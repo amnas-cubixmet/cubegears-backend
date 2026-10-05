@@ -60,7 +60,7 @@ class InvoiceItem(models.Model):
     stock_item=models.ForeignKey("inventory.StockItem",on_delete=models.SET_NULL,null=True,blank=True)
 
 class EWayBill(CompanyOwnedModel):
-    invoice=models.ForeignKey(Invoice,on_delete=models.CASCADE,related_name="eway_bills")
+    invoice=models.ForeignKey(Invoice,on_delete=models.CASCADE,null=True,blank=True,related_name="eway_bills")
     number=models.CharField(max_length=50,blank=True)
     status=models.CharField(max_length=30,default="Draft")
     vehicle_no=models.CharField(max_length=30,blank=True)
