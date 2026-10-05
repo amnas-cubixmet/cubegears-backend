@@ -1,0 +1,53 @@
+from decimal import Decimal
+from django.db import models
+from common.models import CompanyOwnedModel
+
+class AttendanceRecord(CompanyOwnedModel):
+    employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="attendance_records")
+    date=models.DateField()
+    clock_in=models.DateTimeField(null=True,blank=True)
+    clock_out=models.DateTimeField(null=True,blank=True)
+    worked_minutes=models.PositiveIntegerField(default=0)
+    late_minutes=models.PositiveIntegerField(default=0)
+    early_exit_minutes=models.PositiveIntegerField(default=0)
+    overtime_minutes=models.PositiveIntegerField(default=0)
+    status=models.CharField(max_length=30,default="Present")
+    location=models.JSONField(default=dict,blank=True)
+    notes=models.TextField(blank=True)
+    class Meta:
+        ordering=["-date"]
+        constraints=[models.UniqueConstraint(fields=["employee","date"],name="unique_employee_attendance_day")]
+
+class LeaveRequest(CompanyOwnedModel):
+    employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="leave_requests")
+    leave_type=models.CharField(max_length=50)
+    start_date=models.DateField()
+    end_date=models.DateField()
+    half_day=models.BooleanField(default=False)
+    reason=models.TextField(blank=True)
+    attachment=models.URLField(blank=True)
+    status=models.CharField(max_length=30,default="Pending")
+    reviewed_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_leave_requests")
+    reviewed_at=models.DateTimeField(null=True,blank=True)
+
+class OvertimeRequest(CompanyOwnedModel):
+    employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="overtime_requests")
+    date=models.DateField()
+    minutes=models.PositiveIntegerField(default=0)
+    reason=models.TextField(blank=True)
+    status=models.CharField(max_length=30,default="Pending")
+    approved_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+
+class Holiday(CompanyOwnedModel):
+    date=models.DateField()
+    name=models.CharField(max_length=160)
+    holiday_type=models.CharField(max_length=50,default="Company")
+    is_optional=models.BooleanField(default=False)
+
+class AttendanceRule(CompanyOwnedModel):
+    name=models.CharField(max_length=120,default="Default")
+    grace_minutes=models.PositiveIntegerField(default=15)
+    overtime_after_minutes=models.PositiveIntegerField(default=540)
+    location_required=models.BooleanField(default=False)
+    correction_approval=models.BooleanField(default=True)
+    is_default=models.BooleanField(default=True)
