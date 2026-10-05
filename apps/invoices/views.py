@@ -74,4 +74,29 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         return response.Response(InvoiceSerializer(invoice).data,status=status.HTTP_201_CREATED)
 
 class EWayBillViewSet(CompanyScopedModelViewSet):
-    queryset=EWayBill.objects.select_related("invoice").all(); serializer_class=EWayBillSerializer
+    queryset=EWayBill.objects.select_related("invoice").all()
+    serializer_class=EWayBillSerializer
+
+    @decorators.action(detail=True,methods=["post"])
+    def generate(self,request,pk=None):
+        obj=self.get_object()
+        payload=dict(obj.payload or {})
+        required=[
+            payload.get("supplyType"),
+            payload.get("subSupplyType"),
+            payload.get("transactionType"),
+            payload.get("documentType"),
+            payload.get("documentNo"),
+            payload.get("documentDate"),
+        ]
+        if not all(required):
+            raise ValidationError("Complete the required E-Way Bill fields before submitting.")
+        items=payload.get("items") or []
+        if not items:
+            raise ValidationError("Add at least one goods item.")
+        obj.status="Ready for API"
+        payload["status"]="Ready for API"
+        payload["updatedAt"]=timezone.now().isoformat()
+        obj.payload=payload
+        obj.save(update_fields=["status","payload","updated_at"])
+        return response.Response(EWayBillSerializer(obj).data)
