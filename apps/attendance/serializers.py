@@ -7,8 +7,18 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     employeeName=serializers.CharField(source="employee.name",read_only=True)
     class Meta: model=LeaveRequest; exclude=("company","branch")
 class OvertimeRequestSerializer(serializers.ModelSerializer):
-    employeeName=serializers.CharField(source="employee.name",read_only=True)
-    class Meta: model=OvertimeRequest; exclude=("company","branch")
+    staffId=serializers.UUIDField(source="employee_id",read_only=True)
+    staffName=serializers.CharField(source="employee.name",read_only=True)
+    overtimeHours=serializers.SerializerMethodField()
+    payrollMonth=serializers.CharField(source="payroll_month",required=False,allow_blank=True)
+    approvedBy=serializers.CharField(source="approved_by.name",read_only=True)
+    approvedAt=serializers.DateTimeField(source="approved_at",read_only=True)
+    rejectionReason=serializers.CharField(source="rejection_reason",read_only=True)
+    auditHistory=serializers.JSONField(source="audit_history",read_only=True)
+    class Meta:
+        model=OvertimeRequest
+        exclude=("company","branch","payroll_month","approved_at","rejection_reason","audit_history")
+    def get_overtimeHours(self,obj): return round(obj.minutes/60,2)
 class HolidaySerializer(serializers.ModelSerializer):
     class Meta: model=Holiday; exclude=("company","branch")
 class AttendanceRuleSerializer(serializers.ModelSerializer):
