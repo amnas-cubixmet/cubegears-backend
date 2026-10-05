@@ -41,6 +41,7 @@ urlpatterns = [
 
     re_path(r"^api/v1/employees/?", include("apps.employees.urls")),
     re_path(r"^api/v1/attendance/?", include("apps.attendance.urls")),
+    path("api/v1/", include("apps.attendance.compat_urls")),
     re_path(r"^api/v1/payroll/?", include("apps.payroll.urls")),
 
     path("api/v1/dashboard", DashboardView.as_view(), name="dashboard"),
