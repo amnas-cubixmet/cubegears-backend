@@ -48,3 +48,18 @@ class Payslip(CompanyOwnedModel):
     paid_amount=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     payment_status=models.CharField(max_length=30,default="Unpaid")
     payment_history=models.JSONField(default=list,blank=True)
+
+class Incentive(CompanyOwnedModel):
+    employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="incentives")
+    incentive_type=models.CharField(max_length=60,default="Commission")
+    source=models.CharField(max_length=120,blank=True)
+    reference=models.CharField(max_length=120,blank=True)
+    completion_date=models.DateField()
+    payroll_month=models.CharField(max_length=30,blank=True)
+    amount=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
+    status=models.CharField(max_length=30,default="Pending")
+    approved_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="approved_incentives")
+    approved_at=models.DateTimeField(null=True,blank=True)
+    notes=models.TextField(blank=True)
+    metadata=models.JSONField(default=dict,blank=True)
+    class Meta: ordering=["-completion_date","-created_at"]
