@@ -49,7 +49,10 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         if obj.kind=="invoice":
             for line in obj.items.select_related("stock_item"):
                 if not line.stock_item_id: continue
-                item=StockItem.objects.select_for_update().get(pk=line.stock_item_id,company=obj.company)
+                try:
+                    item=StockItem.objects.select_for_update().get(pk=line.stock_item_id,company=obj.company)
+                except StockItem.DoesNotExist:
+                    raise ValidationError("An invoice item references stock from another company or a missing stock item.")
                 if item.available_quantity < line.quantity: raise ValidationError(f"Insufficient stock for {item.name}.")
                 item.on_hand -= line.quantity; item.save(update_fields=["on_hand","updated_at"])
                 StockMovement.objects.create(company=obj.company,branch=obj.branch,item=item,movement_type="sale",quantity=-line.quantity,reference=obj.number,created_by=request.user)
