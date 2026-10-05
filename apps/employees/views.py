@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.mail import send_mail
 from rest_framework import decorators,response
+from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Team,Shift,Skill,Employee,EmployeeDocument
 from .serializers import *
@@ -33,6 +34,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         user=None
         if email:
             user=User.objects.filter(email__iexact=email).first()
+            if user and user.company_id not in {None, company.id}:
+                raise ValidationError({"email":"This login email belongs to another company."})
             if not user:
                 role_name=serializer.validated_data.get("role_name") or ""
                 role=Role.objects.filter(company=company,name__iexact=role_name).first()
