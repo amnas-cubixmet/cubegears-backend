@@ -11,6 +11,23 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
     queryset=Employee.objects.select_related("team","shift","user").prefetch_related("skills").all()
     serializer_class=EmployeeSerializer
 
+    def perform_create(self,serializer):
+        from apps.accounts.models import User
+        from apps.roles.models import Role
+        company=self.request.user.company
+        count=Employee.objects.filter(company=company).count()+1
+        code=serializer.validated_data.get("employee_code") or f"EMP-{count:04d}"
+        email=serializer.validated_data.get("email") or ""
+        name=serializer.validated_data.get("name") or code
+        user=None
+        if email:
+            user=User.objects.filter(email__iexact=email).first()
+            if not user:
+                role_name=serializer.validated_data.get("role_name") or ""
+                role=Role.objects.filter(company=company,name__iexact=role_name).first()
+                user=User.objects.create_user(email=email,name=name,company=company,branch=self.request.user.branch,role=role)
+        serializer.save(company=company,branch=self.request.user.branch,employee_code=code,user=user)
+
     @decorators.action(detail=True,methods=["patch"],url_path="toggle-account")
     def toggle_account(self,request,pk=None):
         obj=self.get_object()
