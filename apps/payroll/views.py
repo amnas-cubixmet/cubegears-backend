@@ -5,7 +5,7 @@ from rest_framework import decorators,response,status
 from common.viewsets import CompanyScopedModelViewSet
 from apps.attendance.models import AttendanceRecord
 from apps.employees.models import Employee
-from .models import SalaryStructure,SalaryAdvance,PayrollRun,Payslip
+from .models import SalaryStructure,SalaryAdvance,PayrollRun,Payslip,Incentive
 from .serializers import *
 
 class SalaryStructureViewSet(CompanyScopedModelViewSet):
@@ -80,3 +80,36 @@ class PayslipViewSet(CompanyScopedModelViewSet):
         slip.payment_status="Paid" if slip.paid_amount>=slip.net else ("Partially Paid" if slip.paid_amount>0 else "Unpaid")
         slip.save(update_fields=["paid_amount","payment_history","payment_status","updated_at"])
         return response.Response(PayslipSerializer(slip).data)
+
+class IncentiveViewSet(CompanyScopedModelViewSet):
+    queryset=Incentive.objects.select_related("employee","approved_by").all()
+    serializer_class=IncentiveSerializer
+
+    def get_queryset(self):
+        qs=super().get_queryset()
+        month=self.request.query_params.get("month")
+        staff_id=self.request.query_params.get("staffId")
+        st=self.request.query_params.get("status")
+        if month: qs=qs.filter(payroll_month=month)
+        if staff_id and staff_id not in {"All","all"}: qs=qs.filter(employee_id=staff_id)
+        if st and st not in {"All","all"}: qs=qs.filter(status=st)
+        return qs
+
+    def perform_create(self,serializer):
+        from apps.employees.models import Employee
+        employee_id=self.request.data.get("employee") or self.request.data.get("staffId")
+        employee=Employee.objects.get(pk=employee_id,company=self.request.user.company)
+        serializer.save(
+            company=self.request.user.company,branch=self.request.user.branch,employee=employee,
+            incentive_type=self.request.data.get("incentive_type") or self.request.data.get("type") or "Commission",
+            completion_date=self.request.data.get("completionDate") or self.request.data.get("completion_date") or timezone.localdate(),
+            payroll_month=self.request.data.get("payrollMonth") or "",
+        )
+
+    @decorators.action(detail=True,methods=["post"],url_path="status")
+    def set_status(self,request,pk=None):
+        obj=self.get_object(); obj.status=request.data.get("status") or obj.status
+        if obj.status=="Approved":
+            obj.approved_by=request.user; obj.approved_at=timezone.now()
+        obj.save()
+        return response.Response(self.get_serializer(obj).data)
