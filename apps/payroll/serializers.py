@@ -1,6 +1,6 @@
 from calendar import month_name
 from rest_framework import serializers
-from .models import SalaryStructure,SalaryAdvance,PayrollRun,Payslip
+from .models import SalaryStructure,SalaryAdvance,PayrollRun,Payslip,Incentive
 
 class SalaryStructureSerializer(serializers.ModelSerializer):
     staffId=serializers.UUIDField(source="employee_id",read_only=True)
@@ -53,3 +53,14 @@ class PayrollRunSerializer(serializers.ModelSerializer):
         exclude=("company","branch")
     def get_period(self,obj):
         return f"{month_name[obj.month]} {obj.year}"
+
+class IncentiveSerializer(serializers.ModelSerializer):
+    staffId=serializers.UUIDField(source="employee_id",read_only=True)
+    staffName=serializers.CharField(source="employee.name",read_only=True)
+    payrollMonth=serializers.CharField(source="payroll_month",required=False,allow_blank=True)
+    completionDate=serializers.DateField(source="completion_date",required=False)
+    approvedBy=serializers.CharField(source="approved_by.name",read_only=True)
+    approvedAt=serializers.DateTimeField(source="approved_at",read_only=True)
+    class Meta:
+        model=Incentive
+        exclude=("company","branch","payroll_month","completion_date","approved_at")
