@@ -13,6 +13,7 @@ class JobActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
     class Meta: model=JobActivity; exclude=("company","branch")
 class JobSerializer(serializers.ModelSerializer):
+    partsWorkflow=serializers.JSONField(source="parts_workflow",required=False)
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
     vehicleId=serializers.UUIDField(source="vehicle_id",read_only=True)
