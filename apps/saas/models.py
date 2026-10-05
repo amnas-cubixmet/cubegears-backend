@@ -45,3 +45,12 @@ class SecurityEvent(CompanyOwnedModel):
     user_agent=models.TextField(blank=True)
     metadata=models.JSONField(default=dict,blank=True)
     class Meta: ordering=["-created_at"]
+
+class MediaFile(CompanyOwnedModel):
+    file=models.FileField(upload_to="saas/%Y/%m/")
+    name=models.CharField(max_length=255)
+    category=models.CharField(max_length=80,default="General")
+    mime_type=models.CharField(max_length=120,blank=True)
+    size_bytes=models.BigIntegerField(default=0)
+    uploaded_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="uploaded_media_files")
+    class Meta: ordering=["-created_at"]
