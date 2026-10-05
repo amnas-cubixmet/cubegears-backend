@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 from rest_framework.permissions import AllowAny
@@ -26,11 +28,13 @@ urlpatterns = [
     re_path(r"^api/v1/vehicles/?", include("apps.vehicles.urls")),
     re_path(r"^api/v1/services/?", include("apps.services.urls")),
     re_path(r"^api/v1/jobs/?", include("apps.jobs.urls")),
+    path("api/v1/", include("apps.jobs.compat_urls")),
 
     re_path(r"^api/v1/stock/?", include("apps.inventory.urls")),
     re_path(r"^api/v1/inventory/?", include("apps.inventory.urls")),
 
     re_path(r"^api/v1/invoices/?", include("apps.invoices.urls")),
+    re_path(r"^api/v1/e-way-bills/?", include("apps.invoices.eway_urls")),
     re_path(r"^api/v1/billing/documents/?", include("apps.invoices.urls")),
     re_path(r"^api/v1/payments/?", include("apps.payments.urls")),
     re_path(r"^api/v1/expenses/?", include("apps.expenses.urls")),
@@ -47,3 +51,6 @@ urlpatterns = [
     path("api/v1/settings/<str:category>", SettingsView.as_view(), name="settings-category"),
     path("api/v1/saas/", include("apps.saas.urls")),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
