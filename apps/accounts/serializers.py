@@ -56,9 +56,15 @@ class ForgotPasswordSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
 class ResetPasswordSerializer(serializers.Serializer):
-    uid = serializers.CharField()
+    uid = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False)
     token = serializers.CharField()
     password = serializers.CharField(write_only=True)
+
+    def validate(self, attrs):
+        if not attrs.get("uid") and not attrs.get("email"):
+            raise serializers.ValidationError("uid or email is required.")
+        return attrs
 
     def validate_password(self, value):
         validate_password(value)
@@ -71,9 +77,17 @@ class MagicLinkVerifySerializer(serializers.Serializer):
     token = serializers.CharField()
 
 class ChangePasswordSerializer(serializers.Serializer):
-    current_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True)
+    current_password = serializers.CharField(write_only=True, required=False)
+    new_password = serializers.CharField(write_only=True, required=False)
+    currentPassword = serializers.CharField(write_only=True, required=False)
+    newPassword = serializers.CharField(write_only=True, required=False)
 
-    def validate_new_password(self, value):
-        validate_password(value)
-        return value
+    def validate(self, attrs):
+        current = attrs.get("current_password") or attrs.get("currentPassword")
+        new = attrs.get("new_password") or attrs.get("newPassword")
+        if not current or not new:
+            raise serializers.ValidationError("Current password and new password are required.")
+        validate_password(new)
+        attrs["current_password"] = current
+        attrs["new_password"] = new
+        return attrs
