@@ -69,3 +69,11 @@ class MagicLinkRequestSerializer(serializers.Serializer):
 
 class MagicLinkVerifySerializer(serializers.Serializer):
     token = serializers.CharField()
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        validate_password(value)
+        return value
