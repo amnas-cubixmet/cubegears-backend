@@ -12,6 +12,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
 from .serializers import (
+    ChangePasswordSerializer,
     ForgotPasswordSerializer,
     LoginSerializer,
     MagicLinkRequestSerializer,
@@ -131,3 +132,15 @@ class MagicLinkVerifyView(APIView):
         user.email_verified = True
         user.save(update_fields=["email_verified"])
         return Response(issue_tokens(user))
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        if not request.user.check_password(serializer.validated_data["current_password"]):
+            return Response({"message": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        request.user.set_password(serializer.validated_data["new_password"])
+        request.user.save(update_fields=["password"])
+        return Response({"message": "Password changed successfully."})
