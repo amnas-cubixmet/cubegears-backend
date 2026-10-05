@@ -45,3 +45,6 @@ class Payslip(CompanyOwnedModel):
     gross=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     net=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     status=models.CharField(max_length=30,default="Generated")
+    paid_amount=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
+    payment_status=models.CharField(max_length=30,default="Unpaid")
+    payment_history=models.JSONField(default=list,blank=True)
