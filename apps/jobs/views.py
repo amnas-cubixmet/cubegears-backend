@@ -31,6 +31,80 @@ class JobViewSet(CompanyScopedModelViewSet):
         JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
         return response.Response(JobSerializer(job).data)
 
+    @decorators.action(detail=True,methods=["get"],url_path="inspection")
+    def inspection_detail(self,request,pk=None):
+        job=self.get_object()
+        return response.Response(job.inspection or {
+            "status":"Not Started","checklist":{},"findings":[],
+            "diagnosticScan":{"performed":False,"codes":[]},"photos":[],
+            "summary":{"totalChecks":0,"good":0,"needsAttention":0,"issuesFound":0,"criticalIssues":0,"recommendedRepairs":0}
+        })
+
+    @decorators.action(detail=True,methods=["post"],url_path="inspection/start")
+    def inspection_start(self,request,pk=None):
+        job=self.get_object(); data=dict(job.inspection or {})
+        data.setdefault("checklist",{}); data.setdefault("findings",[]); data.setdefault("diagnosticScan",{"performed":False,"codes":[]}); data.setdefault("photos",[])
+        data["status"]="In Progress"; data["startedAt"]=timezone.now().isoformat()
+        job.inspection=data; job.status=Job.STATUS_INSPECTION; job.save(update_fields=["inspection","status","updated_at"])
+        return response.Response(data)
+
+    @decorators.action(detail=True,methods=["patch"],url_path="inspection/checklist")
+    def inspection_checklist(self,request,pk=None):
+        job=self.get_object(); data=dict(job.inspection or {}); checklist=dict(data.get("checklist") or {})
+        checklist[request.data.get("itemName","")]=request.data.get("status","Not Checked")
+        data["checklist"]=checklist; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        return response.Response(data)
+
+    @decorators.action(detail=True,methods=["post"],url_path="inspection/findings")
+    def inspection_findings(self,request,pk=None):
+        import uuid
+        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        finding={"id":f"FND-{uuid.uuid4().hex[:10].upper()}","dateTime":timezone.now().isoformat(),"addedToEstimate":False,"estimateStatus":"Not Added",**request.data}
+        findings.insert(0,finding); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        return response.Response(finding,status=status.HTTP_201_CREATED)
+
+    @decorators.action(detail=True,methods=["put","delete"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)")
+    def inspection_finding_detail(self,request,pk=None,finding_id=None):
+        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        idx=next((i for i,x in enumerate(findings) if str(x.get("id"))==str(finding_id)),None)
+        if idx is None: return response.Response({"message":"Finding not found."},status=404)
+        if request.method=="DELETE":
+            removed=findings.pop(idx); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+            return response.Response(removed)
+        findings[idx]={**findings[idx],**request.data}; data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        return response.Response(findings[idx])
+
+    @decorators.action(detail=True,methods=["post"],url_path="inspection/diagnostic")
+    def inspection_diagnostic(self,request,pk=None):
+        import uuid
+        job=self.get_object(); data=dict(job.inspection or {}); scan=dict(data.get("diagnosticScan") or {})
+        codes=list(scan.get("codes") or []); code={"id":f"OBD-{uuid.uuid4().hex[:8].upper()}",**request.data}
+        codes.append(code); scan.update({"performed":True,"scanTime":timezone.now().isoformat(),"codes":codes}); data["diagnosticScan"]=scan
+        job.inspection=data; job.save(update_fields=["inspection","updated_at"]); return response.Response(code,status=201)
+
+    @decorators.action(detail=True,methods=["post"],url_path="inspection/photos")
+    def inspection_photo(self,request,pk=None):
+        import uuid
+        job=self.get_object(); data=dict(job.inspection or {}); photos=list(data.get("photos") or [])
+        photo={"id":f"PH-{uuid.uuid4().hex[:8].upper()}","dateTime":timezone.now().isoformat(),**request.data}
+        photos.append(photo); data["photos"]=photos; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        return response.Response(photo,status=201)
+
+    @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
+    def inspection_complete(self,request,pk=None):
+        job=self.get_object(); data=dict(job.inspection or {}); data["status"]="Completed"; data["completedAt"]=timezone.now().isoformat()
+        job.inspection=data; job.status=Job.STATUS_ESTIMATE_PENDING if request.data.get("needsApproval",True) else job.status
+        job.save(update_fields=["inspection","status","updated_at"])
+        return response.Response({"inspection":data,"newJobStatus":job.status})
+
+    @decorators.action(detail=True,methods=["post"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)/add-to-estimate")
+    def inspection_add_to_estimate(self,request,pk=None,finding_id=None):
+        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        finding=next((x for x in findings if str(x.get("id"))==str(finding_id)),None)
+        if not finding: return response.Response({"message":"Finding not found."},status=404)
+        finding["addedToEstimate"]=True; finding["estimateStatus"]="Added to Estimate"; job.inspection={**data,"findings":findings}
+        job.save(update_fields=["inspection","updated_at"]); return response.Response(finding)
+
     @decorators.action(detail=True,methods=["get","post"])
     def estimates(self,request,pk=None):
         job=self.get_object()
