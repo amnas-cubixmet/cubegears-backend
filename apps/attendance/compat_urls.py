@@ -1,0 +1,19 @@
+from django.urls import path
+from .compat_views import *
+urlpatterns=[
+ path("my-attendance/logs",MyAttendanceLogsView.as_view()),
+ path("my-attendance/calendar",MyAttendanceCalendarView.as_view()),
+ path("my-attendance/corrections",PunchCorrectionCreateView.as_view()),
+ path("leave/balances",LeaveBalancesView.as_view()),
+ path("leave/requests",MyLeaveRequestsView.as_view()),
+ path("leave/requests/<uuid:pk>/cancel",CancelLeaveRequestView.as_view()),
+ path("attendance-manager/approvals",ManagerApprovalsView.as_view()),
+ path("attendance-manager/approvals/<uuid:pk>",ManagerApprovalDetailView.as_view()),
+ path("attendance-manager/team",ManagerTeamView.as_view()),
+ path("attendance-manager/team/<uuid:pk>",ManagerTeamDetailView.as_view()),
+ path("attendance-manager/master",ManagerMasterView.as_view()),
+ path("attendance-manager/leave-types",LeaveTypesView.as_view()),
+ path("attendance-manager/holidays",ManagerHolidaysView.as_view()),
+ path("attendance-manager/rules",ManagerRulesView.as_view()),
+ path("attendance-manager/staff-details/<str:staff_id>/<str:date>",StaffAttendanceDetailsView.as_view()),
+]
