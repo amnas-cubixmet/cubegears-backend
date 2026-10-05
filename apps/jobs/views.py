@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
@@ -16,6 +17,17 @@ class JobViewSet(CompanyScopedModelViewSet):
         return qs.filter(status=st) if st else qs
     def perform_create(self,serializer):
         company=self.request.user.company
+        customer=serializer.validated_data.get("customer")
+        vehicle=serializer.validated_data.get("vehicle")
+        technician=serializer.validated_data.get("technician")
+        if customer and customer.company_id != company.id:
+            raise ValidationError({"customer":"Customer belongs to another company."})
+        if vehicle and vehicle.company_id != company.id:
+            raise ValidationError({"vehicle":"Vehicle belongs to another company."})
+        if vehicle and customer and vehicle.customer_id != customer.id:
+            raise ValidationError({"vehicle":"Vehicle does not belong to the selected customer."})
+        if technician and technician.company_id != company.id:
+            raise ValidationError({"technician":"Technician belongs to another company."})
         count=Job.objects.filter(company=company).count()+1
         number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
         job=serializer.save(company=company,branch=self.request.user.branch,job_number=number,advisor=self.request.user)
@@ -132,9 +144,9 @@ class JobViewSet(CompanyScopedModelViewSet):
     def issue_part(self,request,pk=None):
         from apps.inventory.models import StockItem,StockMovement
         job=self.get_object(); item=StockItem.objects.select_for_update().get(pk=request.data.get("item"),company=job.company)
-        qty=float(request.data.get("quantity",0))
-        if qty<=0 or float(item.available_quantity)<qty: raise ValidationError("Insufficient stock.")
-        item.on_hand=float(item.on_hand)-qty; item.save(update_fields=["on_hand","updated_at"])
+        qty=Decimal(str(request.data.get("quantity",0)))
+        if qty<=0 or item.available_quantity<qty: raise ValidationError("Insufficient stock.")
+        item.on_hand=item.on_hand-qty; item.save(update_fields=["on_hand","updated_at"])
         part=JobPart.objects.create(company=job.company,branch=job.branch,job=job,item=item,quantity=qty,unit_price=item.selling_price,issued=True)
         StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,reference=job.job_number,job=job,created_by=request.user)
         return response.Response(JobPartSerializer(part).data,status=status.HTTP_201_CREATED)
