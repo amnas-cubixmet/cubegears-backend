@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,26 +22,26 @@ urlpatterns = [
     path("api/v1/branches/", include("apps.branches.urls")),
     path("api/v1/roles/", include("apps.roles.urls")),
 
-    path("api/v1/customers", include("apps.customers.urls")),
-    path("api/v1/vehicles", include("apps.vehicles.urls")),
-    path("api/v1/services", include("apps.services.urls")),
-    path("api/v1/jobs", include("apps.jobs.urls")),
+    re_path(r"^api/v1/customers/?", include("apps.customers.urls")),
+    re_path(r"^api/v1/vehicles/?", include("apps.vehicles.urls")),
+    re_path(r"^api/v1/services/?", include("apps.services.urls")),
+    re_path(r"^api/v1/jobs/?", include("apps.jobs.urls")),
 
-    path("api/v1/stock", include("apps.inventory.urls")),
-    path("api/v1/inventory", include("apps.inventory.urls")),
+    re_path(r"^api/v1/stock/?", include("apps.inventory.urls")),
+    re_path(r"^api/v1/inventory/?", include("apps.inventory.urls")),
 
-    path("api/v1/invoices", include("apps.invoices.urls")),
-    path("api/v1/billing/documents", include("apps.invoices.urls")),
-    path("api/v1/payments", include("apps.payments.urls")),
-    path("api/v1/expenses", include("apps.expenses.urls")),
+    re_path(r"^api/v1/invoices/?", include("apps.invoices.urls")),
+    re_path(r"^api/v1/billing/documents/?", include("apps.invoices.urls")),
+    re_path(r"^api/v1/payments/?", include("apps.payments.urls")),
+    re_path(r"^api/v1/expenses/?", include("apps.expenses.urls")),
 
-    path("api/v1/employees", include("apps.employees.urls")),
-    path("api/v1/attendance/", include("apps.attendance.urls")),
-    path("api/v1/payroll", include("apps.payroll.urls")),
+    re_path(r"^api/v1/employees/?", include("apps.employees.urls")),
+    re_path(r"^api/v1/attendance/?", include("apps.attendance.urls")),
+    re_path(r"^api/v1/payroll/?", include("apps.payroll.urls")),
 
     path("api/v1/dashboard", DashboardView.as_view(), name="dashboard"),
-    path("api/v1/reports", include("apps.reports.urls")),
-    path("api/v1/notifications", include("apps.notifications.urls")),
+    re_path(r"^api/v1/reports/?", include("apps.reports.urls")),
+    re_path(r"^api/v1/notifications/?", include("apps.notifications.urls")),
 
     path("api/v1/settings", SettingsView.as_view(), name="settings-all"),
     path("api/v1/settings/<str:category>", SettingsView.as_view(), name="settings-category"),
