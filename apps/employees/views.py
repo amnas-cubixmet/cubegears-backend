@@ -6,7 +6,18 @@ from .models import Team,Shift,Skill,Employee,EmployeeDocument
 from .serializers import *
 class TeamViewSet(CompanyScopedModelViewSet): queryset=Team.objects.all(); serializer_class=TeamSerializer
 class ShiftViewSet(CompanyScopedModelViewSet): queryset=Shift.objects.all(); serializer_class=ShiftSerializer
-class SkillViewSet(CompanyScopedModelViewSet): queryset=Skill.objects.all(); serializer_class=SkillSerializer
+class SkillViewSet(CompanyScopedModelViewSet):
+    queryset=Skill.objects.all()
+    serializer_class=SkillSerializer
+
+    @decorators.action(detail=True,methods=["post"],url_path="assign")
+    def assign(self,request,pk=None):
+        skill=self.get_object()
+        staff_ids=request.data.get("staffIds") or []
+        employees=Employee.objects.filter(company=request.user.company,id__in=staff_ids)
+        for employee in employees:
+            employee.skills.add(skill)
+        return response.Response({"skill":SkillSerializer(skill).data,"assignedStaffIds":[str(x.id) for x in employees]})
 class EmployeeViewSet(CompanyScopedModelViewSet):
     queryset=Employee.objects.select_related("team","shift","user").prefetch_related("skills").all()
     serializer_class=EmployeeSerializer
