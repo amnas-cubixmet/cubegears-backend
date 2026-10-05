@@ -31,6 +31,20 @@ INSTALLED_APPS = [
     "apps.branches",
     "apps.roles",
     "apps.accounts",
+    "apps.customers",
+    "apps.vehicles",
+    "apps.services",
+    "apps.jobs",
+    "apps.inventory",
+    "apps.invoices",
+    "apps.payments",
+    "apps.expenses",
+    "apps.employees",
+    "apps.attendance",
+    "apps.payroll",
+    "apps.notifications",
+    "apps.reports",
+    "apps.saas",
 ]
 
 MIDDLEWARE = [
