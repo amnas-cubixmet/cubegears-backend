@@ -17,6 +17,18 @@ class SalaryAdvanceViewSet(CompanyScopedModelViewSet):
         amount=serializer.validated_data["amount"]
         serializer.save(company=self.request.user.company,branch=self.request.user.branch,outstanding_balance=amount)
 
+    @decorators.action(detail=True,methods=["post"],url_path="recover")
+    def recover(self,request,pk=None):
+        adv=self.get_object()
+        amount=Decimal(str(request.data.get("amount") or 0))
+        if amount<=0 or amount>adv.outstanding_balance:
+            return response.Response({"message":"Invalid recovery amount."},status=400)
+        adv.recovered_amount += amount
+        adv.outstanding_balance -= amount
+        if adv.outstanding_balance<=0: adv.status="Fully Recovered"
+        adv.save(update_fields=["recovered_amount","outstanding_balance","status","updated_at"])
+        return response.Response(SalaryAdvanceSerializer(adv).data)
+
 class PayrollRunViewSet(CompanyScopedModelViewSet):
     queryset=PayrollRun.objects.prefetch_related("payslips").all(); serializer_class=PayrollRunSerializer
 
@@ -44,3 +56,27 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
 
 class PayslipViewSet(CompanyScopedModelViewSet):
     queryset=Payslip.objects.select_related("employee","payroll_run").all(); serializer_class=PayslipSerializer
+
+    @decorators.action(detail=True,methods=["post"],url_path="payment")
+    def payment(self,request,pk=None):
+        slip=self.get_object()
+        amount=Decimal(str(request.data.get("amount") or 0))
+        outstanding=max(Decimal("0"),slip.net-slip.paid_amount)
+        if amount<=0 or amount>outstanding:
+            return response.Response({"message":"Payment exceeds outstanding balance or is invalid."},status=400)
+        entry={
+            "id":f"PMT-{timezone.now().timestamp()}","amount":float(amount),
+            "method":request.data.get("method") or "Bank Transfer",
+            "reference":request.data.get("reference") or "",
+            "date":request.data.get("date") or timezone.localdate().isoformat(),
+            "remarks":request.data.get("remarks") or "",
+            "recordedBy":request.user.name,
+            "transferStatus":request.data.get("transferStatus") or "Successful",
+        }
+        history=list(slip.payment_history or [])
+        history.append(entry)
+        if entry["transferStatus"]=="Successful": slip.paid_amount += amount
+        slip.payment_history=history
+        slip.payment_status="Paid" if slip.paid_amount>=slip.net else ("Partially Paid" if slip.paid_amount>0 else "Unpaid")
+        slip.save(update_fields=["paid_amount","payment_history","payment_status","updated_at"])
+        return response.Response(PayslipSerializer(slip).data)
