@@ -87,8 +87,11 @@ class ResetPasswordView(APIView):
         serializer = ResetPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            user_id = urlsafe_base64_decode(serializer.validated_data["uid"]).decode()
-            user = User.objects.get(pk=user_id, is_active=True)
+            if serializer.validated_data.get("uid"):
+                user_id = urlsafe_base64_decode(serializer.validated_data["uid"]).decode()
+                user = User.objects.get(pk=user_id, is_active=True)
+            else:
+                user = User.objects.get(email__iexact=serializer.validated_data["email"], is_active=True)
         except Exception:
             return Response({"message": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
