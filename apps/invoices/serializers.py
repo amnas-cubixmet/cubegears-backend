@@ -23,6 +23,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
     customer = serializers.JSONField(write_only=True, required=False)
     vehicle = serializers.JSONField(write_only=True, required=False)
     jobCardNo = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    seller = serializers.JSONField(source="seller_snapshot", required=False)
+    transportation = serializers.JSONField(source="transport", required=False)
+    taxMode = serializers.CharField(source="tax_mode", required=False)
+    cgstRate = serializers.DecimalField(source="cgst_rate", max_digits=5, decimal_places=2, required=False)
+    sgstRate = serializers.DecimalField(source="sgst_rate", max_digits=5, decimal_places=2, required=False)
+    igstRate = serializers.DecimalField(source="igst_rate", max_digits=5, decimal_places=2, required=False)
+    paymentType = serializers.CharField(source="payment_type", required=False, allow_blank=True)
+    termsAndConditions = serializers.CharField(source="terms_conditions", required=False, allow_blank=True)
+    staff = serializers.CharField(source="staff_name", required=False, allow_blank=True)
+    sourceJobId = serializers.CharField(source="source_job_id", required=False, allow_blank=True)
     customerId = serializers.UUIDField(source="customer_id", read_only=True)
     customerName = serializers.CharField(source="customer.name", read_only=True)
     vehicleId = serializers.UUIDField(source="vehicle_id", read_only=True)
@@ -189,6 +199,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
             data["vehicle"] = {}
 
         data["jobCardNo"] = instance.job.job_number if instance.job else ""
+        data["seller"] = instance.seller_snapshot or {}
+        data["transportation"] = instance.transport or {}
+        data["taxMode"] = instance.tax_mode
+        data["cgstRate"] = instance.cgst_rate
+        data["sgstRate"] = instance.sgst_rate
+        data["igstRate"] = instance.igst_rate
+        data["paymentType"] = instance.payment_type
+        data["termsAndConditions"] = instance.terms_conditions
+        data["staff"] = instance.staff_name
+        data["sourceJobId"] = instance.source_job_id
         return data
 
 class EWayBillSerializer(serializers.ModelSerializer):
