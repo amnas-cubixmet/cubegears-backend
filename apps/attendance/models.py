@@ -51,3 +51,25 @@ class AttendanceRule(CompanyOwnedModel):
     location_required=models.BooleanField(default=False)
     correction_approval=models.BooleanField(default=True)
     is_default=models.BooleanField(default=True)
+
+class PunchCorrection(CompanyOwnedModel):
+    attendance=models.ForeignKey(AttendanceRecord,on_delete=models.CASCADE,related_name="corrections")
+    employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="punch_corrections")
+    original_clock_out=models.DateTimeField(null=True,blank=True)
+    proposed_clock_out=models.DateTimeField(null=True,blank=True)
+    reason=models.TextField()
+    status=models.CharField(max_length=30,default="Pending")
+    manager_note=models.TextField(blank=True)
+    reviewed_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_punch_corrections")
+    reviewed_at=models.DateTimeField(null=True,blank=True)
+
+class LeaveType(CompanyOwnedModel):
+    name=models.CharField(max_length=100)
+    code=models.CharField(max_length=30)
+    leave_type=models.CharField(max_length=30,default="Paid")
+    annual_allocation=models.DecimalField(max_digits=6,decimal_places=2,default=12)
+    half_day=models.BooleanField(default=True)
+    max_carry_forward=models.DecimalField(max_digits=6,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,default="Active")
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=["company","code"],name="unique_leave_type_code_per_company")]
