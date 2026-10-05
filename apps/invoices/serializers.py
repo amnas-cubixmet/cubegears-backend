@@ -212,6 +212,47 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return data
 
 class EWayBillSerializer(serializers.ModelSerializer):
+    invoiceId = serializers.UUIDField(source="invoice_id", required=False, allow_null=True)
+
     class Meta:
         model = EWayBill
-        exclude = ("company", "branch")
+        exclude = ("company", "branch", "invoice")
+
+    def to_internal_value(self, data):
+        known = {"id", "invoiceId", "number", "status", "vehicle_no", "transporter_name", "transporter_id", "distance_km", "payload"}
+        raw = dict(data)
+        payload = dict(raw.get("payload") or {})
+        for key, value in raw.items():
+            if key not in known:
+                payload[key] = value
+
+        transport = raw.get("transport") or payload.get("transport") or {}
+        raw["vehicle_no"] = raw.get("vehicle_no") or transport.get("vehicleNo") or ""
+        raw["transporter_name"] = raw.get("transporter_name") or transport.get("transporterName") or ""
+        raw["transporter_id"] = raw.get("transporter_id") or transport.get("transporterId") or ""
+        try:
+            raw["distance_km"] = int(raw.get("distance_km") or transport.get("distanceKm") or 0)
+        except (TypeError, ValueError):
+            raw["distance_km"] = 0
+        raw["payload"] = payload
+        filtered = {k: v for k, v in raw.items() if k in known}
+        return super().to_internal_value(filtered)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        merged = dict(instance.payload or {})
+        merged.update({
+            "id": str(instance.id),
+            "invoiceId": str(instance.invoice_id) if instance.invoice_id else "",
+            "status": instance.status,
+            "ewayBillNo": instance.number or merged.get("ewayBillNo", ""),
+        })
+        transport = dict(merged.get("transport") or {})
+        transport.update({
+            "vehicleNo": instance.vehicle_no or transport.get("vehicleNo", ""),
+            "transporterName": instance.transporter_name or transport.get("transporterName", ""),
+            "transporterId": instance.transporter_id or transport.get("transporterId", ""),
+            "distanceKm": instance.distance_km or transport.get("distanceKm", ""),
+        })
+        merged["transport"] = transport
+        return merged
