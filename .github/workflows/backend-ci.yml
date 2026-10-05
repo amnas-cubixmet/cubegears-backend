@@ -1,5 +1,7 @@
 name: Backend CI
 
+# Validates the current full CubixGear backend integration.
+
 on:
   push:
     branches: [main]
