@@ -35,8 +35,14 @@ class OvertimeRequest(CompanyOwnedModel):
     date=models.DateField()
     minutes=models.PositiveIntegerField(default=0)
     reason=models.TextField(blank=True)
+    payroll_month=models.CharField(max_length=30,blank=True)
+    rate=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    amount=models.DecimalField(max_digits=12,decimal_places=2,default=0)
     status=models.CharField(max_length=30,default="Pending")
     approved_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+    approved_at=models.DateTimeField(null=True,blank=True)
+    rejection_reason=models.TextField(blank=True)
+    audit_history=models.JSONField(default=list,blank=True)
 
 class Holiday(CompanyOwnedModel):
     date=models.DateField()
