@@ -1,78 +1,122 @@
 # CubixGear Backend
 
-Django REST API for the CubixGear workshop SaaS.
+Production-oriented Django REST backend for the CubixGear workshop SaaS and company panel.
 
-## Core stack
+## Implemented modules
 
-- Django 6
-- Django REST Framework
-- JWT access/refresh tokens
-- CORS
-- SQLite for local development
-- PostgreSQL through `DATABASE_URL` for production
-- Company/workshop, branch and role scoping
+- Accounts: custom user, JWT login/logout/refresh, /auth/me, password change, forgot/reset password, magic link
+- Company/SaaS: company profile, GST, address, currency, plan, billing summary, storage, files, document templates, settings, security events
+- Branches and roles/permissions
+- Customers: CRUD, duplicate check, vehicles, service/jobs history, invoices, payments, outstanding, reminders/activity
+- Vehicles: CRUD and service history
+- Services: service catalogue
+- Job cards: complaints, inspection, estimates, labour/work JSON workflow, parts, photos, activity/history, QC and exact status workflow
+- Stock: items, categories, suppliers, SKU/barcode, movements, purchase orders, transfers, adjustments/audit, low-stock and job-card deductions
+- Billing: invoices, estimates/quotations, GST, HSN/SAC, payments, E-Way Bill and expenses
+- Staff: employees, teams, shifts, skills, documents and login invitations
+- Attendance: clock in/out, history, leave, overtime, holidays, rules, corrections and manager compatibility APIs
+- Payroll: salary setup, advances, incentives, overtime inputs, payroll runs, payslips and payments
+- Dashboard, reports and notifications
+
+## Job workflow
+
+```text
+New
+→ Inspection
+→ Estimate Pending
+→ Approved
+→ In Progress
+→ Waiting for Parts
+→ QC
+→ Ready for Delivery
+→ Delivered
+```
 
 ## Local setup
 
-Windows:
+### Windows
 
-```bash
+```powershell
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
-python manage.py makemigrations companies branches roles accounts
+
+python manage.py makemigrations
 python manage.py migrate
+python manage.py check
+python manage.py bootstrap_cubixgear
 python manage.py runserver
 ```
 
-macOS/Linux:
+### macOS / Linux
 
 ```bash
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python manage.py makemigrations companies branches roles accounts
+
+python manage.py makemigrations
 python manage.py migrate
+python manage.py check
+python manage.py bootstrap_cubixgear
 python manage.py runserver
 ```
 
-## First company/admin bootstrap
+Before `bootstrap_cubixgear`, change `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD` in `.env`.
 
-Set `BOOTSTRAP_COMPANY_NAME`, `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` in your shell, then run:
-
-```bash
-python manage.py bootstrap_cubixgear
-```
-
-## Core endpoints
+## API base
 
 ```text
-GET  /api/v1/health/
-
-POST /api/v1/auth/login
-POST /api/v1/auth/logout
-GET  /api/v1/auth/me
-POST /api/v1/auth/refresh
-POST /api/v1/auth/change-password
-POST /api/v1/auth/forgot-password
-POST /api/v1/auth/reset-password
-POST /api/v1/auth/magic-link
-POST /api/v1/auth/magic-link/verify
-
-GET/PATCH          /api/v1/company/me
-GET/POST           /api/v1/branches/
-GET/PATCH/DELETE   /api/v1/branches/<uuid>
-GET/POST           /api/v1/roles/
-GET/PATCH/DELETE   /api/v1/roles/<uuid>
+/api/v1/auth/
+/api/v1/company/
+/api/v1/branches/
+/api/v1/roles/
+/api/v1/dashboard
+/api/v1/customers/
+/api/v1/vehicles/
+/api/v1/services/
+/api/v1/jobs/
+/api/v1/stock/
+/api/v1/inventory/
+/api/v1/invoices/
+/api/v1/e-way-bills/
+/api/v1/payments/
+/api/v1/expenses/
+/api/v1/employees/
+/api/v1/attendance/
+/api/v1/payroll/
+/api/v1/reports/
+/api/v1/notifications/
+/api/v1/settings
+/api/v1/saas/
 ```
 
 ## Company panel connection
+
+In `cubegears_company-panel/.env`:
 
 ```env
 VITE_API_URL=http://127.0.0.1:8000/api/v1
 VITE_USE_MOCK_API=false
 ```
 
-Login returns `token`, `access`, `refresh`, and `user`, matching the current company-panel auth client.
+The frontend already sends `Authorization: Bearer <access-token>`.
+
+## Database
+
+Local development defaults to SQLite. Production can use PostgreSQL by setting:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+```
+
+## Security notes
+
+- Every business model is company-scoped.
+- Normal users only query their own company records.
+- Job, payment, employee and inventory relations are validated against company ownership.
+- Refresh tokens can be blacklisted on logout.
+- Magic-link tokens are stored as hashes and expire.
+- Secrets are loaded from `.env`; do not commit the real `.env`.
