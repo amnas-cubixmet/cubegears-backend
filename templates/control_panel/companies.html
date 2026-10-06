@@ -1,0 +1,32 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar">
+  <form class="search-form" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search company, GST, city or email">
+    <button class="btn" type="submit">Search</button>
+  </form>
+</div>
+<section class="panel-card">
+  <div class="responsive-table">
+    <table>
+      <thead><tr><th>Company</th><th>Plan</th><th>Users</th><th>Branches</th><th>GST</th><th>Location</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td data-label="Company"><strong>{{ row.name }}</strong><br><span class="table-sub">{{ row.email|default:"—" }}</span></td>
+          <td data-label="Plan">{{ row.plan|title }}</td>
+          <td data-label="Users">{{ row.user_count }}</td>
+          <td data-label="Branches">{{ row.branch_count }}</td>
+          <td data-label="GST">{{ row.gstin|default:"—" }}</td>
+          <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
+          <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
+          <td data-label="Action">
+            <form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="table-action" type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>
+          </td>
+        </tr>
+      {% empty %}<tr><td colspan="8" class="empty-cell">No companies found.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

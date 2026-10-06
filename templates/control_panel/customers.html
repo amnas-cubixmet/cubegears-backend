@@ -1,18 +1,14 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
-<div class="toolbar">
-  <form class="search-form" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search customer, phone or email"><button class="btn" type="submit">Search</button></form>
-</div>
-<section class="panel-card">
-  <div class="responsive-table">
-    <table>
-      <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th>City</th><th>Status</th></tr></thead>
-      <tbody>
-      {% for row in rows %}
-        <tr><td data-label="Name"><strong>{{ row.name }}</strong></td><td data-label="Phone">{{ row.phone }}</td><td data-label="Email">{{ row.email|default:"—" }}</td><td data-label="Type">{{ row.get_customer_type_display }}</td><td data-label="City">{{ row.city|default:"—" }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td></tr>
-      {% empty %}<tr><td colspan="6" class="empty-cell">No customers found.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+<div class="toolbar"><form class="search-form search-form-wide" method="get">
+  <input type="search" name="q" value="{{ q }}" placeholder="Search customer, phone or email">
+  <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button>
+</form></div>
+<section class="panel-card"><div class="responsive-table"><table>
+<thead><tr><th>Customer</th><th>Company</th><th>Phone</th><th>Email</th><th>Type</th><th>City</th><th>Status</th></tr></thead>
+<tbody>{% for row in rows %}<tr>
+<td data-label="Customer"><strong>{{ row.name }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="Phone">{{ row.phone }}</td><td data-label="Email">{{ row.email|default:"—" }}</td><td data-label="Type">{{ row.get_customer_type_display }}</td><td data-label="City">{{ row.city|default:"—" }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td>
+</tr>{% empty %}<tr><td colspan="7" class="empty-cell">No customers found.</td></tr>{% endfor %}</tbody>
+</table></div></section>
 {% endblock %}
