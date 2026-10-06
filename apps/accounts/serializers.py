@@ -91,3 +91,30 @@ class ChangePasswordSerializer(serializers.Serializer):
         attrs["current_password"] = current
         attrs["new_password"] = new
         return attrs
+
+
+class PublicWorkshopSignupSerializer(serializers.Serializer):
+    workshop_name = serializers.CharField(max_length=180)
+    owner_name = serializers.CharField(max_length=150)
+    mobile = serializers.CharField(max_length=30)
+    email = serializers.EmailField()
+    country = serializers.CharField(max_length=100, default="India")
+    state = serializers.CharField(max_length=100)
+    city = serializers.CharField(max_length=100)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    password_confirm = serializers.CharField(write_only=True, trim_whitespace=False)
+
+    def validate_email(self, value):
+        value = value.lower().strip()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        if attrs["password"] != attrs["password_confirm"]:
+            raise serializers.ValidationError({"password_confirm": "Passwords do not match."})
+        return attrs
