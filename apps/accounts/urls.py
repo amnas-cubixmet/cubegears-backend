@@ -10,9 +10,11 @@ from .views import (
     MagicLinkVerifyView,
     MeView,
     ResetPasswordView,
+    PublicWorkshopSignupView,
 )
 
 urlpatterns = [
+    path("signup", PublicWorkshopSignupView.as_view(), name="public-signup"),
     path("login", LoginView.as_view(), name="login"),
     path("logout", LogoutView.as_view(), name="logout"),
     path("me", MeView.as_view(), name="me"),
