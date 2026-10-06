@@ -1,0 +1,39 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Login · CubixGear</title>
+  <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-card">
+      <div class="brand-row auth-brand">
+        <div class="brand-mark">C</div>
+        <div>
+          <strong>CubixGear</strong>
+          <span>Workshop Control</span>
+        </div>
+      </div>
+      <div class="auth-copy">
+        <p class="eyebrow">Secure access</p>
+        <h1>Welcome back</h1>
+        <p>Sign in to manage your workshop operations.</p>
+      </div>
+      <form method="post" class="auth-form">
+        {% csrf_token %}
+        {% if form.non_field_errors %}
+          <div class="form-error">{{ form.non_field_errors|striptags }}</div>
+        {% endif %}
+        <label>Email</label>
+        {{ form.email }}
+        <label>Password</label>
+        {{ form.password }}
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
