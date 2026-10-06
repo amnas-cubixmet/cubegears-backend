@@ -5,9 +5,9 @@
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <select name="status"><option value="">All status</option>{% for value,label in status_choices %}<option value="{{ value }}" {% if status_value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Filter</button>
-</form></div>
+</form><a class="btn btn-primary" href="{% url 'panel:job-create' %}">Add Job Card</a></div>
 <section class="panel-card"><div class="responsive-table"><table>
-<thead><tr><th>Job</th><th>Company</th><th>Customer</th><th>Vehicle</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead>
-<tbody>{% for row in rows %}<tr><td data-label="Job"><strong>{{ row.job_number }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="Customer">{{ row.customer.name }}</td><td data-label="Vehicle">{{ row.vehicle.registration }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Priority">{{ row.priority }}</td><td data-label="Created">{{ row.created_at|date:"d M Y" }}</td></tr>{% empty %}<tr><td colspan="7" class="empty-cell">No job cards found.</td></tr>{% endfor %}</tbody>
+<thead><tr><th>Job</th><th>Company</th><th>Customer</th><th>Vehicle</th><th>Status</th><th>Priority</th><th>Created</th><th>Actions</th></tr></thead>
+<tbody>{% for row in rows %}<tr><td data-label="Job"><strong>{{ row.job_number }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="Customer">{{ row.customer.name }}</td><td data-label="Vehicle">{{ row.vehicle.registration }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Priority">{{ row.priority }}</td><td data-label="Created">{{ row.created_at|date:"d M Y" }}</td><td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:job-detail' row.id %}">View</a><a href="{% url 'panel:job-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:job-delete' row.id %}">Delete</a></div></td></tr>{% empty %}<tr><td colspan="7" class="empty-cell">No job cards found.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 {% endblock %}
