@@ -120,3 +120,39 @@ DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
 - Refresh tokens can be blacklisted on logout.
 - Magic-link tokens are stored as hashes and expire.
 - Secrets are loaded from `.env`; do not commit the real `.env`.
+
+
+## Celery email worker
+
+CubixGear sends signup/setup-password, forgot-password and magic-link emails through Celery.
+
+Local services:
+
+```powershell
+# Terminal 1 - Redis
+redis-server
+```
+
+```powershell
+# Terminal 2 - Django
+venv\Scripts\activate
+python manage.py runserver
+```
+
+```powershell
+# Terminal 3 - Celery worker (Windows)
+venv\Scripts\activate
+celery -A config worker -l INFO -P solo
+```
+
+Environment:
+
+```env
+CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/1
+CELERY_TASK_ALWAYS_EAGER=False
+```
+
+For quick local testing without Redis/worker, set `CELERY_TASK_ALWAYS_EAGER=True`. In that mode Celery tasks execute inside the Django process.
+
+Email tasks automatically retry transient failures with exponential backoff.
