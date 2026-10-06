@@ -1,0 +1,17 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="delete-wrap">
+  <div class="panel-card delete-card">
+    <div class="delete-icon">!</div>
+    <h2>{{ page_title }}</h2>
+    <p>This action cannot be undone. Related protected records may prevent deletion.</p>
+    <div class="delete-object">{{ object }}</div>
+
+    <form method="post" class="delete-actions">
+      {% csrf_token %}
+      <a class="btn" href="{% url cancel_url %}">Cancel</a>
+      <button class="btn btn-danger" type="submit">Delete Permanently</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
