@@ -67,6 +67,14 @@ def user_has_permission(user, permission_code):
     return "*" in permissions or permission_code in permissions
 
 
+def user_has_permissions(user, permission_codes):
+    if isinstance(permission_codes, str):
+        return user_has_permission(user, permission_codes)
+
+    codes = list(permission_codes or [])
+    return bool(codes) and all(user_has_permission(user, code) for code in codes)
+
+
 def infer_permission_prefix(view):
     explicit = getattr(view, "permission_prefix", None)
     if explicit:
@@ -106,8 +114,16 @@ class RolePermission(BasePermission):
         if request.user.is_superuser:
             return True
 
+        action_map = getattr(view, "action_permission_map", None) or {}
+        action_rule = action_map.get(getattr(view, "action", None))
+        if isinstance(action_rule, dict):
+            code = action_rule.get(request.method)
+        else:
+            code = action_rule
+
         permission_map = getattr(view, "permission_map", None) or {}
-        code = permission_map.get(request.method)
+        if not code:
+            code = permission_map.get(request.method)
 
         if not code:
             code = getattr(view, "permission_code", None)
@@ -130,7 +146,7 @@ class RolePermission(BasePermission):
 
             code = f"{prefix}.{action}"
 
-        return user_has_permission(request.user, code)
+        return user_has_permissions(request.user, code)
 
 
 class HasRolePermission(RolePermission):
