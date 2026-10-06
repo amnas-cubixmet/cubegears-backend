@@ -1,0 +1,14 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar"><form class="search-form" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search item, SKU or barcode"><button class="btn" type="submit">Search</button></form></div>
+<section class="panel-card">
+  <div class="responsive-table">
+    <table>
+      <thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>On hand</th><th>Available</th><th>Sell price</th><th>Status</th></tr></thead>
+      <tbody>{% for row in rows %}
+        <tr><td data-label="Item"><strong>{{ row.name }}</strong></td><td data-label="SKU">{{ row.sku }}</td><td data-label="Category">{{ row.category.name|default:"—" }}</td><td data-label="On hand">{{ row.on_hand }}</td><td data-label="Available">{{ row.available_quantity }}</td><td data-label="Sell price">₹{{ row.selling_price|floatformat:2 }}</td><td data-label="Status">{% if row.low_stock %}<span class="badge badge-warn">Low stock</span>{% else %}<span class="badge">OK</span>{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="7" class="empty-cell">No stock items found.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
