@@ -12,6 +12,22 @@ FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATU
 class JobViewSet(CompanyScopedModelViewSet):
     queryset=Job.objects.select_related("customer","vehicle","advisor","technician").prefetch_related("parts","photos","activities","estimates")
     serializer_class=JobSerializer
+    action_permission_map = {
+        "status": "jobs.edit",
+        "inspection_detail": "jobs.view",
+        "inspection_start": "jobs.edit",
+        "inspection_checklist": "jobs.edit",
+        "inspection_findings": "jobs.edit",
+        "inspection_finding_detail": "jobs.edit",
+        "inspection_diagnostic": "jobs.edit",
+        "inspection_photo": "jobs.edit",
+        "inspection_complete": "jobs.edit",
+        "inspection_add_to_estimate": "jobs.edit",
+        "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
+        "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
+        "activity": "jobs.view",
+        "issue_part": ["jobs.edit", "stock.edit"],
+    }
     def get_queryset(self):
         qs=super().get_queryset(); st=self.request.query_params.get("status")
         return qs.filter(status=st) if st else qs
