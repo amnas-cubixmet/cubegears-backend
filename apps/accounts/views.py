@@ -209,7 +209,7 @@ class PublicWorkshopSignupView(APIView):
 
         user = User.objects.create_user(
             email=data["email"],
-            password=data["password"],
+            password=None,
             name=data["owner_name"].strip(),
             phone=data["mobile"].strip(),
             company=company,
@@ -219,10 +219,27 @@ class PublicWorkshopSignupView(APIView):
             is_staff=False,
             email_verified=False,
         )
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        setup_url = f"{settings.PUBLIC_WEBSITE_URL}/setup-password?uid={uid}&token={token}"
+        send_mail(
+            subject="Set up your CubixGear password",
+            message=(
+                f"Welcome to CubixGear. Your workshop account is ready.\n\n"
+                f"Set your password using this secure link:\n{setup_url}\n\n"
+                f"If you did not create this account, you can ignore this email."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
 
         return Response(
             {
-                "message": "Workshop account created successfully.",
+                "message": "Workshop account created. Check your email to set your password.",
                 "workshop": {
                     "id": str(company.id),
                     "name": company.name,
@@ -233,3 +250,26 @@ class PublicWorkshopSignupView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class SetupPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            user_id = urlsafe_base64_decode(serializer.validated_data["uid"]).decode()
+            user = User.objects.get(pk=user_id, is_active=True)
+        except Exception:
+            return Response({"message": "Invalid or expired setup link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, serializer.validated_data["token"]):
+            return Response({"message": "Invalid or expired setup link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(serializer.validated_data["password"])
+        user.email_verified = True
+        user.save(update_fields=["password", "email_verified"])
+
+        return Response({"message": "Password set successfully. You can now sign in to CubixGear."})
