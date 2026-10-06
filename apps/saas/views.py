@@ -22,15 +22,19 @@ DEFAULTS={
 
 class SubscriptionViewSet(CompanyScopedModelViewSet):
     queryset=Subscription.objects.all(); serializer_class=SubscriptionSerializer
+    permission_map={"GET":"billing.view","POST":"billing.edit","PUT":"billing.edit","PATCH":"billing.edit","DELETE":"billing.edit"}
 
 class StorageUsageViewSet(CompanyScopedModelViewSet):
     queryset=StorageUsage.objects.all(); serializer_class=StorageUsageSerializer
+    permission_map={"GET":"storage.view","POST":"storage.manage","PUT":"storage.manage","PATCH":"storage.manage","DELETE":"storage.manage"}
 
 class DocumentTemplateViewSet(CompanyScopedModelViewSet):
     queryset=DocumentTemplate.objects.all(); serializer_class=DocumentTemplateSerializer
+    permission_map={"GET":"settings.view","POST":"settings.manage","PUT":"settings.manage","PATCH":"settings.manage","DELETE":"settings.manage"}
 
 class SecurityEventViewSet(CompanyScopedModelViewSet):
     queryset=SecurityEvent.objects.select_related("user").all(); serializer_class=SecurityEventSerializer
+    permission_code="settings.view"
     http_method_names=["get","head","options"]
 
 class SubscriptionSummaryView(APIView):
