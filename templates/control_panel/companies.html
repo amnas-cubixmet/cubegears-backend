@@ -5,11 +5,12 @@
     <input type="search" name="q" value="{{ q }}" placeholder="Search company, GST, city or email">
     <button class="btn" type="submit">Search</button>
   </form>
-<a class="btn btn-primary" href="{% url 'panel:company-create' %}">Add Company</a></div>
+  <a class="btn btn-primary" href="{% url 'panel:company-create' %}">Add Company</a>
+</div>
 <section class="panel-card">
   <div class="responsive-table">
     <table>
-      <thead><tr><th>Company</th><th>Plan</th><th>Users</th><th>Branches</th><th>GST</th><th>Location</th><th>Status</th><th>Action</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Company</th><th>Plan</th><th>Users</th><th>Branches</th><th>GST</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
       {% for row in rows %}
         <tr>
@@ -20,10 +21,15 @@
           <td data-label="GST">{{ row.gstin|default:"—" }}</td>
           <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
           <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
-          <td data-label="Action">
-            <form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="table-action" type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>
+          <td data-label="Actions">
+            <div class="row-actions">
+              <a href="{% url 'panel:company-detail' row.id %}">View</a>
+              <a href="{% url 'panel:company-edit' row.id %}">Edit</a>
+              <form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>
+              <a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>
+            </div>
           </td>
-        <td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:company-detail' row.id %}">View</a><a href="{% url 'panel:company-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a></div></td></tr>
+        </tr>
       {% empty %}<tr><td colspan="8" class="empty-cell">No companies found.</td></tr>{% endfor %}
       </tbody>
     </table>
