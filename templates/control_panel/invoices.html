@@ -1,0 +1,18 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar">
+  <form class="search-form search-form-wide" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Invoice no or customer">
+    <select name="kind"><option value="">All documents</option><option value="invoice" {% if kind == "invoice" %}selected{% endif %}>Invoices</option><option value="estimate" {% if kind == "estimate" %}selected{% endif %}>Estimates</option></select>
+    <button class="btn" type="submit">Filter</button>
+  </form>
+</div>
+<section class="panel-card">
+  <div class="responsive-table"><table>
+    <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Type</th><th>Total</th><th>Balance</th><th>Status</th></tr></thead>
+    <tbody>{% for row in rows %}
+      <tr><td data-label="Number"><strong>{{ row.number }}</strong></td><td data-label="Customer">{{ row.customer.name }}</td><td data-label="Date">{{ row.date|date:"d M Y" }}</td><td data-label="Type">{{ row.kind|title }}</td><td data-label="Total">₹{{ row.total|floatformat:2 }}</td><td data-label="Balance">₹{{ row.balance|floatformat:2 }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td></tr>
+    {% empty %}<tr><td colspan="7" class="empty-cell">No invoices or estimates found.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}
