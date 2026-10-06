@@ -1,15 +1,102 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
-<div class="metrics-grid">
-  <article class="metric-card"><span>Customers</span><strong>{{ customers }}</strong><small>Active customers</small></article>
-  <article class="metric-card"><span>Open Jobs</span><strong>{{ open_jobs }}</strong><small>{{ delivered_today }} delivered today</small></article>
-  <article class="metric-card"><span>Sales</span><strong>₹{{ sales|floatformat:0 }}</strong><small>Invoice total</small></article>
-  <article class="metric-card"><span>Outstanding</span><strong>₹{{ outstanding|floatformat:0 }}</strong><small>Pending collection</small></article>
-  <article class="metric-card"><span>Expenses</span><strong>₹{{ expenses|floatformat:0 }}</strong><small>Total expenses</small></article>
-  <article class="metric-card"><span>Low Stock</span><strong>{{ low_stock }}</strong><small>Needs attention</small></article>
+<section class="dashboard-hero">
+  <div>
+    <p class="eyebrow">Workshop overview</p>
+    <h2>{{ today|date:"l, d M Y" }}</h2>
+    <p>Live summary for jobs, billing, stock and staff.</p>
+  </div>
+  <div class="quick-actions">
+    <a class="btn btn-primary" href="{% url 'panel:jobs' %}">View Jobs</a>
+    <a class="btn" href="{% url 'panel:customers' %}">Customers</a>
+    <a class="btn" href="{% url 'panel:invoices' %}">Invoices</a>
+  </div>
+</section>
+
+<div class="metrics-grid metrics-grid-dashboard">
+  <article class="metric-card">
+    <div class="metric-top"><span>Today Revenue</span><span class="metric-icon">₹</span></div>
+    <strong>₹{{ today_sales|floatformat:0 }}</strong>
+    <small>Month: ₹{{ month_sales|floatformat:0 }}</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Open Jobs</span><span class="metric-icon">J</span></div>
+    <strong>{{ open_jobs }}</strong>
+    <small>{{ delivered_today }} delivered today</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Outstanding</span><span class="metric-icon">↗</span></div>
+    <strong>₹{{ outstanding|floatformat:0 }}</strong>
+    <small>Pending collection</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Ready for Delivery</span><span class="metric-icon">✓</span></div>
+    <strong>{{ ready_delivery }}</strong>
+    <small>Vehicles ready</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Pending Estimates</span><span class="metric-icon">E</span></div>
+    <strong>{{ pending_estimates }}</strong>
+    <small>Awaiting conversion/approval</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Low Stock</span><span class="metric-icon">!</span></div>
+    <strong>{{ low_stock }}</strong>
+    <small>Items need attention</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Active Staff</span><span class="metric-icon">S</span></div>
+    <strong>{{ active_staff }}</strong>
+    <small>{{ present_today }} present today</small>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Month Expenses</span><span class="metric-icon">−</span></div>
+    <strong>₹{{ month_expenses|floatformat:0 }}</strong>
+    <small>Total: ₹{{ expenses|floatformat:0 }}</small>
+  </article>
 </div>
 
-<div class="panel-grid">
+<div class="dashboard-layout">
+  <section class="panel-card">
+    <div class="section-head">
+      <div><p class="eyebrow">Workflow</p><h2>Jobs by status</h2></div>
+      <a class="text-link" href="{% url 'panel:jobs' %}">All jobs</a>
+    </div>
+    <div class="status-grid">
+      {% for item in job_status %}
+      <a class="status-card" href="{% url 'panel:jobs' %}?status={{ item.value|urlencode }}">
+        <span>{{ item.label }}</span>
+        <strong>{{ item.count }}</strong>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="panel-card">
+    <div class="section-head">
+      <div><p class="eyebrow">Inventory</p><h2>Low-stock alerts</h2></div>
+      <a class="text-link" href="{% url 'panel:stock' %}">Open stock</a>
+    </div>
+    <div class="mini-list">
+      {% for item in low_stock_items %}
+      <div class="mini-row">
+        <div>
+          <strong>{{ item.name }}</strong>
+          <span>{{ item.sku }} · {{ item.category.name|default:"Uncategorized" }}</span>
+        </div>
+        <div class="mini-row-right">
+          <strong>{{ item.available_quantity }}</strong>
+          <span>available</span>
+        </div>
+      </div>
+      {% empty %}
+      <div class="empty-state">Stock levels look good.</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div class="panel-grid dashboard-tables">
   <section class="panel-card">
     <div class="section-head">
       <div><p class="eyebrow">Operations</p><h2>Recent job cards</h2></div>
@@ -43,8 +130,14 @@
     <div class="mini-list">
       {% for invoice in recent_invoices %}
       <div class="mini-row">
-        <div><strong>{{ invoice.number }}</strong><span>{{ invoice.customer.name }}</span></div>
-        <div class="mini-row-right"><strong>₹{{ invoice.total|floatformat:0 }}</strong><span>{{ invoice.status }}</span></div>
+        <div>
+          <strong>{{ invoice.number }}</strong>
+          <span>{{ invoice.customer.name }} · {{ invoice.date|date:"d M" }}</span>
+        </div>
+        <div class="mini-row-right">
+          <strong>₹{{ invoice.total|floatformat:0 }}</strong>
+          <span>{{ invoice.status }}</span>
+        </div>
       </div>
       {% empty %}
       <div class="empty-state">No invoices yet.</div>
