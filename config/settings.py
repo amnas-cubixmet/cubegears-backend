@@ -152,6 +152,7 @@ EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.com>")
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
+PUBLIC_WEBSITE_URL = env("PUBLIC_WEBSITE_URL", "http://localhost:3000")
 MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
 
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
