@@ -1,7 +1,7 @@
 from datetime import datetime
 from django.utils import timezone
 from rest_framework import decorators,response,status
-from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import *
@@ -67,7 +67,8 @@ class AttendanceRuleViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRule.objects.all(); serializer_class=AttendanceRuleSerializer
 
 class ToggleAttendanceView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def post(self,request):
         employee=getattr(request.user,"employee_profile",None)
         if not employee: return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
