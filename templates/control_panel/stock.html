@@ -4,9 +4,9 @@
   <input type="search" name="q" value="{{ q }}" placeholder="Search item, SKU, barcode or company">
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Filter</button>
-</form></div>
+</form><a class="btn btn-primary" href="{% url 'panel:stock-create' %}">Add Stock Item</a></div>
 <section class="panel-card"><div class="responsive-table"><table>
-<thead><tr><th>Item</th><th>Company</th><th>SKU</th><th>Category</th><th>On hand</th><th>Available</th><th>Price</th><th>Status</th></tr></thead>
-<tbody>{% for row in rows %}<tr><td data-label="Item"><strong>{{ row.name }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="SKU">{{ row.sku }}</td><td data-label="Category">{{ row.category.name|default:"—" }}</td><td data-label="On hand">{{ row.on_hand }}</td><td data-label="Available">{{ row.available_quantity }}</td><td data-label="Price">₹{{ row.selling_price|floatformat:2 }}</td><td data-label="Status">{% if row.low_stock %}<span class="badge badge-warn">Low stock</span>{% else %}<span class="badge">OK</span>{% endif %}</td></tr>{% empty %}<tr><td colspan="8" class="empty-cell">No stock items found.</td></tr>{% endfor %}</tbody>
+<thead><tr><th>Item</th><th>Company</th><th>SKU</th><th>Category</th><th>On hand</th><th>Available</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>{% for row in rows %}<tr><td data-label="Item"><strong>{{ row.name }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="SKU">{{ row.sku }}</td><td data-label="Category">{{ row.category.name|default:"—" }}</td><td data-label="On hand">{{ row.on_hand }}</td><td data-label="Available">{{ row.available_quantity }}</td><td data-label="Price">₹{{ row.selling_price|floatformat:2 }}</td><td data-label="Status">{% if row.low_stock %}<span class="badge badge-warn">Low stock</span>{% else %}<span class="badge">OK</span>{% endif %}</td><td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:stock-detail' row.id %}">View</a><a href="{% url 'panel:stock-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:stock-delete' row.id %}">Delete</a></div></td></tr>{% empty %}<tr><td colspan="8" class="empty-cell">No stock items found.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 {% endblock %}
