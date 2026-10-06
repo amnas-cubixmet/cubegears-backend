@@ -148,7 +148,4 @@ class IsCompanyAdmin(BasePermission):
         if not role or not role.is_active:
             return False
 
-        return bool(
-            role.code in {"SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"}
-            or role.allows("company.manage")
-        )
+        return bool(role.allows("company.manage"))
