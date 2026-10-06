@@ -1,7 +1,7 @@
 from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import parsers, response, status
-from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile
@@ -34,7 +34,8 @@ class SecurityEventViewSet(CompanyScopedModelViewSet):
     http_method_names=["get","head","options"]
 
 class SubscriptionSummaryView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET":"billing.view","PUT":"billing.edit"}
     def get(self,request):
         company=request.user.company
         sub=Subscription.objects.filter(company=company,status__iexact="Active").order_by("-created_at").first()
@@ -69,7 +70,8 @@ class SubscriptionSummaryView(APIView):
         return self.get(request)
 
 class StorageSummaryView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="storage.view"
     def get(self,request):
         company=request.user.company
         files=MediaFile.objects.filter(company=company)
@@ -84,7 +86,8 @@ class StorageSummaryView(APIView):
         })
 
 class StorageFilesView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="storage.manage"
     parser_classes=[parsers.MultiPartParser,parsers.FormParser]
     def post(self,request):
         category=request.data.get("category","General")
@@ -99,7 +102,8 @@ class StorageFilesView(APIView):
         return response.Response(MediaFileSerializer(created,many=True,context={"request":request}).data,status=status.HTTP_201_CREATED)
 
 class StorageFilesDeleteView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="storage.manage"
     def post(self,request):
         ids=request.data.get("ids") or []
         qs=MediaFile.objects.filter(company=request.user.company,id__in=ids)
@@ -111,14 +115,16 @@ class StorageFilesDeleteView(APIView):
         return response.Response({"deleted":deleted})
 
 class StorageSettingsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="storage.manage"
     def put(self,request):
         obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
         obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
 
 class StorageHistoryDateView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="storage.view"
     def get(self,request,date):
         usage=StorageUsage.objects.filter(company=request.user.company,date=date)
         files=MediaFile.objects.filter(company=request.user.company,created_at__date=date)
@@ -129,7 +135,8 @@ class StorageHistoryDateView(APIView):
         })
 
 class SettingsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET":"settings.view","PUT":"settings.manage"}
     def get(self,request,category=None):
         qs=CompanySetting.objects.filter(company=request.user.company)
         if category:
