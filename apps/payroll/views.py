@@ -13,6 +13,7 @@ class SalaryStructureViewSet(CompanyScopedModelViewSet):
 
 class SalaryAdvanceViewSet(CompanyScopedModelViewSet):
     queryset=SalaryAdvance.objects.select_related("employee").all(); serializer_class=SalaryAdvanceSerializer
+    action_permission_map={"recover": "payroll.edit"}
     def perform_create(self,serializer):
         amount=serializer.validated_data["amount"]
         serializer.save(company=self.request.user.company,branch=self.request.user.branch,outstanding_balance=amount)
@@ -31,6 +32,7 @@ class SalaryAdvanceViewSet(CompanyScopedModelViewSet):
 
 class PayrollRunViewSet(CompanyScopedModelViewSet):
     queryset=PayrollRun.objects.prefetch_related("payslips").all(); serializer_class=PayrollRunSerializer
+    action_permission_map={"process": "payroll.edit"}
 
     @decorators.action(detail=True,methods=["post"])
     def process(self,request,pk=None):
@@ -56,6 +58,7 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
 
 class PayslipViewSet(CompanyScopedModelViewSet):
     queryset=Payslip.objects.select_related("employee","payroll_run").all(); serializer_class=PayslipSerializer
+    action_permission_map={"payment": "payroll.edit"}
 
     @decorators.action(detail=True,methods=["post"],url_path="payment")
     def payment(self,request,pk=None):
@@ -84,6 +87,7 @@ class PayslipViewSet(CompanyScopedModelViewSet):
 class IncentiveViewSet(CompanyScopedModelViewSet):
     queryset=Incentive.objects.select_related("employee","approved_by").all()
     serializer_class=IncentiveSerializer
+    action_permission_map={"set_status": "payroll.edit"}
 
     def get_queryset(self):
         qs=super().get_queryset()
