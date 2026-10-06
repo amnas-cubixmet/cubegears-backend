@@ -233,7 +233,7 @@ class PublicWorkshopSignupView(APIView):
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        setup_url = f"{settings.PUBLIC_WEBSITE_URL}/setup-password?uid={uid}&token={token}"
+        setup_url = f"{settings.FRONTEND_URL}/setup-password?uid={uid}&token={token}"
         queue_email(
             subject="Set up your CubixGear password",
             message=(
