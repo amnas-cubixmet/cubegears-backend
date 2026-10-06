@@ -97,7 +97,7 @@ class UserForm(AdminModelForm):
         password = self.cleaned_data.get("password")
         if password:
             user.set_password(password)
-        elif not user.pk:
+        elif user._state.adding:
             user.set_unusable_password()
         if commit:
             user.save()
