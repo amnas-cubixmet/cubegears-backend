@@ -209,10 +209,10 @@ class PublicWorkshopSignupView(APIView):
 
         role = Role.objects.create(
             company=company,
-            name="Workshop Admin",
-            code="ADMIN",
+            name="Super Admin",
+            code="SUPER_ADMIN",
             permissions=["*"],
-            is_system=False,
+            is_system=True,
             is_active=True,
         )
 
@@ -226,6 +226,7 @@ class PublicWorkshopSignupView(APIView):
             role=role,
             is_active=True,
             is_staff=False,
+            is_superuser=False,
             email_verified=False,
         )
         user.set_unusable_password()
