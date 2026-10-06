@@ -3,7 +3,6 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
 from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
@@ -13,6 +12,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
+from .tasks import send_email_task
 from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
@@ -29,6 +29,19 @@ from apps.companies.models import Company
 from apps.roles.models import Role
 
 User = get_user_model()
+
+
+def queue_email(subject, message, recipient_list):
+    transaction.on_commit(
+        lambda: send_email_task.delay(
+            subject=subject,
+            message=message,
+            recipient_list=recipient_list,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+        ),
+        robust=True,
+    )
+
 
 def issue_tokens(user):
     refresh = RefreshToken.for_user(user)
@@ -77,12 +90,10 @@ class ForgotPasswordView(APIView):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
-            send_mail(
+            queue_email(
                 subject="Reset your CubixGear password",
                 message=f"Open this link to reset your password: {reset_url}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
-                fail_silently=True,
             )
 
         return Response({"message": "If the account exists, a reset link has been sent."})
@@ -120,12 +131,10 @@ class MagicLinkRequestView(APIView):
         if user:
             raw_token = MagicLink.issue(user)
             url = f"{settings.FRONTEND_URL}/magic-link/verify?token={raw_token}"
-            send_mail(
+            queue_email(
                 subject="Your CubixGear magic login link",
                 message=f"Open this secure link to sign in: {url}",
-                from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[user.email],
-                fail_silently=True,
             )
 
         return Response({"message": "If the account exists, a magic link has been sent."})
@@ -225,16 +234,14 @@ class PublicWorkshopSignupView(APIView):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
         setup_url = f"{settings.PUBLIC_WEBSITE_URL}/setup-password?uid={uid}&token={token}"
-        send_mail(
+        queue_email(
             subject="Set up your CubixGear password",
             message=(
                 f"Welcome to CubixGear. Your workshop account is ready.\n\n"
                 f"Set your password using this secure link:\n{setup_url}\n\n"
                 f"If you did not create this account, you can ignore this email."
             ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
-            fail_silently=False,
         )
 
         return Response(
