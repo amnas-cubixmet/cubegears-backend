@@ -258,3 +258,5 @@ a{color:inherit}
   .responsive-table td{grid-template-columns:90px minmax(0,1fr)}
   .topbar h1{font-size:16px}
 }
+
+@media(max-width:800px){body.sidebar-open{overflow:hidden;touch-action:none}}
