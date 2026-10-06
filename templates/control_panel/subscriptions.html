@@ -4,11 +4,11 @@
   <input type="search" name="q" value="{{ q }}" placeholder="Search company, plan or status">
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Filter</button>
-</form></div>
+</form><a class="btn btn-primary" href="{% url 'panel:subscription-create' %}">Add Subscription</a></div>
 <section class="panel-card"><div class="responsive-table"><table>
-<thead><tr><th>Company</th><th>Plan</th><th>Cycle</th><th>Amount</th><th>Seats</th><th>Status</th><th>Starts</th><th>Renews</th></tr></thead>
+<thead><tr><th>Company</th><th>Plan</th><th>Cycle</th><th>Amount</th><th>Seats</th><th>Status</th><th>Starts</th><th>Renews</th><th>Actions</th></tr></thead>
 <tbody>{% for row in rows %}
-<tr><td data-label="Company"><strong>{{ row.company.name }}</strong></td><td data-label="Plan">{{ row.plan }}</td><td data-label="Cycle">{{ row.billing_cycle|title }}</td><td data-label="Amount">₹{{ row.amount|floatformat:2 }}</td><td data-label="Seats">{{ row.seats }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Starts">{{ row.starts_at|date:"d M Y"|default:"—" }}</td><td data-label="Renews">{{ row.renews_at|date:"d M Y"|default:"—" }}</td></tr>
+<tr><td data-label="Company"><strong>{{ row.company.name }}</strong></td><td data-label="Plan">{{ row.plan }}</td><td data-label="Cycle">{{ row.billing_cycle|title }}</td><td data-label="Amount">₹{{ row.amount|floatformat:2 }}</td><td data-label="Seats">{{ row.seats }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Starts">{{ row.starts_at|date:"d M Y"|default:"—" }}</td><td data-label="Renews">{{ row.renews_at|date:"d M Y"|default:"—" }}</td><td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:subscription-detail' row.id %}">View</a><a href="{% url 'panel:subscription-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:subscription-delete' row.id %}">Delete</a></div></td></tr>
 {% empty %}<tr><td colspan="8" class="empty-cell">No subscriptions found.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 {% endblock %}
