@@ -7,6 +7,19 @@ from .serializers import *
 
 class StockItemViewSet(CompanyScopedModelViewSet):
     queryset=StockItem.objects.select_related("category","supplier").all(); serializer_class=StockItemSerializer
+    action_permission_map = {
+        "dashboard": "stock.view",
+        "stock_in": "stock.create",
+        "issue": "stock.edit",
+        "stock_return": "stock.edit",
+        "adjustment": "stock.edit",
+        "ledger": "stock.view",
+        "purchases": "stock.view",
+        "reservations": "stock.view",
+        "counts": "stock.view",
+        "transfer": "stock.edit",
+        "low_stock": "stock.view",
+    }
     def get_queryset(self):
         qs=super().get_queryset(); q=self.request.query_params.get("search")
         if q: qs=qs.filter(Q(name__icontains=q)|Q(sku__icontains=q)|Q(barcode__icontains=q)|Q(brand__icontains=q))
