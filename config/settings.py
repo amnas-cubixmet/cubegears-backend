@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.reports",
     "apps.saas",
+    "apps.control_panel",
 ]
 
 MIDDLEWARE = [
@@ -64,7 +65,7 @@ ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
-    "DIRS": [],
+    "DIRS": [BASE_DIR / "templates"],
     "APP_DIRS": True,
     "OPTIONS": {
         "context_processors": [
@@ -108,6 +109,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -155,3 +157,7 @@ MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
+
+LOGIN_URL = "/panel/login/"
+LOGIN_REDIRECT_URL = "/panel/"
+LOGOUT_REDIRECT_URL = "/panel/login/"
