@@ -11,10 +11,12 @@ from .views import (
     MeView,
     ResetPasswordView,
     PublicWorkshopSignupView,
+    SetupPasswordView,
 )
 
 urlpatterns = [
     path("signup", PublicWorkshopSignupView.as_view(), name="public-signup"),
+    path("setup-password", SetupPasswordView.as_view(), name="setup-password"),
     path("login", LoginView.as_view(), name="login"),
     path("logout", LogoutView.as_view(), name="logout"),
     path("me", MeView.as_view(), name="me"),
