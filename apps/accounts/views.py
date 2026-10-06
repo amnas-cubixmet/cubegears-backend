@@ -1,5 +1,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils.text import slugify
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
 from django.utils.encoding import force_bytes
@@ -18,8 +20,13 @@ from .serializers import (
     MagicLinkRequestSerializer,
     MagicLinkVerifySerializer,
     ResetPasswordSerializer,
+    PublicWorkshopSignupSerializer,
     UserSerializer,
 )
+
+from apps.branches.models import Branch
+from apps.companies.models import Company
+from apps.roles.models import Role
 
 User = get_user_model()
 
@@ -147,3 +154,82 @@ class ChangePasswordView(APIView):
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
         return Response({"message": "Password changed successfully."})
+
+
+class PublicWorkshopSignupView(APIView):
+    permission_classes = [AllowAny]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = PublicWorkshopSignupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        base_slug = slugify(data["workshop_name"]) or "workshop"
+        slug = base_slug
+        suffix = 2
+        while Company.objects.filter(slug=slug).exists():
+            slug = f"{base_slug}-{suffix}"
+            suffix += 1
+
+        company = Company.objects.create(
+            name=data["workshop_name"].strip(),
+            legal_name=data["workshop_name"].strip(),
+            slug=slug,
+            email=data["email"],
+            phone=data["mobile"].strip(),
+            city=data["city"].strip(),
+            state=data["state"].strip(),
+            country=data["country"].strip(),
+            currency="INR",
+            plan="starter",
+            is_active=True,
+        )
+
+        branch = Branch.objects.create(
+            company=company,
+            name="Head Office",
+            code="HO",
+            phone=data["mobile"].strip(),
+            email=data["email"],
+            city=data["city"].strip(),
+            state=data["state"].strip(),
+            is_head_office=True,
+            is_active=True,
+        )
+
+        role = Role.objects.create(
+            company=company,
+            name="Workshop Admin",
+            code="ADMIN",
+            permissions=["*"],
+            is_system=False,
+            is_active=True,
+        )
+
+        user = User.objects.create_user(
+            email=data["email"],
+            password=data["password"],
+            name=data["owner_name"].strip(),
+            phone=data["mobile"].strip(),
+            company=company,
+            branch=branch,
+            role=role,
+            is_active=True,
+            is_staff=False,
+            email_verified=False,
+        )
+
+        return Response(
+            {
+                "message": "Workshop account created successfully.",
+                "workshop": {
+                    "id": str(company.id),
+                    "name": company.name,
+                    "slug": company.slug,
+                    "plan": company.plan,
+                },
+                "user": UserSerializer(user).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
