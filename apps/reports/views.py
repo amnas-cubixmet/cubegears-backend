@@ -1,11 +1,12 @@
 from django.db.models import Count,Sum,F
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import RolePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 class DashboardView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="dashboard.view"
     def get(self,request):
         company=request.user.company
         from apps.customers.models import Customer
@@ -30,7 +31,8 @@ class DashboardView(APIView):
         })
 
 class ReportsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="reports.view"
     def get(self,request):
         company=request.user.company
         report_type=request.query_params.get("type","summary")
