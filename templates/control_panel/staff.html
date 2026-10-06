@@ -1,0 +1,12 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar"><form class="search-form" method="get"><input type="search" name="q" value="{{ q }}" placeholder="Search staff, code or phone"><button class="btn" type="submit">Search</button></form></div>
+<section class="panel-card">
+  <div class="responsive-table"><table>
+    <thead><tr><th>Employee</th><th>Code</th><th>Designation</th><th>Team</th><th>Shift</th><th>Phone</th><th>Status</th></tr></thead>
+    <tbody>{% for row in rows %}
+      <tr><td data-label="Employee"><strong>{{ row.name }}</strong></td><td data-label="Code">{{ row.employee_code }}</td><td data-label="Designation">{{ row.designation|default:"—" }}</td><td data-label="Team">{{ row.team.name|default:"—" }}</td><td data-label="Shift">{{ row.shift.name|default:"—" }}</td><td data-label="Phone">{{ row.phone|default:"—" }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td></tr>
+    {% empty %}<tr><td colspan="7" class="empty-cell">No staff found.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</section>
+{% endblock %}
