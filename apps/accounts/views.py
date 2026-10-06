@@ -276,9 +276,27 @@ class SetupPasswordView(APIView):
         if not default_token_generator.check_token(user, serializer.validated_data["token"]):
             return Response({"message": "Invalid or expired setup link."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Upgrade owners created by the earlier public-signup flow.
+        # This remains a tenant-level super admin role only; it does not grant
+        # Django/platform staff or global CubixGear control-panel access.
+        role = getattr(user, "role", None)
+        if (
+            role
+            and role.company_id == user.company_id
+            and role.code == "ADMIN"
+            and "*" in (role.permissions or [])
+        ):
+            role.name = "Super Admin"
+            role.code = "SUPER_ADMIN"
+            role.is_system = True
+            role.is_active = True
+            role.save(update_fields=["name", "code", "is_system", "is_active"])
+
+        user.is_staff = False
+        user.is_superuser = False
         user.set_password(serializer.validated_data["password"])
         user.email_verified = True
-        user.save(update_fields=["password", "email_verified"])
+        user.save(update_fields=["password", "email_verified", "is_staff", "is_superuser"])
 
         tokens = issue_tokens(user)
         tokens["message"] = "Password set successfully."
