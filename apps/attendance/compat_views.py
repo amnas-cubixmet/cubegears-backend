@@ -2,7 +2,7 @@ from datetime import datetime, time
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import response,status
-from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 
 from apps.employees.models import Employee
@@ -13,7 +13,8 @@ def _employee_for_user(user):
     return getattr(user,"employee_profile",None)
 
 class MyAttendanceLogsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def get(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response([])
@@ -23,7 +24,8 @@ class MyAttendanceLogsView(APIView):
         return response.Response(AttendanceRecordSerializer(qs,many=True).data)
 
 class MyAttendanceCalendarView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def get(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response([])
@@ -36,7 +38,8 @@ class MyAttendanceCalendarView(APIView):
         return response.Response(events)
 
 class PunchCorrectionCreateView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def post(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response({"message":"No employee profile linked."},status=400)
@@ -60,7 +63,8 @@ class PunchCorrectionCreateView(APIView):
         return response.Response(PunchCorrectionSerializer(obj).data,status=201)
 
 class LeaveBalancesView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def get(self,request):
         employee=_employee_for_user(request.user)
         types=LeaveType.objects.filter(company=request.user.company,status="Active")
@@ -73,7 +77,8 @@ class LeaveBalancesView(APIView):
         return response.Response(result)
 
 class MyLeaveRequestsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def get(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response([])
@@ -93,7 +98,8 @@ class MyLeaveRequestsView(APIView):
         return response.Response(LeaveRequestSerializer(obj).data,status=201)
 
 class CancelLeaveRequestView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
     def post(self,request,pk):
         employee=_employee_for_user(request.user)
         obj=LeaveRequest.objects.filter(pk=pk,employee=employee,status="Pending").first()
@@ -102,7 +108,8 @@ class CancelLeaveRequestView(APIView):
         return response.Response(LeaveRequestSerializer(obj).data)
 
 class ManagerApprovalsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         company=request.user.company
         rows=[]
@@ -115,7 +122,8 @@ class ManagerApprovalsView(APIView):
         return response.Response(rows)
 
 class ManagerApprovalDetailView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def post(self,request,pk):
         decision=request.data.get("decision")
         next_status="Approved" if decision=="approve" else "Rejected"
@@ -140,7 +148,8 @@ class ManagerApprovalDetailView(APIView):
         return response.Response({"message":"Approval not found."},status=404)
 
 class ManagerTeamView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch")
         branch=request.query_params.get("branch"); st=request.query_params.get("status"); role=request.query_params.get("role")
@@ -153,7 +162,8 @@ class ManagerTeamView(APIView):
         return response.Response(rows)
 
 class ManagerTeamDetailView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def put(self,request,pk):
         obj=AttendanceRecord.objects.filter(pk=pk,company=request.user.company).first()
         if not obj: return response.Response({"message":"Attendance record not found."},status=404)
@@ -164,7 +174,8 @@ class ManagerTeamDetailView(APIView):
         return response.Response(AttendanceRecordSerializer(obj).data)
 
 class ManagerMasterView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch")
         month=request.query_params.get("month"); year=request.query_params.get("year")
@@ -173,7 +184,8 @@ class ManagerMasterView(APIView):
         return response.Response(AttendanceRecordSerializer(qs[:1000],many=True).data)
 
 class LeaveTypesView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         return response.Response(LeaveTypeSerializer(LeaveType.objects.filter(company=request.user.company),many=True).data)
     def post(self,request):
@@ -184,12 +196,14 @@ class LeaveTypesView(APIView):
         return response.Response(LeaveTypeSerializer(obj).data,status=201)
 
 class ManagerHolidaysView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         return response.Response(HolidaySerializer(Holiday.objects.filter(company=request.user.company),many=True).data)
 
 class ManagerRulesView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request):
         obj=AttendanceRule.objects.filter(company=request.user.company,is_default=True).first()
         return response.Response(AttendanceRuleSerializer(obj).data if obj else {})
@@ -204,7 +218,8 @@ class ManagerRulesView(APIView):
         return response.Response(AttendanceRuleSerializer(obj).data)
 
 class StaffAttendanceDetailsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
     def get(self,request,staff_id,date):
         employee=Employee.objects.filter(Q(pk=staff_id)|Q(employee_code=staff_id),company=request.user.company).select_related("shift","branch").first()
         if not employee: return response.Response({"message":"Staff not found."},status=404)
