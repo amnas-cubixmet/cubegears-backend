@@ -1,6 +1,6 @@
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import F, Q, Sum
+from django.db.models import F, Q, Sum, Count
 from django.shortcuts import redirect, render
 from django.utils import timezone
 
@@ -11,6 +11,7 @@ from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.vehicles.models import Vehicle
+from apps.attendance.models import AttendanceRecord
 from .forms import PanelLoginForm
 
 
@@ -44,26 +45,55 @@ def dashboard(request):
         return render(request, "control_panel/no_company.html")
 
     today = timezone.localdate()
+    month_start = today.replace(day=1)
+
+    job_qs = Job.objects.filter(company=company)
     invoice_qs = Invoice.objects.filter(company=company, kind="invoice")
+    expense_qs = Expense.objects.filter(company=company)
+    stock_qs = StockItem.objects.filter(company=company)
+    employee_qs = Employee.objects.filter(company=company)
+    attendance_today = AttendanceRecord.objects.filter(company=company, date=today)
+
+    sales_total = invoice_qs.aggregate(v=Sum("total"))["v"] or 0
+    month_sales = invoice_qs.filter(date__gte=month_start, date__lte=today).aggregate(v=Sum("total"))["v"] or 0
+    today_sales = invoice_qs.filter(date=today).aggregate(v=Sum("total"))["v"] or 0
+    expense_total = expense_qs.aggregate(v=Sum("amount"))["v"] or 0
+    month_expenses = expense_qs.filter(date__gte=month_start, date__lte=today).aggregate(v=Sum("amount"))["v"] or 0
+
+    status_counts = {
+        row["status"]: row["total"]
+        for row in job_qs.values("status").annotate(total=Count("id"))
+    }
+    job_status = [
+        {"label": label, "count": status_counts.get(value, 0), "value": value}
+        for value, label in Job.STATUS_CHOICES
+    ]
+
     context = {
         "page_title": "Dashboard",
         "active": "dashboard",
+        "today": today,
         "customers": Customer.objects.filter(company=company, status="active").count(),
         "vehicles": Vehicle.objects.filter(company=company, status="Active").count(),
-        "open_jobs": Job.objects.filter(company=company).exclude(status=Job.STATUS_DELIVERED).count(),
-        "delivered_today": Job.objects.filter(
-            company=company, status=Job.STATUS_DELIVERED, delivered_at__date=today
-        ).count(),
-        "sales": invoice_qs.aggregate(v=Sum("total"))["v"] or 0,
+        "open_jobs": job_qs.exclude(status=Job.STATUS_DELIVERED).count(),
+        "delivered_today": job_qs.filter(status=Job.STATUS_DELIVERED, delivered_at__date=today).count(),
+        "sales": sales_total,
+        "today_sales": today_sales,
+        "month_sales": month_sales,
         "outstanding": invoice_qs.aggregate(v=Sum("balance"))["v"] or 0,
-        "expenses": Expense.objects.filter(company=company).aggregate(v=Sum("amount"))["v"] or 0,
-        "low_stock": StockItem.objects.filter(
-            company=company, on_hand__lte=F("minimum_stock") + F("reserved")
-        ).count(),
-        "recent_jobs": Job.objects.filter(company=company).select_related(
-            "customer", "vehicle"
-        )[:8],
+        "expenses": expense_total,
+        "month_expenses": month_expenses,
+        "low_stock": stock_qs.filter(on_hand__lte=F("minimum_stock") + F("reserved")).count(),
+        "pending_estimates": Invoice.objects.filter(company=company, kind="estimate").exclude(status__in=["Converted", "Cancelled"]).count(),
+        "ready_delivery": job_qs.filter(status=Job.STATUS_READY).count(),
+        "active_staff": employee_qs.filter(status="Active").count(),
+        "present_today": attendance_today.exclude(status__iexact="Absent").count(),
+        "job_status": job_status,
+        "recent_jobs": job_qs.select_related("customer", "vehicle")[:8],
         "recent_invoices": invoice_qs.select_related("customer")[:6],
+        "low_stock_items": stock_qs.select_related("category").filter(
+            on_hand__lte=F("minimum_stock") + F("reserved")
+        ).order_by("on_hand")[:6],
     }
     return render(request, "control_panel/dashboard.html", context)
 
