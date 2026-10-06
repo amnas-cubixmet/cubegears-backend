@@ -6,10 +6,10 @@
     <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
     <button class="btn" type="submit">Filter</button>
   </form>
-</div>
+<a class="btn btn-primary" href="{% url 'panel:user-create' %}">Add User</a></div>
 <section class="panel-card">
   <div class="responsive-table"><table>
-    <thead><tr><th>User</th><th>Company</th><th>Branch</th><th>Role</th><th>Type</th><th>Status</th><th>Action</th></tr></thead>
+    <thead><tr><th>User</th><th>Company</th><th>Branch</th><th>Role</th><th>Type</th><th>Status</th><th>Action</th><th>Actions</th></tr></thead>
     <tbody>{% for row in rows %}
       <tr>
         <td data-label="User"><strong>{{ row.name|default:row.email }}</strong><br><span class="table-sub">{{ row.email }}</span></td>
@@ -19,7 +19,7 @@
         <td data-label="Type">{% if row.is_superuser %}<span class="badge">Super Admin</span>{% elif row.is_staff %}<span class="badge">Admin Staff</span>{% else %}<span class="badge badge-neutral">Workshop User</span>{% endif %}</td>
         <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
         <td data-label="Action">{% if row.id != request.user.id %}<form method="post" action="{% url 'panel:user-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="table-action" type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% else %}<span class="table-sub">Current user</span>{% endif %}</td>
-      </tr>
+      <td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:user-detail' row.id %}">View</a><a href="{% url 'panel:user-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:user-delete' row.id %}">Delete</a></div></td></tr>
     {% empty %}<tr><td colspan="7" class="empty-cell">No users found.</td></tr>{% endfor %}</tbody>
   </table></div>
 </section>
