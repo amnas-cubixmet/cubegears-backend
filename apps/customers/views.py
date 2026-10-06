@@ -7,6 +7,16 @@ from .serializers import CustomerSerializer, CustomerActivitySerializer, Custome
 class CustomerViewSet(CompanyScopedModelViewSet):
     queryset = Customer.objects.select_related("branch").all()
     serializer_class = CustomerSerializer
+    action_permission_map = {
+        "check_duplicate": "customers.view",
+        "archive": "customers.edit",
+        "vehicles": {"GET": "vehicles.view", "POST": "vehicles.create"},
+        "jobs": "jobs.view",
+        "invoices": "invoices.view",
+        "payments": "payments.view",
+        "activity": "customers.view",
+        "outstanding": "invoices.view",
+    }
 
     def get_queryset(self):
         qs = super().get_queryset()
