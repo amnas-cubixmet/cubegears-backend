@@ -1,0 +1,78 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{ page_title|default:"Control Panel" }} · CubixGear</title>
+  <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-row">
+        <div class="brand-mark">C</div>
+        <div>
+          <strong>CubixGear</strong>
+          <span>Workshop Control</span>
+        </div>
+        <button class="icon-btn sidebar-close" type="button" data-sidebar-close aria-label="Close menu">×</button>
+      </div>
+
+      <nav class="nav-list">
+        <a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}">Customers</a>
+        <a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}">Job Cards</a>
+        <a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}">Stock</a>
+        <a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}">Invoices</a>
+        <a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}">Staff</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="account-mini">
+          <div class="avatar">{{ request.user.name|default:request.user.email|slice:":1"|upper }}</div>
+          <div class="account-copy">
+            <strong>{{ request.user.name|default:request.user.email }}</strong>
+            <span>{{ request.user.company.name|default:"No company" }}</span>
+          </div>
+        </div>
+        <a class="logout-link" href="{% url 'panel:logout' %}">Logout</a>
+      </div>
+    </aside>
+
+    <div class="sidebar-backdrop" data-sidebar-close></div>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn menu-btn" type="button" data-sidebar-open aria-label="Open menu">☰</button>
+          <div>
+            <p class="eyebrow">{{ request.user.company.name|default:"CubixGear" }}</p>
+            <h1>{{ page_title }}</h1>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <div class="user-chip">
+            <span class="status-dot"></span>
+            {{ request.user.name|default:request.user.email }}
+          </div>
+        </div>
+      </header>
+
+      <section class="content-wrap">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+
+  <nav class="mobile-bottom-nav">
+    <a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>
+    <a href="{% url 'panel:jobs' %}" class="{% if active == 'jobs' %}active{% endif %}">Jobs</a>
+    <a href="{% url 'panel:customers' %}" class="{% if active == 'customers' %}active{% endif %}">Customers</a>
+    <a href="{% url 'panel:stock' %}" class="{% if active == 'stock' %}active{% endif %}">Stock</a>
+    <button type="button" data-sidebar-open>More</button>
+  </nav>
+
+  <script src="{% static 'control_panel/panel.js' %}"></script>
+</body>
+</html>
