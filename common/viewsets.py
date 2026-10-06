@@ -1,8 +1,10 @@
 from rest_framework import viewsets
-from rest_framework.permissions import IsAuthenticated
+
+from apps.accounts.permissions import RolePermission
+
 
 class CompanyScopedModelViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [RolePermission]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -13,4 +15,7 @@ class CompanyScopedModelViewSet(viewsets.ModelViewSet):
         return qs.filter(company=user.company)
 
     def perform_create(self, serializer):
-        serializer.save(company=self.request.user.company, branch=getattr(self.request.user, "branch", None))
+        serializer.save(
+            company=self.request.user.company,
+            branch=getattr(self.request.user, "branch", None),
+        )
