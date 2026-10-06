@@ -10,6 +10,7 @@ class ShiftViewSet(CompanyScopedModelViewSet): queryset=Shift.objects.all(); ser
 class SkillViewSet(CompanyScopedModelViewSet):
     queryset=Skill.objects.all()
     serializer_class=SkillSerializer
+    action_permission_map={"assign": "staff.edit"}
 
     @decorators.action(detail=True,methods=["post"],url_path="assign")
     def assign(self,request,pk=None):
@@ -22,6 +23,10 @@ class SkillViewSet(CompanyScopedModelViewSet):
 class EmployeeViewSet(CompanyScopedModelViewSet):
     queryset=Employee.objects.select_related("team","shift","user").prefetch_related("skills").all()
     serializer_class=EmployeeSerializer
+    action_permission_map={
+        "toggle_account": "staff.edit",
+        "invite": "staff.edit",
+    }
 
     def perform_create(self,serializer):
         from apps.accounts.models import User
