@@ -260,3 +260,72 @@ a{color:inherit}
 }
 
 @media(max-width:800px){body.sidebar-open{overflow:hidden;touch-action:none}}
+
+.flash-messages{display:grid;gap:8px;margin-bottom:12px}
+.flash-message{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;font-size:11px;font-weight:700}
+.flash-success{border-color:#bbf7d0;background:var(--success-soft);color:var(--success)}
+.flash-error{border-color:#fecaca;background:var(--danger-soft);color:var(--danger)}
+
+.page-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.page-actions-right{display:flex;align-items:center;gap:8px}
+.btn-danger{border-color:#fecaca;background:var(--danger-soft);color:var(--danger)}
+.btn-danger:hover{background:#fee2e2}
+
+.form-shell{max-width:1120px}
+.admin-form{padding:18px}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.field-group{display:flex;min-width:0;flex-direction:column;gap:6px}
+.field-group label{font-size:10px;font-weight:800;color:#374151;text-transform:uppercase;letter-spacing:.04em}
+.field-group small{color:var(--muted);font-size:9px;line-height:1.4}
+.field-group .form-control{min-height:41px}
+.field-group textarea.form-control{min-height:96px;padding:10px 12px;resize:vertical}
+.field-group select[multiple].form-control{min-height:130px;padding:8px}
+.field-group input[type="checkbox"].form-control{width:18px;height:18px;min-height:18px;padding:0;box-shadow:none}
+.field-span-2{grid-column:1/-1}
+.field-error{color:var(--danger);font-size:10px;font-weight:700}
+.form-error-block{margin-bottom:14px;padding:10px 12px;border-radius:10px;background:var(--danger-soft);color:var(--danger);font-size:11px}
+.form-error-block ul{margin:0;padding-left:18px}
+.form-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+
+.detail-card{padding:18px}
+.detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.detail-item{min-width:0;padding:13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.detail-item span{display:block;margin-bottom:5px;color:var(--muted);font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.detail-item strong{display:block;font-size:12px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-wrap}
+
+.delete-wrap{max-width:560px;margin:28px auto}
+.delete-card{padding:26px;text-align:center}
+.delete-icon{width:44px;height:44px;margin:0 auto 14px;border-radius:50%;display:grid;place-items:center;background:var(--danger-soft);color:var(--danger);font-weight:900;font-size:18px}
+.delete-card h2{margin:0;font-size:20px}
+.delete-card p{margin:9px auto 0;max-width:420px;color:var(--muted);font-size:12px;line-height:1.55}
+.delete-object{margin:18px 0;padding:12px;border-radius:10px;background:var(--surface-soft);font-size:12px;font-weight:800}
+.delete-actions{display:flex;justify-content:center;gap:8px}
+
+.row-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.row-actions a,.row-actions button{
+  border:0;background:none;padding:0;color:var(--brand);font-size:10px;font-weight:800;text-decoration:none;cursor:pointer
+}
+.row-actions form{display:inline;margin:0}
+.row-actions .danger-link{color:var(--danger)}
+.row-actions a:hover,.row-actions button:hover{text-decoration:underline}
+
+@media(max-width:900px){
+  .detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:800px){
+  .toolbar{align-items:stretch}
+  .toolbar>.btn-primary{flex:0 0 auto}
+  .admin-form{padding:14px}
+  .form-grid{grid-template-columns:1fr}
+  .field-span-2{grid-column:auto}
+  .detail-card{padding:12px}
+}
+@media(max-width:560px){
+  .toolbar{flex-direction:column}
+  .toolbar>.btn-primary{width:100%}
+  .page-actions{align-items:stretch}
+  .page-actions-right{flex:1;justify-content:flex-end}
+  .detail-grid{grid-template-columns:1fr}
+  .form-actions,.delete-actions{display:grid;grid-template-columns:1fr}
+  .form-actions .btn,.delete-actions .btn{width:100%}
+}
