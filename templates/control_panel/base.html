@@ -70,6 +70,13 @@
       </header>
 
       <section class="content-wrap">
+        {% if messages %}
+        <div class="flash-messages">
+          {% for message in messages %}
+          <div class="flash-message {% if message.tags %}flash-{{ message.tags }}{% endif %}">{{ message }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
       </section>
     </main>
