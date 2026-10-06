@@ -1,7 +1,9 @@
 from functools import wraps
 
+from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.db.models import F, Q, Sum, Count
+from django.db.models.deletion import ProtectedError
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -15,7 +17,10 @@ from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent
 from apps.vehicles.models import Vehicle
-from .forms import PanelLoginForm
+from .forms import (
+    CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
+    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
+)
 
 
 def panel_admin_required(view_func):
@@ -334,3 +339,326 @@ def staff(request):
         "company_id": company_id,
         "companies": _company_choices(),
     })
+
+
+def _display_rows(obj, fields):
+    rows = []
+    for field_name, label in fields:
+        value = getattr(obj, field_name, None)
+        if hasattr(value, "all"):
+            value = ", ".join(str(item) for item in value.all()) or "—"
+        elif value in (None, ""):
+            value = "—"
+        elif isinstance(value, bool):
+            value = "Yes" if value else "No"
+        rows.append((label, value))
+    return rows
+
+
+def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
+    form = form_class(request.POST or None, instance=instance)
+    if request.method == "POST" and form.is_valid():
+        obj = form.save()
+        messages.success(request, f"{title} saved successfully.")
+        return redirect(cancel_url)
+    return render(request, "control_panel/form.html", {
+        "page_title": title,
+        "active": active,
+        "form": form,
+        "cancel_url": cancel_url,
+        "is_edit": instance is not None,
+    })
+
+
+def _delete_object(request, obj, *, title, active, cancel_url):
+    if request.method == "POST":
+        try:
+            obj.delete()
+            messages.success(request, f"{title} deleted successfully.")
+            return redirect(cancel_url)
+        except ProtectedError:
+            messages.error(request, f"{title} cannot be deleted because other records depend on it.")
+            return redirect(cancel_url)
+    return render(request, "control_panel/confirm_delete.html", {
+        "page_title": f"Delete {title}",
+        "active": active,
+        "object": obj,
+        "cancel_url": cancel_url,
+    })
+
+
+@panel_admin_required
+def company_create(request):
+    return _save_form(request, CompanyForm, title="Add Company", active="companies", cancel_url="panel:companies")
+
+
+@panel_admin_required
+def company_detail(request, pk):
+    obj = get_object_or_404(Company, pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Company Details",
+        "active": "companies",
+        "object": obj,
+        "rows": _display_rows(obj, [
+            ("name", "Name"), ("legal_name", "Legal name"), ("slug", "Slug"),
+            ("email", "Email"), ("phone", "Phone"), ("gstin", "GSTIN"),
+            ("address", "Address"), ("city", "City"), ("state", "State"),
+            ("country", "Country"), ("pincode", "Pincode"), ("currency", "Currency"),
+            ("plan", "Plan"), ("is_active", "Active"), ("created_at", "Created"),
+        ]),
+        "edit_url": "panel:company-edit",
+        "delete_url": "panel:company-delete",
+    })
+
+
+@panel_admin_required
+def company_edit(request, pk):
+    obj = get_object_or_404(Company, pk=pk)
+    return _save_form(request, CompanyForm, instance=obj, title="Edit Company", active="companies", cancel_url="panel:companies")
+
+
+@panel_admin_required
+def company_delete(request, pk):
+    obj = get_object_or_404(Company, pk=pk)
+    return _delete_object(request, obj, title="Company", active="companies", cancel_url="panel:companies")
+
+
+@panel_admin_required
+def user_create(request):
+    return _save_form(request, UserForm, title="Add User", active="users", cancel_url="panel:users")
+
+
+@panel_admin_required
+def user_detail(request, pk):
+    obj = get_object_or_404(User.objects.select_related("company", "branch", "role"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "User Details",
+        "active": "users",
+        "object": obj,
+        "rows": _display_rows(obj, [
+            ("name", "Name"), ("email", "Email"), ("phone", "Phone"),
+            ("company", "Company"), ("branch", "Branch"), ("role", "Role"),
+            ("is_active", "Active"), ("is_staff", "Admin staff"),
+            ("is_superuser", "Super admin"), ("email_verified", "Email verified"),
+            ("created_at", "Created"),
+        ]),
+        "edit_url": "panel:user-edit",
+        "delete_url": "panel:user-delete",
+    })
+
+
+@panel_admin_required
+def user_edit(request, pk):
+    obj = get_object_or_404(User, pk=pk)
+    return _save_form(request, UserForm, instance=obj, title="Edit User", active="users", cancel_url="panel:users")
+
+
+@panel_admin_required
+def user_delete(request, pk):
+    obj = get_object_or_404(User, pk=pk)
+    if obj == request.user:
+        messages.error(request, "You cannot delete your own Control Panel account.")
+        return redirect("panel:users")
+    return _delete_object(request, obj, title="User", active="users", cancel_url="panel:users")
+
+
+@panel_admin_required
+def subscription_create(request):
+    return _save_form(request, SubscriptionForm, title="Add Subscription", active="subscriptions", cancel_url="panel:subscriptions")
+
+
+@panel_admin_required
+def subscription_detail(request, pk):
+    obj = get_object_or_404(Subscription.objects.select_related("company", "branch"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Subscription Details", "active": "subscriptions", "object": obj,
+        "rows": _display_rows(obj, [
+            ("company", "Company"), ("branch", "Branch"), ("plan", "Plan"),
+            ("status", "Status"), ("billing_cycle", "Billing cycle"), ("amount", "Amount"),
+            ("currency", "Currency"), ("starts_at", "Starts"), ("renews_at", "Renews"),
+            ("seats", "Seats"), ("created_at", "Created"),
+        ]),
+        "edit_url": "panel:subscription-edit", "delete_url": "panel:subscription-delete",
+    })
+
+
+@panel_admin_required
+def subscription_edit(request, pk):
+    obj = get_object_or_404(Subscription, pk=pk)
+    return _save_form(request, SubscriptionForm, instance=obj, title="Edit Subscription", active="subscriptions", cancel_url="panel:subscriptions")
+
+
+@panel_admin_required
+def subscription_delete(request, pk):
+    obj = get_object_or_404(Subscription, pk=pk)
+    return _delete_object(request, obj, title="Subscription", active="subscriptions", cancel_url="panel:subscriptions")
+
+
+@panel_admin_required
+def customer_create(request):
+    return _save_form(request, CustomerForm, title="Add Customer", active="customers", cancel_url="panel:customers")
+
+
+@panel_admin_required
+def customer_detail(request, pk):
+    obj = get_object_or_404(Customer.objects.select_related("company", "branch"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Customer Details", "active": "customers", "object": obj,
+        "rows": _display_rows(obj, [
+            ("company", "Company"), ("branch", "Branch"), ("name", "Name"),
+            ("phone", "Phone"), ("whatsapp", "WhatsApp"), ("email", "Email"),
+            ("customer_type", "Type"), ("company_name", "Business name"), ("gstin", "GSTIN"),
+            ("address", "Address"), ("city", "City"), ("state", "State"), ("pincode", "Pincode"),
+            ("credit_limit", "Credit limit"), ("status", "Status"), ("notes", "Notes"),
+        ]),
+        "edit_url": "panel:customer-edit", "delete_url": "panel:customer-delete",
+    })
+
+
+@panel_admin_required
+def customer_edit(request, pk):
+    obj = get_object_or_404(Customer, pk=pk)
+    return _save_form(request, CustomerForm, instance=obj, title="Edit Customer", active="customers", cancel_url="panel:customers")
+
+
+@panel_admin_required
+def customer_delete(request, pk):
+    obj = get_object_or_404(Customer, pk=pk)
+    return _delete_object(request, obj, title="Customer", active="customers", cancel_url="panel:customers")
+
+
+@panel_admin_required
+def job_create(request):
+    return _save_form(request, JobForm, title="Add Job Card", active="jobs", cancel_url="panel:jobs")
+
+
+@panel_admin_required
+def job_detail(request, pk):
+    obj = get_object_or_404(Job.objects.select_related("company", "branch", "customer", "vehicle", "advisor", "technician"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Job Card Details", "active": "jobs", "object": obj,
+        "rows": _display_rows(obj, [
+            ("job_number", "Job number"), ("company", "Company"), ("branch", "Branch"),
+            ("customer", "Customer"), ("vehicle", "Vehicle"), ("advisor", "Advisor"),
+            ("technician", "Technician"), ("status", "Status"), ("priority", "Priority"),
+            ("odometer", "Odometer"), ("fuel_level", "Fuel level"), ("promised_at", "Promised"),
+            ("delivered_at", "Delivered"), ("estimate_total", "Estimate total"),
+            ("labour_total", "Labour total"), ("parts_total", "Parts total"), ("notes", "Notes"),
+        ]),
+        "edit_url": "panel:job-edit", "delete_url": "panel:job-delete",
+    })
+
+
+@panel_admin_required
+def job_edit(request, pk):
+    obj = get_object_or_404(Job, pk=pk)
+    return _save_form(request, JobForm, instance=obj, title="Edit Job Card", active="jobs", cancel_url="panel:jobs")
+
+
+@panel_admin_required
+def job_delete(request, pk):
+    obj = get_object_or_404(Job, pk=pk)
+    return _delete_object(request, obj, title="Job Card", active="jobs", cancel_url="panel:jobs")
+
+
+@panel_admin_required
+def stock_create(request):
+    return _save_form(request, StockItemForm, title="Add Stock Item", active="stock", cancel_url="panel:stock")
+
+
+@panel_admin_required
+def stock_detail(request, pk):
+    obj = get_object_or_404(StockItem.objects.select_related("company", "branch", "category", "supplier"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Stock Item Details", "active": "stock", "object": obj,
+        "rows": _display_rows(obj, [
+            ("name", "Item"), ("company", "Company"), ("branch", "Branch"), ("sku", "SKU"),
+            ("barcode", "Barcode"), ("category", "Category"), ("brand", "Brand"),
+            ("compatible_vehicle", "Compatible vehicle"), ("unit", "Unit"), ("cost_price", "Cost price"),
+            ("selling_price", "Selling price"), ("on_hand", "On hand"), ("reserved", "Reserved"),
+            ("minimum_stock", "Minimum stock"), ("reorder_level", "Reorder level"),
+            ("rack", "Rack"), ("supplier", "Supplier"), ("tax", "Tax"), ("hsn_code", "HSN"),
+            ("status", "Status"),
+        ]),
+        "edit_url": "panel:stock-edit", "delete_url": "panel:stock-delete",
+    })
+
+
+@panel_admin_required
+def stock_edit(request, pk):
+    obj = get_object_or_404(StockItem, pk=pk)
+    return _save_form(request, StockItemForm, instance=obj, title="Edit Stock Item", active="stock", cancel_url="panel:stock")
+
+
+@panel_admin_required
+def stock_delete(request, pk):
+    obj = get_object_or_404(StockItem, pk=pk)
+    return _delete_object(request, obj, title="Stock Item", active="stock", cancel_url="panel:stock")
+
+
+@panel_admin_required
+def invoice_create(request):
+    return _save_form(request, InvoiceForm, title="Add Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
+
+
+@panel_admin_required
+def invoice_detail(request, pk):
+    obj = get_object_or_404(Invoice.objects.select_related("company", "branch", "customer", "vehicle", "job"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Billing Document Details", "active": "invoices", "object": obj,
+        "rows": _display_rows(obj, [
+            ("number", "Number"), ("company", "Company"), ("branch", "Branch"), ("kind", "Type"),
+            ("invoice_type", "Invoice type"), ("status", "Status"), ("date", "Date"),
+            ("customer", "Customer"), ("vehicle", "Vehicle"), ("job", "Job"), ("tax_mode", "Tax mode"),
+            ("taxable", "Taxable"), ("cgst", "CGST"), ("sgst", "SGST"), ("igst", "IGST"),
+            ("discount", "Discount"), ("total", "Total"), ("paid", "Paid"), ("balance", "Balance"),
+            ("payment_mode", "Payment mode"), ("payment_terms", "Payment terms"), ("notes", "Notes"),
+        ]),
+        "edit_url": "panel:invoice-edit", "delete_url": "panel:invoice-delete",
+    })
+
+
+@panel_admin_required
+def invoice_edit(request, pk):
+    obj = get_object_or_404(Invoice, pk=pk)
+    return _save_form(request, InvoiceForm, instance=obj, title="Edit Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
+
+
+@panel_admin_required
+def invoice_delete(request, pk):
+    obj = get_object_or_404(Invoice, pk=pk)
+    return _delete_object(request, obj, title="Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
+
+
+@panel_admin_required
+def staff_create(request):
+    return _save_form(request, EmployeeForm, title="Add Staff", active="staff", cancel_url="panel:staff")
+
+
+@panel_admin_required
+def staff_detail(request, pk):
+    obj = get_object_or_404(Employee.objects.select_related("company", "branch", "user", "team", "shift").prefetch_related("skills"), pk=pk)
+    return render(request, "control_panel/detail.html", {
+        "page_title": "Staff Details", "active": "staff", "object": obj,
+        "rows": _display_rows(obj, [
+            ("employee_code", "Employee code"), ("name", "Name"), ("company", "Company"),
+            ("branch", "Branch"), ("user", "Linked user"), ("phone", "Phone"), ("email", "Email"),
+            ("designation", "Designation"), ("role_name", "Role"), ("department_name", "Department"),
+            ("team", "Team"), ("shift", "Shift"), ("skills", "Skills"), ("joining_date", "Joining date"),
+            ("employment_type", "Employment type"), ("base_salary", "Base salary"),
+            ("status", "Status"), ("address", "Address"), ("emergency_contact", "Emergency contact"),
+        ]),
+        "edit_url": "panel:staff-edit", "delete_url": "panel:staff-delete",
+    })
+
+
+@panel_admin_required
+def staff_edit(request, pk):
+    obj = get_object_or_404(Employee, pk=pk)
+    return _save_form(request, EmployeeForm, instance=obj, title="Edit Staff", active="staff", cancel_url="panel:staff")
+
+
+@panel_admin_required
+def staff_delete(request, pk):
+    obj = get_object_or_404(Employee, pk=pk)
+    return _delete_object(request, obj, title="Staff", active="staff", cancel_url="panel:staff")
