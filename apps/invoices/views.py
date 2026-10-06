@@ -10,6 +10,11 @@ from .serializers import InvoiceSerializer,EWayBillSerializer
 class InvoiceViewSet(CompanyScopedModelViewSet):
     queryset=Invoice.objects.select_related("customer","vehicle","job").prefetch_related("items").all()
     serializer_class=InvoiceSerializer
+    action_permission_map = {
+        "finalize": ["invoices.edit", "stock.edit"],
+        "cancel": "invoices.edit",
+        "convert": "invoices.create",
+    }
     def get_queryset(self):
         qs=super().get_queryset(); kind=self.request.query_params.get("kind")
         return qs.filter(kind=kind) if kind else qs
@@ -79,6 +84,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 class EWayBillViewSet(CompanyScopedModelViewSet):
     queryset=EWayBill.objects.select_related("invoice").all()
     serializer_class=EWayBillSerializer
+    action_permission_map={"generate": "invoices.edit"}
 
     @decorators.action(detail=True,methods=["post"])
     def generate(self,request,pk=None):
