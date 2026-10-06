@@ -7,9 +7,9 @@
   <title>{{ page_title|default:"Control Panel" }} · CubixGear</title>
   <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
 </head>
-<body>
+<body class="panel-body">
   <div class="app-shell">
-    <aside class="sidebar" id="sidebar">
+    <aside class="sidebar" id="sidebar" aria-label="Control panel navigation">
       <div class="brand-row">
         <div class="brand-mark">C</div>
         <div>
@@ -75,7 +75,7 @@
     </main>
   </div>
 
-  <nav class="mobile-bottom-nav">
+  <nav class="mobile-bottom-nav" aria-label="Mobile control panel navigation">
     <a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>
     <a href="{% url 'panel:companies' %}" class="{% if active == 'companies' %}active{% endif %}">Companies</a>
     <a href="{% url 'panel:users' %}" class="{% if active == 'users' %}active{% endif %}">Users</a>
