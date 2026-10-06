@@ -14,13 +14,23 @@
         <div class="brand-mark">C</div>
         <div>
           <strong>CubixGear</strong>
-          <span>Workshop Control</span>
+          <span>SaaS Control Panel</span>
         </div>
         <button class="icon-btn sidebar-close" type="button" data-sidebar-close aria-label="Close menu">×</button>
       </div>
 
       <nav class="nav-list">
+        <p class="nav-label">Overview</p>
         <a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+
+        <p class="nav-label">Platform</p>
+        <a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}">Companies</a>
+        <a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}">Users & Access</a>
+        <a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Plans & Billing</a>
+        <a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}">Storage</a>
+        <a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}">Security & Activity</a>
+
+        <p class="nav-label">All Workshop Data</p>
         <a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}">Customers</a>
         <a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}">Job Cards</a>
         <a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}">Stock</a>
@@ -33,7 +43,7 @@
           <div class="avatar">{{ request.user.name|default:request.user.email|slice:":1"|upper }}</div>
           <div class="account-copy">
             <strong>{{ request.user.name|default:request.user.email }}</strong>
-            <span>{{ request.user.company.name|default:"No company" }}</span>
+            <span>{% if request.user.is_superuser %}Super Admin{% else %}Admin Staff{% endif %}</span>
           </div>
         </div>
         <a class="logout-link" href="{% url 'panel:logout' %}">Logout</a>
@@ -47,7 +57,7 @@
         <div class="topbar-left">
           <button class="icon-btn menu-btn" type="button" data-sidebar-open aria-label="Open menu">☰</button>
           <div>
-            <p class="eyebrow">{{ request.user.company.name|default:"CubixGear" }}</p>
+            <p class="eyebrow">CubixGear Platform Administration</p>
             <h1>{{ page_title }}</h1>
           </div>
         </div>
@@ -67,9 +77,9 @@
 
   <nav class="mobile-bottom-nav">
     <a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>
-    <a href="{% url 'panel:jobs' %}" class="{% if active == 'jobs' %}active{% endif %}">Jobs</a>
-    <a href="{% url 'panel:customers' %}" class="{% if active == 'customers' %}active{% endif %}">Customers</a>
-    <a href="{% url 'panel:stock' %}" class="{% if active == 'stock' %}active{% endif %}">Stock</a>
+    <a href="{% url 'panel:companies' %}" class="{% if active == 'companies' %}active{% endif %}">Companies</a>
+    <a href="{% url 'panel:users' %}" class="{% if active == 'users' %}active{% endif %}">Users</a>
+    <a href="{% url 'panel:subscriptions' %}" class="{% if active == 'subscriptions' %}active{% endif %}">Billing</a>
     <button type="button" data-sidebar-open>More</button>
   </nav>
 
