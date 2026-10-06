@@ -1,0 +1,21 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="page-actions">
+  <a class="btn" href="javascript:history.back()">Back</a>
+  <div class="page-actions-right">
+    <a class="btn" href="{% url edit_url object.id %}">Edit</a>
+    <a class="btn btn-danger" href="{% url delete_url object.id %}">Delete</a>
+  </div>
+</div>
+
+<section class="panel-card detail-card">
+  <div class="detail-grid">
+    {% for label, value in rows %}
+      <div class="detail-item">
+        <span>{{ label }}</span>
+        <strong>{{ value }}</strong>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
