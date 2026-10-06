@@ -279,4 +279,6 @@ class SetupPasswordView(APIView):
         user.email_verified = True
         user.save(update_fields=["password", "email_verified"])
 
-        return Response({"message": "Password set successfully. You can now sign in to CubixGear."})
+        tokens = issue_tokens(user)
+        tokens["message"] = "Password set successfully."
+        return Response(tokens)
