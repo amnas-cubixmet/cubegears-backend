@@ -7,6 +7,7 @@ from .serializers import VehicleSerializer
 class VehicleViewSet(CompanyScopedModelViewSet):
     queryset=Vehicle.objects.select_related("customer").all()
     serializer_class=VehicleSerializer
+    action_permission_map={"history": "jobs.view"}
 
     def get_queryset(self):
         qs=super().get_queryset()
