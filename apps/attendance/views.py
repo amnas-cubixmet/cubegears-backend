@@ -9,11 +9,14 @@ from .serializers import *
 
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRecord.objects.select_related("employee").all(); serializer_class=AttendanceRecordSerializer
+    permission_code="attendance.manage"
 class LeaveRequestViewSet(CompanyScopedModelViewSet):
     queryset=LeaveRequest.objects.select_related("employee").all(); serializer_class=LeaveRequestSerializer
+    permission_code="attendance.manage"
 class OvertimeRequestViewSet(CompanyScopedModelViewSet):
     queryset=OvertimeRequest.objects.select_related("employee","approved_by").all()
     serializer_class=OvertimeRequestSerializer
+    permission_code="attendance.manage"
 
     def get_queryset(self):
         qs=super().get_queryset()
@@ -63,8 +66,10 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         return response.Response(self.get_serializer(obj).data)
 class HolidayViewSet(CompanyScopedModelViewSet):
     queryset=Holiday.objects.all(); serializer_class=HolidaySerializer
+    permission_code="attendance.manage"
 class AttendanceRuleViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRule.objects.all(); serializer_class=AttendanceRuleSerializer
+    permission_code="attendance.manage"
 
 class ToggleAttendanceView(APIView):
     permission_classes=[RolePermission]
