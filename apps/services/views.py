@@ -10,6 +10,7 @@ class ServiceViewSet(CompanyScopedModelViewSet):
 class ServiceCategoryViewSet(CompanyScopedModelViewSet):
     queryset=ServiceCategory.objects.all()
     serializer_class=ServiceCategorySerializer
+    action_permission_map={"add_type": "services.edit"}
 
     @decorators.action(detail=True,methods=["post"],url_path="types")
     def add_type(self,request,pk=None):
