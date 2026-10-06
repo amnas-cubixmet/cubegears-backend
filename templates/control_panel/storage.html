@@ -1,0 +1,16 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="metrics-grid">
+  <article class="metric-card"><span>Total Storage Records</span><strong>{{ rows|length }}</strong><small>Usage snapshots shown</small></article>
+  <article class="metric-card"><span>Total Files</span><strong>{{ total_files }}</strong><small>Across selected companies</small></article>
+  <article class="metric-card"><span>Total Bytes</span><strong>{{ total_bytes|filesizeformat }}</strong><small>Recorded usage</small></article>
+</div>
+<div class="toolbar toolbar-spaced"><form class="search-form" method="get">
+  <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+  <button class="btn" type="submit">Filter</button>
+</form></div>
+<section class="panel-card"><div class="responsive-table"><table>
+<thead><tr><th>Date</th><th>Company</th><th>Category</th><th>Usage</th><th>Files</th></tr></thead>
+<tbody>{% for row in rows %}<tr><td data-label="Date">{{ row.date|date:"d M Y" }}</td><td data-label="Company"><strong>{{ row.company.name }}</strong></td><td data-label="Category">{{ row.category }}</td><td data-label="Usage">{{ row.bytes_used|filesizeformat }}</td><td data-label="Files">{{ row.file_count }}</td></tr>{% empty %}<tr><td colspan="5" class="empty-cell">No storage usage records.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}
