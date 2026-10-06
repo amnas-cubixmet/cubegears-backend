@@ -31,6 +31,22 @@ from apps.roles.models import Role
 User = get_user_model()
 
 
+def ensure_tenant_super_admin_role(user):
+    role = getattr(user, "role", None)
+    if (
+        role
+        and role.company_id == user.company_id
+        and role.code == "ADMIN"
+        and "*" in (role.permissions or [])
+    ):
+        role.name = "Super Admin"
+        role.code = "SUPER_ADMIN"
+        role.is_system = True
+        role.is_active = True
+        role.save(update_fields=["name", "code", "is_system", "is_active"])
+    return user
+
+
 def queue_email(subject, message, recipient_list):
     transaction.on_commit(
         lambda: send_email_task.delay(
@@ -44,6 +60,7 @@ def queue_email(subject, message, recipient_list):
 
 
 def issue_tokens(user):
+    user = ensure_tenant_super_admin_role(user)
     refresh = RefreshToken.for_user(user)
     return {
         "token": str(refresh.access_token),
@@ -76,7 +93,8 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        user = ensure_tenant_super_admin_role(request.user)
+        return Response(UserSerializer(user).data)
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
@@ -276,21 +294,7 @@ class SetupPasswordView(APIView):
         if not default_token_generator.check_token(user, serializer.validated_data["token"]):
             return Response({"message": "Invalid or expired setup link."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Upgrade owners created by the earlier public-signup flow.
-        # This remains a tenant-level super admin role only; it does not grant
-        # Django/platform staff or global CubixGear control-panel access.
-        role = getattr(user, "role", None)
-        if (
-            role
-            and role.company_id == user.company_id
-            and role.code == "ADMIN"
-            and "*" in (role.permissions or [])
-        ):
-            role.name = "Super Admin"
-            role.code = "SUPER_ADMIN"
-            role.is_system = True
-            role.is_active = True
-            role.save(update_fields=["name", "code", "is_system", "is_active"])
+        ensure_tenant_super_admin_role(user)
 
         user.is_staff = False
         user.is_superuser = False
