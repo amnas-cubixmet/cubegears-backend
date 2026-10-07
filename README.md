@@ -156,3 +156,42 @@ CELERY_TASK_ALWAYS_EAGER=False
 For quick local testing without Redis/worker, set `CELERY_TASK_ALWAYS_EAGER=True`. In that mode Celery tasks execute inside the Django process.
 
 Email tasks automatically retry transient failures with exponential backoff.
+
+
+### Attendance automation
+
+Attendance supports four company-wide punch modes:
+
+- `single`: one check-in and one check-out per day.
+- `multi`: multiple check-in/check-out sessions per day.
+- `auto_checkout`: employee checks in; manual checkout is disabled and Celery closes the session at shift end.
+- `hybrid`: one manual session; missed checkout is automatically closed at shift end.
+
+Attendance rules also control shift times, late grace, overtime threshold, maximum sessions, missing-punch policy, weekly offs, alternate Saturdays, location-required punches and correction approval.
+
+Run Celery worker and Beat together with Django:
+
+```powershell
+# Terminal 1
+redis-server
+```
+
+```powershell
+# Terminal 2
+venv\Scripts\activate
+python manage.py runserver
+```
+
+```powershell
+# Terminal 3 - Windows worker
+venv\Scripts\activate
+celery -A config worker -l INFO -P solo
+```
+
+```powershell
+# Terminal 4 - scheduler for auto checkout
+venv\Scripts\activate
+celery -A config beat -l INFO
+```
+
+The Beat schedule checks open attendance sessions every five minutes. The recorded checkout time remains the configured shift end; the worker grace interval is not counted as worked time.
