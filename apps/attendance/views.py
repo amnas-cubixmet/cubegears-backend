@@ -144,7 +144,19 @@ class AttendanceStatusView(APIView):
         rule=state["rule"]
         record=state["record"]
 
+        shift=getattr(employee,"shift",None)
+        employee_shift=(
+            f"{shift.name} ({shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')})"
+            if shift else employee.shift_label or "Company Default"
+        )
+
         return response.Response({
+            "employee":{
+                "id":str(employee.id),
+                "employeeCode":employee.employee_code,
+                "name":employee.name,
+                "shiftName":employee_shift,
+            },
             "status":"CLOCKED_IN" if state["open_session"] else "CLOCKED_OUT",
             "canCheckIn":state["can_check_in"],
             "canCheckOut":state["can_check_out"],
