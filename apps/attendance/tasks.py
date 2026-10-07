@@ -1,6 +1,7 @@
 from celery import shared_task
 from django.utils import timezone
 
+from apps.notifications.models import Notification
 from .models import AttendanceRule, AttendanceSession
 from .services import (
     auto_checkout_due_datetime,
@@ -45,11 +46,41 @@ def auto_close_attendance_sessions():
                 note="Automatically closed at configured shift end.",
             )
             closed+=1
+            if employee.user_id:
+                Notification.objects.get_or_create(
+                    company=record.company,
+                    branch=record.branch,
+                    user=employee.user,
+                    notification_type="attendance_auto_checkout",
+                    data={"recordId":str(record.id)},
+                    defaults={
+                        "title":"Attendance checked out automatically",
+                        "message":f"Your attendance was checked out automatically at {scheduled.astimezone().strftime('%I:%M %p')}.",
+                    },
+                )
             continue
 
         if rule.missing_punch_policy in {"request_correction","mark_missing"}:
             if record.status != "Missing Clock Out":
                 record.status="Missing Clock Out"
                 record.save(update_fields=["status","updated_at"])
+
+            reminder_due=scheduled + timezone.timedelta(minutes=rule.missing_punch_reminder_minutes or 0)
+            if (
+                rule.missing_punch_reminder_enabled
+                and now >= reminder_due
+                and employee.user_id
+            ):
+                Notification.objects.get_or_create(
+                    company=record.company,
+                    branch=record.branch,
+                    user=employee.user,
+                    notification_type="attendance_missing_punch",
+                    data={"recordId":str(record.id)},
+                    defaults={
+                        "title":"Clock-out reminder",
+                        "message":"Your shift has ended but your attendance is still open. Please check out or request a punch correction.",
+                    },
+                )
 
     return {"closed":closed}
