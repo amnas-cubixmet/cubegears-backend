@@ -99,8 +99,60 @@ class MyAttendanceCalendarView(APIView):
         year=int(request.query_params.get("year") or timezone.localdate().year)
         records=AttendanceRecord.objects.filter(employee=employee,date__month=month,date__year=year)
         holidays=Holiday.objects.filter(company=request.user.company,date__month=month,date__year=year)
+        leaves=LeaveRequest.objects.filter(
+            employee=employee,
+            status="Approved",
+            start_date__lte=datetime(year,month,28).date()+timedelta(days=4),
+            end_date__gte=datetime(year,month,1).date(),
+        )
+        rule=get_attendance_rule(request.user.company,None)
+        first_day=datetime(year,month,1).date()
+        next_month=(first_day.replace(day=28)+timedelta(days=4)).replace(day=1)
+        last_day=next_month-timedelta(days=1)
+
         events=[{"id":str(x.id),"date":x.date,"type":"Attendance","status":x.status,"title":x.status} for x in records]
-        events += [{"id":str(x.id),"date":x.date,"type":"Holiday","status":"Holiday","title":x.name} for x in holidays]
+        recorded_dates={x.date for x in records}
+
+        for holiday in holidays:
+            if holiday.date not in recorded_dates:
+                events.append({
+                    "id":str(holiday.id),
+                    "date":holiday.date,
+                    "type":"Holiday",
+                    "status":"Holiday",
+                    "title":holiday.name,
+                })
+
+        for leave in leaves:
+            cursor=max(leave.start_date,first_day)
+            end=min(leave.end_date,last_day)
+            while cursor<=end:
+                if cursor not in recorded_dates:
+                    events.append({
+                        "id":f"leave-{leave.id}-{cursor}",
+                        "date":cursor,
+                        "type":"Leave",
+                        "status":"On Leave",
+                        "title":leave.leave_type,
+                    })
+                cursor+=timedelta(days=1)
+
+        cursor=first_day
+        while cursor<=last_day:
+            if (
+                cursor not in recorded_dates
+                and is_configured_weekly_off(cursor,rule)
+                and not any(str(event["date"])==cursor.isoformat() for event in events)
+            ):
+                events.append({
+                    "id":f"weekly-off-{cursor}",
+                    "date":cursor,
+                    "type":"Weekly Off",
+                    "status":"Weekly Off",
+                    "title":"Weekly Off",
+                })
+            cursor+=timedelta(days=1)
+
         return response.Response(events)
 
 class PunchCorrectionCreateView(APIView):
