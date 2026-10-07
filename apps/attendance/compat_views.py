@@ -19,7 +19,7 @@ class MyAttendanceLogsView(APIView):
     def get(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response([])
-        qs=AttendanceRecord.objects.filter(employee=employee)
+        qs=AttendanceRecord.objects.filter(employee=employee).prefetch_related("sessions")
         st=request.query_params.get("status")
         if st and st.upper()!="ALL": qs=qs.filter(status__iexact=st)
         return response.Response(AttendanceRecordSerializer(qs,many=True).data)
@@ -223,7 +223,7 @@ class ManagerMasterView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
     def get(self,request):
-        qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch")
+        qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch").prefetch_related("sessions")
         month=request.query_params.get("month"); year=request.query_params.get("year")
         if month: qs=qs.filter(date__month=month)
         if year: qs=qs.filter(date__year=year)
