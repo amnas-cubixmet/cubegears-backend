@@ -76,6 +76,36 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     weekendAttendancePolicy = serializers.CharField(source="weekend_attendance_policy", required=False)
     weekendEffectiveFrom = serializers.DateField(source="weekend_effective_from", required=False, allow_null=True)
 
+    def validate(self, attrs):
+        mode = attrs.get("attendance_mode", getattr(self.instance, "attendance_mode", AttendanceRule.MODE_SINGLE))
+        missing_policy = attrs.get(
+            "missing_punch_policy",
+            getattr(self.instance, "missing_punch_policy", "request_correction"),
+        )
+        weekend_policy = attrs.get(
+            "weekend_attendance_policy",
+            getattr(self.instance, "weekend_attendance_policy", "weekly_off"),
+        )
+
+        valid_modes = {choice[0] for choice in AttendanceRule.MODE_CHOICES}
+        if mode not in valid_modes:
+            raise serializers.ValidationError({"attendanceMode": "Invalid attendance mode."})
+
+        if missing_policy not in {"request_correction", "auto_close", "mark_missing"}:
+            raise serializers.ValidationError({"missingPunchPolicy": "Invalid missing punch policy."})
+
+        if weekend_policy not in {"weekly_off", "allow", "allow_overtime"}:
+            raise serializers.ValidationError({"weekendAttendancePolicy": "Invalid weekend attendance policy."})
+
+        max_sessions = attrs.get(
+            "max_sessions_per_day",
+            getattr(self.instance, "max_sessions_per_day", 0),
+        )
+        if mode != AttendanceRule.MODE_MULTI and max_sessions not in {0, 1}:
+            attrs["max_sessions_per_day"] = 0
+
+        return attrs
+
     class Meta:
         model = AttendanceRule
         exclude = (
