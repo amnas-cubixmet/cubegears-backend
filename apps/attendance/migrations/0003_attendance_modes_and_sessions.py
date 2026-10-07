@@ -155,5 +155,17 @@ class Migration(migrations.Migration):
                 name="unique_attendance_session_number",
             ),
         ),
+        migrations.AddConstraint(
+            model_name="attendancesession",
+            constraint=models.UniqueConstraint(
+                fields=("attendance",),
+                condition=models.Q(clock_out__isnull=True),
+                name="unique_open_attendance_session",
+            ),
+        ),
+        migrations.AddIndex(
+            model_name="attendancesession",
+            index=models.Index(fields=["clock_out"], name="att_session_open_idx"),
+        ),
         migrations.RunPython(backfill_sessions, migrations.RunPython.noop),
     ]
