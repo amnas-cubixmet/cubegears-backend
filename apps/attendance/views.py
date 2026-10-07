@@ -1,9 +1,12 @@
+import calendar
 from datetime import datetime
 from django.utils import timezone
+from django.db.models import Q
 from rest_framework import decorators,response,status
 from apps.accounts.permissions import RolePermission
 from apps.notifications.models import Notification
 from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import *
 from .serializers import *
@@ -25,20 +28,50 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         month=self.request.query_params.get("month")
         staff_id=self.request.query_params.get("staffId")
         st=self.request.query_params.get("status")
-        if month: qs=qs.filter(payroll_month=month)
-        if staff_id and staff_id not in {"All","all"}: qs=qs.filter(employee_id=staff_id)
+        if month:
+            normalized_month=month
+            for month_number,month_name in enumerate(calendar.month_name):
+                if month_name and month_name.lower() in str(month).lower():
+                    year_text="".join(ch for ch in str(month) if ch.isdigit())
+                    if len(year_text)>=4:
+                        normalized_month=f"{year_text[:4]}-{month_number:02d}"
+                    break
+            qs=qs.filter(payroll_month=normalized_month)
+        if staff_id and staff_id not in {"All","all"}:
+            qs=qs.filter(Q(employee_id=staff_id)|Q(employee__employee_code=staff_id))
         if st and st not in {"All","all"}: qs=qs.filter(status=st)
         return qs
 
     def perform_create(self,serializer):
         employee_id=self.request.data.get("employee") or self.request.data.get("staffId")
         from apps.employees.models import Employee
-        employee=Employee.objects.get(pk=employee_id,company=self.request.user.company)
+
+        employee=Employee.objects.filter(
+            company=self.request.user.company,
+            employee_code=str(employee_id or ""),
+        ).first()
+        if not employee:
+            try:
+                employee=Employee.objects.get(pk=employee_id,company=self.request.user.company)
+            except Exception as exc:
+                raise ValidationError({"staffId":"Employee not found."}) from exc
+
         hours=float(self.request.data.get("overtimeHours") or 0)
         minutes=int(self.request.data.get("minutes") or round(hours*60))
+
+        payroll_month=self.request.data.get("payrollMonth") or ""
+        for month_number,month_name in enumerate(calendar.month_name):
+            if month_name and month_name.lower() in str(payroll_month).lower():
+                year_text="".join(ch for ch in str(payroll_month) if ch.isdigit())
+                if len(year_text)>=4:
+                    payroll_month=f"{year_text[:4]}-{month_number:02d}"
+                break
+        if not payroll_month and self.request.data.get("date"):
+            payroll_month=str(self.request.data.get("date"))[:7]
+
         serializer.save(
             company=self.request.user.company,branch=self.request.user.branch,employee=employee,
-            minutes=minutes,payroll_month=self.request.data.get("payrollMonth") or "",
+            minutes=minutes,payroll_month=payroll_month,
             rate=self.request.data.get("rate") or 0,amount=self.request.data.get("amount") or 0,
             audit_history=[{"action":"Overtime Submitted","actor":self.request.user.name,"timestamp":timezone.now().isoformat()}],
         )
