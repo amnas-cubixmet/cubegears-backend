@@ -447,6 +447,33 @@ class ManagerTeamView(APIView):
         record.status=request.data.get("status") or record.status
         record.notes=request.data.get("auditReason") or request.data.get("notes") or record.notes
         record.save(update_fields=["status","notes","updated_at"])
+
+        clock_in=_parse_attendance_datetime(day,request.data.get("clockIn"))
+        clock_out=_parse_attendance_datetime(day,request.data.get("clockOut"))
+        if clock_in:
+            session=record.sessions.order_by("session_number").first()
+            if not session:
+                session=AttendanceSession.objects.create(
+                    company=request.user.company,
+                    branch=employee.branch,
+                    attendance=record,
+                    session_number=1,
+                    clock_in=clock_in,
+                    source="manager",
+                    note="Attendance created by manager.",
+                )
+            else:
+                session.clock_in=clock_in
+                session.save(update_fields=["clock_in","updated_at"])
+            if clock_out:
+                close_session(
+                    session,
+                    closed_at=clock_out,
+                    note="Attendance created by manager.",
+                )
+            else:
+                recalculate_record(record)
+
         return response.Response(AttendanceRecordSerializer(record).data,status=201)
 
 class ManagerTeamDetailView(APIView):
