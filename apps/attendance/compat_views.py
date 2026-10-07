@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from apps.employees.models import Employee
 from .models import AttendanceRecord,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
 from .serializers import AttendanceRecordSerializer,LeaveRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
-from .services import close_session, get_attendance_rule
+from .services import close_session, ensure_record_session, get_attendance_rule
 
 def _employee_for_user(user):
     return getattr(user,"employee_profile",None)
@@ -274,6 +274,7 @@ class StaffAttendanceDetailsView(APIView):
         employee=Employee.objects.filter(Q(pk=staff_id)|Q(employee_code=staff_id),company=request.user.company).select_related("shift","branch").first()
         if not employee: return response.Response({"message":"Staff not found."},status=404)
         record=AttendanceRecord.objects.filter(employee=employee,date=date).first()
+        ensure_record_session(record)
         leave=LeaveRequest.objects.filter(employee=employee,start_date__lte=date,end_date__gte=date).first()
         correction=PunchCorrection.objects.filter(employee=employee,attendance=record).order_by("-created_at").first() if record else None
         return response.Response({
