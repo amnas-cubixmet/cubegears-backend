@@ -48,7 +48,13 @@ def scheduled_checkout_datetime(record, employee, rule):
     if end_time <= start_time:
         end_dt += timedelta(days=1)
 
-    return end_dt + timedelta(minutes=rule.auto_checkout_grace_minutes or 0)
+    return end_dt
+
+
+def auto_checkout_due_datetime(record, employee, rule):
+    return scheduled_checkout_datetime(record, employee, rule) + timedelta(
+        minutes=rule.auto_checkout_grace_minutes or 0
+    )
 
 
 def recalculate_record(record, rule=None):
