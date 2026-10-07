@@ -1,3 +1,4 @@
+from datetime import timedelta
 from celery import shared_task
 from django.utils import timezone
 
@@ -65,7 +66,7 @@ def auto_close_attendance_sessions():
                 record.status="Missing Clock Out"
                 record.save(update_fields=["status","updated_at"])
 
-            reminder_due=scheduled + timezone.timedelta(minutes=rule.missing_punch_reminder_minutes or 0)
+            reminder_due=scheduled + timedelta(minutes=rule.missing_punch_reminder_minutes or 0)
             if (
                 rule.missing_punch_reminder_enabled
                 and now >= reminder_due
