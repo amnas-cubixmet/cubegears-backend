@@ -150,6 +150,25 @@ def close_session(session, closed_at=None, location=None, auto_closed=False, not
     return session
 
 
+def ensure_record_session(record):
+    if not record or record.sessions.exists() or not record.clock_in:
+        return
+
+    AttendanceSession.objects.create(
+        company=record.company,
+        branch=record.branch,
+        attendance=record,
+        session_number=1,
+        clock_in=record.clock_in,
+        clock_out=record.clock_out,
+        worked_minutes=record.worked_minutes or 0,
+        auto_closed=False,
+        source="legacy",
+        clock_in_location=record.location or {},
+        note="Created from legacy attendance record",
+    )
+
+
 def get_attendance_state(employee, day=None):
     day = day or timezone.localdate()
     rule = get_attendance_rule(employee.company, employee.branch)
@@ -159,6 +178,7 @@ def get_attendance_state(employee, day=None):
         .prefetch_related("sessions")
         .first()
     )
+    ensure_record_session(record)
     sessions = list(record.sessions.all()) if record else []
     open_session = next((session for session in sessions if session.clock_out is None), None)
 
@@ -176,7 +196,11 @@ def get_attendance_state(employee, day=None):
         else:
             can_check_out = True
     else:
-        if mode in {AttendanceRule.MODE_SINGLE, AttendanceRule.MODE_AUTO_CHECKOUT}:
+        if mode in {
+            AttendanceRule.MODE_SINGLE,
+            AttendanceRule.MODE_AUTO_CHECKOUT,
+            AttendanceRule.MODE_HYBRID,
+        }:
             can_check_in = session_count == 0
             if session_count:
                 reason = "Today's attendance is already completed."
