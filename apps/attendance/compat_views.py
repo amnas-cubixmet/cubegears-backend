@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from apps.employees.models import Employee
 from .models import AttendanceRecord,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
 from .serializers import AttendanceRecordSerializer,LeaveRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
+from .services import get_attendance_rule
 
 def _employee_for_user(user):
     return getattr(user,"employee_profile",None)
@@ -55,11 +56,21 @@ class PunchCorrectionCreateView(APIView):
             except Exception:
                 try: proposed_dt=datetime.fromisoformat(proposed)
                 except Exception: pass
+        rule=get_attendance_rule(request.user.company,request.user.branch)
         obj=PunchCorrection.objects.create(
             company=request.user.company,branch=request.user.branch,attendance=attendance,employee=employee,
             original_clock_out=attendance.clock_out,proposed_clock_out=proposed_dt,
             reason=request.data.get("reason") or "",
+            status="Approved" if not rule.correction_approval else "Pending",
+            reviewed_by=request.user if not rule.correction_approval else None,
+            reviewed_at=timezone.now() if not rule.correction_approval else None,
         )
+        if not rule.correction_approval and proposed_dt:
+            attendance.clock_out=proposed_dt
+            if attendance.clock_in:
+                attendance.worked_minutes=max(0,int((attendance.clock_out-attendance.clock_in).total_seconds()//60))
+            attendance.status="Present"
+            attendance.save(update_fields=["clock_out","worked_minutes","status","updated_at"])
         return response.Response(PunchCorrectionSerializer(obj).data,status=201)
 
 class LeaveBalancesView(APIView):
@@ -128,9 +139,18 @@ class ManagerApprovalDetailView(APIView):
         decision=request.data.get("decision")
         next_status="Approved" if decision=="approve" else "Rejected"
         note=request.data.get("note") or ""
+        rule=get_attendance_rule(request.user.company,request.user.branch)
         for Model in (PunchCorrection,LeaveRequest,OvertimeRequest):
-            obj=Model.objects.filter(pk=pk,company=request.user.company).first()
+            obj=Model.objects.filter(pk=pk,company=request.user.company).select_related("employee__user").first()
             if not obj: continue
+            if (
+                not rule.allow_self_approval
+                and getattr(obj.employee,"user_id",None)==request.user.id
+            ):
+                return response.Response(
+                    {"message":"Self-approval is disabled by attendance rules."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
             obj.status=next_status
             if isinstance(obj,PunchCorrection):
                 obj.manager_note=note; obj.reviewed_by=request.user; obj.reviewed_at=timezone.now()
@@ -229,7 +249,17 @@ class StaffAttendanceDetailsView(APIView):
         return response.Response({
             "staffInfo":{"id":str(employee.id),"name":employee.name,"designation":employee.designation,"branch":employee.branch.name if employee.branch else "","shift":employee.shift_label or (employee.shift.name if employee.shift else ""),"weeklyOff":", ".join(employee.shift.weekly_off) if employee.shift else ""},
             "attendanceSummary":{"date":date,"status":record.status if record else "Absent","workedHours":f"{(record.worked_minutes if record else 0)//60}h {(record.worked_minutes if record else 0)%60}m","lateMinutes":record.late_minutes if record else 0,"earlyExitMinutes":record.early_exit_minutes if record else 0,"missingClockOut":bool(record and record.clock_in and not record.clock_out)},
-            "sessions":[{"clockIn":record.clock_in,"clockOut":record.clock_out,"duration":record.worked_minutes}] if record else [],
+            "sessions":[
+                {
+                    "id":str(session.id),
+                    "clockIn":session.clock_in,
+                    "clockOut":session.clock_out,
+                    "duration":session.worked_minutes,
+                    "autoClosed":session.auto_closed,
+                    "source":session.source,
+                }
+                for session in (record.sessions.all() if record else [])
+            ],
             "correctionInfo":PunchCorrectionSerializer(correction).data if correction else None,
             "leaveInfo":LeaveRequestSerializer(leave).data if leave else None,
             "auditHistory":[],
