@@ -141,36 +141,38 @@ class Command(BaseCommand):
             },
         )
 
-        owner_employee, _ = Employee.objects.get_or_create(
-            company=company,
-            employee_code="CG-OWNER-001",
-            defaults={
-                "branch": branch,
-                "user": owner,
-                "name": owner.name or "Workshop Owner",
-                "phone": owner.phone,
-                "email": owner.email,
-                "designation": "Owner / Super Admin",
-                "role_name": "Super Admin",
-                "department_name": "Management",
-                "shift_label": "09:00 AM - 06:00 PM",
-                "payment_type": "Monthly",
-                "joining_date": timezone.localdate() - timedelta(days=365),
-                "employment_type": "Full Time",
-                "status": "Active",
-            },
-        )
-        if owner_employee.user_id != owner.id:
+        owner_employee = Employee.objects.filter(user=owner).first()
+        if not owner_employee:
+            owner_employee, _ = Employee.objects.get_or_create(
+                company=company,
+                employee_code="CG-OWNER-001",
+                defaults={
+                    "branch": branch,
+                    "name": owner.name or "Workshop Owner",
+                    "phone": owner.phone,
+                    "email": owner.email,
+                    "designation": "Owner / Super Admin",
+                    "role_name": "Super Admin",
+                    "department_name": "Management",
+                    "shift_label": "09:00 AM - 06:00 PM",
+                    "payment_type": "Monthly",
+                    "joining_date": timezone.localdate() - timedelta(days=365),
+                    "employment_type": "Full Time",
+                    "status": "Active",
+                },
+            )
             owner_employee.user = owner
             owner_employee.save(update_fields=["user"])
 
         staff_users = []
         for code, name, designation, kind, staff_email, phone, salary in STAFF:
             role = mechanic_role if kind == "mechanic" else advisor_role
-            user = User.objects.filter(email__iexact=staff_email).first()
+            local_part, domain = staff_email.split("@", 1)
+            scoped_staff_email = f"{local_part}.{company.slug}@{domain}"
+            user = User.objects.filter(email__iexact=scoped_staff_email).first()
             if not user:
                 user = User.objects.create_user(
-                    email=staff_email,
+                    email=scoped_staff_email,
                     password=None,
                     name=name,
                     phone=phone,
@@ -200,7 +202,7 @@ class Command(BaseCommand):
                     "user": user,
                     "name": name,
                     "phone": phone,
-                    "email": staff_email,
+                    "email": scoped_staff_email,
                     "designation": designation,
                     "role_name": designation,
                     "department_name": "Workshop Operations",
