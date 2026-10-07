@@ -101,13 +101,26 @@ def recalculate_record(record, rule=None):
     record.clock_in = first.clock_in
     record.clock_out = None if open_session else sessions[-1].clock_out
     record.worked_minutes = completed_minutes
+
     if (
         is_configured_weekly_off(record.date, rule)
         and rule.weekend_attendance_policy == "allow_overtime"
     ):
         record.overtime_minutes = completed_minutes
     else:
-        record.overtime_minutes = max(0, completed_minutes - int(rule.overtime_after_minutes or 0))
+        record.overtime_minutes = max(
+            0,
+            completed_minutes - int(rule.overtime_after_minutes or 0),
+        )
+
+    if record.clock_out:
+        scheduled_end = scheduled_checkout_datetime(record, record.employee, rule)
+        record.early_exit_minutes = max(
+            0,
+            int((scheduled_end - record.clock_out).total_seconds() // 60),
+        )
+    else:
+        record.early_exit_minutes = 0
 
     if record.status not in {"On Leave", "Holiday", "Weekly Off"}:
         record.status = "Present"
@@ -117,6 +130,7 @@ def recalculate_record(record, rule=None):
             "clock_in",
             "clock_out",
             "worked_minutes",
+            "early_exit_minutes",
             "overtime_minutes",
             "status",
             "updated_at",
