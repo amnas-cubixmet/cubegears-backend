@@ -175,3 +175,11 @@ CELERY_TASK_TIME_LIMIT = int(env("CELERY_TASK_TIME_LIMIT", 120))
 CELERY_TASK_SOFT_TIME_LIMIT = int(env("CELERY_TASK_SOFT_TIME_LIMIT", 90))
 CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
 CELERY_TASK_EAGER_PROPAGATES = env_bool("CELERY_TASK_EAGER_PROPAGATES", True)
+
+
+CELERY_BEAT_SCHEDULE = {
+    "auto-close-attendance-sessions": {
+        "task": "apps.attendance.tasks.auto_close_attendance_sessions",
+        "schedule": 300.0,
+    },
+}
