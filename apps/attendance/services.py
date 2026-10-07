@@ -25,6 +25,7 @@ def get_attendance_rule(company, branch=None):
         company=company,
         branch=None,
         name="Default",
+        weekend_days=["Sunday"],
         is_default=True,
     )
 
