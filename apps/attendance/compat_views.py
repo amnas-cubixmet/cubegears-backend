@@ -92,15 +92,50 @@ class PunchCorrectionCreateView(APIView):
 class LeaveBalancesView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.self"
+
+    @staticmethod
+    def _days(request_obj):
+        if request_obj.half_day:
+            return 0.5
+        delta=(request_obj.end_date-request_obj.start_date).days+1
+        return max(1,delta)
+
     def get(self,request):
         employee=_employee_for_user(request.user)
         types=LeaveType.objects.filter(company=request.user.company,status="Active")
         result=[]
+
         for lt in types:
-            used=0
+            approved=0.0
+            pending=0.0
+
             if employee:
-                used=LeaveRequest.objects.filter(employee=employee,leave_type=lt.name,status="Approved").count()
-            result.append({"id":str(lt.id),"type":lt.name,"allocated":float(lt.annual_allocation),"used":used,"remaining":max(0,float(lt.annual_allocation)-used)})
+                leave_rows=LeaveRequest.objects.filter(
+                    employee=employee,
+                    leave_type=lt.name,
+                    status__in=["Approved","Pending"],
+                )
+                for leave in leave_rows:
+                    days=self._days(leave)
+                    if leave.status=="Approved":
+                        approved+=days
+                    elif leave.status=="Pending":
+                        pending+=days
+
+            allocated=float(lt.annual_allocation)
+            remaining=max(0,allocated-approved)
+            available=max(0,remaining-pending)
+
+            result.append({
+                "id":str(lt.id),
+                "type":lt.name,
+                "allocated":allocated,
+                "used":approved,
+                "pending":pending,
+                "remaining":remaining,
+                "available":available,
+            })
+
         return response.Response(result)
 
 class MyLeaveRequestsView(APIView):
