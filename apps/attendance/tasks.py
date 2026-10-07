@@ -2,7 +2,12 @@ from celery import shared_task
 from django.utils import timezone
 
 from .models import AttendanceRule, AttendanceSession
-from .services import close_session, get_attendance_rule, scheduled_checkout_datetime
+from .services import (
+    auto_checkout_due_datetime,
+    close_session,
+    get_attendance_rule,
+    scheduled_checkout_datetime,
+)
 
 
 @shared_task
@@ -21,19 +26,22 @@ def auto_close_attendance_sessions():
         employee=record.employee
         rule=get_attendance_rule(record.company,record.branch)
 
-        if rule.attendance_mode not in {
+        auto_mode=rule.attendance_mode in {
             AttendanceRule.MODE_AUTO_CHECKOUT,
             AttendanceRule.MODE_HYBRID,
-        }:
+        }
+        auto_missing=rule.missing_punch_policy=="auto_close"
+        if not auto_mode and not auto_missing:
             continue
 
-        cutoff=scheduled_checkout_datetime(record,employee,rule)
-        if now < cutoff:
+        scheduled=scheduled_checkout_datetime(record,employee,rule)
+        due=auto_checkout_due_datetime(record,employee,rule)
+        if now < due:
             continue
 
         close_session(
             session,
-            closed_at=cutoff,
+            closed_at=scheduled,
             auto_closed=True,
             note="Automatically closed at configured shift end.",
         )
