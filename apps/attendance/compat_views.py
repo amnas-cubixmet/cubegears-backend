@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from apps.employees.models import Employee
 from .models import AttendanceRecord,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
 from .serializers import AttendanceRecordSerializer,LeaveRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
-from .services import get_attendance_rule
+from .services import close_session, get_attendance_rule
 
 def _employee_for_user(user):
     return getattr(user,"employee_profile",None)
@@ -66,11 +66,19 @@ class PunchCorrectionCreateView(APIView):
             reviewed_at=timezone.now() if not rule.correction_approval else None,
         )
         if not rule.correction_approval and proposed_dt:
-            attendance.clock_out=proposed_dt
-            if attendance.clock_in:
-                attendance.worked_minutes=max(0,int((attendance.clock_out-attendance.clock_in).total_seconds()//60))
-            attendance.status="Present"
-            attendance.save(update_fields=["clock_out","worked_minutes","status","updated_at"])
+            open_session=attendance.sessions.filter(clock_out__isnull=True).order_by("-session_number").first()
+            if open_session:
+                close_session(
+                    open_session,
+                    closed_at=proposed_dt,
+                    note="Punch correction applied without manager approval.",
+                )
+            else:
+                attendance.clock_out=proposed_dt
+                if attendance.clock_in:
+                    attendance.worked_minutes=max(0,int((attendance.clock_out-attendance.clock_in).total_seconds()//60))
+                attendance.status="Present"
+                attendance.save(update_fields=["clock_out","worked_minutes","status","updated_at"])
         return response.Response(PunchCorrectionSerializer(obj).data,status=201)
 
 class LeaveBalancesView(APIView):
@@ -155,10 +163,20 @@ class ManagerApprovalDetailView(APIView):
             if isinstance(obj,PunchCorrection):
                 obj.manager_note=note; obj.reviewed_by=request.user; obj.reviewed_at=timezone.now()
                 if next_status=="Approved" and obj.proposed_clock_out:
-                    att=obj.attendance; att.clock_out=obj.proposed_clock_out
-                    if att.clock_in:
-                        att.worked_minutes=max(0,int((att.clock_out-att.clock_in).total_seconds()//60))
-                    att.save()
+                    att=obj.attendance
+                    open_session=att.sessions.filter(clock_out__isnull=True).order_by("-session_number").first()
+                    if open_session:
+                        close_session(
+                            open_session,
+                            closed_at=obj.proposed_clock_out,
+                            note="Manager-approved punch correction.",
+                        )
+                    else:
+                        att.clock_out=obj.proposed_clock_out
+                        if att.clock_in:
+                            att.worked_minutes=max(0,int((att.clock_out-att.clock_in).total_seconds()//60))
+                        att.status="Present"
+                        att.save()
             elif isinstance(obj,LeaveRequest):
                 obj.reviewed_by=request.user; obj.reviewed_at=timezone.now()
             else:
