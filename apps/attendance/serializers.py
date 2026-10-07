@@ -19,7 +19,15 @@ class AttendanceSessionSerializer(serializers.ModelSerializer):
 
 class AttendanceRecordSerializer(serializers.ModelSerializer):
     employeeName = serializers.CharField(source="employee.name", read_only=True)
+    employeeCode = serializers.CharField(source="employee.employee_code", read_only=True)
+    shiftName = serializers.SerializerMethodField()
     sessions = AttendanceSessionSerializer(many=True, read_only=True)
+
+    def get_shiftName(self, obj):
+        shift=getattr(obj.employee,"shift",None)
+        if shift:
+            return f"{shift.name} ({shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')})"
+        return obj.employee.shift_label or "Company Default"
 
     class Meta:
         model = AttendanceRecord
