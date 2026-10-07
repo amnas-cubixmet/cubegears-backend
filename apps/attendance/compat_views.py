@@ -423,6 +423,32 @@ class ManagerTeamView(APIView):
             rows=[row for row in rows if row["status"]==st]
         return response.Response(rows)
 
+    def post(self,request):
+        employee=Employee.objects.filter(
+            pk=request.data.get("employeeId"),
+            company=request.user.company,
+        ).first()
+        if not employee:
+            return response.Response({"message":"Employee not found."},status=404)
+
+        date_value=request.data.get("date") or timezone.localdate().isoformat()
+        try:
+            day=datetime.strptime(str(date_value),"%Y-%m-%d").date()
+        except ValueError:
+            return response.Response({"message":"Invalid date."},status=400)
+
+        record,_=AttendanceRecord.objects.get_or_create(
+            company=request.user.company,
+            branch=employee.branch,
+            employee=employee,
+            date=day,
+            defaults={"status":request.data.get("status") or "Present"},
+        )
+        record.status=request.data.get("status") or record.status
+        record.notes=request.data.get("auditReason") or request.data.get("notes") or record.notes
+        record.save(update_fields=["status","notes","updated_at"])
+        return response.Response(AttendanceRecordSerializer(record).data,status=201)
+
 class ManagerTeamDetailView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
