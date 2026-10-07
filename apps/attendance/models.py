@@ -34,8 +34,16 @@ class AttendanceSession(CompanyOwnedModel):
 
     class Meta:
         ordering=["session_number"]
+        indexes=[
+            models.Index(fields=["clock_out"],name="att_session_open_idx"),
+        ]
         constraints=[
-            models.UniqueConstraint(fields=["attendance","session_number"],name="unique_attendance_session_number")
+            models.UniqueConstraint(fields=["attendance","session_number"],name="unique_attendance_session_number"),
+            models.UniqueConstraint(
+                fields=["attendance"],
+                condition=models.Q(clock_out__isnull=True),
+                name="unique_open_attendance_session",
+            ),
         ]
 
     @property
