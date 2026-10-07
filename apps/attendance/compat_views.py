@@ -50,12 +50,20 @@ class PunchCorrectionCreateView(APIView):
         proposed=request.data.get("proposedClockOut")
         proposed_dt=None
         if proposed:
-            try:
-                t=datetime.strptime(proposed,"%H:%M").time()
-                proposed_dt=timezone.make_aware(datetime.combine(attendance.date,t))
-            except Exception:
-                try: proposed_dt=datetime.fromisoformat(proposed)
-                except Exception: pass
+            for fmt in ("%H:%M","%I:%M %p"):
+                try:
+                    t=datetime.strptime(proposed,fmt).time()
+                    proposed_dt=timezone.make_aware(datetime.combine(attendance.date,t))
+                    break
+                except Exception:
+                    continue
+            if proposed_dt is None:
+                try:
+                    proposed_dt=datetime.fromisoformat(proposed)
+                    if timezone.is_naive(proposed_dt):
+                        proposed_dt=timezone.make_aware(proposed_dt)
+                except Exception:
+                    pass
         rule=get_attendance_rule(request.user.company,request.user.branch)
         obj=PunchCorrection.objects.create(
             company=request.user.company,branch=request.user.branch,attendance=attendance,employee=employee,
@@ -243,8 +251,8 @@ class ManagerRulesView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
     def get(self,request):
-        obj=AttendanceRule.objects.filter(company=request.user.company,is_default=True).first()
-        return response.Response(AttendanceRuleSerializer(obj).data if obj else {})
+        obj=get_attendance_rule(request.user.company,request.user.branch)
+        return response.Response(AttendanceRuleSerializer(obj).data)
     def post(self,request):
         obj=AttendanceRule.objects.filter(company=request.user.company,is_default=True).first()
         if obj:
