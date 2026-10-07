@@ -195,3 +195,35 @@ celery -A config beat -l INFO
 ```
 
 The Beat schedule checks open attendance sessions every five minutes. The recorded checkout time remains the configured shift end; the worker grace interval is not counted as worked time.
+
+
+## Attendance modes
+
+Attendance rules are company-wide and managed from the Company Panel Attendance Manager.
+
+Supported modes:
+
+- `single`: one check-in + one manual check-out per day. No second session.
+- `multi`: multiple check-in/check-out sessions per day, with optional session limit.
+- `auto_checkout`: employee checks in once; manual checkout is disabled and Celery closes the session at configured shift end.
+- `hybrid`: employee can manually check out once; if forgotten, Celery auto-closes at shift end.
+
+Other controls include late grace minutes, overtime threshold, missing-punch policy, correction approval, self-approval protection, required browser location, weekly offs and alternate Saturdays.
+
+Run the periodic auto-checkout worker with Redis:
+
+```powershell
+# Worker
+celery -A config worker -l INFO -P solo
+
+# Beat scheduler
+celery -A config beat -l INFO
+```
+
+Django must also be running:
+
+```powershell
+python manage.py runserver
+```
+
+The Celery Beat schedule checks open attendance sessions every 5 minutes. Auto-closed sessions are recorded at the configured shift-end time, not at the later worker execution time.
