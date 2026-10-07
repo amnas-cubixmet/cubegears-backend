@@ -31,20 +31,25 @@ def auto_close_attendance_sessions():
             AttendanceRule.MODE_HYBRID,
         }
         auto_missing=rule.missing_punch_policy=="auto_close"
-        if not auto_mode and not auto_missing:
-            continue
 
         scheduled=scheduled_checkout_datetime(record,employee,rule)
         due=auto_checkout_due_datetime(record,employee,rule)
         if now < due:
             continue
 
-        close_session(
-            session,
-            closed_at=scheduled,
-            auto_closed=True,
-            note="Automatically closed at configured shift end.",
-        )
-        closed+=1
+        if auto_mode or auto_missing:
+            close_session(
+                session,
+                closed_at=scheduled,
+                auto_closed=True,
+                note="Automatically closed at configured shift end.",
+            )
+            closed+=1
+            continue
+
+        if rule.missing_punch_policy in {"request_correction","mark_missing"}:
+            if record.status != "Missing Clock Out":
+                record.status="Missing Clock Out"
+                record.save(update_fields=["status","updated_at"])
 
     return {"closed":closed}
