@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 
+from django.db import IntegrityError
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -254,15 +255,18 @@ def start_session(employee, location=None, source="web"):
     )
 
     session_number = record.sessions.count() + 1
-    session = AttendanceSession.objects.create(
-        company=employee.company,
-        branch=employee.branch,
-        attendance=record,
-        session_number=session_number,
-        clock_in=now,
-        source=source,
-        clock_in_location=location or {},
-    )
+    try:
+        session = AttendanceSession.objects.create(
+            company=employee.company,
+            branch=employee.branch,
+            attendance=record,
+            session_number=session_number,
+            clock_in=now,
+            source=source,
+            clock_in_location=location or {},
+        )
+    except IntegrityError as exc:
+        raise ValueError("Attendance was already updated. Refresh and try again.") from exc
 
     start_time, _ = get_shift_times(employee, rule)
     shift_start = shift_datetime(today, start_time)
