@@ -38,7 +38,12 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
                     break
             qs=qs.filter(payroll_month=normalized_month)
         if staff_id and staff_id not in {"All","all"}:
-            qs=qs.filter(Q(employee_id=staff_id)|Q(employee__employee_code=staff_id))
+            try:
+                import uuid
+                uuid.UUID(str(staff_id))
+                qs=qs.filter(Q(employee_id=staff_id)|Q(employee__employee_code=staff_id))
+            except (ValueError,TypeError,AttributeError):
+                qs=qs.filter(employee__employee_code=staff_id)
         if st and st not in {"All","all"}: qs=qs.filter(status=st)
         return qs
 
