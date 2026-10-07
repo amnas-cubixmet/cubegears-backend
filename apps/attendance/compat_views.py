@@ -251,16 +251,20 @@ class ManagerRulesView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
     def get(self,request):
-        obj=get_attendance_rule(request.user.company,request.user.branch)
+        obj=get_attendance_rule(request.user.company,None)
         return response.Response(AttendanceRuleSerializer(obj).data)
     def post(self,request):
-        obj=AttendanceRule.objects.filter(company=request.user.company,is_default=True).first()
+        obj=AttendanceRule.objects.filter(
+            company=request.user.company,
+            branch__isnull=True,
+            is_default=True,
+        ).first()
         if obj:
             ser=AttendanceRuleSerializer(obj,data=request.data,partial=True)
         else:
             ser=AttendanceRuleSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj=ser.save(company=request.user.company,branch=request.user.branch,is_default=True)
+        obj=ser.save(company=request.user.company,branch=None,is_default=True)
         return response.Response(AttendanceRuleSerializer(obj).data)
 
 class StaffAttendanceDetailsView(APIView):
