@@ -7,6 +7,8 @@ urlpatterns=[
  path("leave/balances",LeaveBalancesView.as_view()),
  path("leave/requests",MyLeaveRequestsView.as_view()),
  path("leave/requests/<uuid:pk>/cancel",CancelLeaveRequestView.as_view()),
+ path("my-attendance/overtime",MyOvertimeRequestsView.as_view()),
+ path("my-attendance/overtime/<uuid:pk>/cancel",CancelOvertimeRequestView.as_view()),
  path("attendance-manager/approvals",ManagerApprovalsView.as_view()),
  path("attendance-manager/approvals/<uuid:pk>",ManagerApprovalDetailView.as_view()),
  path("attendance-manager/team",ManagerTeamView.as_view()),
@@ -14,6 +16,9 @@ urlpatterns=[
  path("attendance-manager/master",ManagerMasterView.as_view()),
  path("attendance-manager/leave-types",LeaveTypesView.as_view()),
  path("attendance-manager/holidays",ManagerHolidaysView.as_view()),
+ path("attendance-manager/holidays/<uuid:pk>",ManagerHolidayDetailView.as_view()),
+ path("attendance-manager/calendar",ManagerCalendarView.as_view()),
+ path("attendance-manager/shifts",ManagerShiftsView.as_view()),
  path("attendance-manager/rules",ManagerRulesView.as_view()),
  path("attendance-manager/staff-details/<str:staff_id>/<str:date>",StaffAttendanceDetailsView.as_view()),
 ]
