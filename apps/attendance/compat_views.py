@@ -1,17 +1,75 @@
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import response,status
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
+from apps.accounts.models import User
+from apps.notifications.models import Notification
+from apps.employees.models import Employee, Shift, Team
 from rest_framework.views import APIView
 
-from apps.employees.models import Employee
-from .models import AttendanceRecord,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
-from .serializers import AttendanceRecordSerializer,LeaveRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
-from .services import close_session, ensure_record_session, get_attendance_rule
+from .models import AttendanceRecord,AttendanceSession,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
+from .serializers import AttendanceRecordSerializer,AttendanceSessionSerializer,LeaveRequestSerializer,OvertimeRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
+from .services import close_session, ensure_record_session, get_attendance_rule, is_configured_weekly_off, recalculate_record
 
 def _employee_for_user(user):
     return getattr(user,"employee_profile",None)
+
+
+def _notify_attendance_managers(company,title,message,notification_type,data=None):
+    users=User.objects.filter(company=company,is_active=True).select_related("role")
+    notifications=[]
+    for user in users:
+        if user_has_permission(user,"attendance.manage"):
+            notifications.append(Notification(
+                company=company,
+                branch=user.branch,
+                user=user,
+                title=title,
+                message=message,
+                notification_type=notification_type,
+                data=data or {},
+            ))
+    if notifications:
+        Notification.objects.bulk_create(notifications)
+
+
+def _notify_employee(employee,title,message,notification_type,data=None):
+    if not employee or not employee.user_id:
+        return
+    Notification.objects.create(
+        company=employee.company,
+        branch=employee.branch,
+        user=employee.user,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        data=data or {},
+    )
+
+
+def _parse_attendance_datetime(day,value):
+    if not value:
+        return None
+    if isinstance(value,datetime):
+        parsed=value
+    else:
+        text=str(value).strip()
+        parsed=None
+        try:
+            parsed=datetime.fromisoformat(text.replace("Z","+00:00"))
+        except Exception:
+            for fmt in ("%H:%M","%I:%M %p"):
+                try:
+                    parsed=datetime.combine(day,datetime.strptime(text,fmt).time())
+                    break
+                except Exception:
+                    continue
+        if parsed is None:
+            return None
+    if timezone.is_naive(parsed):
+        parsed=timezone.make_aware(parsed,timezone.get_current_timezone())
+    return parsed
 
 class MyAttendanceLogsView(APIView):
     permission_classes=[RolePermission]
@@ -157,6 +215,15 @@ class MyLeaveRequestsView(APIView):
             reason=request.data.get("reason") or "",
             attachment=request.data.get("attachment") or "",
         )
+        rule=get_attendance_rule(request.user.company,None)
+        if rule.leave_request_notifications:
+            _notify_attendance_managers(
+                request.user.company,
+                "New leave request",
+                f"{employee.name} submitted {obj.leave_type} from {obj.start_date} to {obj.end_date}.",
+                "attendance_leave_request",
+                {"requestId":str(obj.id),"staffId":str(employee.id),"route":"/attendance-manager/leave-requests"},
+            )
         return response.Response(LeaveRequestSerializer(obj).data,status=201)
 
 class CancelLeaveRequestView(APIView):
@@ -225,33 +292,172 @@ class ManagerApprovalDetailView(APIView):
             else:
                 obj.approved_by=request.user
             obj.save()
+            request_type=(
+                "Punch correction" if isinstance(obj,PunchCorrection)
+                else "Leave request" if isinstance(obj,LeaveRequest)
+                else "Overtime request"
+            )
+            _notify_employee(
+                obj.employee,
+                f"{request_type} {obj.status.lower()}",
+                f"Your {request_type.lower()} has been {obj.status.lower()}.",
+                "attendance_request_decision",
+                {"requestId":str(obj.id),"status":obj.status,"route":"/my-attendance/calendar"},
+            )
             return response.Response({"id":str(obj.id),"status":obj.status})
         return response.Response({"message":"Approval not found."},status=404)
 
 class ManagerTeamView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
+
     def get(self,request):
-        qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch")
-        branch=request.query_params.get("branch"); st=request.query_params.get("status"); role=request.query_params.get("role")
-        if branch and branch!="All": qs=qs.filter(branch__name=branch)
-        if st and st!="All": qs=qs.filter(status=st)
-        if role and role!="All": qs=qs.filter(employee__designation=role)
+        company=request.user.company
+        date_value=request.query_params.get("date")
+        try:
+            day=datetime.strptime(date_value,"%Y-%m-%d").date() if date_value else timezone.localdate()
+        except ValueError:
+            return response.Response({"message":"Invalid date."},status=400)
+
+        employees=Employee.objects.filter(company=company,status="Active").select_related("branch","shift","team","user")
+        branch=request.query_params.get("branch")
+        role=request.query_params.get("role")
+        search=request.query_params.get("search") or ""
+
+        if branch and branch!="All":
+            employees=employees.filter(branch__name=branch)
+        if role and role!="All":
+            employees=employees.filter(designation=role)
+        if search:
+            employees=employees.filter(
+                Q(name__icontains=search)|
+                Q(employee_code__icontains=search)|
+                Q(phone__icontains=search)|
+                Q(designation__icontains=search)
+            )
+
+        records={
+            record.employee_id:record
+            for record in AttendanceRecord.objects.filter(company=company,date=day)
+            .select_related("employee","branch")
+            .prefetch_related("sessions")
+        }
+        leaves={
+            row.employee_id:row
+            for row in LeaveRequest.objects.filter(
+                company=company,status="Approved",start_date__lte=day,end_date__gte=day
+            )
+        }
+        holiday=Holiday.objects.filter(company=company,date=day).first()
+        rule=get_attendance_rule(company,None)
         rows=[]
-        for x in qs[:500]:
-            rows.append({"id":str(x.id),"staffId":str(x.employee_id),"name":x.employee.name,"staffName":x.employee.name,"designation":x.employee.designation,"branch":x.branch.name if x.branch else "","date":x.date,"clockIn":x.clock_in,"clockOut":x.clock_out,"workedMinutes":x.worked_minutes,"lateMinutes":x.late_minutes,"overtimeMinutes":x.overtime_minutes,"status":x.status})
+
+        for employee in employees:
+            record=records.get(employee.id)
+            sessions=list(record.sessions.all()) if record else []
+            leave=leaves.get(employee.id)
+
+            if record:
+                row_status=record.status
+            elif holiday:
+                row_status="Holiday"
+            elif leave:
+                row_status="On Leave"
+            elif is_configured_weekly_off(day,rule):
+                row_status="Weekly Off"
+            elif day <= timezone.localdate():
+                row_status="Absent"
+            else:
+                row_status="Not Scheduled"
+
+            first_session=sessions[0] if sessions else None
+            last_session=sessions[-1] if sessions else None
+            location_enabled=bool(rule.location_tracking_enabled or rule.location_required)
+
+            serialized_sessions=[]
+            for session in sessions:
+                data=AttendanceSessionSerializer(session).data
+                if not location_enabled:
+                    data["clock_in_location"]={}
+                    data["clock_out_location"]={}
+                serialized_sessions.append(data)
+
+            rows.append({
+                "id":str(record.id) if record else f"staff-{employee.id}-{day.isoformat()}",
+                "attendanceId":str(record.id) if record else None,
+                "employeeId":str(employee.id),
+                "staffId":employee.employee_code,
+                "employeeCode":employee.employee_code,
+                "name":employee.name,
+                "staffName":employee.name,
+                "phone":employee.phone,
+                "designation":employee.designation,
+                "branch":employee.branch.name if employee.branch else "",
+                "team":employee.team.name if employee.team else "",
+                "shift":employee.shift.name if employee.shift else employee.shift_label,
+                "date":day,
+                "clockIn":first_session.clock_in if first_session else None,
+                "clockOut":last_session.clock_out if last_session else None,
+                "workedMinutes":record.worked_minutes if record else 0,
+                "worked":f"{(record.worked_minutes if record else 0)//60}h {(record.worked_minutes if record else 0)%60}m",
+                "lateMinutes":record.late_minutes if record else 0,
+                "earlyExitMinutes":record.early_exit_minutes if record else 0,
+                "overtimeMinutes":record.overtime_minutes if record else 0,
+                "overtimeHours":round((record.overtime_minutes if record else 0)/60,2),
+                "status":row_status,
+                "notes":record.notes if record else "",
+                "sessionCount":len(sessions),
+                "sessions":serialized_sessions,
+                "locationEnabled":location_enabled,
+            })
+
+        st=request.query_params.get("status")
+        if st and st!="All":
+            rows=[row for row in rows if row["status"]==st]
         return response.Response(rows)
 
 class ManagerTeamDetailView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
+
     def put(self,request,pk):
-        obj=AttendanceRecord.objects.filter(pk=pk,company=request.user.company).first()
-        if not obj: return response.Response({"message":"Attendance record not found."},status=404)
-        for incoming,attr in [("status","status"),("workedMinutes","worked_minutes"),("lateMinutes","late_minutes"),("earlyExitMinutes","early_exit_minutes"),("overtimeMinutes","overtime_minutes")]:
-            if incoming in request.data: setattr(obj,attr,request.data[incoming])
-        obj.notes=request.data.get("auditReason") or obj.notes
-        obj.save()
+        obj=AttendanceRecord.objects.filter(pk=pk,company=request.user.company).prefetch_related("sessions").first()
+        if not obj:
+            return response.Response({"message":"Attendance record not found."},status=404)
+
+        for incoming,attr in [
+            ("status","status"),
+            ("workedMinutes","worked_minutes"),
+            ("lateMinutes","late_minutes"),
+            ("earlyExitMinutes","early_exit_minutes"),
+            ("overtimeMinutes","overtime_minutes"),
+        ]:
+            if incoming in request.data:
+                setattr(obj,attr,request.data[incoming])
+
+        ensure_record_session(obj)
+        sessions=list(obj.sessions.order_by("session_number"))
+        clock_in=_parse_attendance_datetime(obj.date,request.data.get("clockIn")) if "clockIn" in request.data else None
+        clock_out=_parse_attendance_datetime(obj.date,request.data.get("clockOut")) if "clockOut" in request.data else None
+
+        if sessions and "clockIn" in request.data and clock_in:
+            first=sessions[0]
+            first.clock_in=clock_in
+            first.save(update_fields=["clock_in","updated_at"])
+
+        if sessions and "clockOut" in request.data:
+            last=sessions[-1]
+            if clock_out:
+                close_session(last,closed_at=clock_out,note="Manager corrected attendance time.")
+            else:
+                last.clock_out=None
+                last.worked_minutes=0
+                last.save(update_fields=["clock_out","worked_minutes","updated_at"])
+
+        obj.notes=request.data.get("auditReason") or request.data.get("notes") or obj.notes
+        obj.save(update_fields=["status","worked_minutes","late_minutes","early_exit_minutes","overtime_minutes","notes","updated_at"])
+        if sessions:
+            recalculate_record(obj)
         return response.Response(AttendanceRecordSerializer(obj).data)
 
 class ManagerMasterView(APIView):
@@ -279,8 +485,263 @@ class LeaveTypesView(APIView):
 class ManagerHolidaysView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
+
     def get(self,request):
-        return response.Response(HolidaySerializer(Holiday.objects.filter(company=request.user.company),many=True).data)
+        qs=Holiday.objects.filter(company=request.user.company).order_by("date")
+        year=request.query_params.get("year")
+        if year:
+            qs=qs.filter(date__year=year)
+        return response.Response(HolidaySerializer(qs,many=True).data)
+
+    def post(self,request):
+        serializer=HolidaySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj=serializer.save(company=request.user.company,branch=request.user.branch)
+        return response.Response(HolidaySerializer(obj).data,status=201)
+
+
+class ManagerHolidayDetailView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
+
+    def delete(self,request,pk):
+        obj=Holiday.objects.filter(pk=pk,company=request.user.company).first()
+        if not obj:
+            return response.Response({"message":"Holiday not found."},status=404)
+        obj.delete()
+        return response.Response(status=204)
+
+
+class ManagerCalendarView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
+
+    def get(self,request):
+        today=timezone.localdate()
+        month=int(request.query_params.get("month") or today.month)
+        year=int(request.query_params.get("year") or today.year)
+        if month<1 or month>12:
+            return response.Response({"message":"Invalid month."},status=400)
+
+        company=request.user.company
+        first_day=datetime(year,month,1).date()
+        next_month=(first_day.replace(day=28)+timedelta(days=4)).replace(day=1)
+        last_day=next_month-timedelta(days=1)
+        employees=list(
+            Employee.objects.filter(company=company,status="Active")
+            .select_related("branch","shift","team")
+            .order_by("name")
+        )
+        records=AttendanceRecord.objects.filter(
+            company=company,date__gte=first_day,date__lte=last_day
+        ).select_related("employee")
+        record_map={(row.employee_id,row.date):row for row in records}
+        leaves=LeaveRequest.objects.filter(
+            company=company,status="Approved",start_date__lte=last_day,end_date__gte=first_day
+        )
+        leave_rows=list(leaves)
+        holidays=list(Holiday.objects.filter(company=company,date__gte=first_day,date__lte=last_day))
+        holiday_map={row.date:row for row in holidays}
+        rule=get_attendance_rule(company,None)
+
+        result=[]
+        for employee in employees:
+            day_map={}
+            for day_num in range(1,last_day.day+1):
+                day=datetime(year,month,day_num).date()
+                record=record_map.get((employee.id,day))
+                leave=next((x for x in leave_rows if x.employee_id==employee.id and x.start_date<=day<=x.end_date),None)
+                holiday=holiday_map.get(day)
+
+                if record:
+                    status_value=record.status
+                elif holiday:
+                    status_value="Holiday"
+                elif leave:
+                    status_value="On Leave"
+                elif is_configured_weekly_off(day,rule):
+                    status_value="Weekly Off"
+                elif day <= today:
+                    status_value="Absent"
+                else:
+                    status_value=""
+
+                code={
+                    "Present":"P",
+                    "Absent":"A",
+                    "On Leave":"L",
+                    "Half Day":"H",
+                    "Weekly Off":"WO",
+                    "Holiday":"HD",
+                    "Missing Clock Out":"M",
+                }.get(status_value,"")
+                day_map[str(day_num)]={
+                    "status":status_value,
+                    "code":code,
+                    "recordId":str(record.id) if record else None,
+                }
+
+            result.append({
+                "employeeId":str(employee.id),
+                "staffId":employee.employee_code,
+                "name":employee.name,
+                "designation":employee.designation,
+                "branch":employee.branch.name if employee.branch else "",
+                "days":day_map,
+            })
+
+        return response.Response({
+            "month":month,
+            "year":year,
+            "days":last_day.day,
+            "employees":result,
+            "holidays":HolidaySerializer(holidays,many=True).data,
+        })
+
+
+class MyOvertimeRequestsView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
+
+    def get(self,request):
+        employee=_employee_for_user(request.user)
+        if not employee:
+            return response.Response([])
+        rows=OvertimeRequest.objects.filter(employee=employee).select_related("approved_by")
+        return response.Response(OvertimeRequestSerializer(rows,many=True).data)
+
+    def post(self,request):
+        employee=_employee_for_user(request.user)
+        if not employee:
+            return response.Response({"message":"No employee profile linked."},status=400)
+
+        date_value=request.data.get("date") or timezone.localdate().isoformat()
+        try:
+            request_date=datetime.strptime(str(date_value),"%Y-%m-%d").date()
+        except ValueError:
+            return response.Response({"message":"Invalid overtime date."},status=400)
+
+        minutes=int(request.data.get("minutes") or round(float(request.data.get("overtimeHours") or 0)*60))
+        if minutes<=0:
+            return response.Response({"message":"Overtime minutes must be greater than zero."},status=400)
+
+        obj=OvertimeRequest.objects.create(
+            company=request.user.company,
+            branch=request.user.branch,
+            employee=employee,
+            date=request_date,
+            minutes=minutes,
+            reason=request.data.get("reason") or "",
+            payroll_month=request.data.get("payrollMonth") or request_date.strftime("%Y-%m"),
+            status="Pending",
+            audit_history=[{
+                "action":"Overtime Submitted",
+                "actor":request.user.name,
+                "timestamp":timezone.now().isoformat(),
+            }],
+        )
+        rule=get_attendance_rule(request.user.company,None)
+        if rule.overtime_request_notifications:
+            _notify_attendance_managers(
+                request.user.company,
+                "New overtime request",
+                f"{employee.name} requested {round(minutes/60,2)} hours overtime for {request_date}.",
+                "attendance_overtime_request",
+                {"requestId":str(obj.id),"staffId":str(employee.id),"route":"/attendance-manager/overtime"},
+            )
+        return response.Response(OvertimeRequestSerializer(obj).data,status=201)
+
+
+class CancelOvertimeRequestView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
+
+    def post(self,request,pk):
+        employee=_employee_for_user(request.user)
+        obj=OvertimeRequest.objects.filter(pk=pk,employee=employee,status="Pending").first()
+        if not obj:
+            return response.Response({"message":"Pending overtime request not found."},status=404)
+        obj.status="Cancelled"
+        obj.save(update_fields=["status","updated_at"])
+        return response.Response(OvertimeRequestSerializer(obj).data)
+
+
+class ManagerShiftsView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
+
+    def get(self,request):
+        company=request.user.company
+        shifts=Shift.objects.filter(company=company).order_by("name")
+        teams=Team.objects.filter(company=company,is_active=True).order_by("name")
+        employees=Employee.objects.filter(company=company,status="Active").select_related("team","shift").order_by("name")
+        return response.Response({
+            "shifts":[{
+                "id":str(row.id),
+                "name":row.name,
+                "startTime":row.start_time,
+                "endTime":row.end_time,
+                "breakMinutes":row.break_minutes,
+                "weeklyOff":row.weekly_off,
+                "isActive":row.is_active,
+                "staffCount":row.employees.filter(status="Active").count(),
+            } for row in shifts],
+            "teams":[{
+                "id":str(row.id),
+                "name":row.name,
+                "staffCount":row.employees.filter(status="Active").count(),
+            } for row in teams],
+            "employees":[{
+                "id":str(row.id),
+                "staffId":row.employee_code,
+                "name":row.name,
+                "teamId":str(row.team_id) if row.team_id else None,
+                "team":row.team.name if row.team else "",
+                "shiftId":str(row.shift_id) if row.shift_id else None,
+                "shift":row.shift.name if row.shift else row.shift_label,
+            } for row in employees],
+        })
+
+    def post(self,request):
+        company=request.user.company
+        action=request.data.get("action") or "assign"
+
+        if action=="save_shift":
+            shift_id=request.data.get("shiftId")
+            shift=Shift.objects.filter(pk=shift_id,company=company).first() if shift_id else None
+            values={
+                "name":request.data.get("name") or "General Shift",
+                "start_time":request.data.get("startTime") or "09:00",
+                "end_time":request.data.get("endTime") or "18:00",
+                "break_minutes":max(0,int(request.data.get("breakMinutes") or 0)),
+                "weekly_off":request.data.get("weeklyOff") or [],
+                "is_active":bool(request.data.get("isActive",True)),
+            }
+            if shift:
+                for key,value in values.items():
+                    setattr(shift,key,value)
+                shift.save()
+            else:
+                shift=Shift.objects.create(company=company,branch=request.user.branch,**values)
+            return response.Response({"id":str(shift.id),"name":shift.name})
+
+        shift=Shift.objects.filter(pk=request.data.get("shiftId"),company=company).first()
+        if not shift:
+            return response.Response({"message":"Shift not found."},status=404)
+
+        employees=Employee.objects.filter(company=company,status="Active")
+        team_id=request.data.get("teamId")
+        staff_ids=request.data.get("staffIds") or []
+        if team_id:
+            employees=employees.filter(team_id=team_id)
+        elif staff_ids:
+            employees=employees.filter(id__in=staff_ids)
+        else:
+            return response.Response({"message":"Select a team or staff members."},status=400)
+
+        count=employees.update(shift=shift,shift_label=shift.name)
+        return response.Response({"assigned":count,"shiftId":str(shift.id)})
+
 
 class ManagerRulesView(APIView):
     permission_classes=[RolePermission]
@@ -323,9 +784,12 @@ class StaffAttendanceDetailsView(APIView):
                     "duration":session.worked_minutes,
                     "autoClosed":session.auto_closed,
                     "source":session.source,
+                    "clockInLocation":session.clock_in_location if get_attendance_rule(request.user.company,None).location_tracking_enabled else {},
+                    "clockOutLocation":session.clock_out_location if get_attendance_rule(request.user.company,None).location_tracking_enabled else {},
                 }
                 for session in (record.sessions.all() if record else [])
             ],
+            "locationEnabled":bool(get_attendance_rule(request.user.company,None).location_tracking_enabled),
             "correctionInfo":PunchCorrectionSerializer(correction).data if correction else None,
             "leaveInfo":LeaveRequestSerializer(leave).data if leave else None,
             "auditHistory":[],
