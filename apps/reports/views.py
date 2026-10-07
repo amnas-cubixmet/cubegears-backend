@@ -10,6 +10,7 @@ class DashboardView(APIView):
 
     def get(self,request):
         from apps.attendance.models import AttendanceRecord
+        from apps.attendance.services import get_attendance_state
         from apps.customers.models import Customer
         from apps.employees.models import Employee
         from apps.expenses.models import Expense
@@ -35,15 +36,16 @@ class DashboardView(APIView):
 
         employee=getattr(request.user,"employee_profile",None)
         attendance_record=None
+        attendance_state=None
         if employee:
-            attendance_record=AttendanceRecord.objects.filter(
-                employee=employee,
-                date=today,
-            ).first()
+            attendance_state=get_attendance_state(employee,today)
+            attendance_record=attendance_state["record"]
 
-        attendance_status="CLOCKED_OUT"
-        if attendance_record and attendance_record.clock_in and not attendance_record.clock_out:
-            attendance_status="CLOCKED_IN"
+        attendance_status=(
+            "CLOCKED_IN"
+            if attendance_state and attendance_state["open_session"]
+            else "CLOCKED_OUT"
+        )
 
         todays_vehicle_count=job_qs.filter(
             created_at__date=today
@@ -160,6 +162,13 @@ class DashboardView(APIView):
                     f"{attendance_record.worked_minutes // 60}h {attendance_record.worked_minutes % 60}m"
                     if attendance_record else "0h 00m"
                 ),
+                "canCheckIn": attendance_state["can_check_in"] if attendance_state else False,
+                "canCheckOut": attendance_state["can_check_out"] if attendance_state else False,
+                "nextAction": attendance_state["next_action"] if attendance_state else None,
+                "reason": attendance_state["reason"] if attendance_state else "No employee profile linked.",
+                "attendanceMode": attendance_state["rule"].attendance_mode if attendance_state else None,
+                "autoCheckoutAt": attendance_state["auto_checkout_at"] if attendance_state else None,
+                "sessionCount": len(attendance_state["sessions"]) if attendance_state else 0,
             },
             "stats": {
                 "todaysVehicles": todays_vehicle_count,
