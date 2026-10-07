@@ -169,6 +169,7 @@ class DashboardView(APIView):
                 "attendanceMode": attendance_state["rule"].attendance_mode if attendance_state else None,
                 "autoCheckoutAt": attendance_state["auto_checkout_at"] if attendance_state else None,
                 "sessionCount": len(attendance_state["sessions"]) if attendance_state else 0,
+                "locationRequired": attendance_state["rule"].location_required if attendance_state else False,
             },
             "stats": {
                 "todaysVehicles": todays_vehicle_count,
