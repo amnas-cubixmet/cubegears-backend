@@ -48,7 +48,8 @@ STAFF = [
 
 def aware_today_at(hour, minute=0):
     today = timezone.localdate()
-    return timezone.make_aware(datetime.combine(today, time(hour, minute)))
+    base = datetime.combine(today, time(hour, 0)) + timedelta(minutes=minute)
+    return timezone.make_aware(base)
 
 
 class Command(BaseCommand):
@@ -409,8 +410,8 @@ class Command(BaseCommand):
                     "cgst_rate": Decimal("9"),
                     "sgst_rate": Decimal("9"),
                     "taxable": (total / Decimal("1.18")).quantize(Decimal("0.01")),
-                    "cgst": (total - (total / Decimal("1.18"))) / Decimal("2"),
-                    "sgst": (total - (total / Decimal("1.18"))) / Decimal("2"),
+                    "cgst": (((total - (total / Decimal("1.18"))) / Decimal("2")).quantize(Decimal("0.01"))),
+                    "sgst": (((total - (total / Decimal("1.18"))) / Decimal("2")).quantize(Decimal("0.01"))),
                     "total": total,
                     "paid": paid,
                     "balance": balance,
