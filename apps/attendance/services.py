@@ -159,18 +159,20 @@ def ensure_record_session(record):
     if not record or record.sessions.exists() or not record.clock_in:
         return
 
-    AttendanceSession.objects.create(
-        company=record.company,
-        branch=record.branch,
+    AttendanceSession.objects.get_or_create(
         attendance=record,
         session_number=1,
-        clock_in=record.clock_in,
-        clock_out=record.clock_out,
-        worked_minutes=record.worked_minutes or 0,
-        auto_closed=False,
-        source="legacy",
-        clock_in_location=record.location or {},
-        note="Created from legacy attendance record",
+        defaults={
+            "company":record.company,
+            "branch":record.branch,
+            "clock_in":record.clock_in,
+            "clock_out":record.clock_out,
+            "worked_minutes":record.worked_minutes or 0,
+            "auto_closed":False,
+            "source":"legacy",
+            "clock_in_location":record.location or {},
+            "note":"Created from legacy attendance record",
+        },
     )
 
 
