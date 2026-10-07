@@ -914,8 +914,22 @@ class StaffAttendanceDetailsView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
     def get(self,request,staff_id,date):
-        employee=Employee.objects.filter(Q(pk=staff_id)|Q(employee_code=staff_id),company=request.user.company).select_related("shift","branch").first()
-        if not employee: return response.Response({"message":"Staff not found."},status=404)
+        employee=Employee.objects.filter(
+            company=request.user.company,
+            employee_code=staff_id,
+        ).select_related("shift","branch").first()
+        if not employee:
+            try:
+                import uuid
+                uuid.UUID(str(staff_id))
+                employee=Employee.objects.filter(
+                    pk=staff_id,
+                    company=request.user.company,
+                ).select_related("shift","branch").first()
+            except (ValueError,TypeError,AttributeError):
+                employee=None
+        if not employee:
+            return response.Response({"message":"Staff not found."},status=404)
         record=AttendanceRecord.objects.filter(employee=employee,date=date).first()
         ensure_record_session(record)
         leave=LeaveRequest.objects.filter(employee=employee,start_date__lte=date,end_date__gte=date).first()
