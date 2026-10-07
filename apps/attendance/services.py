@@ -39,6 +39,31 @@ def shift_datetime(day, value):
     )
 
 
+def is_configured_weekly_off(day, rule):
+    if rule.weekend_effective_from and day < rule.weekend_effective_from:
+        return False
+
+    if day.strftime("%A") in set(rule.weekend_days or []):
+        return True
+
+    if day.strftime("%A") != "Saturday" or not rule.alternate_saturday_enabled:
+        return False
+
+    occurrence=((day.day - 1) // 7) + 1
+    pattern=rule.alternate_saturday_pattern or ""
+
+    if pattern=="1st & 3rd Saturday":
+        return occurrence in {1,3}
+    if pattern=="2nd & 4th Saturday":
+        return occurrence in {2,4}
+    if pattern=="1st, 3rd & 5th Saturday":
+        return occurrence in {1,3,5}
+    if pattern=="All Saturdays":
+        return True
+
+    return False
+
+
 def scheduled_checkout_datetime(record, employee, rule):
     _, end_time = get_shift_times(employee, rule)
     end_dt = shift_datetime(record.date, end_time)
@@ -71,7 +96,13 @@ def recalculate_record(record, rule=None):
     record.clock_in = first.clock_in
     record.clock_out = None if open_session else sessions[-1].clock_out
     record.worked_minutes = completed_minutes
-    record.overtime_minutes = max(0, completed_minutes - int(rule.overtime_after_minutes or 0))
+    if (
+        is_configured_weekly_off(record.date, rule)
+        and rule.weekend_attendance_policy == "allow_overtime"
+    ):
+        record.overtime_minutes = completed_minutes
+    else:
+        record.overtime_minutes = max(0, completed_minutes - int(rule.overtime_after_minutes or 0))
 
     if record.status not in {"On Leave", "Holiday", "Weekly Off"}:
         record.status = "Present"
@@ -181,10 +212,8 @@ def start_session(employee, location=None, source="web"):
     if not state["can_check_in"]:
         raise ValueError(state["reason"] or "Check-in is not available.")
 
-    weekend_names = set(rule.weekend_days or [])
-    weekday = today.strftime("%A")
-    if weekday in weekend_names and rule.weekend_attendance_policy == "weekly_off":
-        raise ValueError(f"{weekday} is configured as a weekly off.")
+    if is_configured_weekly_off(today, rule) and rule.weekend_attendance_policy == "weekly_off":
+        raise ValueError(f"{today.strftime('%A')} is configured as a weekly off.")
 
     record, _ = AttendanceRecord.objects.get_or_create(
         company=employee.company,
