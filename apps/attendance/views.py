@@ -9,7 +9,7 @@ from .serializers import *
 from .services import finish_session, get_attendance_state, start_session
 
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
-    queryset=AttendanceRecord.objects.select_related("employee").all(); serializer_class=AttendanceRecordSerializer
+    queryset=AttendanceRecord.objects.select_related("employee").prefetch_related("sessions").all(); serializer_class=AttendanceRecordSerializer
     permission_code="attendance.manage"
 class LeaveRequestViewSet(CompanyScopedModelViewSet):
     queryset=LeaveRequest.objects.select_related("employee").all(); serializer_class=LeaveRequestSerializer
