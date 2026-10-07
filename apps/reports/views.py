@@ -86,7 +86,16 @@ class DashboardView(APIView):
             })
 
         recent_jobs=[]
-        for job in job_qs.exclude(status=Job.STATUS_DELIVERED).order_by("-updated_at")[:6]:
+        active_repair=job_qs.filter(status=Job.STATUS_IN_PROGRESS).order_by("-updated_at").first()
+        recent_job_rows=[]
+        if active_repair:
+            recent_job_rows.append(active_repair)
+        remaining=job_qs.exclude(status=Job.STATUS_DELIVERED)
+        if active_repair:
+            remaining=remaining.exclude(pk=active_repair.pk)
+        recent_job_rows.extend(list(remaining.order_by("-updated_at")[:5]))
+
+        for job in recent_job_rows:
             recent_jobs.append({
                 "id": str(job.id),
                 "jobNumber": job.job_number,
