@@ -834,7 +834,7 @@ class StaffAttendanceDetailsView(APIView):
         leave=LeaveRequest.objects.filter(employee=employee,start_date__lte=date,end_date__gte=date).first()
         correction=PunchCorrection.objects.filter(employee=employee,attendance=record).order_by("-created_at").first() if record else None
         return response.Response({
-            "staffInfo":{"id":str(employee.id),"name":employee.name,"designation":employee.designation,"branch":employee.branch.name if employee.branch else "","shift":employee.shift_label or (employee.shift.name if employee.shift else ""),"weeklyOff":", ".join(employee.shift.weekly_off) if employee.shift else ""},
+            "staffInfo":{"id":employee.employee_code,"employeeId":str(employee.id),"name":employee.name,"designation":employee.designation,"branch":employee.branch.name if employee.branch else "","shift":employee.shift_label or (employee.shift.name if employee.shift else ""),"weeklyOff":", ".join(employee.shift.weekly_off) if employee.shift else ""},
             "attendanceSummary":{"date":date,"status":record.status if record else "Absent","workedHours":f"{(record.worked_minutes if record else 0)//60}h {(record.worked_minutes if record else 0)%60}m","lateMinutes":record.late_minutes if record else 0,"earlyExitMinutes":record.early_exit_minutes if record else 0,"missingClockOut":bool(record and record.clock_in and not record.clock_out)},
             "sessions":[
                 {
