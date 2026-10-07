@@ -68,6 +68,11 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     autoCheckoutGraceMinutes = serializers.IntegerField(source="auto_checkout_grace_minutes", required=False)
     missingPunchPolicy = serializers.CharField(source="missing_punch_policy", required=False)
     locationRequired = serializers.BooleanField(source="location_required", required=False)
+    locationTrackingEnabled = serializers.BooleanField(source="location_tracking_enabled", required=False)
+    missingPunchReminderEnabled = serializers.BooleanField(source="missing_punch_reminder_enabled", required=False)
+    missingPunchReminderMinutes = serializers.IntegerField(source="missing_punch_reminder_minutes", required=False)
+    leaveRequestNotifications = serializers.BooleanField(source="leave_request_notifications", required=False)
+    overtimeRequestNotifications = serializers.BooleanField(source="overtime_request_notifications", required=False)
     correctionApproval = serializers.BooleanField(source="correction_approval", required=False)
     allowSelfApproval = serializers.BooleanField(source="allow_self_approval", required=False)
     weekendDays = serializers.JSONField(source="weekend_days", required=False)
@@ -104,6 +109,13 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
         if mode != AttendanceRule.MODE_MULTI and max_sessions not in {0, 1}:
             attrs["max_sessions_per_day"] = 0
 
+        location_required = attrs.get(
+            "location_required",
+            getattr(self.instance, "location_required", False),
+        )
+        if location_required:
+            attrs["location_tracking_enabled"] = True
+
         return attrs
 
     class Meta:
@@ -120,6 +132,11 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
             "auto_checkout_grace_minutes",
             "missing_punch_policy",
             "location_required",
+            "location_tracking_enabled",
+            "missing_punch_reminder_enabled",
+            "missing_punch_reminder_minutes",
+            "leave_request_notifications",
+            "overtime_request_notifications",
             "correction_approval",
             "allow_self_approval",
             "weekend_days",
