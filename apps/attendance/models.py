@@ -1,3 +1,4 @@
+from datetime import time
 from decimal import Decimal
 from django.db import models
 from common.models import CompanyOwnedModel
@@ -17,6 +18,29 @@ class AttendanceRecord(CompanyOwnedModel):
     class Meta:
         ordering=["-date"]
         constraints=[models.UniqueConstraint(fields=["employee","date"],name="unique_employee_attendance_day")]
+
+
+class AttendanceSession(CompanyOwnedModel):
+    attendance=models.ForeignKey(AttendanceRecord,on_delete=models.CASCADE,related_name="sessions")
+    session_number=models.PositiveIntegerField(default=1)
+    clock_in=models.DateTimeField()
+    clock_out=models.DateTimeField(null=True,blank=True)
+    worked_minutes=models.PositiveIntegerField(default=0)
+    auto_closed=models.BooleanField(default=False)
+    source=models.CharField(max_length=30,default="web")
+    clock_in_location=models.JSONField(default=dict,blank=True)
+    clock_out_location=models.JSONField(default=dict,blank=True)
+    note=models.CharField(max_length=255,blank=True)
+
+    class Meta:
+        ordering=["session_number"]
+        constraints=[
+            models.UniqueConstraint(fields=["attendance","session_number"],name="unique_attendance_session_number")
+        ]
+
+    @property
+    def is_open(self):
+        return self.clock_out is None
 
 class LeaveRequest(CompanyOwnedModel):
     employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="leave_requests")
@@ -51,11 +75,34 @@ class Holiday(CompanyOwnedModel):
     is_optional=models.BooleanField(default=False)
 
 class AttendanceRule(CompanyOwnedModel):
+    MODE_SINGLE="single"
+    MODE_MULTI="multi"
+    MODE_AUTO_CHECKOUT="auto_checkout"
+    MODE_HYBRID="hybrid"
+    MODE_CHOICES=[
+        (MODE_SINGLE,"Single check-in / check-out"),
+        (MODE_MULTI,"Multiple check-in / check-out sessions"),
+        (MODE_AUTO_CHECKOUT,"Check-in with automatic checkout"),
+        (MODE_HYBRID,"Manual checkout with automatic fallback"),
+    ]
+
     name=models.CharField(max_length=120,default="Default")
+    attendance_mode=models.CharField(max_length=30,choices=MODE_CHOICES,default=MODE_SINGLE)
+    shift_start_time=models.TimeField(default=time(9,0))
+    shift_end_time=models.TimeField(default=time(18,0))
     grace_minutes=models.PositiveIntegerField(default=15)
     overtime_after_minutes=models.PositiveIntegerField(default=540)
+    max_sessions_per_day=models.PositiveIntegerField(default=0)
+    auto_checkout_grace_minutes=models.PositiveIntegerField(default=0)
+    missing_punch_policy=models.CharField(max_length=30,default="request_correction")
     location_required=models.BooleanField(default=False)
     correction_approval=models.BooleanField(default=True)
+    allow_self_approval=models.BooleanField(default=False)
+    weekend_days=models.JSONField(default=list,blank=True)
+    alternate_saturday_enabled=models.BooleanField(default=False)
+    alternate_saturday_pattern=models.CharField(max_length=60,blank=True,default="")
+    weekend_attendance_policy=models.CharField(max_length=40,default="weekly_off")
+    weekend_effective_from=models.DateField(null=True,blank=True)
     is_default=models.BooleanField(default=True)
 
 class PunchCorrection(CompanyOwnedModel):
