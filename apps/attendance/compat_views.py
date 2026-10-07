@@ -79,7 +79,14 @@ class MyAttendanceLogsView(APIView):
         if not employee: return response.Response([])
         qs=AttendanceRecord.objects.filter(employee=employee).prefetch_related("sessions")
         st=request.query_params.get("status")
-        if st and st.upper()!="ALL": qs=qs.filter(status__iexact=st)
+        month=request.query_params.get("month")
+        year=request.query_params.get("year")
+        if st and st.upper()!="ALL":
+            qs=qs.filter(status__iexact=st)
+        if month:
+            qs=qs.filter(date__month=month)
+        if year:
+            qs=qs.filter(date__year=year)
         return response.Response(AttendanceRecordSerializer(qs,many=True).data)
 
 class MyAttendanceCalendarView(APIView):
