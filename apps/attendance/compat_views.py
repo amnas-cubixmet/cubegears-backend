@@ -459,6 +459,13 @@ class ManagerTeamView(APIView):
             first_session=sessions[0] if sessions else None
             last_session=sessions[-1] if sessions else None
             location_enabled=bool(rule.location_tracking_enabled or rule.location_required)
+            live_worked_minutes=record.worked_minutes if record else 0
+            open_session=next((session for session in sessions if session.clock_out is None),None)
+            if open_session:
+                live_worked_minutes += max(
+                    0,
+                    int((timezone.now()-open_session.clock_in).total_seconds()//60),
+                )
 
             serialized_sessions=[]
             for session in sessions:
@@ -485,7 +492,8 @@ class ManagerTeamView(APIView):
                 "clockIn":first_session.clock_in if first_session else None,
                 "clockOut":last_session.clock_out if last_session else None,
                 "workedMinutes":record.worked_minutes if record else 0,
-                "worked":f"{(record.worked_minutes if record else 0)//60}h {(record.worked_minutes if record else 0)%60}m",
+                "liveWorkedMinutes":live_worked_minutes,
+                "worked":f"{live_worked_minutes//60}h {live_worked_minutes%60}m",
                 "lateMinutes":record.late_minutes if record else 0,
                 "earlyExitMinutes":record.early_exit_minutes if record else 0,
                 "overtimeMinutes":record.overtime_minutes if record else 0,
