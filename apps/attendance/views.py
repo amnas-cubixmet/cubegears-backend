@@ -2,6 +2,7 @@ from datetime import datetime
 from django.utils import timezone
 from rest_framework import decorators,response,status
 from apps.accounts.permissions import RolePermission
+from apps.notifications.models import Notification
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import *
@@ -50,6 +51,16 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         if request.data.get("amount") is not None: obj.amount=request.data["amount"]
         history=list(obj.audit_history or []); history.insert(0,{"action":"Approved Overtime","actor":request.user.name,"timestamp":timezone.now().isoformat(),"note":request.data.get("managerNote") or ""}); obj.audit_history=history
         obj.save()
+        if obj.employee.user_id:
+            Notification.objects.create(
+                company=obj.company,
+                branch=obj.branch,
+                user=obj.employee.user,
+                title="Overtime request approved",
+                message=f"Your overtime request for {obj.date} was approved.",
+                notification_type="attendance_request_decision",
+                data={"requestId":str(obj.id),"status":"Approved","route":"/my-attendance/overtime"},
+            )
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"])
@@ -57,6 +68,16 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         obj=self.get_object(); obj.status="Rejected"; obj.rejection_reason=request.data.get("reason") or "Not authorized"
         history=list(obj.audit_history or []); history.insert(0,{"action":"Rejected Overtime","actor":request.user.name,"timestamp":timezone.now().isoformat(),"reason":obj.rejection_reason}); obj.audit_history=history
         obj.save()
+        if obj.employee.user_id:
+            Notification.objects.create(
+                company=obj.company,
+                branch=obj.branch,
+                user=obj.employee.user,
+                title="Overtime request rejected",
+                message=f"Your overtime request for {obj.date} was rejected.",
+                notification_type="attendance_request_decision",
+                data={"requestId":str(obj.id),"status":"Rejected","route":"/my-attendance/overtime"},
+            )
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"])
