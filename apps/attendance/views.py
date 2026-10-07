@@ -113,12 +113,16 @@ class ToggleAttendanceView(APIView):
         action=request.data.get("action") or state["next_action"]
         location=request.data.get("location") or {}
         source=request.data.get("source") or "web"
+        rule=state["rule"]
 
-        if state["rule"].location_required and not location:
+        if rule.location_required and not location:
             return response.Response(
                 {"message":"Location is required for attendance punches."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        if not rule.location_tracking_enabled and not rule.location_required:
+            location={}
 
         try:
             if action=="check_in":
