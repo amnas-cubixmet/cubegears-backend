@@ -6,6 +6,7 @@ from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import *
 from .serializers import *
+from .services import finish_session, get_attendance_state, start_session
 
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRecord.objects.select_related("employee").all(); serializer_class=AttendanceRecordSerializer
@@ -71,24 +72,80 @@ class AttendanceRuleViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRule.objects.all(); serializer_class=AttendanceRuleSerializer
     permission_code="attendance.manage"
 
+class AttendanceStatusView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.self"
+
+    def get(self,request):
+        employee=getattr(request.user,"employee_profile",None)
+        if not employee:
+            return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
+
+        state=get_attendance_state(employee)
+        rule=state["rule"]
+        record=state["record"]
+
+        return response.Response({
+            "status":"CLOCKED_IN" if state["open_session"] else "CLOCKED_OUT",
+            "canCheckIn":state["can_check_in"],
+            "canCheckOut":state["can_check_out"],
+            "nextAction":state["next_action"],
+            "reason":state["reason"],
+            "attendanceMode":rule.attendance_mode,
+            "maxSessionsPerDay":rule.max_sessions_per_day,
+            "autoCheckoutAt":state["auto_checkout_at"],
+            "sessionCount":len(state["sessions"]),
+            "rule":AttendanceRuleSerializer(rule).data,
+            "record":AttendanceRecordSerializer(record).data if record else None,
+        })
+
+
 class ToggleAttendanceView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.self"
+
     def post(self,request):
         employee=getattr(request.user,"employee_profile",None)
-        if not employee: return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
-        today=timezone.localdate()
-        record,_=AttendanceRecord.objects.get_or_create(company=request.user.company,branch=request.user.branch,employee=employee,date=today)
-        if not record.clock_in:
-            record.clock_in=timezone.now(); action="clocked_in"
-        elif not record.clock_out:
-            record.clock_out=timezone.now()
-            record.worked_minutes=max(0,int((record.clock_out-record.clock_in).total_seconds()//60))
-            rule=AttendanceRule.objects.filter(company=request.user.company,is_default=True).first()
-            threshold=rule.overtime_after_minutes if rule else 540
-            record.overtime_minutes=max(0,record.worked_minutes-threshold)
-            action="clocked_out"
-        else:
-            return response.Response({"message":"Attendance already completed for today."},status=status.HTTP_400_BAD_REQUEST)
-        record.save()
-        return response.Response({"action":action,"record":AttendanceRecordSerializer(record).data})
+        if not employee:
+            return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
+
+        state=get_attendance_state(employee)
+        action=request.data.get("action") or state["next_action"]
+        location=request.data.get("location") or {}
+        source=request.data.get("source") or "web"
+
+        if state["rule"].location_required and not location:
+            return response.Response(
+                {"message":"Location is required for attendance punches."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            if action=="check_in":
+                session,next_state=start_session(employee,location=location,source=source)
+                action_name="clocked_in"
+            elif action=="check_out":
+                session,next_state=finish_session(employee,location=location,source=source)
+                action_name="clocked_out"
+            else:
+                return response.Response(
+                    {"message":state["reason"] or "No attendance action is currently available."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        except ValueError as exc:
+            return response.Response({"message":str(exc)},status=status.HTTP_400_BAD_REQUEST)
+
+        record=next_state["record"]
+        return response.Response({
+            "action":action_name,
+            "status":"CLOCKED_IN" if next_state["open_session"] else "CLOCKED_OUT",
+            "canCheckIn":next_state["can_check_in"],
+            "canCheckOut":next_state["can_check_out"],
+            "nextAction":next_state["next_action"],
+            "reason":next_state["reason"],
+            "attendanceMode":next_state["rule"].attendance_mode,
+            "autoCheckoutAt":next_state["auto_checkout_at"],
+            "sessionCount":len(next_state["sessions"]),
+            "session":AttendanceSessionSerializer(session).data,
+            "record":AttendanceRecordSerializer(record).data,
+        })
