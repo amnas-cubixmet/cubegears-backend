@@ -44,6 +44,7 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
 
 class OvertimeRequestSerializer(serializers.ModelSerializer):
     staffId = serializers.UUIDField(source="employee_id", read_only=True)
+    employeeCode = serializers.CharField(source="employee.employee_code", read_only=True)
     staffName = serializers.CharField(source="employee.name", read_only=True)
     overtimeHours = serializers.SerializerMethodField()
     payrollMonth = serializers.CharField(source="payroll_month", required=False, allow_blank=True)
