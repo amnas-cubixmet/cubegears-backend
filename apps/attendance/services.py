@@ -182,7 +182,10 @@ def get_attendance_state(employee, day=None):
         .first()
     )
     ensure_record_session(record)
-    sessions = list(record.sessions.all()) if record else []
+    sessions = (
+        list(AttendanceSession.objects.filter(attendance=record).order_by("session_number"))
+        if record else []
+    )
     open_session = next((session for session in sessions if session.clock_out is None), None)
 
     mode = rule.attendance_mode
