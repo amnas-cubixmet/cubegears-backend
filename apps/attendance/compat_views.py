@@ -252,7 +252,19 @@ class ManagerApprovalsView(APIView):
         for x in PunchCorrection.objects.filter(company=company,status="Pending").select_related("employee"):
             rows.append({"id":str(x.id),"type":"Punch Correction","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.attendance.date})
         for x in LeaveRequest.objects.filter(company=company,status="Pending").select_related("employee"):
-            rows.append({"id":str(x.id),"type":"Leave","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.start_date})
+            rows.append({
+                "id":str(x.id),
+                "type":"Leave",
+                "staffId":x.employee.employee_code,
+                "employeeId":str(x.employee_id),
+                "staffName":x.employee.name,
+                "status":x.status,
+                "reason":x.reason,
+                "date":x.start_date,
+                "endDate":x.end_date,
+                "leaveType":x.leave_type,
+                "halfDay":x.half_day,
+            })
         for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee"):
             rows.append({"id":str(x.id),"type":"Overtime","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.date,"minutes":x.minutes})
         return response.Response(rows)
@@ -297,19 +309,34 @@ class ManagerApprovalDetailView(APIView):
             elif isinstance(obj,LeaveRequest):
                 obj.reviewed_by=request.user; obj.reviewed_at=timezone.now()
             else:
-                obj.approved_by=request.user
+                obj.approved_by=request.user if next_status=="Approved" else None
+                obj.approved_at=timezone.now() if next_status=="Approved" else None
+                obj.rejection_reason=note if next_status=="Rejected" else ""
+                history=list(obj.audit_history or [])
+                history.insert(0,{
+                    "action":f"{next_status} Overtime",
+                    "actor":request.user.name,
+                    "timestamp":timezone.now().isoformat(),
+                    "note":note,
+                })
+                obj.audit_history=history
             obj.save()
             request_type=(
                 "Punch correction" if isinstance(obj,PunchCorrection)
                 else "Leave request" if isinstance(obj,LeaveRequest)
                 else "Overtime request"
             )
+            route=(
+                "/my-attendance/leave" if isinstance(obj,LeaveRequest)
+                else "/my-attendance/overtime" if isinstance(obj,OvertimeRequest)
+                else "/my-attendance/history"
+            )
             _notify_employee(
                 obj.employee,
                 f"{request_type} {obj.status.lower()}",
                 f"Your {request_type.lower()} has been {obj.status.lower()}.",
                 "attendance_request_decision",
-                {"requestId":str(obj.id),"status":obj.status,"route":"/my-attendance/calendar"},
+                {"requestId":str(obj.id),"status":obj.status,"route":route},
             )
             return response.Response({"id":str(obj.id),"status":obj.status})
         return response.Response({"message":"Approval not found."},status=404)
