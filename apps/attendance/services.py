@@ -8,14 +8,17 @@ from .models import AttendanceRecord, AttendanceRule, AttendanceSession
 
 def get_attendance_rule(company, branch=None):
     qs = AttendanceRule.objects.filter(company=company, is_default=True)
-    if branch:
-        branch_rule = qs.filter(branch=branch).first()
-        if branch_rule:
-            return branch_rule
 
-    rule = qs.filter(branch__isnull=True).first() or qs.first()
+    rule = qs.filter(branch__isnull=True).first()
     if rule:
         return rule
+
+    # Normalize legacy branch-scoped defaults into the company-wide rule.
+    legacy = qs.first()
+    if legacy:
+        legacy.branch = None
+        legacy.save(update_fields=["branch", "updated_at"])
+        return legacy
 
     return AttendanceRule.objects.create(
         company=company,
