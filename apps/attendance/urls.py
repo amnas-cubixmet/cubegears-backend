@@ -7,4 +7,8 @@ router.register("leave",LeaveRequestViewSet,basename="leave")
 router.register("overtime",OvertimeRequestViewSet,basename="overtime")
 router.register("holidays",HolidayViewSet,basename="holidays")
 router.register("rules",AttendanceRuleViewSet,basename="attendance-rules")
-urlpatterns=[path("toggle",ToggleAttendanceView.as_view(),name="attendance-toggle"),*router.urls]
+urlpatterns=[
+    path("status",AttendanceStatusView.as_view(),name="attendance-status"),
+    path("toggle",ToggleAttendanceView.as_view(),name="attendance-toggle"),
+    *router.urls,
+]
