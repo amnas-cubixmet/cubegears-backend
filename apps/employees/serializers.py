@@ -27,7 +27,30 @@ class SkillSerializer(serializers.ModelSerializer):
         return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
-    class Meta: model=EmployeeDocument; exclude=("company","branch")
+    staffId=serializers.UUIDField(source="employee_id",read_only=True)
+    staffName=serializers.CharField(source="employee.name",read_only=True)
+    designation=serializers.CharField(source="employee.designation",read_only=True)
+    name=serializers.CharField(source="title",read_only=True)
+    type=serializers.CharField(source="document_type",read_only=True)
+    fileUrl=serializers.URLField(source="file_url",read_only=True)
+    expiryDate=serializers.DateField(source="expiry_date",read_only=True)
+    uploadedDate=serializers.DateTimeField(source="created_at",read_only=True)
+    status=serializers.SerializerMethodField()
+
+    class Meta:
+        model=EmployeeDocument
+        exclude=("company","branch")
+
+    def get_status(self,obj):
+        if not obj.expiry_date:
+            return "Valid"
+        from django.utils import timezone
+        days=(obj.expiry_date-timezone.localdate()).days
+        if days < 0:
+            return "Expired"
+        if days <= 30:
+            return "Expiring Soon"
+        return "Valid"
 
 class EmployeeActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
