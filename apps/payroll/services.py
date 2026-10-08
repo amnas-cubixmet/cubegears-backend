@@ -2,7 +2,7 @@ from calendar import monthrange
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Q, Sum
+from django.db.models import F, Q, Sum
 from django.utils import timezone
 
 from apps.attendance.models import AttendanceRecord, LeaveRequest, LeaveType, OvertimeRequest
@@ -327,7 +327,9 @@ def generate_commissions(employee,plan,year,month,policy):
             eligible=Invoice.objects.filter(
                 company=employee.company,job=assignment.job,kind="invoice",
                 total__gt=0,balance__lte=0,
-            ).exclude(status__iexact="Cancelled").exists()
+            ).filter(paid__gte=F("total")).exclude(
+                status__in=["Cancelled","Draft"]
+            ).exists()
         else:
             eligible=assignment.job.status in {"Ready for Delivery","Delivered"}
         if not eligible or assignment.status not in {"Approved","Completed"}:
