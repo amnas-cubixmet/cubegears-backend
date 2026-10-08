@@ -30,7 +30,6 @@ MODEL_PERMISSION_PREFIX = {
     "employeeactivity": "staff",
     "team": "staff",
     "shift": "staff",
-    "skill": "staff",
     "attendancerecord": "attendance",
     "leaverequest": "attendance",
     "overtimerequest": "attendance",
