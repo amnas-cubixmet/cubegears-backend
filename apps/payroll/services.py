@@ -309,8 +309,9 @@ def generate_commissions(employee,plan,year,month,policy):
     ).filter(
         Q(completed_at__date__range=(start,end))|
         Q(job__delivered_at__date__range=(start,end))|
-        Q(job__updated_at__date__range=(start,end))
-    )
+        Q(job__updated_at__date__range=(start,end))|
+        Q(job__invoices__payments__date__range=(start,end))
+    ).distinct()
 
     auto_approve=bool(rules.get("autoApprove",False))
     generated=[]
@@ -346,25 +347,35 @@ def generate_commissions(employee,plan,year,month,policy):
             commission_type=EmployeeCompensationPlan.COMMISSION_PERCENTAGE
         if commission_type==EmployeeCompensationPlan.COMMISSION_NONE:
             continue
-        # Commission split belongs to the individual Job Card.
+        # Service-wise: approved timesheet revenue is already attributed to
+        # this mechanic. Applying a second global split would underpay them.
+        # Total-labour mode divides the Job Card's labour revenue by split.
         allocation=money(assignment.commission_allocation_percent)/Decimal("100")
-
-        if basis==EmployeeCompensationPlan.REVENUE_LABOUR:
-            base=money(assignment.eligible_labour_revenue or assignment.job.labour_total)
-        elif basis==EmployeeCompensationPlan.REVENUE_SERVICE:
-            base=money(assignment.eligible_service_revenue or assignment.job.labour_total)
+        verified=assignment.work_logs.filter(status="Approved").exists()
+        if basis_mode=="service_wise" and verified and basis in {
+            EmployeeCompensationPlan.REVENUE_LABOUR,
+            EmployeeCompensationPlan.REVENUE_SERVICE,
+            EmployeeCompensationPlan.REVENUE_CUSTOM,
+        }:
+            if basis==EmployeeCompensationPlan.REVENUE_SERVICE:
+                base=money(assignment.eligible_service_revenue)
+            else:
+                base=money(assignment.eligible_labour_revenue)
+            allocation=Decimal("1")
+        elif basis_mode=="total_labour" and basis in {
+            EmployeeCompensationPlan.REVENUE_LABOUR,
+            EmployeeCompensationPlan.REVENUE_SERVICE,
+        }:
+            base=money(assignment.job.labour_total)*allocation
         elif basis==EmployeeCompensationPlan.REVENUE_JOB_CARD:
             base=money(
                 assignment.job.estimate_total or
                 (assignment.job.labour_total+assignment.job.parts_total)
-            )
+            )*allocation
         else:
-            base=max(
-                money(assignment.eligible_labour_revenue),
-                money(assignment.eligible_service_revenue),
-            )
-
-        base=money(base*allocation)
+            base=money(
+                assignment.eligible_labour_revenue or assignment.job.labour_total
+            )*allocation
         minimum=money(rule.minimum_revenue if rule else 0)
         if base<minimum:
             continue
@@ -400,6 +411,13 @@ def generate_commissions(employee,plan,year,month,policy):
             },
         )
         if not created:
+            if obj.status in {"Approved","Paid"}:
+                # Approved and settled ledger entries never get silently
+                # recalculated after a Job Card or rate changes.
+                generated.append(obj)
+                continue
+            if obj.status=="Rejected":
+                obj.status="Pending"
             obj.plan=plan
             obj.assignment=assignment
             obj.job=assignment.job
@@ -411,7 +429,7 @@ def generate_commissions(employee,plan,year,month,policy):
             obj.amount=amount
             obj.metadata={**(obj.metadata or {}),"allocationPercent":float(allocation*100)}
             obj.save(update_fields=[
-                "plan","assignment","job","revenue_basis","eligible_base",
+                "status","plan","assignment","job","revenue_basis","eligible_base",
                 "commission_type","rate","fixed_amount","amount","metadata","updated_at",
             ])
         generated.append(obj)
