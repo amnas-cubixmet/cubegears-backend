@@ -70,6 +70,54 @@ class ShiftViewSet(CompanyScopedModelViewSet):
     queryset=Shift.objects.all()
     serializer_class=ShiftSerializer
     permission_prefix="staff"
+    action_permission_map={"assign": "staff.edit"}
+
+    @decorators.action(detail=True,methods=["post"],url_path="assign")
+    def assign(self,request,pk=None):
+        shift=self.get_object()
+        staff_ids=[str(value) for value in (request.data.get("staffIds") or [])]
+        selected=Employee.objects.filter(
+            company=request.user.company,
+            id__in=staff_ids,
+        )
+
+        removed=Employee.objects.filter(
+            company=request.user.company,
+            shift=shift,
+        ).exclude(id__in=staff_ids)
+
+        for employee in removed:
+            old_label=employee.shift_label or _shift_label(shift)
+            employee.shift=None
+            employee.shift_label=""
+            employee.save(update_fields=["shift","shift_label","updated_at"])
+            _record_activity(
+                employee,
+                "Shift Removed",
+                old_label,
+                request.user,
+                {"shiftId":str(shift.id)},
+            )
+
+        for employee in selected:
+            old_label=employee.shift_label or (
+                _shift_label(employee.shift) if employee.shift else "Unassigned"
+            )
+            employee.shift=shift
+            employee.shift_label=_shift_label(shift)
+            employee.save(update_fields=["shift","shift_label","updated_at"])
+            _record_activity(
+                employee,
+                "Shift Assigned",
+                f"{old_label} → {employee.shift_label}",
+                request.user,
+                {"shiftId":str(shift.id)},
+            )
+
+        return response.Response({
+            "shift":self.get_serializer(shift).data,
+            "assignedStaffIds":[str(employee.id) for employee in selected],
+        })
 
 
 class SkillViewSet(CompanyScopedModelViewSet):
@@ -81,20 +129,46 @@ class SkillViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["post"],url_path="assign")
     def assign(self,request,pk=None):
         skill=self.get_object()
-        staff_ids=request.data.get("staffIds") or []
-        employees=Employee.objects.filter(company=request.user.company,id__in=staff_ids)
+        staff_ids=[str(value) for value in (request.data.get("staffIds") or [])]
+        replace=bool(request.data.get("replace"))
+        employees=Employee.objects.filter(
+            company=request.user.company,
+            id__in=staff_ids,
+        )
+
+        if replace:
+            removed=Employee.objects.filter(
+                company=request.user.company,
+                skills=skill,
+            ).exclude(id__in=staff_ids)
+            for employee in removed:
+                employee.skills.remove(skill)
+                _record_activity(
+                    employee,
+                    "Skill Removed",
+                    skill.name,
+                    request.user,
+                    {"skillId":str(skill.id)},
+                )
+
         for employee in employees:
-            employee.skills.add(skill)
-            _record_activity(
-                employee,
-                "Skill Assigned",
-                skill.name,
-                request.user,
-                {"skillId":str(skill.id)},
-            )
+            if not employee.skills.filter(pk=skill.pk).exists():
+                employee.skills.add(skill)
+                _record_activity(
+                    employee,
+                    "Skill Assigned",
+                    skill.name,
+                    request.user,
+                    {"skillId":str(skill.id)},
+                )
+
+        assigned=Employee.objects.filter(
+            company=request.user.company,
+            skills=skill,
+        )
         return response.Response({
-            "skill":SkillSerializer(skill).data,
-            "assignedStaffIds":[str(x.id) for x in employees],
+            "skill":self.get_serializer(skill).data,
+            "assignedStaffIds":[str(x.id) for x in assigned],
         })
 
 
