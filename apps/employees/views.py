@@ -63,12 +63,20 @@ class TeamViewSet(CompanyScopedModelViewSet):
     serializer_class=TeamSerializer
     permission_prefix="staff"
 
+    def perform_create(self,serializer):
+        branch=serializer.validated_data.get("branch",getattr(self.request.user,"branch",None))
+        serializer.save(company=self.request.user.company,branch=branch)
+
 
 class ShiftViewSet(CompanyScopedModelViewSet):
     queryset=Shift.objects.all()
     serializer_class=ShiftSerializer
     permission_prefix="staff"
     action_permission_map={"assign": "staff.edit"}
+
+    def perform_create(self,serializer):
+        branch=serializer.validated_data.get("branch",getattr(self.request.user,"branch",None))
+        serializer.save(company=self.request.user.company,branch=branch)
 
     @decorators.action(detail=True,methods=["post"],url_path="assign")
     def assign(self,request,pk=None):
@@ -169,6 +177,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         email=serializer.validated_data.get("email") or ""
         name=serializer.validated_data.get("name") or code
         role_name=serializer.validated_data.get("role_name") or ""
+        branch=serializer.validated_data.get("branch",self.request.user.branch)
         team=serializer.validated_data.get("team")
         shift=serializer.validated_data.get("shift")
 
@@ -184,14 +193,14 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                     password=None,
                     name=name,
                     company=company,
-                    branch=self.request.user.branch,
+                    branch=branch,
                     role=self._resolve_role(role_name),
                     is_active=True,
                 )
 
         obj=serializer.save(
             company=company,
-            branch=self.request.user.branch,
+            branch=branch,
             employee_code=code,
             user=user,
             department_name=serializer.validated_data.get("department_name") or (team.name if team else ""),
