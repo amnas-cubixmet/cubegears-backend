@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -108,7 +110,7 @@ class ForgotPasswordView(APIView):
         if user:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
+            reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}&email={quote(user.email)}"
             queue_email(
                 subject="Reset your CubixGear password",
                 message=f"Open this link to reset your password: {reset_url}",
@@ -256,7 +258,7 @@ class PublicWorkshopSignupView(APIView):
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        setup_url = f"{settings.FRONTEND_URL}/setup-password?uid={uid}&token={token}"
+        setup_url = f"{settings.FRONTEND_URL}/setup-password?uid={uid}&token={token}&email={quote(user.email)}"
         queue_email(
             subject="Set up your CubixGear password",
             message=(
