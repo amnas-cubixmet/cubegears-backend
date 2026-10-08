@@ -254,7 +254,7 @@ def sync_job_assignments(employee,start,end):
             "Approved" if job.status in {Job.STATUS_QC,Job.STATUS_READY} else "Assigned"
         )
         completed_at=job.delivered_at if job.status==Job.STATUS_DELIVERED else None
-        JobCardEmployeeAssignment.objects.update_or_create(
+        assignment,created=JobCardEmployeeAssignment.objects.get_or_create(
             company=employee.company,
             job=job,
             employee=employee,
@@ -269,6 +269,16 @@ def sync_job_assignments(employee,start,end):
                 "metadata":{"source":"job.technician"},
             },
         )
+        # Never overwrite a manual Job Card allocation or its rate override.
+        if not created and (assignment.metadata or {}).get("source")=="job.technician":
+            assignment.completed_at=completed_at
+            assignment.eligible_labour_revenue=money(job.labour_total)
+            assignment.eligible_service_revenue=money(job.labour_total)
+            assignment.status=status
+            assignment.save(update_fields=[
+                "completed_at","eligible_labour_revenue",
+                "eligible_service_revenue","status","updated_at",
+            ])
 
 
 def _commission_rule(plan,employee,as_of):
@@ -285,14 +295,8 @@ def _commission_rule(plan,employee,as_of):
 
 
 def generate_commissions(employee,plan,year,month,policy):
-    if plan.payment_type not in {
-        PayrollPolicy.PAYMENT_COMMISSION,
-        PayrollPolicy.PAYMENT_MONTHLY_COMMISSION,
-        PayrollPolicy.PAYMENT_DAILY_COMMISSION,
-        PayrollPolicy.PAYMENT_HOURLY_COMMISSION,
-    } and plan.commission_type==EmployeeCompensationPlan.COMMISSION_NONE:
-        return []
-
+    # A specific job may authorize commission even when the employee's
+    # default payment type is wage-only. Without an override there is none.
     start,end=month_bounds(year,month)
     sync_job_assignments(employee,start,end)
 
@@ -315,9 +319,16 @@ def generate_commissions(employee,plan,year,month,policy):
         basis=rule.revenue_basis if rule else plan.eligible_revenue_basis
         percentage=money(rule.percentage if rule else plan.commission_percentage)
         fixed_amount=money(rule.fixed_amount if rule else plan.commission_fixed_amount)
-        allocation=money(
-            rule.allocation_percent if rule else assignment.commission_allocation_percent
-        )/Decimal("100")
+        override=(assignment.metadata or {}).get("commissionRateOverride")
+        if override is not None and override!="":
+            # Validated in the assignment serializer; a per-job percentage
+            # overrides only the rate, never the employee's base wage.
+            percentage=money(override)
+            commission_type=EmployeeCompensationPlan.COMMISSION_PERCENTAGE
+        if commission_type==EmployeeCompensationPlan.COMMISSION_NONE:
+            continue
+        # Commission split belongs to the individual Job Card.
+        allocation=money(assignment.commission_allocation_percent)/Decimal("100")
 
         if basis==EmployeeCompensationPlan.REVENUE_LABOUR:
             base=money(assignment.eligible_labour_revenue or assignment.job.labour_total)
