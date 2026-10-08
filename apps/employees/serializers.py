@@ -6,10 +6,25 @@ class TeamSerializer(serializers.ModelSerializer):
     class Meta: model=Team; exclude=("company","branch")
 
 class ShiftSerializer(serializers.ModelSerializer):
-    class Meta: model=Shift; exclude=("company","branch")
+    assignedStaffIds=serializers.SerializerMethodField()
+
+    class Meta:
+        model=Shift
+        exclude=("company","branch")
+
+    def get_assignedStaffIds(self,obj):
+        return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
+
 
 class SkillSerializer(serializers.ModelSerializer):
-    class Meta: model=Skill; exclude=("company","branch")
+    assignedStaffIds=serializers.SerializerMethodField()
+
+    class Meta:
+        model=Skill
+        exclude=("company","branch")
+
+    def get_assignedStaffIds(self,obj):
+        return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     class Meta: model=EmployeeDocument; exclude=("company","branch")
