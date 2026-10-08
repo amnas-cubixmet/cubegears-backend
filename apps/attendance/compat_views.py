@@ -6,6 +6,7 @@ from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.accounts.models import User
 from apps.notifications.models import Notification
 from apps.employees.models import Employee, Shift, Team
+from apps.employees.services import resolve_employee_for_user
 from rest_framework.views import APIView
 
 from .models import AttendanceRecord,AttendanceSession,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
@@ -13,7 +14,7 @@ from .serializers import AttendanceRecordSerializer,AttendanceSessionSerializer,
 from .services import close_session, ensure_record_session, get_attendance_rule, is_configured_weekly_off, recalculate_record
 
 def _employee_for_user(user):
-    return getattr(user,"employee_profile",None)
+    return resolve_employee_for_user(user)
 
 
 def _notify_attendance_managers(company,title,message,notification_type,data=None):
