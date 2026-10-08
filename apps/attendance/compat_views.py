@@ -305,6 +305,7 @@ class ManagerApprovalsView(APIView):
         for x in PunchCorrection.objects.filter(company=company,status="Pending").select_related("employee"):
             rows.append({"id":str(x.id),"type":"Punch Correction","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.attendance.date})
         for x in LeaveRequest.objects.filter(company=company,status="Pending").select_related("employee"):
+            total_days=0.5 if x.half_day else max(1,(x.end_date-x.start_date).days+1)
             rows.append({
                 "id":str(x.id),
                 "type":"Leave",
@@ -314,9 +315,12 @@ class ManagerApprovalsView(APIView):
                 "status":x.status,
                 "reason":x.reason,
                 "date":x.start_date,
+                "startDate":x.start_date,
                 "endDate":x.end_date,
+                "totalDays":total_days,
                 "leaveType":x.leave_type,
                 "halfDay":x.half_day,
+                "managerNote":x.manager_note,
             })
         for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee"):
             rows.append({"id":str(x.id),"type":"Overtime","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.date,"minutes":x.minutes})
@@ -360,7 +364,9 @@ class ManagerApprovalDetailView(APIView):
                         att.status="Present"
                         att.save()
             elif isinstance(obj,LeaveRequest):
-                obj.reviewed_by=request.user; obj.reviewed_at=timezone.now()
+                obj.reviewed_by=request.user
+                obj.reviewed_at=timezone.now()
+                obj.manager_note=note
             else:
                 obj.approved_by=request.user if next_status=="Approved" else None
                 obj.approved_at=timezone.now() if next_status=="Approved" else None
