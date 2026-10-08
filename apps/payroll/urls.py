@@ -1,5 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .work_session_views import JobWorkSessionViewSet
+from .job_timer_assignments import JobTimerAssignmentsViewSet
 
 from .views import (
     CommissionRuleViewSet,
@@ -28,6 +29,7 @@ router.register("commission-rules",CommissionRuleViewSet,basename="commission-ru
 router.register("job-assignments",JobCardEmployeeAssignmentViewSet,basename="job-assignments")
 router.register("work-logs",EmployeeWorkLogViewSet,basename="work-logs")
 router.register("work-sessions",JobWorkSessionViewSet,basename="work-sessions")
+router.register("job-timer-assignments",JobTimerAssignmentsViewSet,basename="job-timer-assignments")
 router.register("commissions",EmployeeCommissionViewSet,basename="employee-commissions")
 router.register("salary-setup",SalaryStructureViewSet,basename="salary-setup")
 router.register("advances",SalaryAdvanceViewSet,basename="salary-advances")
