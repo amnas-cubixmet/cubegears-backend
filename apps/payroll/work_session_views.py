@@ -165,3 +165,110 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         self._record(obj, "Submitted for review", request.user)
         obj.save()
         return response.Response(self.get_serializer(obj).data)
+
+
+    @decorators.action(detail=True, methods=["post"])
+    @transaction.atomic
+    def correct(self, request, pk=None):
+        obj = self.get_object()
+        obj = JobWorkSession.objects.select_for_update().get(pk=obj.pk)
+        if obj.status not in (JobWorkSession.PENDING, JobWorkSession.REJECTED):
+            raise ValidationError({"timer": "Only unapproved work may be corrected."})
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError({"reason": "Supervisor correction reason is required."})
+        try:
+            minutes = int(request.data.get("minutes"))
+        except (TypeError, ValueError):
+            raise ValidationError({"minutes": "Enter corrected payable work minutes."})
+        if minutes < 1 or minutes > 1440:
+            raise ValidationError({"minutes": "Minutes must be between 1 and 1440."})
+        if "labourCharge" in request.data:
+            obj.labour_charge = valid_amount(request.data.get("labourCharge"))
+        previous = obj.approved_minutes or max(1, (obj.elapsed_seconds + 59) // 60)
+        obj.approved_minutes = minutes
+        obj.correction_reason = reason
+        obj.status = JobWorkSession.PENDING
+        self._record(obj, "Corrected", request.user, {"fromMinutes": previous, "toMinutes": minutes, "reason": reason})
+        obj.save()
+        return response.Response(self.get_serializer(obj).data)
+
+    @decorators.action(detail=True, methods=["post"])
+    @transaction.atomic
+    def reject(self, request, pk=None):
+        obj = self.get_object()
+        obj = JobWorkSession.objects.select_for_update().get(pk=obj.pk)
+        if obj.status != JobWorkSession.PENDING:
+            raise ValidationError({"timer": "Only pending work can be rejected."})
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            raise ValidationError({"reason": "A rejection reason is required."})
+        obj.status = JobWorkSession.REJECTED
+        obj.reviewed_at = timezone.now()
+        obj.reviewed_by = request.user
+        self._record(obj, "Rejected", request.user, {"reason": reason})
+        obj.save()
+        return response.Response(self.get_serializer(obj).data)
+
+    @decorators.action(detail=True, methods=["post"])
+    @transaction.atomic
+    def approve(self, request, pk=None):
+        obj = self.get_object()
+        obj = JobWorkSession.objects.select_for_update().get(pk=obj.pk)
+        if obj.status == JobWorkSession.APPROVED:
+            return response.Response(self.get_serializer(obj).data)
+        if obj.status != JobWorkSession.PENDING:
+            raise ValidationError({"timer": "Submit the completed work before approval."})
+        if obj.employee.user_id == request.user.id and not request.user.is_superuser:
+            raise ValidationError({"approval": "A mechanic cannot approve their own work."})
+
+        # Validate service-wise revenue; it is not added again to the invoice.
+        # A job with no labour quote may still approve hours with zero charge.
+        approved_other = JobWorkSession.objects.filter(
+            company=obj.company, job=obj.job, status=JobWorkSession.APPROVED
+        ).exclude(pk=obj.pk).aggregate(value=Sum("labour_charge"))["value"] or Decimal("0")
+        if obj.job.labour_total > 0 and approved_other + obj.labour_charge > obj.job.labour_total:
+            raise ValidationError({
+                "labourCharge": "Approved mechanic labour allocation exceeds the Job Card's labour charge."
+            })
+        minutes = obj.approved_minutes or max(1, (obj.elapsed_seconds + 59) // 60)
+        log = obj.work_log
+        if log is None:
+            log = EmployeeWorkLog.objects.create(
+                company=obj.company, branch=obj.branch,
+                assignment=obj.assignment, employee=obj.employee, job=obj.job,
+                work_date=timezone.localtime(obj.started_at).date(),
+                minutes=minutes, labour_revenue=obj.labour_charge,
+                service_revenue=obj.labour_charge, status="Approved",
+                approved_by=request.user, approved_at=timezone.now(),
+                notes=f"Verified timer: {obj.service_name} ({obj.id})",
+            )
+            obj.work_log = log
+        else:
+            log.minutes = minutes
+            log.labour_revenue = obj.labour_charge
+            log.service_revenue = obj.labour_charge
+            log.status = "Approved"
+            log.approved_by = request.user
+            log.approved_at = timezone.now()
+            log.save()
+
+        totals = obj.assignment.work_logs.filter(status="Approved").aggregate(
+            minutes=Sum("minutes"), labour=Sum("labour_revenue"),
+            service=Sum("service_revenue"),
+        )
+        assignment = obj.assignment
+        assignment.approved_work_minutes = totals["minutes"] or 0
+        assignment.eligible_labour_revenue = totals["labour"] or Decimal("0")
+        assignment.eligible_service_revenue = totals["service"] or Decimal("0")
+        assignment.status = "Approved"
+        assignment.save(update_fields=[
+            "approved_work_minutes", "eligible_labour_revenue",
+            "eligible_service_revenue", "status", "updated_at",
+        ])
+        obj.status = JobWorkSession.APPROVED
+        obj.reviewed_at = timezone.now()
+        obj.reviewed_by = request.user
+        self._record(obj, "Approved", request.user, {"minutes": minutes})
+        obj.save()
+        return response.Response(self.get_serializer(obj).data)
