@@ -393,6 +393,19 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
         "submit":"payroll.edit",
     }
 
+    def get_queryset(self):
+        qs=super().get_queryset()
+        month=self.request.query_params.get("month")
+        year=self.request.query_params.get("year")
+        branch_id=self.request.query_params.get("branchId")
+        if month and str(month).isdigit():
+            qs=qs.filter(month=int(month))
+        if year and str(year).isdigit():
+            qs=qs.filter(year=int(year))
+        if branch_id and branch_id not in {"All","all"}:
+            qs=qs.filter(branch_id=branch_id)
+        return qs
+
     def perform_create(self,serializer):
         branch=serializer.validated_data.get("branch",getattr(self.request.user,"branch",None))
         run=serializer.save(company=self.request.user.company,branch=branch)
