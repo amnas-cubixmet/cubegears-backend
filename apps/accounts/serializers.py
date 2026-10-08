@@ -30,12 +30,26 @@ class UserSerializer(serializers.ModelSerializer):
     company = CompanyMiniSerializer(read_only=True)
     branch = BranchMiniSerializer(read_only=True)
     role = RoleMiniSerializer(read_only=True)
+    employeeProfileId = serializers.SerializerMethodField()
+    employeeDisplayNo = serializers.SerializerMethodField()
+
+    def get_employeeProfileId(self, obj):
+        employee = getattr(obj, "employee_profile", None)
+        return str(employee.id) if employee else None
+
+    def get_employeeDisplayNo(self, obj):
+        employee = getattr(obj, "employee_profile", None)
+        if not employee:
+            return None
+        digits = "".join(ch for ch in str(employee.employee_code or "") if ch.isdigit())
+        return f"Employee {int(digits)}" if digits else "Employee"
 
     class Meta:
         model = User
         fields = [
             "id", "name", "email", "phone", "avatar",
             "company", "branch", "role",
+            "employeeProfileId", "employeeDisplayNo",
             "is_staff", "is_superuser", "email_verified",
             "created_at",
         ]
