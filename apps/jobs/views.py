@@ -31,6 +31,21 @@ class JobViewSet(CompanyScopedModelViewSet):
     def get_queryset(self):
         qs=super().get_queryset(); st=self.request.query_params.get("status")
         return qs.filter(status=st) if st else qs
+    def _guard_active_timers(self,job,next_status):
+        if next_status in {"QC","Ready for Delivery","Delivered"}:
+            from apps.payroll.models import JobWorkSession
+            if JobWorkSession.objects.filter(
+                company=job.company,job=job,
+                status__in=[JobWorkSession.RUNNING,JobWorkSession.PAUSED],
+            ).exists():
+                raise ValidationError({
+                    "status":"Pause and complete all active mechanic timers before QC or delivery."
+                })
+
+    def perform_update(self,serializer):
+        self._guard_active_timers(self.get_object(),serializer.validated_data.get("status"))
+        serializer.save()
+
     def perform_create(self,serializer):
         company=self.request.user.company
         customer=serializer.validated_data.get("customer")
