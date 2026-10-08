@@ -23,6 +23,8 @@ class JobSerializer(serializers.ModelSerializer):
     assignedEmployeeId=serializers.SerializerMethodField()
     assignedEmployeeName=serializers.CharField(source="technician.name",read_only=True)
     technicianName=serializers.CharField(source="technician.name",read_only=True)
+    customerRating=serializers.IntegerField(source="customer_rating",required=False,allow_null=True,min_value=1,max_value=5)
+    customerFeedback=serializers.CharField(source="customer_feedback",required=False,allow_blank=True)
     createdDate=serializers.DateTimeField(source="created_at",read_only=True)
     parts=JobPartSerializer(many=True,read_only=True)
     photos=JobPhotoSerializer(many=True,read_only=True)
