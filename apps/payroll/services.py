@@ -73,7 +73,6 @@ def get_compensation_plan(employee,as_of=None):
     return EmployeeCompensationPlan.objects.filter(
         company=employee.company,
         employee=employee,
-        is_active=True,
         approval_status__iexact="Approved",
         effective_from__lte=as_of,
     ).filter(
