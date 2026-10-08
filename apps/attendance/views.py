@@ -216,6 +216,10 @@ class AttendanceStatusView(APIView):
                 "employeeCode":employee.employee_code,
                 "name":employee.name,
                 "shiftName":employee_shift,
+                "joiningDate":(
+                    employee.joining_date
+                    or timezone.localtime(employee.created_at).date()
+                ),
             },
             "status":"CLOCKED_IN" if state["open_session"] else "CLOCKED_OUT",
             "canCheckIn":state["can_check_in"],
