@@ -27,6 +27,7 @@ MODEL_PERMISSION_PREFIX = {
     "expense": "expenses",
     "employee": "staff",
     "employeedocument": "staff",
+    "employeeactivity": "staff",
     "team": "staff",
     "shift": "staff",
     "skill": "staff",
