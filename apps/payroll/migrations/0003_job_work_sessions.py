@@ -23,6 +23,7 @@ class Migration(migrations.Migration):
                 ("elapsed_seconds", models.PositiveIntegerField(default=0)),
                 ("approved_minutes", models.PositiveIntegerField(null=True, blank=True)),
                 ("correction_reason", models.TextField(blank=True)),
+                ("reviewed_at", models.DateTimeField(null=True, blank=True)),
                 ("history", models.JSONField(default=list, blank=True)),
                 ("company", models.ForeignKey(to="companies.company", on_delete=django.db.models.deletion.CASCADE)),
                 ("branch", models.ForeignKey(to="branches.branch", on_delete=django.db.models.deletion.SET_NULL, null=True, blank=True)),
