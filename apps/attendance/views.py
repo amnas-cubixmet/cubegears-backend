@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 import calendar
 from datetime import datetime
 from django.utils import timezone
@@ -85,20 +86,63 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["post"])
     def approve(self,request,pk=None):
         obj=self.get_object()
-        obj.status="Approved"; obj.approved_by=request.user; obj.approved_at=timezone.now()
-        if request.data.get("rate") is not None: obj.rate=request.data["rate"]
-        if request.data.get("amount") is not None: obj.amount=request.data["amount"]
-        history=list(obj.audit_history or []); history.insert(0,{"action":"Approved Overtime","actor":request.user.name,"timestamp":timezone.now().isoformat(),"note":request.data.get("managerNote") or ""}); obj.audit_history=history
-        obj.save()
+
+        raw_rate=request.data.get("rate")
+        if raw_rate in (None,""):
+            from apps.payroll.models import SalaryStructure
+            structure=SalaryStructure.objects.filter(employee=obj.employee).first()
+            raw_rate=(structure.overtime_rate if structure else obj.rate)
+
+        try:
+            rate=Decimal(str(raw_rate or 0))
+        except (InvalidOperation,TypeError,ValueError):
+            return response.Response({"message":"Enter a valid overtime rate."},status=400)
+
+        if rate<=0:
+            return response.Response(
+                {"message":"Overtime rate is required before approval."},
+                status=400,
+            )
+
+        hours=Decimal(obj.minutes)/Decimal("60")
+        amount=(hours*rate).quantize(Decimal("0.01"))
+
+        obj.status="Approved"
+        obj.approved_by=request.user
+        obj.approved_at=timezone.now()
+        obj.rate=rate
+        obj.amount=amount
+
+        history=list(obj.audit_history or [])
+        history.insert(0,{
+            "action":"Approved Overtime",
+            "actor":request.user.name,
+            "timestamp":timezone.now().isoformat(),
+            "note":request.data.get("managerNote") or "",
+            "rate":float(rate),
+            "amount":float(amount),
+        })
+        obj.audit_history=history
+        obj.save(update_fields=[
+            "status","approved_by","approved_at","rate","amount",
+            "audit_history","updated_at",
+        ])
+
         if obj.employee.user_id:
             Notification.objects.create(
                 company=obj.company,
                 branch=obj.branch,
                 user=obj.employee.user,
                 title="Overtime request approved",
-                message=f"Your overtime request for {obj.date} was approved.",
+                message=f"Your overtime request for {obj.date} was approved for ₹{amount}.",
                 notification_type="attendance_request_decision",
-                data={"requestId":str(obj.id),"status":"Approved","route":"/my-attendance/overtime"},
+                data={
+                    "requestId":str(obj.id),
+                    "status":"Approved",
+                    "rate":float(rate),
+                    "amount":float(amount),
+                    "route":"/my-attendance/overtime",
+                },
             )
         return response.Response(self.get_serializer(obj).data)
 
