@@ -11,7 +11,6 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import (
     Team,
     Shift,
-    Skill,
     Employee,
     EmployeeDocument,
     EmployeeActivity,
@@ -19,7 +18,6 @@ from .models import (
 from .serializers import (
     TeamSerializer,
     ShiftSerializer,
-    SkillSerializer,
     EmployeeSerializer,
     EmployeeDocumentSerializer,
     EmployeeActivitySerializer,
@@ -120,60 +118,8 @@ class ShiftViewSet(CompanyScopedModelViewSet):
         })
 
 
-class SkillViewSet(CompanyScopedModelViewSet):
-    queryset=Skill.objects.all()
-    serializer_class=SkillSerializer
-    permission_prefix="staff"
-    action_permission_map={"assign": "staff.edit"}
-
-    @decorators.action(detail=True,methods=["post"],url_path="assign")
-    def assign(self,request,pk=None):
-        skill=self.get_object()
-        staff_ids=[str(value) for value in (request.data.get("staffIds") or [])]
-        replace=bool(request.data.get("replace"))
-        employees=Employee.objects.filter(
-            company=request.user.company,
-            id__in=staff_ids,
-        )
-
-        if replace:
-            removed=Employee.objects.filter(
-                company=request.user.company,
-                skills=skill,
-            ).exclude(id__in=staff_ids)
-            for employee in removed:
-                employee.skills.remove(skill)
-                _record_activity(
-                    employee,
-                    "Skill Removed",
-                    skill.name,
-                    request.user,
-                    {"skillId":str(skill.id)},
-                )
-
-        for employee in employees:
-            if not employee.skills.filter(pk=skill.pk).exists():
-                employee.skills.add(skill)
-                _record_activity(
-                    employee,
-                    "Skill Assigned",
-                    skill.name,
-                    request.user,
-                    {"skillId":str(skill.id)},
-                )
-
-        assigned=Employee.objects.filter(
-            company=request.user.company,
-            skills=skill,
-        )
-        return response.Response({
-            "skill":self.get_serializer(skill).data,
-            "assignedStaffIds":[str(x.id) for x in assigned],
-        })
-
-
 class EmployeeViewSet(CompanyScopedModelViewSet):
-    queryset=Employee.objects.select_related("team","shift","user").prefetch_related("skills").all()
+    queryset=Employee.objects.select_related("team","shift","user").all()
     serializer_class=EmployeeSerializer
     permission_prefix="staff"
     action_permission_map={
