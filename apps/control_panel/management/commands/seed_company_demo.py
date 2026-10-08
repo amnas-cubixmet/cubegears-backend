@@ -6,7 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import User
-from apps.attendance.models import AttendanceRecord
+from apps.attendance.models import AttendanceRecord, AttendanceSession
 from apps.customers.models import Customer
 from apps.employees.models import Employee
 from apps.expenses.models import Expense
@@ -58,7 +58,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--email",
-            default="micew@mailinator.com",
+            default="workshop@cubixgear.com",
             help="Existing CubixGear account email whose company should receive demo data.",
         )
 
@@ -483,7 +483,7 @@ class Command(BaseCommand):
             clock_in = timezone.make_aware(datetime.combine(day, time(9, 5 + (days_ago % 4) * 3)))
             clock_out = None if days_ago == 0 else timezone.make_aware(datetime.combine(day, time(18, 5)))
             worked = 0 if not clock_out else int((clock_out - clock_in).total_seconds() // 60)
-            AttendanceRecord.objects.update_or_create(
+            attendance_record, _ = AttendanceRecord.objects.update_or_create(
                 employee=owner_employee,
                 date=day,
                 defaults={
@@ -499,18 +499,52 @@ class Command(BaseCommand):
                     "notes": "Demo attendance",
                 },
             )
+            AttendanceSession.objects.update_or_create(
+                attendance=attendance_record,
+                session_number=1,
+                defaults={
+                    "company": company,
+                    "branch": branch,
+                    "clock_in": clock_in,
+                    "clock_out": clock_out,
+                    "worked_minutes": worked,
+                    "auto_closed": False,
+                    "source": "demo_seed",
+                    "clock_in_location": {"label": "Main Workshop"},
+                    "clock_out_location": {"label": "Main Workshop"} if clock_out else {},
+                    "note": "Demo attendance session",
+                },
+            )
 
         for index, (user, employee) in enumerate(staff_users):
-            AttendanceRecord.objects.update_or_create(
+            staff_clock_in = aware_today_at(8, 55 + index * 5)
+            staff_attendance, _ = AttendanceRecord.objects.update_or_create(
                 employee=employee,
                 date=today,
                 defaults={
                     "company": company,
                     "branch": branch,
-                    "clock_in": aware_today_at(8, 55 + index * 5),
+                    "clock_in": staff_clock_in,
+                    "clock_out": None,
                     "worked_minutes": 0,
                     "status": "Present",
                     "location": {"label": "Main Workshop"},
+                },
+            )
+            AttendanceSession.objects.update_or_create(
+                attendance=staff_attendance,
+                session_number=1,
+                defaults={
+                    "company": company,
+                    "branch": branch,
+                    "clock_in": staff_clock_in,
+                    "clock_out": None,
+                    "worked_minutes": 0,
+                    "auto_closed": False,
+                    "source": "demo_seed",
+                    "clock_in_location": {"label": "Main Workshop"},
+                    "clock_out_location": {},
+                    "note": "Demo active attendance session",
                 },
             )
 
