@@ -13,6 +13,7 @@ from .models import (
     CompensationComponent,
     EmployeeCommission,
     EmployeeCompensationPlan,
+    EmployeeWorkLog,
     Incentive,
     JobCardEmployeeAssignment,
     PayrollAdjustment,
@@ -477,6 +478,13 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
     payment_type=plan.payment_type
     payable_days=attendance["payableDays"]
     payable_hours=attendance["payableHours"]
+    hourly_source=(policy.commission_rules or {}).get("hourlyWageSource","attendance")
+    if hourly_source=="approved_job_hours":
+        approved_minutes=EmployeeWorkLog.objects.filter(
+            company=employee.company,employee=employee,status="Approved",
+            work_date__range=(start,end),
+        ).aggregate(value=Sum("minutes"))["value"] or 0
+        payable_hours=(Decimal(approved_minutes)/Decimal("60")).quantize(Decimal("0.01"))
     unpaid_leave=attendance["unpaidLeaveDays"]
 
     base_pay=Decimal("0")
@@ -654,6 +662,7 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
             "approvedOvertimeMinutes":overtime["minutes"],
             "approvedCommission":float(approved_commission),
             "approvedIncentives":float(legacy_incentives),
+            "hourlyWageSource":hourly_source,
         },
     }
 
