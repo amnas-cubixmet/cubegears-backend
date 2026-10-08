@@ -406,3 +406,6 @@ class Incentive(CompanyOwnedModel):
 
     class Meta:
         ordering=["-completion_date","-created_at"]
+
+# Register timed Job Card work sessions with the Payroll app.
+from .timer_models import JobWorkSession  # noqa: E402,F401
