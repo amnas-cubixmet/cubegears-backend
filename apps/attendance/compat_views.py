@@ -17,6 +17,54 @@ def _employee_for_user(user):
     return resolve_employee_for_user(user)
 
 
+def _leave_days(start_date,end_date,half_day=False):
+    if half_day:
+        return 0.5
+    return max(1,(end_date-start_date).days+1)
+
+
+def _leave_period_bounds(leave_type,reference_date):
+    if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY:
+        start=reference_date.replace(day=1)
+        next_month=(start.replace(day=28)+timedelta(days=4)).replace(day=1)
+        return start,next_month-timedelta(days=1)
+
+    return reference_date.replace(month=1,day=1),reference_date.replace(month=12,day=31)
+
+
+def _leave_period_allocation(leave_type):
+    if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY:
+        return float(leave_type.monthly_allocation or 0)
+    if leave_type.allocation_method==LeaveType.ALLOCATION_MANUAL:
+        return float(leave_type.annual_allocation or 0)
+    return float(leave_type.annual_allocation or 0)
+
+
+def _leave_usage(employee,leave_type,reference_date):
+    period_start,period_end=_leave_period_bounds(leave_type,reference_date)
+    approved=0.0
+    pending=0.0
+
+    rows=LeaveRequest.objects.filter(
+        employee=employee,
+        leave_type=leave_type.name,
+        status__in=["Approved","Pending"],
+        start_date__lte=period_end,
+        end_date__gte=period_start,
+    )
+
+    for row in rows:
+        overlap_start=max(row.start_date,period_start)
+        overlap_end=min(row.end_date,period_end)
+        days=0.5 if row.half_day else _leave_days(overlap_start,overlap_end)
+        if row.status=="Approved":
+            approved+=days
+        else:
+            pending+=days
+
+    return approved,pending
+
+
 def _notify_attendance_managers(company,title,message,notification_type,data=None):
     users=User.objects.filter(company=company,is_active=True).select_related("role")
     notifications=[]
@@ -211,70 +259,155 @@ class LeaveBalancesView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.self"
 
-    @staticmethod
-    def _days(request_obj):
-        if request_obj.half_day:
-            return 0.5
-        delta=(request_obj.end_date-request_obj.start_date).days+1
-        return max(1,delta)
-
     def get(self,request):
         employee=_employee_for_user(request.user)
-        types=LeaveType.objects.filter(company=request.user.company,status="Active")
+        if not employee:
+            return response.Response([])
+
+        today=timezone.localdate()
+        types=LeaveType.objects.filter(
+            company=request.user.company,
+            status="Active",
+        ).order_by("name")
+
         result=[]
+        for leave_type in types:
+            allocated=_leave_period_allocation(leave_type)
 
-        for lt in types:
-            approved=0.0
-            pending=0.0
+            # Do not expose inactive/unallocated policies on the employee leave screen.
+            if allocated<=0:
+                continue
 
-            if employee:
-                leave_rows=LeaveRequest.objects.filter(
-                    employee=employee,
-                    leave_type=lt.name,
-                    status__in=["Approved","Pending"],
-                )
-                for leave in leave_rows:
-                    days=self._days(leave)
-                    if leave.status=="Approved":
-                        approved+=days
-                    elif leave.status=="Pending":
-                        pending+=days
-
-            allocated=float(lt.annual_allocation)
+            approved,pending=_leave_usage(employee,leave_type,today)
             remaining=max(0,allocated-approved)
             available=max(0,remaining-pending)
 
             result.append({
-                "id":str(lt.id),
-                "type":lt.name,
+                "id":str(leave_type.id),
+                "code":leave_type.code,
+                "type":leave_type.name,
+                "paidType":leave_type.leave_type,
+                "allocationMethod":leave_type.allocation_method,
+                "allocationPeriod":"month" if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY else "year",
                 "allocated":allocated,
                 "used":approved,
                 "pending":pending,
                 "remaining":remaining,
                 "available":available,
+                "halfDayAllowed":leave_type.half_day,
             })
 
         return response.Response(result)
 
+
 class MyLeaveRequestsView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.self"
+
     def get(self,request):
         employee=_employee_for_user(request.user)
-        if not employee: return response.Response([])
-        return response.Response(LeaveRequestSerializer(LeaveRequest.objects.filter(employee=employee),many=True).data)
+        if not employee:
+            return response.Response([])
+        return response.Response(
+            LeaveRequestSerializer(
+                LeaveRequest.objects.filter(employee=employee),
+                many=True,
+            ).data
+        )
+
     def post(self,request):
         employee=_employee_for_user(request.user)
-        if not employee: return response.Response({"message":"No employee profile linked."},status=400)
+        if not employee:
+            return response.Response({"message":"No employee profile linked."},status=400)
+
+        leave_name=(request.data.get("leaveType") or request.data.get("leave_type") or "").strip()
+        leave_type=LeaveType.objects.filter(
+            company=request.user.company,
+            name=leave_name,
+            status="Active",
+        ).first()
+        if not leave_type:
+            return response.Response(
+                {"message":"Select an active leave type configured by your company."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        start_value=request.data.get("startDate") or request.data.get("start_date")
+        end_value=request.data.get("endDate") or request.data.get("end_date") or start_value
+        try:
+            start_date=datetime.strptime(str(start_value),"%Y-%m-%d").date()
+            end_date=datetime.strptime(str(end_value),"%Y-%m-%d").date()
+        except (TypeError,ValueError):
+            return response.Response({"message":"A valid leave date is required."},status=400)
+
+        if end_date<start_date:
+            return response.Response(
+                {"message":"Leave end date cannot be before start date."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        half_day=bool(request.data.get("halfDay") or request.data.get("half_day") or False)
+        if half_day and not leave_type.half_day:
+            return response.Response(
+                {"message":f"{leave_type.name} does not allow half-day requests."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY
+            and (start_date.year,start_date.month)!=(end_date.year,end_date.month)
+        ):
+            return response.Response(
+                {"message":"Monthly leave requests must stay within the same calendar month."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        allocation=_leave_period_allocation(leave_type)
+        if allocation<=0:
+            return response.Response(
+                {"message":f"{leave_type.name} currently has no leave allocation."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        approved,pending=_leave_usage(employee,leave_type,start_date)
+        available=max(0,allocation-approved-pending)
+        requested=_leave_days(start_date,end_date,half_day)
+
+        if requested>available:
+            return response.Response(
+                {
+                    "message":f"Only {available:g} day(s) of {leave_type.name} are available for this period.",
+                    "available":available,
+                    "requested":requested,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        overlaps=LeaveRequest.objects.filter(
+            employee=employee,
+            status__in=["Pending","Approved"],
+            start_date__lte=end_date,
+            end_date__gte=start_date,
+        ).exists()
+        if overlaps:
+            return response.Response(
+                {"message":"A pending or approved leave request already exists for this date."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         obj=LeaveRequest.objects.create(
-            company=request.user.company,branch=request.user.branch,employee=employee,
-            leave_type=request.data.get("leaveType") or request.data.get("leave_type") or "Casual Leave",
-            start_date=request.data.get("startDate") or request.data.get("start_date"),
-            end_date=request.data.get("endDate") or request.data.get("end_date"),
-            half_day=bool(request.data.get("halfDay") or False),
+            company=request.user.company,
+            branch=request.user.branch,
+            employee=employee,
+            leave_type=leave_type.name,
+            start_date=start_date,
+            end_date=end_date,
+            half_day=half_day,
             reason=request.data.get("reason") or "",
             attachment=request.data.get("attachment") or "",
+            manager_note="",
         )
+
         rule=get_attendance_rule(request.user.company,None)
         if rule.leave_request_notifications:
             _notify_attendance_managers(
@@ -284,7 +417,9 @@ class MyLeaveRequestsView(APIView):
                 "attendance_leave_request",
                 {"requestId":str(obj.id),"staffId":str(employee.id),"route":"/attendance-manager/leave-requests"},
             )
+
         return response.Response(LeaveRequestSerializer(obj).data,status=201)
+
 
 class CancelLeaveRequestView(APIView):
     permission_classes=[RolePermission]
