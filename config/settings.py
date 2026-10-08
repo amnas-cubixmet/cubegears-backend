@@ -1,6 +1,8 @@
+import hashlib
 import os
 from datetime import timedelta
 from pathlib import Path
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,6 +20,19 @@ def env_list(name, default=""):
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
+
+JWT_SIGNING_KEY = env("JWT_SIGNING_KEY", SECRET_KEY)
+if len(JWT_SIGNING_KEY.encode("utf-8")) < 32:
+    if DEBUG:
+        # Local-development fallback only. Production must provide a real
+        # high-entropy key of at least 32 bytes.
+        JWT_SIGNING_KEY = hashlib.sha256(
+            JWT_SIGNING_KEY.encode("utf-8")
+        ).hexdigest()
+    else:
+        raise ImproperlyConfigured(
+            "JWT_SIGNING_KEY must be at least 32 bytes long in production."
+        )
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -135,6 +150,7 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": True,
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "SIGNING_KEY": JWT_SIGNING_KEY,
 }
 
 CORS_ALLOWED_ORIGINS = env_list(
