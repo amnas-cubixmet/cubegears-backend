@@ -19,3 +19,6 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
       - run: python manage.py check
+      # Exercise the full migration graph on a fresh SQLite database.
+      # Runtime model changes must not ship without their database tables.
+      - run: python manage.py migrate --noinput
