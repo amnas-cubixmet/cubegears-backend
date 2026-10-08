@@ -762,14 +762,66 @@ class ManagerMasterView(APIView):
 class LeaveTypesView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
+
     def get(self,request):
-        return response.Response(LeaveTypeSerializer(LeaveType.objects.filter(company=request.user.company),many=True).data)
+        qs=LeaveType.objects.filter(company=request.user.company).order_by("name")
+        return response.Response(LeaveTypeSerializer(qs,many=True).data)
+
     def post(self,request):
         data=request.data.copy()
-        if "type" not in data: data["type"]="Paid" if data.get("isPaid",True) else "Unpaid"
-        ser=LeaveTypeSerializer(data=data); ser.is_valid(raise_exception=True)
+        if "type" not in data:
+            data["type"]="Paid" if data.get("isPaid",True) else "Unpaid"
+
+        method=data.get("allocationMethod") or data.get("allocation_method")
+        if method=="Fixed Annual Allocation":
+            data["allocationMethod"]=LeaveType.ALLOCATION_ANNUAL
+        elif method=="Monthly Accrual":
+            data["allocationMethod"]=LeaveType.ALLOCATION_MONTHLY
+        elif method=="Manual Adjustment Only":
+            data["allocationMethod"]=LeaveType.ALLOCATION_MANUAL
+
+        ser=LeaveTypeSerializer(data=data)
+        ser.is_valid(raise_exception=True)
         obj=ser.save(company=request.user.company,branch=request.user.branch)
         return response.Response(LeaveTypeSerializer(obj).data,status=201)
+
+
+class LeaveTypeDetailView(APIView):
+    permission_classes=[RolePermission]
+    permission_code="attendance.manage"
+
+    def _get(self,request,pk):
+        return LeaveType.objects.filter(pk=pk,company=request.user.company).first()
+
+    def patch(self,request,pk):
+        obj=self._get(request,pk)
+        if not obj:
+            return response.Response({"message":"Leave type not found."},status=404)
+
+        data=request.data.copy()
+        method=data.get("allocationMethod") or data.get("allocation_method")
+        if method=="Fixed Annual Allocation":
+            data["allocationMethod"]=LeaveType.ALLOCATION_ANNUAL
+        elif method=="Monthly Accrual":
+            data["allocationMethod"]=LeaveType.ALLOCATION_MONTHLY
+        elif method=="Manual Adjustment Only":
+            data["allocationMethod"]=LeaveType.ALLOCATION_MANUAL
+
+        ser=LeaveTypeSerializer(obj,data=data,partial=True)
+        ser.is_valid(raise_exception=True)
+        obj=ser.save()
+        return response.Response(LeaveTypeSerializer(obj).data)
+
+    def put(self,request,pk):
+        return self.patch(request,pk)
+
+    def delete(self,request,pk):
+        obj=self._get(request,pk)
+        if not obj:
+            return response.Response({"message":"Leave type not found."},status=404)
+        obj.status="Inactive"
+        obj.save(update_fields=["status","updated_at"])
+        return response.Response(LeaveTypeSerializer(obj).data)
 
 class ManagerHolidaysView(APIView):
     permission_classes=[RolePermission]
