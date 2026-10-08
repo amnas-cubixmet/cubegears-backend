@@ -275,7 +275,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         obj=Employee.objects.filter(
             company=request.user.company,
             user=request.user,
-        ).select_related("team","shift","user").prefetch_related("skills").first()
+        ).select_related("team","shift","user").first()
         if not obj:
             return response.Response({"message":"No employee profile linked."},status=404)
         return response.Response(self.get_serializer(obj).data)
