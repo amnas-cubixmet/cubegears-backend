@@ -36,6 +36,14 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
     employeeName = serializers.CharField(source="employee.name", read_only=True)
+    payType = serializers.SerializerMethodField()
+    isPaid = serializers.SerializerMethodField()
+
+    def get_payType(self, obj):
+        return "Unpaid" if str(obj.leave_type or "").strip().casefold() == "unpaid leave" else "Paid"
+
+    def get_isPaid(self, obj):
+        return self.get_payType(obj) == "Paid"
 
     class Meta:
         model = LeaveRequest
