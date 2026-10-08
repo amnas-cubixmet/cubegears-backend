@@ -166,7 +166,9 @@ class PunchCorrectionSerializer(serializers.ModelSerializer):
 
 class LeaveTypeSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="leave_type", required=False)
+    allocationMethod = serializers.CharField(source="allocation_method", required=False)
     annualAllocation = serializers.DecimalField(source="annual_allocation", max_digits=6, decimal_places=2, required=False)
+    monthlyAllocation = serializers.DecimalField(source="monthly_allocation", max_digits=6, decimal_places=2, required=False)
     halfDay = serializers.BooleanField(source="half_day", required=False)
     maxCarryForward = serializers.DecimalField(source="max_carry_forward", max_digits=6, decimal_places=2, required=False)
     allocation = serializers.SerializerMethodField()
@@ -174,9 +176,46 @@ class LeaveTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = LeaveType
-        exclude = ("company", "branch", "leave_type", "annual_allocation", "half_day", "max_carry_forward")
+        exclude = (
+            "company",
+            "branch",
+            "leave_type",
+            "allocation_method",
+            "annual_allocation",
+            "monthly_allocation",
+            "half_day",
+            "max_carry_forward",
+        )
+
+    def validate(self, attrs):
+        method = attrs.get(
+            "allocation_method",
+            getattr(self.instance, "allocation_method", LeaveType.ALLOCATION_ANNUAL),
+        )
+        if method not in {
+            LeaveType.ALLOCATION_ANNUAL,
+            LeaveType.ALLOCATION_MONTHLY,
+            LeaveType.ALLOCATION_MANUAL,
+        }:
+            raise serializers.ValidationError({"allocationMethod": "Invalid allocation method."})
+
+        annual = attrs.get(
+            "annual_allocation",
+            getattr(self.instance, "annual_allocation", 0),
+        )
+        monthly = attrs.get(
+            "monthly_allocation",
+            getattr(self.instance, "monthly_allocation", 0),
+        )
+        if annual < 0 or monthly < 0:
+            raise serializers.ValidationError("Leave allocation cannot be negative.")
+        return attrs
 
     def get_allocation(self, obj):
+        if obj.allocation_method == LeaveType.ALLOCATION_MONTHLY:
+            return f"{obj.monthly_allocation} Days / Month"
+        if obj.allocation_method == LeaveType.ALLOCATION_MANUAL:
+            return "Manual allocation"
         return f"{obj.annual_allocation} Days / Year"
 
     def get_carryForward(self, obj):
