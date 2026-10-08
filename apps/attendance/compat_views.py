@@ -1098,9 +1098,33 @@ class MyOvertimeRequestsView(APIView):
         except ValueError:
             return response.Response({"message":"Invalid overtime date."},status=400)
 
-        minutes=int(request.data.get("minutes") or round(float(request.data.get("overtimeHours") or 0)*60))
+        attendance=AttendanceRecord.objects.filter(
+            employee=employee,
+            date=request_date,
+        ).first()
+        detected_minutes=int(attendance.overtime_minutes or 0) if attendance else 0
+        requested_minutes=int(
+            request.data.get("minutes")
+            or round(float(request.data.get("overtimeHours") or 0)*60)
+        )
+        minutes=detected_minutes if detected_minutes>0 else requested_minutes
+
         if minutes<=0:
-            return response.Response({"message":"Overtime minutes must be greater than zero."},status=400)
+            return response.Response(
+                {"message":"No overtime is recorded for this date. Enter valid overtime hours."},
+                status=400,
+            )
+
+        duplicate=OvertimeRequest.objects.filter(
+            employee=employee,
+            date=request_date,
+            status__in=["Pending","Approved"],
+        ).exists()
+        if duplicate:
+            return response.Response(
+                {"message":"An overtime request already exists for this date."},
+                status=400,
+            )
 
         obj=OvertimeRequest.objects.create(
             company=request.user.company,
