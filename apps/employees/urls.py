@@ -5,5 +5,6 @@ router.register("teams",TeamViewSet,basename="teams")
 router.register("shifts",ShiftViewSet,basename="shifts")
 router.register("skills",SkillViewSet,basename="skills")
 router.register("documents",EmployeeDocumentViewSet,basename="employee-documents")
+router.register("activities",EmployeeActivityViewSet,basename="employee-activities")
 router.register("",EmployeeViewSet,basename="employees")
 urlpatterns=router.urls
