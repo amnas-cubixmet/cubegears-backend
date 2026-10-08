@@ -822,8 +822,16 @@ class LeaveTypesView(APIView):
     permission_code="attendance.manage"
 
     def get(self,request):
-        qs=LeaveType.objects.filter(company=request.user.company).order_by("name")
-        return response.Response(LeaveTypeSerializer(qs,many=True).data)
+        qs=(
+            LeaveType.objects.filter(company=request.user.company)
+            .exclude(code__iexact=UNPAID_LEAVE_CODE)
+            .exclude(name__iexact=UNPAID_LEAVE_NAME)
+            .order_by("name")
+        )
+        data=LeaveTypeSerializer(qs,many=True).data
+        for item in data:
+            item["type"]="Paid"
+        return response.Response(data)
 
     def post(self,request):
         data=request.data.copy()
