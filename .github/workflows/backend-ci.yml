@@ -21,4 +21,5 @@ jobs:
       - run: python manage.py check
       # Exercise the full migration graph on a fresh SQLite database.
       # Runtime model changes must not ship without their database tables.
+      - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
