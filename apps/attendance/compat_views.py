@@ -136,7 +136,13 @@ class MyAttendanceLogsView(APIView):
     def get(self,request):
         employee=_employee_for_user(request.user)
         if not employee: return response.Response([])
-        qs=AttendanceRecord.objects.filter(employee=employee).prefetch_related("sessions")
+        attendance_start=employee.joining_date or timezone.localtime(employee.created_at).date()
+        today=timezone.localdate()
+        qs=AttendanceRecord.objects.filter(
+            employee=employee,
+            date__gte=attendance_start,
+            date__lte=today,
+        ).prefetch_related("sessions")
         st=request.query_params.get("status")
         month=request.query_params.get("month")
         year=request.query_params.get("year")
@@ -156,18 +162,34 @@ class MyAttendanceCalendarView(APIView):
         if not employee: return response.Response([])
         month=int(request.query_params.get("month") or timezone.localdate().month)
         year=int(request.query_params.get("year") or timezone.localdate().year)
-        records=AttendanceRecord.objects.filter(employee=employee,date__month=month,date__year=year)
-        holidays=Holiday.objects.filter(company=request.user.company,date__month=month,date__year=year)
-        leaves=LeaveRequest.objects.filter(
-            employee=employee,
-            status="Approved",
-            start_date__lte=datetime(year,month,28).date()+timedelta(days=4),
-            end_date__gte=datetime(year,month,1).date(),
-        )
         rule=get_attendance_rule(request.user.company,None)
         first_day=datetime(year,month,1).date()
         next_month=(first_day.replace(day=28)+timedelta(days=4)).replace(day=1)
         last_day=next_month-timedelta(days=1)
+        attendance_start=employee.joining_date or timezone.localtime(employee.created_at).date()
+        today=timezone.localdate()
+        visible_start=max(first_day,attendance_start)
+        visible_end=min(last_day,today)
+
+        if visible_start>visible_end:
+            return response.Response([])
+
+        records=AttendanceRecord.objects.filter(
+            employee=employee,
+            date__gte=visible_start,
+            date__lte=visible_end,
+        )
+        holidays=Holiday.objects.filter(
+            company=request.user.company,
+            date__gte=visible_start,
+            date__lte=visible_end,
+        )
+        leaves=LeaveRequest.objects.filter(
+            employee=employee,
+            status="Approved",
+            start_date__lte=visible_end,
+            end_date__gte=visible_start,
+        )
 
         events=[{"id":str(x.id),"date":x.date,"type":"Attendance","status":x.status,"title":x.status} for x in records]
         recorded_dates={x.date for x in records}
@@ -183,8 +205,8 @@ class MyAttendanceCalendarView(APIView):
                 })
 
         for leave in leaves:
-            cursor=max(leave.start_date,first_day)
-            end=min(leave.end_date,last_day)
+            cursor=max(leave.start_date,visible_start)
+            end=min(leave.end_date,visible_end)
             while cursor<=end:
                 if cursor not in recorded_dates:
                     events.append({
@@ -196,8 +218,8 @@ class MyAttendanceCalendarView(APIView):
                     })
                 cursor+=timedelta(days=1)
 
-        cursor=first_day
-        while cursor<=last_day:
+        cursor=visible_start
+        while cursor<=visible_end:
             if (
                 cursor not in recorded_dates
                 and is_configured_weekly_off(cursor,rule)
