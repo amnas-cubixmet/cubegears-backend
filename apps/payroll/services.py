@@ -300,20 +300,39 @@ def generate_commissions(employee,plan,year,month,policy):
     start,end=month_bounds(year,month)
     sync_job_assignments(employee,start,end)
 
+    rules=policy.commission_rules or {}
+    eligibility=rules.get("eligibility","job_complete")
+    basis_mode=rules.get("basisMode","service_wise")
     assignments=JobCardEmployeeAssignment.objects.select_related("job").filter(
         company=employee.company,
         employee=employee,
-        status__in=["Approved","Completed"],
     ).filter(
         Q(completed_at__date__range=(start,end))|
         Q(job__delivered_at__date__range=(start,end))|
         Q(job__updated_at__date__range=(start,end))
     )
 
-    auto_approve=bool((policy.commission_rules or {}).get("autoApprove",False))
+    auto_approve=bool(rules.get("autoApprove",False))
     generated=[]
 
     for assignment in assignments:
+        existing=EmployeeCommission.objects.filter(
+            company=employee.company,employee=employee,assignment=assignment,
+            payroll_year=year,payroll_month=month,status="Pending",
+        )
+        if eligibility=="invoice_paid":
+            from apps.invoices.models import Invoice
+            eligible=Invoice.objects.filter(
+                company=employee.company,job=assignment.job,kind="invoice",
+                total__gt=0,balance__lte=0,
+            ).exclude(status__iexact="Cancelled").exists()
+        else:
+            eligible=assignment.job.status in {"Ready for Delivery","Delivered"}
+        if not eligible or assignment.status not in {"Approved","Completed"}:
+            # Pending commission is cancelled when a job reopens. Already
+            # approved or paid earnings require an explicit payroll adjustment.
+            existing.update(status="Rejected")
+            continue
         rule=_commission_rule(plan,employee,end)
         commission_type=rule.commission_type if rule else plan.commission_type
         basis=rule.revenue_basis if rule else plan.eligible_revenue_basis
