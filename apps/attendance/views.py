@@ -79,7 +79,7 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         serializer.save(
             company=self.request.user.company,branch=self.request.user.branch,employee=employee,
             minutes=minutes,payroll_month=payroll_month,
-            rate=self.request.data.get("rate") or 0,amount=self.request.data.get("amount") or 0,
+            rate=0,amount=0,
             audit_history=[{"action":"Overtime Submitted","actor":self.request.user.name,"timestamp":timezone.now().isoformat()}],
         )
 
