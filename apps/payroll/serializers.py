@@ -368,10 +368,23 @@ class PayrollRunSerializer(serializers.ModelSerializer):
     approvalStatus=serializers.CharField(source="approval_status",read_only=True)
     approvedBy=serializers.CharField(source="approved_by.name",read_only=True)
     approvedAt=serializers.DateTimeField(source="approved_at",read_only=True)
+    branchId=serializers.PrimaryKeyRelatedField(
+        source="branch",
+        queryset=Branch.objects.all(),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model=PayrollRun
         exclude=("company","branch","approval_status","approved_at")
+
+    def validate_branchId(self,value):
+        request=self.context.get("request")
+        company=getattr(getattr(request,"user",None),"company",None)
+        if value and company and value.company_id!=company.id:
+            raise serializers.ValidationError("Invalid branch for this company.")
+        return value
 
     def get_periodLabel(self,obj):
         return f"{month_name[obj.month]} {obj.year}"
