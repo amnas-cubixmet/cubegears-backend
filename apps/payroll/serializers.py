@@ -1,4 +1,5 @@
 from calendar import month_name
+from decimal import Decimal, InvalidOperation
 
 from rest_framework import serializers
 
@@ -191,6 +192,18 @@ class JobCardEmployeeAssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"employee":"Employee belongs to another company."})
         if allocation<0 or allocation>100:
             raise serializers.ValidationError({"commissionAllocationPercent":"Allocation must be between 0 and 100."})
+        metadata=attrs.get("metadata")
+        if metadata is not None:
+            if not isinstance(metadata,dict):
+                raise serializers.ValidationError({"metadata":"Expected an object."})
+            override=metadata.get("commissionRateOverride")
+            if override not in (None,""):
+                try:
+                    rate=Decimal(str(override))
+                except (InvalidOperation,TypeError,ValueError):
+                    raise serializers.ValidationError({"metadata":"Commission rate must be a number."})
+                if not rate.is_finite() or rate<0 or rate>100:
+                    raise serializers.ValidationError({"metadata":"Job commission rate must be between 0 and 100%."})
         return attrs
 
 
