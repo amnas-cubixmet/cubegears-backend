@@ -9,7 +9,6 @@ class TeamSerializer(serializers.ModelSerializer):
         queryset=Branch.objects.all(),
         required=False,
         allow_null=True,
-        write_only=True,
     )
     branchName=serializers.CharField(source="branch.name",read_only=True)
 
@@ -31,7 +30,6 @@ class ShiftSerializer(serializers.ModelSerializer):
         queryset=Branch.objects.all(),
         required=False,
         allow_null=True,
-        write_only=True,
     )
     branchName=serializers.CharField(source="branch.name",read_only=True)
 
@@ -98,7 +96,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
         queryset=Branch.objects.all(),
         required=False,
         allow_null=True,
-        write_only=True,
     )
     team=TeamSerializer(read_only=True)
     teamId=serializers.PrimaryKeyRelatedField(source="team",queryset=Team.objects.all(),required=False,allow_null=True,write_only=True)
