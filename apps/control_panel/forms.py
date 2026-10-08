@@ -252,7 +252,7 @@ class EmployeeForm(AdminModelForm):
         fields = [
             "company", "branch", "user", "employee_code", "name", "phone",
             "email", "designation", "role_name", "department_name",
-            "shift_label", "payment_type", "notes", "team", "shift", "skills",
+            "shift_label", "payment_type", "notes", "team", "shift",
             "joining_date", "employment_type", "base_salary", "status",
             "address", "emergency_contact",
         ]
@@ -265,7 +265,6 @@ class EmployeeForm(AdminModelForm):
         user = data.get("user")
         team = data.get("team")
         shift = data.get("shift")
-        skills = data.get("skills")
 
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
@@ -275,9 +274,4 @@ class EmployeeForm(AdminModelForm):
             self.add_error("team", "Selected team belongs to another company.")
         if shift and company and shift.company_id != company.id:
             self.add_error("shift", "Selected shift belongs to another company.")
-        if company and skills:
-            for skill in skills:
-                if skill.company_id != company.id:
-                    self.add_error("skills", "One or more selected skills belong to another company.")
-                    break
         return data
