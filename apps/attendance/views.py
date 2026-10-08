@@ -8,6 +8,7 @@ from apps.notifications.models import Notification
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
+from apps.employees.services import resolve_employee_for_user
 from .models import *
 from .serializers import *
 from .services import finish_session, get_attendance_state, start_session
@@ -136,7 +137,7 @@ class AttendanceStatusView(APIView):
     permission_code="attendance.self"
 
     def get(self,request):
-        employee=getattr(request.user,"employee_profile",None)
+        employee=resolve_employee_for_user(request.user)
         if not employee:
             return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
 
@@ -176,7 +177,7 @@ class ToggleAttendanceView(APIView):
     permission_code="attendance.self"
 
     def post(self,request):
-        employee=getattr(request.user,"employee_profile",None)
+        employee=resolve_employee_for_user(request.user)
         if not employee:
             return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
 
