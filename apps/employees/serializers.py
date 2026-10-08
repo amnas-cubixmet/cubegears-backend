@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Team,Shift,Skill,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
+    leadName=serializers.CharField(source="lead.name",read_only=True)
     class Meta: model=Team; exclude=("company","branch")
 
 class ShiftSerializer(serializers.ModelSerializer):
