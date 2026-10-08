@@ -69,6 +69,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         job=self.get_object(); new_status=request.data.get("status")
         if new_status not in FLOW: raise ValidationError({"status":"Invalid job status."})
         old=job.status
+        self._guard_active_timers(job,new_status)
         if new_status==Job.STATUS_DELIVERED: job.delivered_at=timezone.now()
         job.status=new_status; job.save(update_fields=["status","delivered_at","updated_at"])
         JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
