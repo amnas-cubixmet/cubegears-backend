@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Team,Shift,Skill,Employee,EmployeeDocument
+from .models import Team,Shift,Skill,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
     class Meta: model=Team; exclude=("company","branch")
@@ -12,6 +12,12 @@ class SkillSerializer(serializers.ModelSerializer):
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     class Meta: model=EmployeeDocument; exclude=("company","branch")
+
+class EmployeeActivitySerializer(serializers.ModelSerializer):
+    actorName=serializers.CharField(source="actor.name",read_only=True)
+    class Meta:
+        model=EmployeeActivity
+        exclude=("company","branch")
 
 class EmployeeSerializer(serializers.ModelSerializer):
     employeeId=serializers.CharField(source="employee_code",required=False)
