@@ -3,7 +3,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import decorators,response,status
 from common.viewsets import CompanyScopedModelViewSet
-from apps.attendance.models import AttendanceRecord
+from apps.attendance.models import AttendanceRecord, OvertimeRequest
 from apps.employees.models import Employee
 from .models import SalaryStructure,SalaryAdvance,PayrollRun,Payslip,Incentive
 from .serializers import *
@@ -45,8 +45,21 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
             if not structure: continue
             attendance=AttendanceRecord.objects.filter(employee=emp,date__year=run.year,date__month=run.month)
             present_days=attendance.exclude(status__iexact="Absent").count()
-            overtime=attendance.aggregate(v=Sum("overtime_minutes"))["v"] or 0
-            overtime_amount=(Decimal(overtime)/Decimal("60"))*structure.overtime_rate
+
+            approved_overtime=OvertimeRequest.objects.filter(
+                employee=emp,
+                company=run.company,
+                status="Approved",
+                date__year=run.year,
+                date__month=run.month,
+            )
+            overtime_summary=approved_overtime.aggregate(
+                minutes=Sum("minutes"),
+                amount=Sum("amount"),
+            )
+            overtime=overtime_summary["minutes"] or 0
+            overtime_amount=overtime_summary["amount"] or Decimal("0")
+
             advances=SalaryAdvance.objects.filter(employee=emp,status="Active").aggregate(v=Sum("outstanding_balance"))["v"] or Decimal("0")
             recovery=min(advances, max(Decimal("0"),structure.basic*Decimal("0.20")))
             gross=structure.basic+structure.hra+structure.allowances+overtime_amount
