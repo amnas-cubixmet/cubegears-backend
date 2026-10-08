@@ -390,6 +390,14 @@ def generate_commissions(employee,plan,year,month,policy):
             amount=money(base*percentage/Decimal("100"))
             rate=percentage
 
+        # A mechanic earns commission once for each Job Card assignment.
+        # Period changes or revised salary plans must not create duplicates.
+        other=EmployeeCommission.objects.filter(
+            company=employee.company,employee=employee,assignment=assignment,
+        ).exclude(source_key=f"assignment:{assignment.id}:plan:{plan.id}:{year}-{month:02d}")
+        if other.exclude(status="Rejected").exists():
+            continue
+
         source_key=f"assignment:{assignment.id}:plan:{plan.id}:{year}-{month:02d}"
         obj,created=EmployeeCommission.objects.get_or_create(
             company=employee.company,
