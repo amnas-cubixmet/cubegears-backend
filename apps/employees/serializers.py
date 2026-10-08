@@ -68,6 +68,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     employmentStatus=serializers.CharField(source="status",required=False)
     emergencyContact=serializers.CharField(source="emergency_contact",required=False,allow_blank=True)
     paymentType=serializers.CharField(source="payment_type",required=False,allow_blank=True)
+    branchName=serializers.CharField(source="branch.name",read_only=True)
     team=TeamSerializer(read_only=True)
     teamId=serializers.PrimaryKeyRelatedField(source="team",queryset=Team.objects.all(),required=False,allow_null=True,write_only=True)
     teamName=serializers.CharField(source="team.name",read_only=True)
