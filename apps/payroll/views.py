@@ -62,7 +62,7 @@ def _close_previous_plans(plan):
         approval_status="Approved",
         effective_from__lt=plan.effective_from,
     ).exclude(pk=plan.pk)
-    previous.update(effective_to=plan.effective_from-timedelta(days=1),is_active=False)
+    previous.update(effective_to=plan.effective_from-timedelta(days=1))
 
 
 class PayrollPolicyViewSet(CompanyScopedModelViewSet):
@@ -97,7 +97,14 @@ class EmployeeCompensationPlanViewSet(CompanyScopedModelViewSet):
         if employee_id and employee_id not in {"All","all"}:
             qs=qs.filter(employee_id=employee_id)
         if active in {"true","1","yes"}:
-            qs=qs.filter(is_active=True)
+            today=timezone.localdate()
+            qs=qs.filter(
+                is_active=True,
+                approval_status__iexact="Approved",
+                effective_from__lte=today,
+            ).filter(
+                Q(effective_to__isnull=True)|Q(effective_to__gte=today)
+            )
         return qs
 
     @transaction.atomic
