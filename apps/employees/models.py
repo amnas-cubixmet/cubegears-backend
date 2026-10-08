@@ -16,11 +16,6 @@ class Shift(CompanyOwnedModel):
     weekly_off=models.JSONField(default=list,blank=True)
     is_active=models.BooleanField(default=True)
 
-class Skill(CompanyOwnedModel):
-    name=models.CharField(max_length=120)
-    category=models.CharField(max_length=100,blank=True)
-    is_active=models.BooleanField(default=True)
-
 class Employee(CompanyOwnedModel):
     user=models.OneToOneField("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="employee_profile")
     employee_code=models.CharField(max_length=40)
@@ -35,7 +30,6 @@ class Employee(CompanyOwnedModel):
     notes=models.TextField(blank=True)
     team=models.ForeignKey(Team,on_delete=models.SET_NULL,null=True,blank=True,related_name="employees")
     shift=models.ForeignKey(Shift,on_delete=models.SET_NULL,null=True,blank=True,related_name="employees")
-    skills=models.ManyToManyField(Skill,blank=True,related_name="employees")
     joining_date=models.DateField(null=True,blank=True)
     employment_type=models.CharField(max_length=50,default="Full Time")
     base_salary=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
