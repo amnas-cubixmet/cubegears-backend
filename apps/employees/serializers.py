@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Team,Shift,Skill,Employee,EmployeeDocument,EmployeeActivity
+from .models import Team,Shift,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
     leadName=serializers.CharField(source="lead.name",read_only=True)
@@ -15,16 +15,6 @@ class ShiftSerializer(serializers.ModelSerializer):
     def get_assignedStaffIds(self,obj):
         return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
 
-
-class SkillSerializer(serializers.ModelSerializer):
-    assignedStaffIds=serializers.SerializerMethodField()
-
-    class Meta:
-        model=Skill
-        exclude=("company","branch")
-
-    def get_assignedStaffIds(self,obj):
-        return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     staffId=serializers.UUIDField(source="employee_id",read_only=True)
@@ -75,8 +65,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
     shiftId=serializers.PrimaryKeyRelatedField(source="shift",queryset=Shift.objects.all(),required=False,allow_null=True,write_only=True)
     shiftDetails=ShiftSerializer(source="shift",read_only=True)
     shiftName=serializers.CharField(source="shift.name",read_only=True)
-    skills=SkillSerializer(many=True,read_only=True)
-    skillIds=serializers.PrimaryKeyRelatedField(source="skills",queryset=Skill.objects.all(),many=True,required=False,write_only=True)
     accountStatus=serializers.SerializerMethodField()
     loginStatus=serializers.SerializerMethodField()
 
@@ -97,14 +85,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
         team=attrs.get("team")
         shift=attrs.get("shift")
-        skills=attrs.get("skills")
 
         if team and team.company_id!=company.id:
             raise serializers.ValidationError({"teamId":"Invalid team for this company."})
         if shift and shift.company_id!=company.id:
             raise serializers.ValidationError({"shiftId":"Invalid shift for this company."})
-        if skills and any(skill.company_id!=company.id for skill in skills):
-            raise serializers.ValidationError({"skillIds":"One or more skills do not belong to this company."})
         return attrs
 
     def get_accountStatus(self,obj):
