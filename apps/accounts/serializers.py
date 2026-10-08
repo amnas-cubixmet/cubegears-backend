@@ -33,12 +33,18 @@ class UserSerializer(serializers.ModelSerializer):
     employeeProfileId = serializers.SerializerMethodField()
     employeeDisplayNo = serializers.SerializerMethodField()
 
+    def _employee(self, obj):
+        try:
+            return obj.employee_profile
+        except Exception:
+            return None
+
     def get_employeeProfileId(self, obj):
-        employee = getattr(obj, "employee_profile", None)
+        employee = self._employee(obj)
         return str(employee.id) if employee else None
 
     def get_employeeDisplayNo(self, obj):
-        employee = getattr(obj, "employee_profile", None)
+        employee = self._employee(obj)
         if not employee:
             return None
         digits = "".join(ch for ch in str(employee.employee_code or "") if ch.isdigit())
