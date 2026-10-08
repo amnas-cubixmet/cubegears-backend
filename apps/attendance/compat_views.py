@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, time, timedelta
 from django.db.models import Q
 from django.utils import timezone
@@ -516,7 +517,21 @@ class ManagerApprovalsView(APIView):
                 "managerNote":x.manager_note,
             })
         for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee"):
-            rows.append({"id":str(x.id),"type":"Overtime","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.date,"minutes":x.minutes})
+            rows.append({
+                "id":str(x.id),
+                "type":"Overtime",
+                "staffId":x.employee.employee_code,
+                "employeeId":str(x.employee_id),
+                "staffName":x.employee.name,
+                "status":x.status,
+                "reason":x.reason,
+                "date":x.date,
+                "affectedDate":x.date,
+                "minutes":x.minutes,
+                "overtimeHours":round(x.minutes/60,2),
+                "rate":float(x.rate or 0),
+                "amount":float(x.amount or 0),
+            })
         return response.Response(rows)
 
 class ManagerApprovalDetailView(APIView):
@@ -561,15 +576,46 @@ class ManagerApprovalDetailView(APIView):
                 obj.reviewed_at=timezone.now()
                 obj.manager_note=note
             else:
-                obj.approved_by=request.user if next_status=="Approved" else None
-                obj.approved_at=timezone.now() if next_status=="Approved" else None
-                obj.rejection_reason=note if next_status=="Rejected" else ""
+                if next_status=="Approved":
+                    raw_rate=request.data.get("rate")
+                    if raw_rate in (None,""):
+                        from apps.payroll.models import SalaryStructure
+                        structure=SalaryStructure.objects.filter(employee=obj.employee).first()
+                        raw_rate=(structure.overtime_rate if structure else obj.rate)
+
+                    try:
+                        rate=Decimal(str(raw_rate or 0))
+                    except (InvalidOperation,TypeError,ValueError):
+                        return response.Response(
+                            {"message":"Enter a valid overtime rate."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    if rate<=0:
+                        return response.Response(
+                            {"message":"Overtime rate is required before approval."},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+                    amount=((Decimal(obj.minutes)/Decimal("60"))*rate).quantize(Decimal("0.01"))
+                    obj.rate=rate
+                    obj.amount=amount
+                    obj.approved_by=request.user
+                    obj.approved_at=timezone.now()
+                    obj.rejection_reason=""
+                else:
+                    obj.approved_by=None
+                    obj.approved_at=None
+                    obj.rejection_reason=note
+
                 history=list(obj.audit_history or [])
                 history.insert(0,{
                     "action":f"{next_status} Overtime",
                     "actor":request.user.name,
                     "timestamp":timezone.now().isoformat(),
                     "note":note,
+                    "rate":float(obj.rate or 0),
+                    "amount":float(obj.amount or 0),
                 })
                 obj.audit_history=history
             obj.save()
@@ -586,9 +632,19 @@ class ManagerApprovalDetailView(APIView):
             _notify_employee(
                 obj.employee,
                 f"{request_type} {obj.status.lower()}",
-                f"Your {request_type.lower()} has been {obj.status.lower()}.",
+                (
+                    f"Your overtime request has been approved for ₹{obj.amount}."
+                    if isinstance(obj,OvertimeRequest) and obj.status=="Approved"
+                    else f"Your {request_type.lower()} has been {obj.status.lower()}."
+                ),
                 "attendance_request_decision",
-                {"requestId":str(obj.id),"status":obj.status,"route":route},
+                {
+                    "requestId":str(obj.id),
+                    "status":obj.status,
+                    "rate":float(obj.rate or 0) if isinstance(obj,OvertimeRequest) else None,
+                    "amount":float(obj.amount or 0) if isinstance(obj,OvertimeRequest) else None,
+                    "route":route,
+                },
             )
             return response.Response({"id":str(obj.id),"status":obj.status})
         return response.Response({"message":"Approval not found."},status=404)
