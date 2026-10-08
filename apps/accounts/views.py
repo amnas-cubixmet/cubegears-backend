@@ -26,6 +26,7 @@ from .serializers import (
 
 from apps.branches.models import Branch
 from apps.companies.models import Company
+from apps.employees.services import resolve_employee_for_user
 from apps.roles.models import Role
 
 User = get_user_model()
@@ -249,6 +250,9 @@ class PublicWorkshopSignupView(APIView):
         )
         user.set_unusable_password()
         user.save(update_fields=["password"])
+
+        # Every workshop owner can use My Attendance immediately.
+        resolve_employee_for_user(user)
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
