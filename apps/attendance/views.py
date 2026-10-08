@@ -11,7 +11,7 @@ from common.viewsets import CompanyScopedModelViewSet
 from apps.employees.services import resolve_employee_for_user
 from .models import *
 from .serializers import *
-from .services import finish_session, get_attendance_state, start_session
+from .services import finish_session, get_attendance_rule, get_attendance_state, start_session
 
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRecord.objects.select_related("employee").prefetch_related("sessions").all(); serializer_class=AttendanceRecordSerializer
@@ -139,7 +139,22 @@ class AttendanceStatusView(APIView):
     def get(self,request):
         employee=resolve_employee_for_user(request.user)
         if not employee:
-            return response.Response({"message":"No employee profile linked."},status=status.HTTP_400_BAD_REQUEST)
+            rule=get_attendance_rule(request.user.company,request.user.branch)
+            return response.Response({
+                "employee":None,
+                "profileLinked":False,
+                "status":"UNAVAILABLE",
+                "canCheckIn":False,
+                "canCheckOut":False,
+                "nextAction":None,
+                "reason":"No employee profile is linked to this account.",
+                "attendanceMode":rule.attendance_mode,
+                "maxSessionsPerDay":rule.max_sessions_per_day,
+                "autoCheckoutAt":None,
+                "sessionCount":0,
+                "rule":AttendanceRuleSerializer(rule).data,
+                "record":None,
+            })
 
         state=get_attendance_state(employee)
         rule=state["rule"]
