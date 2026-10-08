@@ -637,14 +637,14 @@ def staff_create(request):
 
 @panel_admin_required
 def staff_detail(request, pk):
-    obj = get_object_or_404(Employee.objects.select_related("company", "branch", "user", "team", "shift").prefetch_related("skills"), pk=pk)
+    obj = get_object_or_404(Employee.objects.select_related("company", "branch", "user", "team", "shift"), pk=pk)
     return render(request, "control_panel/detail.html", {
         "page_title": "Staff Details", "active": "staff", "object": obj,
         "rows": _display_rows(obj, [
             ("employee_code", "Employee code"), ("name", "Name"), ("company", "Company"),
             ("branch", "Branch"), ("user", "Linked user"), ("phone", "Phone"), ("email", "Email"),
             ("designation", "Designation"), ("role_name", "Role"), ("department_name", "Department"),
-            ("team", "Team"), ("shift", "Shift"), ("skills", "Skills"), ("joining_date", "Joining date"),
+            ("team", "Team"), ("shift", "Shift"), ("joining_date", "Joining date"),
             ("employment_type", "Employment type"), ("base_salary", "Base salary"),
             ("status", "Status"), ("address", "Address"), ("emergency_contact", "Emergency contact"),
         ]),
