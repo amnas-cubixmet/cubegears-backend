@@ -61,6 +61,7 @@ class LeaveRequest(CompanyOwnedModel):
     status=models.CharField(max_length=30,default="Pending")
     reviewed_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="reviewed_leave_requests")
     reviewed_at=models.DateTimeField(null=True,blank=True)
+    manager_note=models.TextField(blank=True,default="")
 
 class OvertimeRequest(CompanyOwnedModel):
     employee=models.ForeignKey("employees.Employee",on_delete=models.CASCADE,related_name="overtime_requests")
@@ -130,10 +131,21 @@ class PunchCorrection(CompanyOwnedModel):
     reviewed_at=models.DateTimeField(null=True,blank=True)
 
 class LeaveType(CompanyOwnedModel):
+    ALLOCATION_ANNUAL="annual"
+    ALLOCATION_MONTHLY="monthly"
+    ALLOCATION_MANUAL="manual"
+    ALLOCATION_CHOICES=[
+        (ALLOCATION_ANNUAL,"Annual"),
+        (ALLOCATION_MONTHLY,"Monthly"),
+        (ALLOCATION_MANUAL,"Manual"),
+    ]
+
     name=models.CharField(max_length=100)
     code=models.CharField(max_length=30)
     leave_type=models.CharField(max_length=30,default="Paid")
+    allocation_method=models.CharField(max_length=20,choices=ALLOCATION_CHOICES,default=ALLOCATION_ANNUAL)
     annual_allocation=models.DecimalField(max_digits=6,decimal_places=2,default=12)
+    monthly_allocation=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     half_day=models.BooleanField(default=True)
     max_carry_forward=models.DecimalField(max_digits=6,decimal_places=2,default=0)
     status=models.CharField(max_length=20,default="Active")
