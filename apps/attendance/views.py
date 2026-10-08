@@ -207,7 +207,7 @@ class AttendanceStatusView(APIView):
         shift=getattr(employee,"shift",None)
         employee_shift=(
             f"{shift.name} ({shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')})"
-            if shift else employee.shift_label or "Company Default"
+            if shift else (employee.shift_label or "")
         )
 
         return response.Response({
@@ -215,6 +215,8 @@ class AttendanceStatusView(APIView):
                 "id":str(employee.id),
                 "employeeCode":employee.employee_code,
                 "name":employee.name,
+                "roleName":employee.role_name or "",
+                "branchName":employee.branch.name if employee.branch_id and employee.branch else "",
                 "shiftName":employee_shift,
                 "joiningDate":(
                     employee.joining_date
