@@ -26,6 +26,8 @@ class Job(CompanyOwnedModel):
     estimate_total=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     labour_total=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     parts_total=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
+    customer_rating=models.PositiveSmallIntegerField(null=True,blank=True)
+    customer_feedback=models.TextField(blank=True)
     class Meta:
         ordering=["-created_at"]
         constraints=[models.UniqueConstraint(fields=["company","job_number"],name="unique_job_number_per_company")]
