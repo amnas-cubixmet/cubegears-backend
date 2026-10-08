@@ -1,12 +1,39 @@
 from rest_framework import serializers
+from apps.branches.models import Branch
 from .models import Team,Shift,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
     leadName=serializers.CharField(source="lead.name",read_only=True)
-    class Meta: model=Team; exclude=("company","branch")
+    branchId=serializers.PrimaryKeyRelatedField(
+        source="branch",
+        queryset=Branch.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    branchName=serializers.CharField(source="branch.name",read_only=True)
+
+    class Meta:
+        model=Team
+        exclude=("company","branch")
+
+    def validate_branchId(self,value):
+        request=self.context.get("request")
+        company=getattr(getattr(request,"user",None),"company",None)
+        if value and company and value.company_id!=company.id:
+            raise serializers.ValidationError("Invalid branch for this company.")
+        return value
 
 class ShiftSerializer(serializers.ModelSerializer):
     assignedStaffIds=serializers.SerializerMethodField()
+    branchId=serializers.PrimaryKeyRelatedField(
+        source="branch",
+        queryset=Branch.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
+    branchName=serializers.CharField(source="branch.name",read_only=True)
 
     class Meta:
         model=Shift
@@ -14,6 +41,13 @@ class ShiftSerializer(serializers.ModelSerializer):
 
     def get_assignedStaffIds(self,obj):
         return [str(pk) for pk in obj.employees.values_list("id",flat=True)]
+
+    def validate_branchId(self,value):
+        request=self.context.get("request")
+        company=getattr(getattr(request,"user",None),"company",None)
+        if value and company and value.company_id!=company.id:
+            raise serializers.ValidationError("Invalid branch for this company.")
+        return value
 
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
@@ -59,6 +93,13 @@ class EmployeeSerializer(serializers.ModelSerializer):
     emergencyContact=serializers.CharField(source="emergency_contact",required=False,allow_blank=True)
     paymentType=serializers.CharField(source="payment_type",required=False,allow_blank=True)
     branchName=serializers.CharField(source="branch.name",read_only=True)
+    branchId=serializers.PrimaryKeyRelatedField(
+        source="branch",
+        queryset=Branch.objects.all(),
+        required=False,
+        allow_null=True,
+        write_only=True,
+    )
     team=TeamSerializer(read_only=True)
     teamId=serializers.PrimaryKeyRelatedField(source="team",queryset=Team.objects.all(),required=False,allow_null=True,write_only=True)
     teamName=serializers.CharField(source="team.name",read_only=True)
@@ -83,9 +124,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not company:
             return attrs
 
+        branch=attrs.get("branch")
         team=attrs.get("team")
         shift=attrs.get("shift")
 
+        if branch and branch.company_id!=company.id:
+            raise serializers.ValidationError({"branchId":"Invalid branch for this company."})
         if team and team.company_id!=company.id:
             raise serializers.ValidationError({"teamId":"Invalid team for this company."})
         if shift and shift.company_id!=company.id:
