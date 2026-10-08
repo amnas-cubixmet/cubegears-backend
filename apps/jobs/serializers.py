@@ -20,6 +20,9 @@ class JobSerializer(serializers.ModelSerializer):
     vehicleReg=serializers.CharField(source="vehicle.registration",read_only=True)
     vehicleInfo=serializers.SerializerMethodField()
     jobNumber=serializers.CharField(source="job_number",required=False)
+    assignedEmployeeId=serializers.SerializerMethodField()
+    assignedEmployeeName=serializers.CharField(source="technician.name",read_only=True)
+    technicianName=serializers.CharField(source="technician.name",read_only=True)
     createdDate=serializers.DateTimeField(source="created_at",read_only=True)
     parts=JobPartSerializer(many=True,read_only=True)
     photos=JobPhotoSerializer(many=True,read_only=True)
@@ -31,3 +34,11 @@ class JobSerializer(serializers.ModelSerializer):
         read_only_fields=("id","created_at","updated_at")
     def get_vehicleInfo(self,obj):
         return " ".join(filter(None,[obj.vehicle.make,obj.vehicle.model,obj.vehicle.variant]))
+
+    def get_assignedEmployeeId(self,obj):
+        if not obj.technician:
+            return None
+        try:
+            return str(obj.technician.employee_profile.id)
+        except Exception:
+            return None
