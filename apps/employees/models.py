@@ -53,3 +53,14 @@ class EmployeeDocument(CompanyOwnedModel):
     file_url=models.URLField()
     expiry_date=models.DateField(null=True,blank=True)
     notes=models.TextField(blank=True)
+
+
+class EmployeeActivity(CompanyOwnedModel):
+    employee=models.ForeignKey(Employee,on_delete=models.CASCADE,related_name="activities")
+    action=models.CharField(max_length=120)
+    details=models.TextField(blank=True)
+    actor=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="employee_activity_entries")
+    metadata=models.JSONField(default=dict,blank=True)
+
+    class Meta:
+        ordering=["-created_at"]
