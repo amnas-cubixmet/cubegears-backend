@@ -27,7 +27,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
         shift=getattr(obj.employee,"shift",None)
         if shift:
             return f"{shift.name} ({shift.start_time.strftime('%H:%M')} - {shift.end_time.strftime('%H:%M')})"
-        return obj.employee.shift_label or "Company Default"
+        return obj.employee.shift_label or ""
 
     class Meta:
         model = AttendanceRecord
