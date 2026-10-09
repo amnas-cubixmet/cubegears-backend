@@ -35,7 +35,7 @@ def amount(value, *, positive=True, allow_negative=False):
         if value is None or value == "" or isinstance(value, bool):
             raise ValueError()
         result = Decimal(str(value))
-        if not result.is_finite() or (positive and result <= 0) or (not allow_negative and result < 0):
+        if not result.is_finite() or abs(result) >= Decimal("10000000000") or (positive and result <= 0) or (not allow_negative and result < 0):
             raise ValueError()
         return result.quantize(CENT, rounding=ROUND_HALF_UP)
     except (InvalidOperation, ValueError, TypeError):
@@ -178,6 +178,8 @@ def finalize_attendance(employee, work_date, status, user, reason):
         created_at__gte=existing.created_at,
     ).exists()
     old_base = existing.base_amount if existing else ZERO
+    if existing and existing.attendance_status != normalized and not str(reason or "").strip():
+        raise ValidationError({"reason": "A reason is required to correct finalized attendance."})
     old_rate = existing.applied_rate if existing else None
     if existing and settled:
         # Do not rewrite a historically settled earning. Append the
@@ -224,7 +226,8 @@ def pay_balance(employee, user, value, method, reference, key, payment_date):
             raise ValidationError({"requestKey": "This key already belongs to a reversed payment."})
         return existing
     paid_amount = amount(value)
-    if paid_amount > totals(employee)["currentBalance"]:
+    balance_before = totals(employee)["currentBalance"]
+    if paid_amount > balance_before:
         raise ValidationError({"amount": "Payment exceeds current outstanding balance."})
     method = str(method or "").strip()
     if method not in METHODS:
@@ -238,6 +241,8 @@ def pay_balance(employee, user, value, method, reference, key, payment_date):
         request_key=key, payment_date=payment_date, created_by=user,
     )
     audit(employee, user, "WAGE_PAYMENT", work_date=payment_date,
-          updated={"paymentId": str(payment.pk), "amount": str(paid_amount), "method": method},
+          original={"balance": str(balance_before)},
+          updated={"paymentId": str(payment.pk), "amount": str(paid_amount), "method": method,
+                   "balance": str(balance_before - paid_amount)},
           reason="Wage payout")
     return payment
