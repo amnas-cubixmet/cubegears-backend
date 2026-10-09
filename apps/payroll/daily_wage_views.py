@@ -336,7 +336,8 @@ class DailyWageExtraApprovalView(WageAPIView):
         extra.reviewed_at = timezone.now()
         extra.save(update_fields=["status", "reviewed_by", "reviewed_at", "updated_at"])
         audit(extra.employee, request.user, "EXTRA_" + desired.upper(),
-              work_date=extra.work_date, updated={"extra": str(extra.pk), "amount": str(extra.amount)},
+              work_date=extra.work_date, original={"status": "Pending"},
+              updated={"status": desired, "extra": str(extra.pk), "amount": str(extra.amount)},
               reason=extra.reason)
         return Response(pack_extra(extra))
 
@@ -356,13 +357,16 @@ class DailyWageAdjustmentView(WageAPIView):
         raw = amount(request.data.get("amount"), positive=False, allow_negative=True)
         if raw == 0:
             raise ValidationError({"amount": "Adjustment must not be zero."})
+        previous_balance = totals(employee)["currentBalance"]
         entry = WageAdjustment.objects.create(
             company=employee.company, branch=employee.branch, employee=employee,
             work_date=parsed_date(request.data.get("date")), amount=raw,
             reason=reason, kind="Manual", created_by=request.user, request_key=key,
         )
         audit(employee, request.user, "MANUAL_ADJUSTMENT", work_date=entry.work_date,
-              updated={"amount": str(raw), "adjustment": str(entry.pk)}, reason=reason)
+              original={"balance": str(previous_balance)},
+              updated={"amount": str(raw), "adjustment": str(entry.pk),
+                       "balance": str(previous_balance + raw)}, reason=reason)
         return Response({"id": str(entry.pk), "amount": str(raw), "balance": str(totals(employee)["currentBalance"])}, status=201)
 
 
@@ -393,6 +397,7 @@ class DailyWageReversalView(WageAPIView):
         reason = str(request.data.get("reason") or "").strip()
         if not reason:
             raise ValidationError({"reason": "A reversal reason is required."})
+        balance_before = totals(employee)["currentBalance"]
         reversal, created = WagePaymentReversal.objects.get_or_create(
             payment=payment, defaults={
                 "company": employee.company, "branch": employee.branch,
@@ -401,6 +406,8 @@ class DailyWageReversalView(WageAPIView):
         )
         if created:
             audit(employee, request.user, "PAYMENT_REVERSED", work_date=payment.payment_date,
-                  original={"payment": str(payment.pk), "amount": str(payment.amount)},
-                  updated={"reversal": str(reversal.pk)}, reason=reason)
+                  original={"payment": str(payment.pk), "amount": str(payment.amount),
+                            "balance": str(balance_before)},
+                  updated={"reversal": str(reversal.pk),
+                           "balance": str(balance_before + payment.amount)}, reason=reason)
         return Response({"payment": pack_payment(payment), "balance": str(totals(employee)["currentBalance"])})
