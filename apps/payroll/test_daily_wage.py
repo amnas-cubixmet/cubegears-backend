@@ -135,7 +135,7 @@ class DailyWageLedgerTests(TestCase):
         entry = DailyWageEntry.objects.get(employee=self.employee, work_date=self.yesterday)
         updated = self.client.patch(
             f"/api/v1/attendance/records/{entry.attendance_id}",
-            {"status": "Half Day"}, format="json",
+            {"status": "Half Day", "reason": "Supervisor verified half-day"}, format="json",
         )
         self.assertEqual(updated.status_code, 200, updated.data)
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("400"))
