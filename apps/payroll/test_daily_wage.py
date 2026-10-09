@@ -129,6 +129,18 @@ class DailyWageLedgerTests(TestCase):
         self.assertEqual(WagePaymentReversal.objects.count(), 1)
         self.assertEqual(Decimal(self.account()["currentBalance"]), Decimal("800"))
 
+    def test_approved_attendance_edit_recalculates_unpaid_ledger_once(self):
+        self.setup_rate("800")
+        self.finalize(self.yesterday, "Full Day")
+        entry = DailyWageEntry.objects.get(employee=self.employee, work_date=self.yesterday)
+        updated = self.client.patch(
+            f"/api/v1/attendance/records/{entry.attendance_id}",
+            {"status": "Half Day"}, format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("400"))
+        self.assertEqual(DailyWageEntry.objects.count(), 1)
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
