@@ -65,6 +65,82 @@ class DailyWageLedgerTests(TestCase):
         self.assertEqual(self.finalize(self.today, "Unpaid Leave").status_code, 200)
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("800"))
 
+    def test_all_leave_types_and_weekly_off_pay_zero_without_duplicates(self):
+        self.setup_rate("800")
+        unpaid_statuses = [
+            "Leave", "Full Day Leave", "On Leave", "Paid Leave",
+            "Sick Leave", "Casual Leave", "Unpaid Leave",
+            "Absent", "Weekly Off", "Weekly Off (Not Worked)", "Holiday",
+        ]
+        for status in unpaid_statuses:
+            with self.subTest(attendance=status):
+                result = self.finalize(self.today, status)
+                self.assertEqual(result.status_code, 200, result.data)
+                self.assertEqual(Decimal(result.data["base"]), Decimal("0"))
+                self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("0"))
+                self.assertEqual(Decimal(self.account()["currentBalance"]), Decimal("0"))
+                self.assertEqual(DailyWageEntry.objects.count(), 1)
+
+    def test_worked_full_and_half_days_use_independent_rate(self):
+        self.setup_rate("800")
+        full = self.finalize(self.yesterday, "Full Day Present")
+        half = self.finalize(self.today, "Half Day Worked")
+        self.assertEqual(full.status_code, 200, full.data)
+        self.assertEqual(half.status_code, 200, half.data)
+        self.assertEqual(Decimal(full.data["base"]), Decimal("800"))
+        self.assertEqual(Decimal(half.data["base"]), Decimal("400"))
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("1200"))
+
+    def test_approved_full_day_leave_blocks_wage_even_if_labeled_paid(self):
+        from apps.attendance.models import LeaveRequest
+        self.setup_rate("800")
+        LeaveRequest.objects.create(
+            company=self.company, branch=self.branch, employee=self.employee,
+            leave_type="Paid Leave", start_date=self.today, end_date=self.today,
+            status="Approved", reason="Approved day of leave",
+        )
+        no_salary = self.finalize(self.today, "Paid Leave")
+        self.assertEqual(no_salary.status_code, 200, no_salary.data)
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("0"))
+        incorrectly_marked_worked = self.finalize(self.today, "Full Day")
+        self.assertEqual(incorrectly_marked_worked.status_code, 400, incorrectly_marked_worked.data)
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("0"))
+
+    def test_half_day_approved_leave_allows_only_worked_half_day_wage(self):
+        from apps.attendance.models import LeaveRequest
+        self.setup_rate("800")
+        LeaveRequest.objects.create(
+            company=self.company, branch=self.branch, employee=self.employee,
+            leave_type="Unpaid Leave", start_date=self.today, end_date=self.today,
+            half_day=True, status="Approved", reason="Half-day unpaid leave",
+        )
+        worked = self.finalize(self.today, "Half Day Worked")
+        self.assertEqual(worked.status_code, 200, worked.data)
+        self.assertEqual(Decimal(worked.data["base"]), Decimal("400"))
+        self.assertEqual(self.finalize(self.today, "Full Day").status_code, 400)
+
+    def test_overtime_adds_to_worked_wage_then_full_payment_zeros_balance(self):
+        self.setup_rate("800")
+        self.finalize(self.today, "Full Day")
+        extra = self.client.post(f"{self.url}/extras", {
+            "date": str(self.today), "category": "OT", "amount": "200",
+            "reason": "Approved two-hour overtime", "requestKey": "ot-200",
+        }, format="json")
+        self.assertEqual(extra.status_code, 201, extra.data)
+        reviewed = self.client.post(
+            f"/api/v1/payroll/daily-wages/extras/{extra.data['id']}/approve",
+            {"status": "Approved"}, format="json",
+        )
+        self.assertEqual(reviewed.status_code, 200, reviewed.data)
+        self.assertEqual(Decimal(self.account()["currentBalance"]), Decimal("1000"))
+        paid = self.client.post(f"{self.url}/pay", {
+            "amount": "1000", "method": "UPI", "requestKey": "settle-1000",
+        }, format="json")
+        self.assertEqual(paid.status_code, 200, paid.data)
+        self.assertEqual(Decimal(self.account()["currentBalance"]), Decimal("0"))
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("1000"))
+        self.assertEqual(Decimal(self.account()["totalPaid"]), Decimal("1000"))
+
     def test_pending_extras_approval_and_payment_are_idempotent(self):
         self.setup_rate("900")
         self.finalize(self.yesterday)
