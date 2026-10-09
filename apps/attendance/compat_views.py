@@ -1,6 +1,8 @@
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, time, timedelta
 from django.db.models import Q
+from django.db import transaction
+from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from rest_framework import response,status
 from apps.accounts.permissions import RolePermission, user_has_permission
@@ -788,6 +790,7 @@ class ManagerTeamView(APIView):
             rows=[row for row in rows if row["status"]==st]
         return response.Response(rows)
 
+    @transaction.atomic
     def post(self,request):
         employee=Employee.objects.filter(
             pk=request.data.get("employeeId"),
@@ -809,8 +812,12 @@ class ManagerTeamView(APIView):
             date=day,
             defaults={"status":request.data.get("status") or "Present"},
         )
+        previous_status=record.status
         record.status=request.data.get("status") or record.status
-        record.notes=request.data.get("auditReason") or request.data.get("notes") or record.notes
+        reason=str(request.data.get("auditReason") or request.data.get("notes") or "").strip()
+        if record.wage_finalized and record.status != previous_status and not reason:
+            raise ValidationError({"auditReason": "Reason is required for finalized attendance corrections."})
+        record.notes=reason or record.notes
         record.save(update_fields=["status","notes","updated_at"])
 
         clock_in=_parse_attendance_datetime(day,request.data.get("clockIn"))
@@ -839,16 +846,24 @@ class ManagerTeamView(APIView):
             else:
                 recalculate_record(record)
 
+        if record.wage_finalized and record.status != previous_status:
+            from apps.payroll.daily_wage_service import finalize_attendance
+            finalize_attendance(employee, day, record.status, request.user, reason)
+            record.refresh_from_db()
         return response.Response(AttendanceRecordSerializer(record).data,status=201)
 
 class ManagerTeamDetailView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
 
+    @transaction.atomic
     def put(self,request,pk):
         obj=AttendanceRecord.objects.filter(pk=pk,company=request.user.company).prefetch_related("sessions").first()
         if not obj:
             return response.Response({"message":"Attendance record not found."},status=404)
+        old_status=obj.status
+        reason=str(request.data.get("auditReason") or request.data.get("notes") or "").strip()
+        requested_status=request.data.get("status")
 
         for incoming,attr in [
             ("status","status"),
@@ -883,6 +898,13 @@ class ManagerTeamDetailView(APIView):
         obj.save(update_fields=["status","worked_minutes","late_minutes","early_exit_minutes","overtime_minutes","notes","updated_at"])
         if sessions:
             recalculate_record(obj)
+        next_status=requested_status or obj.status
+        if obj.wage_finalized and next_status != old_status:
+            if not reason:
+                raise ValidationError({"auditReason": "Reason is required for finalized attendance corrections."})
+            from apps.payroll.daily_wage_service import finalize_attendance
+            finalize_attendance(obj.employee, obj.date, next_status, request.user, reason)
+            obj.refresh_from_db()
         return response.Response(AttendanceRecordSerializer(obj).data)
 
 class ManagerMasterView(APIView):
