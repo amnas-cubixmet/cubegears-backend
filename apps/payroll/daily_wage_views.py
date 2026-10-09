@@ -66,7 +66,9 @@ def pack_extra(x):
 def pack_payment(p):
     return {
         "id": str(p.pk), "employeeId": str(p.employee_id),
-        "employeeName": p.employee.name, "amount": str(p.amount),
+        "employeeName": p.employee.name, "branchId": str(p.employee.branch_id or ""),
+        "branchName": p.employee.branch.name if p.employee.branch else "No Branch",
+        "amount": str(p.amount),
         "date": str(p.payment_date), "method": p.method,
         "reference": p.reference,
         "reversed": hasattr(p, "reversal"),
@@ -74,9 +76,9 @@ def pack_payment(p):
 
 
 def history_for(employee=None, request=None):
-    entries = DailyWageEntry.objects.select_related("employee", "attendance").filter(
+    entries = DailyWageEntry.objects.select_related("employee", "employee__branch", "attendance").filter(
         employee=employee
-    ) if employee else DailyWageEntry.objects.select_related("employee", "attendance").filter(
+    ) if employee else DailyWageEntry.objects.select_related("employee", "employee__branch", "attendance").filter(
         employee__in=visible_workers(request)
     )
     if request:
@@ -114,7 +116,9 @@ def history_for(employee=None, request=None):
                           else "Part Paid" if allocated > 0 else "Unpaid")
         rows.append({
             "id": str(entry.pk), "employeeId": str(entry.employee_id),
-            "employeeName": entry.employee.name, "date": str(entry.work_date),
+            "employeeName": entry.employee.name, "branchId": str(entry.employee.branch_id or ""),
+            "branchName": entry.employee.branch.name if entry.employee.branch else "No Branch",
+            "date": str(entry.work_date),
             "attendance": entry.attendance_status, "dailyRate": str(entry.applied_rate),
             "baseWage": str(entry.base_amount), "extras": str(bonus),
             "adjustments": str(correction), "total": str(total_day),
@@ -156,7 +160,7 @@ def account(employee):
         "lastPaymentDate": str(last.payment_date) if last else None,
         "history": history_for(employee=employee)[:120],
         "extras": [pack_extra(x) for x in DailyWageExtra.objects.filter(employee=employee).order_by("-work_date","-created_at")[:120]],
-        "payments": [pack_payment(p) for p in WagePayment.objects.select_related("employee").filter(employee=employee).order_by("-created_at")[:120]],
+        "payments": [pack_payment(p) for p in WagePayment.objects.select_related("employee", "employee__branch").filter(employee=employee).order_by("-created_at")[:120]],
         "audit": [{
             "id": str(log.pk), "date": str(log.work_date) if log.work_date else "",
             "action": log.action, "reason": log.reason,
@@ -261,7 +265,7 @@ class DailyWageHistoryView(WageAPIView):
 class DailyWagePaymentListView(WageAPIView):
     def get(self, request):
         employee_id = request.query_params.get("employee")
-        qs = WagePayment.objects.select_related("employee").filter(employee__in=visible_workers(request))
+        qs = WagePayment.objects.select_related("employee", "employee__branch").filter(employee__in=visible_workers(request))
         if employee_id:
             qs = qs.filter(employee_id=employee_id)
         return Response([pack_payment(p) for p in qs.order_by("-created_at")[:400]])
