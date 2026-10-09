@@ -153,7 +153,13 @@ def finalize_attendance(employee, work_date, status, user, reason):
     if requested not in STATUSES:
         raise ValidationError({"status": "Use Full Day, Half Day, Absent or Unpaid Leave."})
     normalized, fraction = STATUSES[requested]
-    new_base = (rate.rate * fraction).quantize(CENT, rounding=ROUND_HALF_UP)
+    existing = DailyWageEntry.objects.select_for_update().filter(
+        employee=employee, work_date=work_date
+    ).first()
+    # An already-posted day's rate is a historical snapshot: later rate
+    # revisions must not silently change that day's agreed pay.
+    snapshot_rate = existing.applied_rate if existing else rate.rate
+    new_base = (snapshot_rate * fraction).quantize(CENT, rounding=ROUND_HALF_UP)
     if not current:
         current = AttendanceRecord.objects.create(
             company=employee.company, branch=employee.branch, employee=employee,
@@ -167,11 +173,9 @@ def finalize_attendance(employee, work_date, status, user, reason):
     current.save(update_fields=[
         "status", "wage_finalized", "wage_finalized_by", "wage_finalized_at", "updated_at",
     ])
-    existing = DailyWageEntry.objects.select_for_update().filter(
-        employee=employee, work_date=work_date
-    ).first()
-    settled = WagePayment.objects.filter(
-        employee=employee, reversal__isnull=True, payment_date__gte=work_date
+    settled = bool(existing) and WagePayment.objects.filter(
+        employee=employee, reversal__isnull=True,
+        created_at__gte=existing.created_at,
     ).exists()
     old_base = existing.base_amount if existing else ZERO
     old_rate = existing.applied_rate if existing else None
@@ -190,7 +194,7 @@ def finalize_attendance(employee, work_date, status, user, reason):
             )
     elif existing:
         existing.attendance_status = normalized
-        existing.applied_rate = rate.rate
+        existing.applied_rate = snapshot_rate
         existing.base_amount = new_base
         existing.finalized_by = user
         existing.save(update_fields=[
@@ -200,12 +204,12 @@ def finalize_attendance(employee, work_date, status, user, reason):
         DailyWageEntry.objects.create(
             company=employee.company, branch=employee.branch, employee=employee,
             attendance=current, work_date=work_date, attendance_status=normalized,
-            applied_rate=rate.rate, base_amount=new_base, finalized_by=user,
+            applied_rate=snapshot_rate, base_amount=new_base, finalized_by=user,
         )
     audit(employee, user, "ATTENDANCE_FINALIZED", work_date=work_date,
           original={"status": old_status, "finalized": old_final,
                     "base": str(old_base), "rate": str(old_rate) if old_rate is not None else None},
-          updated={"status": normalized, "base": str(new_base), "rate": str(rate.rate)},
+          updated={"status": normalized, "base": str(new_base), "rate": str(snapshot_rate)},
           reason=str(reason or "Attendance finalized"))
     return day_amounts(employee, work_date)
 
@@ -216,8 +220,8 @@ def pay_balance(employee, user, value, method, reference, key, payment_date):
     key = request_key(key)
     existing = WagePayment.objects.filter(employee=employee, request_key=key).first()
     if existing:
-        if existing.reversal if hasattr(existing, "reversal") else False:
-            raise ValidationError({"requestKey": "This payment key belongs to a reversed transaction."})
+        if WagePaymentReversal.objects.filter(payment=existing).exists():
+            raise ValidationError({"requestKey": "This key already belongs to a reversed payment."})
         return existing
     paid_amount = amount(value)
     if paid_amount > totals(employee)["currentBalance"]:
