@@ -750,9 +750,25 @@ def process_payroll_run(run,user):
     if run.branch_id:
         employees=employees.filter(branch=run.branch)
 
+    # A staff member enrolled in the Daily Wage Ledger must not also receive
+    # automatic legacy monthly payslips for that payroll period.
+    from .daily_wage_models import EmployeeDailyWageRate
+    end_of_month=date(run.year,run.month,monthrange(run.year,run.month)[1])
+    daily_employee_ids=set(EmployeeDailyWageRate.objects.filter(
+        company=run.company, effective_from__lte=end_of_month,
+        employee__in=employees,
+    ).values_list("employee_id",flat=True))
+
     active_ids=[]
     for employee in employees.select_related("branch","user"):
-        plan=ensure_compensation_plan(employee,date(run.year,run.month,monthrange(run.year,run.month)[1]))
+        if employee.pk in daily_employee_ids:
+            # Do not delete already paid legacy payslips. Existing unpaid
+            # drafts are cleaned up by the ordinary run reconciliation.
+            active_ids.extend(Payslip.objects.filter(
+                payroll_run=run, employee=employee, paid_amount__gt=0,
+            ).values_list("id", flat=True))
+            continue
+        plan=ensure_compensation_plan(employee,end_of_month)
         existing=Payslip.objects.filter(payroll_run=run,employee=employee).first()
         calc=calculate_employee_payroll(employee,plan,run.year,run.month,existing)
 
