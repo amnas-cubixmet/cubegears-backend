@@ -57,15 +57,15 @@ def get_payroll_policy(company,branch=None):
         company=company,
         branch=None,
         name="Default",
-        default_payment_type=PayrollPolicy.PAYMENT_MONTHLY,
-        payroll_cycle="monthly",
+        default_payment_type=PayrollPolicy.PAYMENT_DAILY,
+        payroll_cycle="daily",
         working_day_calculation="attendance",
         overtime_rules={"multiplier":1.5},
         commission_rules={"autoApprove":False},
         job_incentive_rules={},
         approval_workflow={"managerApproval":True},
         payment_methods=["Bank Transfer","UPI","Cash","Cheque"],
-        unpaid_leave_policy={"monthlyDivisor":30},
+        unpaid_leave_policy={},
         is_default=True,
     )
 
