@@ -8,7 +8,7 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from apps.attendance.models import AttendanceRecord
+from apps.attendance.models import AttendanceRecord, LeaveRequest
 from apps.employees.models import Employee
 from .daily_wage_models import (
     DailyWageEntry, DailyWageExtra, EmployeeDailyWageRate,
@@ -172,6 +172,21 @@ def finalize_attendance(employee, work_date, status, user, reason):
     if requested not in STATUSES:
         raise ValidationError({"status": "Use Full Day, Half Day, Leave, Absent, Weekly Off or Holiday."})
     normalized, fraction = STATUSES[requested]
+    # A leave approval must never be interpreted as paid leave salary.
+    # Half-day approved leave can coexist with half a worked day; a full-day
+    # approved leave blocks any worked wage until the leave is corrected.
+    if fraction > ZERO:
+        approved_leave = LeaveRequest.objects.filter(
+            company=employee.company,
+            employee=employee,
+            status__iexact="Approved",
+            start_date__lte=work_date,
+            end_date__gte=work_date,
+        ).first()
+        if approved_leave and (not approved_leave.half_day or fraction > Decimal("0.5")):
+            raise ValidationError({
+                "status": "Approved leave covers this work date. Leave wage is ₹0; correct or cancel the approved leave before posting worked wages."
+            })
     existing = DailyWageEntry.objects.select_for_update().filter(
         employee=employee, work_date=work_date
     ).first()
