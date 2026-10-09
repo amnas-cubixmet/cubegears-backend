@@ -30,6 +30,7 @@ class JobWorkSession(CompanyOwnedModel):
     )
     service_name = models.CharField(max_length=160)
     labour_charge = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    worker_charge = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=RUNNING)
     started_at = models.DateTimeField()
     resumed_at = models.DateTimeField(null=True, blank=True)
