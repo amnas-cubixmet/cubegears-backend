@@ -89,7 +89,6 @@ class EmployeeSerializer(serializers.ModelSerializer):
     joiningDate=serializers.DateField(source="joining_date",required=False,allow_null=True)
     employmentStatus=serializers.CharField(source="status",required=False)
     emergencyContact=serializers.CharField(source="emergency_contact",required=False,allow_blank=True)
-    paymentType=serializers.CharField(source="payment_type",required=False,allow_blank=True)
     branchName=serializers.CharField(source="branch.name",read_only=True)
     branchId=serializers.PrimaryKeyRelatedField(
         source="branch",
