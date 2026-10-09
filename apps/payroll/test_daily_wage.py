@@ -187,6 +187,19 @@ class DailyWageLedgerTests(TestCase):
         self.assertEqual(old.applied_rate, Decimal("800"))
         self.assertEqual(old.base_amount, Decimal("400"))
 
+    def test_legacy_monthly_run_does_not_create_duplicate_payslip(self):
+        from .models import PayrollRun, Payslip
+        from .services import process_payroll_run
+        self.setup_rate("800")
+        self.finalize(self.yesterday)
+        run = PayrollRun.objects.create(
+            company=self.company, branch=self.branch,
+            month=self.today.month, year=self.today.year,
+        )
+        process_payroll_run(run, self.user)
+        self.assertFalse(Payslip.objects.filter(employee=self.employee, payroll_run=run).exists())
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("800"))
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
