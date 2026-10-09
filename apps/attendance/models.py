@@ -13,6 +13,9 @@ class AttendanceRecord(CompanyOwnedModel):
     early_exit_minutes=models.PositiveIntegerField(default=0)
     overtime_minutes=models.PositiveIntegerField(default=0)
     status=models.CharField(max_length=30,default="Present")
+    wage_finalized=models.BooleanField(default=False)
+    wage_finalized_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="approved_daily_wage_attendance")
+    wage_finalized_at=models.DateTimeField(null=True,blank=True)
     location=models.JSONField(default=dict,blank=True)
     notes=models.TextField(blank=True)
     class Meta:
