@@ -200,6 +200,29 @@ class DailyWageLedgerTests(TestCase):
         self.assertFalse(Payslip.objects.filter(employee=self.employee, payroll_run=run).exists())
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("800"))
 
+    def test_partial_payments_allocate_oldest_workdays_first(self):
+        from .daily_wage_models import WagePaymentAllocation
+        self.setup_rate("800")
+        self.finalize(self.yesterday)
+        self.finalize(self.today)
+        first = self.client.post(f"{self.url}/pay", {
+            "amount": "1000", "method": "UPI", "requestKey": "fifo-one",
+        }, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        allocations = list(WagePaymentAllocation.objects.order_by("work_date"))
+        self.assertEqual([row.work_date for row in allocations], [self.yesterday, self.today])
+        self.assertEqual([row.amount for row in allocations], [Decimal("800"), Decimal("200")])
+        entries = {x["date"]: x for x in self.account()["history"]}
+        self.assertEqual(entries[str(self.yesterday)]["paymentStatus"], "Paid")
+        self.assertEqual(entries[str(self.today)]["paymentStatus"], "Part Paid")
+        second = self.client.post(f"{self.url}/pay", {
+            "amount": "600", "method": "Cash", "requestKey": "fifo-two",
+        }, format="json")
+        self.assertEqual(second.status_code, 200, second.data)
+        self.assertEqual(Decimal(self.account()["currentBalance"]), Decimal("0"))
+        entries = {x["date"]: x for x in self.account()["history"]}
+        self.assertEqual(entries[str(self.today)]["paymentStatus"], "Paid")
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
