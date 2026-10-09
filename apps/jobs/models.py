@@ -66,3 +66,44 @@ class JobActivity(CompanyOwnedModel):
     to_status=models.CharField(max_length=40,blank=True)
     metadata=models.JSONField(default=dict,blank=True)
     class Meta: ordering=["-created_at"]
+
+
+
+class OutsideLabourCharge(CompanyOwnedModel):
+    """One-off freelance work; NOT an Employee or Payroll earning.
+
+    The customer charge is a reference to the Job Card quote only.
+    Paying the contractor creates one linked expense; it does not modify
+    invoice labour totals or internal staff wages.
+    """
+    STATUS_PENDING = "Pending"
+    STATUS_PAID = "Paid"
+    job = models.ForeignKey(Job, on_delete=models.PROTECT, related_name="outside_labour")
+    worker_name = models.CharField(max_length=160)
+    worker_phone = models.CharField(max_length=30, blank=True)
+    work_description = models.CharField(max_length=300)
+    customer_charge = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    worker_charge = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(
+        max_length=12, choices=[(STATUS_PENDING, "Pending"), (STATUS_PAID, "Paid")],
+        default=STATUS_PENDING,
+    )
+    payment_method = models.CharField(max_length=40, blank=True)
+    payment_reference = models.CharField(max_length=120, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_outside_labour",
+    )
+    paid_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="paid_outside_labour",
+    )
+    expense = models.OneToOneField(
+        "expenses.Expense", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="outside_labour",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["company", "status"], name="outlab_company_status_idx")]
