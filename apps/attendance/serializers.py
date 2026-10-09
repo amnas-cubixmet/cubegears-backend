@@ -32,6 +32,7 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendanceRecord
         exclude = ("company", "branch")
+        read_only_fields = ("wage_finalized", "wage_finalized_by", "wage_finalized_at")
 
 
 class LeaveRequestSerializer(serializers.ModelSerializer):
