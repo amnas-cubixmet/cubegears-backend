@@ -234,6 +234,17 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         if obj.employee.user_id == request.user.id and not request.user.is_superuser:
             raise ValidationError({"approval": "A mechanic cannot approve their own work."})
 
+        # Per-work staff are paid the fixed amount, not a percentage of the
+        # customer's invoice. Require this amount before final approval.
+        from .services import get_compensation_plan
+        from .models import PayrollPolicy
+        plan = get_compensation_plan(obj.employee, timezone.localdate(obj.started_at))
+        payment_type = plan.payment_type if plan else obj.employee.payment_type
+        if payment_type == PayrollPolicy.PAYMENT_PER_JOB and obj.worker_charge <= 0:
+            raise ValidationError({
+                "workerCharge": "Enter the worker's fixed work charge before approval."
+            })
+
         # Validate service-wise revenue; it is not added again to the invoice.
         # A job with no labour quote may still approve hours with zero charge.
         approved_other = JobWorkSession.objects.filter(
