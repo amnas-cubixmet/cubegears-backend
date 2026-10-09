@@ -3,6 +3,7 @@ import calendar
 from datetime import datetime
 from django.utils import timezone
 from django.db.models import Q
+from django.db import transaction
 from rest_framework import decorators,response,status
 from apps.accounts.permissions import RolePermission
 from apps.notifications.models import Notification
@@ -17,6 +18,29 @@ from .services import finish_session, get_attendance_rule, get_attendance_state,
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRecord.objects.select_related("employee").prefetch_related("sessions").all(); serializer_class=AttendanceRecordSerializer
     permission_code="attendance.manage"
+
+    def perform_create(self, serializer):
+        employee = serializer.validated_data["employee"]
+        if employee.company_id != self.request.user.company_id:
+            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        serializer.save(company=employee.company, branch=employee.branch)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        record = serializer.instance
+        old_status = record.status
+        new_status = serializer.validated_data.get("status", old_status)
+        if new_status != old_status and record.wage_finalized:
+            # A manager's approved edit to a finalized record must update
+            # the wage account. Settled records receive audit adjustments.
+            serializer.save()
+            from apps.payroll.daily_wage_service import finalize_attendance
+            finalize_attendance(
+                record.employee, record.date, new_status, self.request.user,
+                str(self.request.data.get("reason") or "Approved attendance status correction"),
+            )
+        else:
+            serializer.save()
 class LeaveRequestViewSet(CompanyScopedModelViewSet):
     queryset=LeaveRequest.objects.select_related("employee").all(); serializer_class=LeaveRequestSerializer
     permission_code="attendance.manage"
