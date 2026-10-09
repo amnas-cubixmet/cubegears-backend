@@ -10,6 +10,7 @@ class PayrollPolicy(CompanyOwnedModel):
     PAYMENT_MONTHLY="monthly"
     PAYMENT_DAILY="daily"
     PAYMENT_HOURLY="hourly"
+    PAYMENT_PER_JOB="per_job"
     PAYMENT_COMMISSION="commission"
     PAYMENT_MONTHLY_COMMISSION="monthly_commission"
     PAYMENT_DAILY_COMMISSION="daily_commission"
@@ -21,6 +22,7 @@ class PayrollPolicy(CompanyOwnedModel):
         (PAYMENT_MONTHLY,"Fixed Monthly Salary"),
         (PAYMENT_DAILY,"Daily Wage"),
         (PAYMENT_HOURLY,"Hourly Wage"),
+        (PAYMENT_PER_JOB,"Fixed Charge per Job Work"),
         (PAYMENT_COMMISSION,"Commission Only"),
         (PAYMENT_MONTHLY_COMMISSION,"Monthly Salary + Commission"),
         (PAYMENT_DAILY_COMMISSION,"Daily Wage + Commission"),
