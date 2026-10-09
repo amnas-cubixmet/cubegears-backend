@@ -411,3 +411,10 @@ class Incentive(CompanyOwnedModel):
 
 # Register timed Job Card work sessions with the Payroll app.
 from .timer_models import JobWorkSession  # noqa: E402,F401
+
+
+# Imported here so Django discovers the standalone, non-monthly wage models.
+from .daily_wage_models import (
+    EmployeeDailyWageRate, DailyWageEntry, DailyWageExtra,
+    WageAdjustment, WagePayment, WagePaymentReversal, WageAuditLog,
+)
