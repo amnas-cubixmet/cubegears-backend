@@ -14,8 +14,6 @@ urlpatterns=[
  path("attendance-manager/team",ManagerTeamView.as_view()),
  path("attendance-manager/team/<uuid:pk>",ManagerTeamDetailView.as_view()),
  path("attendance-manager/master",ManagerMasterView.as_view()),
- path("attendance-manager/leave-types",LeaveTypesView.as_view()),
- path("attendance-manager/leave-types/<uuid:pk>",LeaveTypeDetailView.as_view()),
  path("attendance-manager/holidays",ManagerHolidaysView.as_view()),
  path("attendance-manager/holidays/<uuid:pk>",ManagerHolidayDetailView.as_view()),
  path("attendance-manager/calendar",ManagerCalendarView.as_view()),
