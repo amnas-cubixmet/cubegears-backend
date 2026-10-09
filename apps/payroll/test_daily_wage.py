@@ -312,6 +312,34 @@ class DailyWageLedgerTests(TestCase):
         self.assertEqual(DailyWageEntry.objects.count(), 1)
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("400"))
 
+    def test_legacy_salary_frequency_and_commission_writes_are_retired(self):
+        # Old reports remain available, but creating new monthly/weekly
+        # earnings through obsolete endpoints must be impossible.
+        for url in (
+            "/api/v1/payroll/policy",
+            "/api/v1/payroll/compensation-plans",
+            "/api/v1/payroll/commission-rules",
+            "/api/v1/payroll/commissions",
+            "/api/v1/payroll/salary-setup",
+            "/api/v1/payroll/runs",
+            "/api/v1/payroll/payslips",
+            "/api/v1/payroll/adjustments",
+        ):
+            with self.subTest(url=url):
+                response = self.client.post(url, {
+                    "paymentType": "monthly", "paymentFrequency": "weekly",
+                }, format="json")
+                self.assertEqual(response.status_code, 405, response.data)
+
+    def test_employees_cannot_set_monthly_pay_type_on_create(self):
+        result = self.client.post("/api/v1/employees", {
+            "name": "New Daily Worker", "paymentType": "monthly",
+        }, format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        created = Employee.objects.get(pk=result.data["id"])
+        self.assertEqual(created.payment_type, "daily")
+        self.assertNotIn("paymentType", result.data)
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
