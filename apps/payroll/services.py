@@ -742,6 +742,10 @@ def ensure_period(run):
 
 
 def process_payroll_run(run,user):
+    # Disabled for Daily Wage Only operations. Do not generate monthly,
+    # hourly or commission payslips; previous paid records remain readable.
+    raise ValueError("Legacy payroll runs are retired. Use Daily Wage accounts and record wage payments there.")
+
     if run.locked_at or run.approval_status=="Approved":
         raise ValueError("Approved payroll is locked. Use an audited adjustment instead.")
 
