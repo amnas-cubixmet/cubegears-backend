@@ -31,13 +31,16 @@ class AttendanceRecordViewSet(CompanyScopedModelViewSet):
         old_status = record.status
         new_status = serializer.validated_data.get("status", old_status)
         if new_status != old_status and record.wage_finalized:
+            reason = str(self.request.data.get("reason") or "").strip()
+            if not reason:
+                raise ValidationError({"reason": "Explain the approved attendance correction."})
             # A manager's approved edit to a finalized record must update
             # the wage account. Settled records receive audit adjustments.
             serializer.save()
             from apps.payroll.daily_wage_service import finalize_attendance
             finalize_attendance(
                 record.employee, record.date, new_status, self.request.user,
-                str(self.request.data.get("reason") or "Approved attendance status correction"),
+                reason,
             )
         else:
             serializer.save()
