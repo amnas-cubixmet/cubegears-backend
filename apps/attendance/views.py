@@ -47,6 +47,16 @@ class AttendanceRecordViewSet(CompanyScopedModelViewSet):
 class LeaveRequestViewSet(CompanyScopedModelViewSet):
     queryset=LeaveRequest.objects.select_related("employee").all(); serializer_class=LeaveRequestSerializer
     permission_code="attendance.manage"
+
+    def perform_create(self, serializer):
+        employee = serializer.validated_data["employee"]
+        if employee.company_id != self.request.user.company_id:
+            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        serializer.save(
+            company=employee.company, branch=employee.branch,
+            leave_type="Unpaid Leave",
+        )
+
 class OvertimeRequestViewSet(CompanyScopedModelViewSet):
     queryset=OvertimeRequest.objects.select_related("employee","approved_by").all()
     serializer_class=OvertimeRequestSerializer
