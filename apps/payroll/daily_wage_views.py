@@ -31,7 +31,7 @@ def visible_workers(request):
     asked_branch = request.query_params.get("branch")
     if asked_branch:
         qs = qs.filter(branch_id=asked_branch)
-    return qs.order_by("name")
+    return qs.select_related("branch").order_by("name")
 
 
 def worker_or_404(request, employee_id):
@@ -126,6 +126,7 @@ def account(employee):
         "employee": {
             "id": str(employee.pk), "employeeCode": employee.employee_code,
             "name": employee.name, "branchId": str(employee.branch_id or ""),
+            "branchName": employee.branch.name if employee.branch else "No Branch",
             "companyId": str(employee.company_id), "designation": employee.designation,
         },
         "currentRate": str(applied_rate(employee, today).rate) if applied_rate(employee, today) else None,
