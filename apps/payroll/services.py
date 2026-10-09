@@ -149,7 +149,9 @@ def ensure_compensation_plan(employee,as_of=None):
         branch=employee.branch,
         employee=employee,
         payment_type=payment_type,
-        base_salary=employee.base_salary,
+        base_salary=employee.base_salary if payment_type!=PayrollPolicy.PAYMENT_PER_JOB else Decimal('0'),
+        overtime_eligible=payment_type!=PayrollPolicy.PAYMENT_PER_JOB,
+        incentive_eligible=payment_type!=PayrollPolicy.PAYMENT_PER_JOB,
         effective_from=employee.joining_date or timezone.localdate(),
         approval_status="Approved",
         is_active=True,
@@ -473,7 +475,11 @@ def _component_amount(component,base_pay,payable_days,payable_hours):
 def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
     policy=get_payroll_policy(employee.company,employee.branch)
     attendance=attendance_summary(employee,year,month)
-    overtime=overtime_summary(employee,year,month,plan,policy)
+    overtime=(
+        {'minutes':0,'amount':Decimal('0')}
+        if plan.payment_type==PayrollPolicy.PAYMENT_PER_JOB
+        else overtime_summary(employee,year,month,plan,policy)
+    )
     start,end=month_bounds(year,month)
     generate_commissions(employee,plan,year,month,policy)
 
@@ -485,9 +491,12 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
         status__iexact="Approved",
     ).aggregate(value=Sum("amount"))["value"] or Decimal("0")
     approved_commission=money(approved_commission)
+    if plan.payment_type==PayrollPolicy.PAYMENT_PER_JOB:
+        # Fixed worker charges and legacy commissions must never be combined.
+        approved_commission=Decimal('0')
 
     legacy_incentives=Decimal("0")
-    if plan.incentive_eligible:
+    if plan.incentive_eligible and plan.payment_type!=PayrollPolicy.PAYMENT_PER_JOB:
         legacy_incentives=money(
             Incentive.objects.filter(
                 company=employee.company,
@@ -605,7 +614,7 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
 
     bonus=Decimal("0")
     bonus_rules=plan.bonus_rules or {}
-    if plan.incentive_eligible:
+    if plan.incentive_eligible and plan.payment_type!=PayrollPolicy.PAYMENT_PER_JOB:
         bonus=money(bonus_rules.get("fixedAmount") or bonus_rules.get("fixed") or 0)
         legacy_incentives=money(legacy_incentives+bonus)
 
