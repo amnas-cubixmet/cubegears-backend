@@ -846,9 +846,9 @@ class ManagerTeamView(APIView):
             else:
                 recalculate_record(record)
 
-        if record.wage_finalized and record.status != previous_status:
+        if record.wage_finalized and (request.data.get("status") or record.status) != previous_status:
             from apps.payroll.daily_wage_service import finalize_attendance
-            finalize_attendance(employee, day, record.status, request.user, reason)
+            finalize_attendance(employee, day, request.data.get("status") or record.status, request.user, reason)
             record.refresh_from_db()
         return response.Response(AttendanceRecordSerializer(record).data,status=201)
 
