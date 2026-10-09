@@ -41,14 +41,16 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
     isPaid = serializers.SerializerMethodField()
 
     def get_payType(self, obj):
-        return "Unpaid" if str(obj.leave_type or "").strip().casefold() == "unpaid leave" else "Paid"
+        # This workshop uses Daily Wage Only; no leave earns paid salary.
+        return "Unpaid"
 
     def get_isPaid(self, obj):
-        return self.get_payType(obj) == "Paid"
+        return False
 
     class Meta:
         model = LeaveRequest
         exclude = ("company", "branch")
+        read_only_fields = ("leave_type",)
 
 
 class OvertimeRequestSerializer(serializers.ModelSerializer):
