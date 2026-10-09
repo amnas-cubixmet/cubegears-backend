@@ -1,3 +1,4 @@
+from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from .work_session_views import JobWorkSessionViewSet
 from .job_timer_assignments import JobTimerAssignmentsViewSet
@@ -41,4 +42,4 @@ router.register("adjustments",PayrollAdjustmentViewSet,basename="payroll-adjustm
 router.register("salary-payments",SalaryPaymentViewSet,basename="salary-payments")
 router.register("incentives",IncentiveViewSet,basename="incentives")
 
-urlpatterns=router.urls
+urlpatterns = [path("daily-wages/", include("apps.payroll.daily_wage_urls"))] + router.urls
