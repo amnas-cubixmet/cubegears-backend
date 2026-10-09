@@ -84,6 +84,20 @@ class WagePayment(CompanyOwnedModel):
         ]
 
 
+class WagePaymentAllocation(CompanyOwnedModel):
+    """Immutable portion of a payment allocated to a work date (oldest first)."""
+    payment = models.ForeignKey(WagePayment, on_delete=models.PROTECT, related_name="allocations")
+    employee = models.ForeignKey("employees.Employee", on_delete=models.PROTECT, related_name="wage_payment_allocations")
+    work_date = models.DateField()
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    class Meta:
+        ordering = ["work_date"]
+        constraints = [
+            models.UniqueConstraint(fields=["payment", "work_date"], name="unique_wage_payment_date_alloc"),
+            models.CheckConstraint(condition=Q(amount__gt=0), name="daily_wage_allocation_positive"),
+        ]
+
+
 class WagePaymentReversal(CompanyOwnedModel):
     payment = models.OneToOneField(WagePayment, on_delete=models.PROTECT, related_name="reversal")
     reason = models.TextField()
