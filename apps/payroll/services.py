@@ -16,6 +16,7 @@ from .models import (
     EmployeeWorkLog,
     Incentive,
     JobCardEmployeeAssignment,
+    JobWorkSession,
     PayrollAdjustment,
     PayrollPeriod,
     PayrollPolicy,
@@ -132,6 +133,9 @@ def ensure_compensation_plan(employee,as_of=None):
         "Fixed Monthly":PayrollPolicy.PAYMENT_MONTHLY,
         "Daily Wage":PayrollPolicy.PAYMENT_DAILY,
         "Hourly Wage":PayrollPolicy.PAYMENT_HOURLY,
+        "Per Job":PayrollPolicy.PAYMENT_PER_JOB,
+        "Per Work":PayrollPolicy.PAYMENT_PER_JOB,
+        "Fixed Work Charge":PayrollPolicy.PAYMENT_PER_JOB,
         "Commission":PayrollPolicy.PAYMENT_COMMISSION,
         "Commission Only":PayrollPolicy.PAYMENT_COMMISSION,
     }
@@ -498,6 +502,17 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
     unpaid_leave=attendance["unpaidLeaveDays"]
 
     base_pay=Decimal("0")
+    work_charge_sessions=[]
+    if payment_type==PayrollPolicy.PAYMENT_PER_JOB:
+        # Each approved work session belongs to exactly one approval month.
+        # Customer-facing labour charges never enter worker payroll.
+        work_charge_sessions=list(JobWorkSession.objects.filter(
+            company=employee.company,employee=employee,
+            status=JobWorkSession.APPROVED,
+            reviewed_at__date__range=(start,end),
+            worker_charge__gt=0,
+        ).select_related("job").order_by("reviewed_at","pk"))
+        base_pay=money(sum((entry.worker_charge for entry in work_charge_sessions),Decimal("0")))
     if payment_type in {
         PayrollPolicy.PAYMENT_MONTHLY,
         PayrollPolicy.PAYMENT_MONTHLY_COMMISSION,
@@ -540,7 +555,23 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
             "source_id":str(plan.id),
             "source_key":"base",
         }
-    ] if base_pay else []
+    ] if base_pay and payment_type!=PayrollPolicy.PAYMENT_PER_JOB else []
+    for entry in work_charge_sessions:
+        line_items.append({
+            "kind":"earning",
+            "code":"WORK_CHARGE",
+            "description":f"{entry.service_name} · {entry.job.job_number}",
+            "quantity":Decimal("1"),
+            "rate":entry.worker_charge,
+            "amount":entry.worker_charge,
+            "source_type":"job_work_session",
+            "source_id":str(entry.pk),
+            "source_key":f"work-session:{entry.pk}",
+            "metadata":{
+                "jobId":str(entry.job_id),
+                "customerLabourCharge":str(entry.labour_charge),
+            },
+        })
 
     component_earnings=Decimal("0")
     component_deductions=Decimal("0")
@@ -671,6 +702,7 @@ def calculate_employee_payroll(employee,plan,year,month,existing_payslip=None):
             "payableHours":float(payable_hours),
             "approvedOvertimeMinutes":overtime["minutes"],
             "approvedCommission":float(approved_commission),
+            "approvedFixedWorkCharge":float(base_pay) if payment_type==PayrollPolicy.PAYMENT_PER_JOB else 0,
             "approvedIncentives":float(legacy_incentives),
             "hourlyWageSource":hourly_source,
         },
