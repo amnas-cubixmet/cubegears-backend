@@ -66,6 +66,8 @@ def _close_previous_plans(plan):
 
 
 class PayrollPolicyViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=PayrollPolicy.objects.all()
     serializer_class=PayrollPolicySerializer
     permission_prefix="payroll"
@@ -83,6 +85,8 @@ class PayrollPolicyViewSet(CompanyScopedModelViewSet):
 
 
 class EmployeeCompensationPlanViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=EmployeeCompensationPlan.objects.select_related(
         "employee","approved_by"
     ).prefetch_related("components").all()
@@ -149,6 +153,8 @@ class EmployeeCompensationPlanViewSet(CompanyScopedModelViewSet):
 
 
 class CompensationComponentViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=CompensationComponent.objects.select_related("plan","plan__employee").all()
     serializer_class=CompensationComponentSerializer
     permission_prefix="payroll"
@@ -175,6 +181,8 @@ class CompensationComponentViewSet(CompanyScopedModelViewSet):
 
 
 class CommissionRuleViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=CommissionRule.objects.select_related("employee","plan").all()
     serializer_class=CommissionRuleSerializer
     permission_prefix="payroll"
@@ -308,6 +316,8 @@ class EmployeeWorkLogViewSet(CompanyScopedModelViewSet):
 
 
 class EmployeeCommissionViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=EmployeeCommission.objects.select_related(
         "employee","job","assignment","plan","approved_by"
     ).all()
@@ -346,12 +356,16 @@ class EmployeeCommissionViewSet(CompanyScopedModelViewSet):
 
 
 class SalaryStructureViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=SalaryStructure.objects.select_related("employee").all()
     serializer_class=SalaryStructureSerializer
     permission_prefix="payroll"
 
 
 class SalaryAdvanceViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=SalaryAdvance.objects.select_related("employee").all()
     serializer_class=SalaryAdvanceSerializer
     permission_prefix="payroll"
@@ -387,6 +401,8 @@ class PayrollPeriodViewSet(CompanyScopedModelViewSet):
 
 
 class PayrollRunViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=PayrollRun.objects.select_related(
         "period","processed_by","approved_by"
     ).prefetch_related(
@@ -465,6 +481,8 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
 
 
 class PayslipViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=Payslip.objects.select_related(
         "employee","payroll_run","compensation_plan"
     ).prefetch_related("line_items","adjustments","salary_payments").all()
@@ -558,6 +576,8 @@ class PayrollLineItemViewSet(CompanyScopedModelViewSet):
 
 
 class PayrollAdjustmentViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=PayrollAdjustment.objects.select_related("payslip","approved_by").all()
     serializer_class=PayrollAdjustmentSerializer
     permission_prefix="payroll"
@@ -637,6 +657,8 @@ class SalaryPaymentViewSet(CompanyScopedModelViewSet):
 
 
 class IncentiveViewSet(CompanyScopedModelViewSet):
+    # Historical data remains readable; new compensation is Daily Wage ledger only.
+    http_method_names = ["get", "head", "options"]
     queryset=Incentive.objects.select_related("employee","approved_by").all()
     serializer_class=IncentiveSerializer
     permission_prefix="payroll"
