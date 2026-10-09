@@ -29,6 +29,7 @@ urlpatterns = [
     re_path(r"^api/v1/vehicles/?", include("apps.vehicles.urls")),
     re_path(r"^api/v1/services/?", include("apps.services.urls")),
     re_path(r"^api/v1/jobs/?", include("apps.jobs.urls")),
+    re_path(r"^api/v1/outside-labour/?", include("apps.jobs.outside_labour_urls")),
     path("api/v1/", include("apps.jobs.compat_urls")),
 
     re_path(r"^api/v1/stock/?", include("apps.inventory.urls")),
