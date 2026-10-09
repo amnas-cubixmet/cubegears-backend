@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
@@ -11,7 +12,7 @@ from apps.attendance.models import AttendanceRecord
 from apps.employees.models import Employee
 from .daily_wage_models import (
     DailyWageEntry, DailyWageExtra, EmployeeDailyWageRate,
-    WageAdjustment, WageAuditLog, WagePayment, WagePaymentReversal,
+    WageAdjustment, WageAuditLog, WagePayment, WagePaymentAllocation, WagePaymentReversal,
 )
 
 ZERO = Decimal("0.00")
@@ -216,6 +217,40 @@ def finalize_attendance(employee, work_date, status, user, reason):
     return day_amounts(employee, work_date)
 
 
+def allocate_payment(payment, employee):
+    # Allocation only explains what a payment settles. Financial balance is
+    # always calculated independently from immutable earnings minus payments.
+    ledger = defaultdict(lambda: Decimal("0"))
+    for row in DailyWageEntry.objects.filter(employee=employee):
+        ledger[row.work_date] += row.base_amount
+    for row in DailyWageExtra.objects.filter(employee=employee, status="Approved"):
+        ledger[row.work_date] += row.amount
+    for row in WageAdjustment.objects.filter(employee=employee):
+        ledger[row.work_date] += row.amount
+    allocations = defaultdict(lambda: Decimal("0"))
+    for row in WagePaymentAllocation.objects.filter(
+        employee=employee, payment__reversal__isnull=True
+    ).values("work_date").annotate(total=Sum("amount")):
+        allocations[row["work_date"]] += row["total"]
+    balance_to_allocate = payment.amount
+    rows = []
+    for day in sorted(ledger):
+        due = max(Decimal("0"), ledger[day] - allocations[day])
+        take = min(balance_to_allocate, due)
+        if take > 0:
+            rows.append(WagePaymentAllocation(
+                company=employee.company, branch=employee.branch,
+                payment=payment, employee=employee,
+                work_date=day, amount=take,
+            ))
+            balance_to_allocate -= take
+        if balance_to_allocate <= 0:
+            break
+    if balance_to_allocate:
+        raise ValidationError({"amount": "Unable to allocate the payment to posted daily earnings."})
+    WagePaymentAllocation.objects.bulk_create(rows)
+
+
 @transaction.atomic
 def pay_balance(employee, user, value, method, reference, key, payment_date):
     Employee.objects.select_for_update().get(pk=employee.pk)
@@ -240,6 +275,7 @@ def pay_balance(employee, user, value, method, reference, key, payment_date):
         amount=paid_amount, method=method, reference=str(reference or "")[:150],
         request_key=key, payment_date=payment_date, created_by=user,
     )
+    allocate_payment(payment, employee)
     audit(employee, user, "WAGE_PAYMENT", work_date=payment_date,
           original={"balance": str(balance_before)},
           updated={"paymentId": str(payment.pk), "amount": str(paid_amount), "method": method,
