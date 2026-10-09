@@ -300,8 +300,16 @@ def _commission_rule(plan,employee,as_of):
 
 
 def generate_commissions(employee,plan,year,month,policy):
-    # A specific job may authorize commission even when the employee's
-    # default payment type is wage-only. Without an override there is none.
+    # Commission remains available only for existing legacy commission plans.
+    # New monthly/daily/hourly/per-job workers use wages or fixed work charges.
+    legacy_types={
+        PayrollPolicy.PAYMENT_COMMISSION,
+        PayrollPolicy.PAYMENT_MONTHLY_COMMISSION,
+        PayrollPolicy.PAYMENT_DAILY_COMMISSION,
+        PayrollPolicy.PAYMENT_HOURLY_COMMISSION,
+    }
+    if plan.payment_type not in legacy_types:
+        return []
     start,end=month_bounds(year,month)
     sync_job_assignments(employee,start,end)
 
