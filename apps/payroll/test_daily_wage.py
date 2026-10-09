@@ -272,7 +272,8 @@ class DailyWageLedgerTests(TestCase):
             company=self.company, branch=self.branch,
             month=self.today.month, year=self.today.year,
         )
-        process_payroll_run(run, self.user)
+        with self.assertRaisesRegex(ValueError, "Legacy payroll runs are retired"):
+            process_payroll_run(run, self.user)
         self.assertFalse(Payslip.objects.filter(employee=self.employee, payroll_run=run).exists())
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("800"))
 
