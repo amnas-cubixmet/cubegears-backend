@@ -12,17 +12,12 @@ from apps.employees.models import Employee, Shift, Team
 from apps.employees.services import resolve_employee_for_user
 from rest_framework.views import APIView
 
-from .models import AttendanceRecord,AttendanceSession,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection,LeaveType
-from .serializers import AttendanceRecordSerializer,AttendanceSessionSerializer,LeaveRequestSerializer,OvertimeRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer,LeaveTypeSerializer
+from .models import AttendanceRecord,AttendanceSession,LeaveRequest,OvertimeRequest,Holiday,AttendanceRule,PunchCorrection
+from .serializers import AttendanceRecordSerializer,AttendanceSessionSerializer,LeaveRequestSerializer,OvertimeRequestSerializer,HolidaySerializer,AttendanceRuleSerializer,PunchCorrectionSerializer
 from .services import close_session, ensure_record_session, get_attendance_rule, is_configured_weekly_off, recalculate_record
 
 UNPAID_LEAVE_NAME="Unpaid Leave"
 UNPAID_LEAVE_CODE="UNPAID"
-
-
-def _is_unpaid_leave_name(value):
-    normalized=str(value or "").strip().casefold()
-    return normalized in {UNPAID_LEAVE_NAME.casefold(),UNPAID_LEAVE_CODE.casefold()}
 
 
 def _employee_for_user(user):
@@ -33,48 +28,6 @@ def _leave_days(start_date,end_date,half_day=False):
     if half_day:
         return 0.5
     return max(1,(end_date-start_date).days+1)
-
-
-def _leave_period_bounds(leave_type,reference_date):
-    if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY:
-        start=reference_date.replace(day=1)
-        next_month=(start.replace(day=28)+timedelta(days=4)).replace(day=1)
-        return start,next_month-timedelta(days=1)
-
-    return reference_date.replace(month=1,day=1),reference_date.replace(month=12,day=31)
-
-
-def _leave_period_allocation(leave_type):
-    if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY:
-        return float(leave_type.monthly_allocation or 0)
-    if leave_type.allocation_method==LeaveType.ALLOCATION_MANUAL:
-        return float(leave_type.annual_allocation or 0)
-    return float(leave_type.annual_allocation or 0)
-
-
-def _leave_usage(employee,leave_type,reference_date):
-    period_start,period_end=_leave_period_bounds(leave_type,reference_date)
-    approved=0.0
-    pending=0.0
-
-    rows=LeaveRequest.objects.filter(
-        employee=employee,
-        leave_type=leave_type.name,
-        status__in=["Approved","Pending"],
-        start_date__lte=period_end,
-        end_date__gte=period_start,
-    )
-
-    for row in rows:
-        overlap_start=max(row.start_date,period_start)
-        overlap_end=min(row.end_date,period_end)
-        days=0.5 if row.half_day else _leave_days(overlap_start,overlap_end)
-        if row.status=="Approved":
-            approved+=days
-        else:
-            pending+=days
-
-    return approved,pending
 
 
 def _notify_attendance_managers(company,title,message,notification_type,data=None):
@@ -216,7 +169,7 @@ class MyAttendanceCalendarView(APIView):
                         "date":cursor,
                         "type":"Leave",
                         "status":"On Leave",
-                        "title":leave.leave_type,
+                        "title":"Leave",
                     })
                 cursor+=timedelta(days=1)
 
@@ -299,46 +252,6 @@ class LeaveBalancesView(APIView):
             return response.Response([])
 
         today=timezone.localdate()
-        types=LeaveType.objects.filter(
-            company=request.user.company,
-            status="Active",
-        ).order_by("name")
-
-        result=[]
-        for leave_type in types:
-            # Unpaid Leave is a built-in system option. Configured company leave
-            # types are always treated as paid leave.
-            if _is_unpaid_leave_name(leave_type.name) or str(leave_type.code or "").upper()==UNPAID_LEAVE_CODE:
-                continue
-
-            allocated=_leave_period_allocation(leave_type)
-
-            # Paid leave types without an allocation are not available to employees.
-            if allocated<=0:
-                continue
-
-            approved,pending=_leave_usage(employee,leave_type,today)
-            remaining=max(0,allocated-approved)
-            available=max(0,remaining-pending)
-
-            result.append({
-                "id":str(leave_type.id),
-                "code":leave_type.code,
-                "type":leave_type.name,
-                "paidType":"Paid",
-                "isPaid":True,
-                "isUnpaid":False,
-                "unlimited":False,
-                "allocationMethod":leave_type.allocation_method,
-                "allocationPeriod":"month" if leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY else "year",
-                "allocated":allocated,
-                "used":approved,
-                "pending":pending,
-                "remaining":remaining,
-                "available":available,
-                "halfDayAllowed":leave_type.half_day,
-            })
-
         unpaid_rows=LeaveRequest.objects.filter(
             employee=employee,
             leave_type=UNPAID_LEAVE_NAME,
@@ -354,7 +267,7 @@ class LeaveBalancesView(APIView):
             else:
                 unpaid_pending+=days
 
-        result.append({
+        result=[{
             "id":UNPAID_LEAVE_CODE,
             "code":UNPAID_LEAVE_CODE,
             "type":UNPAID_LEAVE_NAME,
@@ -370,7 +283,7 @@ class LeaveBalancesView(APIView):
             "remaining":None,
             "available":None,
             "halfDayAllowed":True,
-        })
+        }]
 
         return response.Response(result)
 
@@ -395,23 +308,9 @@ class MyLeaveRequestsView(APIView):
         if not employee:
             return response.Response({"message":"No employee profile linked."},status=400)
 
-        leave_name=(request.data.get("leaveType") or request.data.get("leave_type") or "").strip()
-        is_unpaid=_is_unpaid_leave_name(leave_name)
-        leave_type=None
-
-        if is_unpaid:
-            leave_name=UNPAID_LEAVE_NAME
-        else:
-            leave_type=LeaveType.objects.filter(
-                company=request.user.company,
-                name=leave_name,
-                status="Active",
-            ).exclude(code__iexact=UNPAID_LEAVE_CODE).first()
-            if not leave_type:
-                return response.Response(
-                    {"message":"Select an active paid leave type or Unpaid Leave."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+        # All leave is unpaid. Leave Type selection and paid leave policies
+        # have been removed; preserve the internal legacy column for history.
+        leave_name=UNPAID_LEAVE_NAME
 
         start_value=request.data.get("startDate") or request.data.get("start_date")
         end_value=request.data.get("endDate") or request.data.get("end_date") or start_value
@@ -428,44 +327,6 @@ class MyLeaveRequestsView(APIView):
             )
 
         half_day=bool(request.data.get("halfDay") or request.data.get("half_day") or False)
-        if not is_unpaid and half_day and not leave_type.half_day:
-            return response.Response(
-                {"message":f"{leave_type.name} does not allow half-day requests."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        requested=_leave_days(start_date,end_date,half_day)
-
-        if not is_unpaid:
-            if (
-                leave_type.allocation_method==LeaveType.ALLOCATION_MONTHLY
-                and (start_date.year,start_date.month)!=(end_date.year,end_date.month)
-            ):
-                return response.Response(
-                    {"message":"Monthly leave requests must stay within the same calendar month."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            allocation=_leave_period_allocation(leave_type)
-            if allocation<=0:
-                return response.Response(
-                    {"message":f"{leave_type.name} currently has no paid leave allocation."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            approved,pending=_leave_usage(employee,leave_type,start_date)
-            available=max(0,allocation-approved-pending)
-
-            if requested>available:
-                return response.Response(
-                    {
-                        "message":f"Only {available:g} day(s) of {leave_type.name} are available for this period. Use Unpaid Leave if paid balance is not available.",
-                        "available":available,
-                        "requested":requested,
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
         overlaps=LeaveRequest.objects.filter(
             employee=employee,
             status__in=["Pending","Approved"],
@@ -482,7 +343,7 @@ class MyLeaveRequestsView(APIView):
             company=request.user.company,
             branch=request.user.branch,
             employee=employee,
-            leave_type=UNPAID_LEAVE_NAME if is_unpaid else leave_type.name,
+            leave_type=UNPAID_LEAVE_NAME,
             start_date=start_date,
             end_date=end_date,
             half_day=half_day,
@@ -496,7 +357,7 @@ class MyLeaveRequestsView(APIView):
             _notify_attendance_managers(
                 request.user.company,
                 "New leave request",
-                f"{employee.name} submitted {obj.leave_type} from {obj.start_date} to {obj.end_date}.",
+                f"{employee.name} submitted leave from {obj.start_date} to {obj.end_date}.",
                 "attendance_leave_request",
                 {"requestId":str(obj.id),"staffId":str(employee.id),"route":"/attendance-manager/leave-requests"},
             )
@@ -536,7 +397,6 @@ class ManagerApprovalsView(APIView):
                 "startDate":x.start_date,
                 "endDate":x.end_date,
                 "totalDays":total_days,
-                "leaveType":x.leave_type,
                 "halfDay":x.half_day,
                 "managerNote":x.manager_note,
             })
@@ -916,92 +776,6 @@ class ManagerMasterView(APIView):
         if month: qs=qs.filter(date__month=month)
         if year: qs=qs.filter(date__year=year)
         return response.Response(AttendanceRecordSerializer(qs[:1000],many=True).data)
-
-class LeaveTypesView(APIView):
-    permission_classes=[RolePermission]
-    permission_code="attendance.manage"
-
-    def get(self,request):
-        qs=(
-            LeaveType.objects.filter(company=request.user.company)
-            .exclude(code__iexact=UNPAID_LEAVE_CODE)
-            .exclude(name__iexact=UNPAID_LEAVE_NAME)
-            .order_by("name")
-        )
-        data=LeaveTypeSerializer(qs,many=True).data
-        for item in data:
-            item["type"]="Paid"
-        return response.Response(data)
-
-    def post(self,request):
-        data=request.data.copy()
-        requested_name=str(data.get("name") or "").strip()
-        requested_code=str(data.get("code") or "").strip().upper()
-        if _is_unpaid_leave_name(requested_name) or requested_code==UNPAID_LEAVE_CODE:
-            return response.Response(
-                {"message":"Unpaid Leave is a built-in system leave type and does not need configuration."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        data["type"]="Paid"
-
-        method=data.get("allocationMethod") or data.get("allocation_method")
-        if method=="Fixed Annual Allocation":
-            data["allocationMethod"]=LeaveType.ALLOCATION_ANNUAL
-        elif method=="Monthly Accrual":
-            data["allocationMethod"]=LeaveType.ALLOCATION_MONTHLY
-        elif method=="Manual Adjustment Only":
-            data["allocationMethod"]=LeaveType.ALLOCATION_MANUAL
-
-        ser=LeaveTypeSerializer(data=data)
-        ser.is_valid(raise_exception=True)
-        obj=ser.save(company=request.user.company,branch=request.user.branch)
-        return response.Response(LeaveTypeSerializer(obj).data,status=201)
-
-
-class LeaveTypeDetailView(APIView):
-    permission_classes=[RolePermission]
-    permission_code="attendance.manage"
-
-    def _get(self,request,pk):
-        return LeaveType.objects.filter(pk=pk,company=request.user.company).first()
-
-    def patch(self,request,pk):
-        obj=self._get(request,pk)
-        if not obj:
-            return response.Response({"message":"Leave type not found."},status=404)
-
-        data=request.data.copy()
-        requested_name=str(data.get("name") or obj.name or "").strip()
-        requested_code=str(data.get("code") or obj.code or "").strip().upper()
-        if _is_unpaid_leave_name(requested_name) or requested_code==UNPAID_LEAVE_CODE:
-            return response.Response(
-                {"message":"Unpaid Leave is a built-in system leave type and cannot be configured here."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        data["type"]="Paid"
-        method=data.get("allocationMethod") or data.get("allocation_method")
-        if method=="Fixed Annual Allocation":
-            data["allocationMethod"]=LeaveType.ALLOCATION_ANNUAL
-        elif method=="Monthly Accrual":
-            data["allocationMethod"]=LeaveType.ALLOCATION_MONTHLY
-        elif method=="Manual Adjustment Only":
-            data["allocationMethod"]=LeaveType.ALLOCATION_MANUAL
-
-        ser=LeaveTypeSerializer(obj,data=data,partial=True)
-        ser.is_valid(raise_exception=True)
-        obj=ser.save()
-        return response.Response(LeaveTypeSerializer(obj).data)
-
-    def put(self,request,pk):
-        return self.patch(request,pk)
-
-    def delete(self,request,pk):
-        obj=self._get(request,pk)
-        if not obj:
-            return response.Response({"message":"Leave type not found."},status=404)
-        obj.status="Inactive"
-        obj.save(update_fields=["status","updated_at"])
-        return response.Response(LeaveTypeSerializer(obj).data)
 
 class ManagerHolidaysView(APIView):
     permission_classes=[RolePermission]
