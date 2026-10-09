@@ -21,7 +21,7 @@ class DailyWageLedgerTests(TestCase):
         self.branch = Branch.objects.create(company=self.company, name="Main", code="MAIN")
         self.role = Role.objects.create(
             company=self.company, name="Payroll Admin", code="PAYROLL_ADMIN",
-            permissions=["payroll.view", "payroll.edit", "attendance.manage"],
+            permissions=["payroll.view", "payroll.edit", "attendance.manage", "staff.create"],
         )
         self.user = User.objects.create(
             company=self.company, branch=self.branch, role=self.role,
