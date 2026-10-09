@@ -24,9 +24,27 @@ STATUSES = {
     "half day": ("Half Day", Decimal("0.5")),
     "half-day": ("Half Day", Decimal("0.5")),
     "half": ("Half Day", Decimal("0.5")),
+    "half day worked": ("Half Day", Decimal("0.5")),
+    "full day present": ("Full Day", Decimal("1")),
+    # Daily-wage staff receive ZERO base earnings for ALL leave types,
+    # including leave types labeled "paid" elsewhere in Attendance Manager.
+    "leave": ("Leave", ZERO),
+    "full day leave": ("Leave", ZERO),
+    "on leave": ("Leave", ZERO),
+    "paid leave": ("Leave", ZERO),
+    "casual leave": ("Leave", ZERO),
+    "sick leave": ("Leave", ZERO),
+    "earned leave": ("Leave", ZERO),
+    "annual leave": ("Leave", ZERO),
+    "unpaid leave": ("Leave", ZERO),
+    "unpaid": ("Leave", ZERO),
     "absent": ("Absent", ZERO),
-    "unpaid leave": ("Unpaid Leave", ZERO),
-    "unpaid": ("Unpaid Leave", ZERO),
+    "weekly off": ("Weekly Off", ZERO),
+    "week off": ("Weekly Off", ZERO),
+    "weekly off (not worked)": ("Weekly Off", ZERO),
+    "not scheduled": ("Weekly Off", ZERO),
+    "holiday": ("Holiday", ZERO),
+    "public holiday": ("Holiday", ZERO),
 }
 METHODS = {"Cash", "UPI", "Bank Transfer", "Cheque", "Other"}
 
@@ -152,7 +170,7 @@ def finalize_attendance(employee, work_date, status, user, reason):
     ).first()
     requested = str(status or (current.status if current else "")).strip().lower()
     if requested not in STATUSES:
-        raise ValidationError({"status": "Use Full Day, Half Day, Absent or Unpaid Leave."})
+        raise ValidationError({"status": "Use Full Day, Half Day, Leave, Absent, Weekly Off or Holiday."})
     normalized, fraction = STATUSES[requested]
     existing = DailyWageEntry.objects.select_for_update().filter(
         employee=employee, work_date=work_date
