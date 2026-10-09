@@ -36,6 +36,7 @@ class JobWorkSessionSerializer(serializers.ModelSerializer):
     labourCharge = serializers.DecimalField(
         source="labour_charge", max_digits=12, decimal_places=2, read_only=True
     )
+    workerCharge = serializers.SerializerMethodField()
     startedAt = serializers.DateTimeField(source="started_at", read_only=True)
     resumedAt = serializers.DateTimeField(source="resumed_at", read_only=True)
     completedAt = serializers.DateTimeField(source="completed_at", read_only=True)
@@ -43,11 +44,17 @@ class JobWorkSessionSerializer(serializers.ModelSerializer):
     approvedMinutes = serializers.IntegerField(source="approved_minutes", read_only=True)
     correctionReason = serializers.CharField(source="correction_reason", read_only=True)
 
+    def get_workerCharge(self, obj):
+        user = getattr(self.context.get("request"), "user", None)
+        if user_has_permission(user, "payroll.view") or user_has_permission(user, "payroll.edit"):
+            return str(obj.worker_charge)
+        return None
+
     class Meta:
         model = JobWorkSession
         exclude = (
             "company", "branch", "employee", "job", "service_name",
-            "labour_charge", "started_at", "resumed_at", "completed_at",
+            "labour_charge", "worker_charge", "started_at", "resumed_at", "completed_at",
             "elapsed_seconds", "approved_minutes", "correction_reason",
         )
         read_only_fields = [field.name for field in JobWorkSession._meta.fields]
@@ -107,11 +114,14 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         ).exists():
             raise ValidationError({"timer": "Mechanic already has a running timer. Pause or complete it first."})
         now = timezone.now()
+        if "workerCharge" in request.data and not user_has_permission(request.user, "payroll.edit"):
+            raise ValidationError({"workerCharge": "Only payroll managers may set worker payment."})
         session = JobWorkSession.objects.create(
             company=assignment.company, branch=assignment.branch,
             job=assignment.job, employee=assignment.employee, assignment=assignment,
             service_name=service_name,
             labour_charge=valid_amount(request.data.get("labourCharge", 0)),
+            worker_charge=valid_amount(request.data.get("workerCharge", 0)),
             started_at=now, resumed_at=now,
             history=[event_entry(request.user, "Started")],
         )
@@ -185,6 +195,8 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"minutes": "Minutes must be between 1 and 1440."})
         if "labourCharge" in request.data:
             obj.labour_charge = valid_amount(request.data.get("labourCharge"))
+        if "workerCharge" in request.data:
+            obj.worker_charge = valid_amount(request.data.get("workerCharge"))
         previous = obj.approved_minutes or max(1, (obj.elapsed_seconds + 59) // 60)
         obj.approved_minutes = minutes
         obj.correction_reason = reason
