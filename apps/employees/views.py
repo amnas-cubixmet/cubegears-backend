@@ -202,6 +202,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             company=company,
             branch=branch,
             employee_code=code,
+            payment_type="daily",
             user=user,
             department_name=serializer.validated_data.get("department_name") or (team.name if team else ""),
             shift_label=serializer.validated_data.get("shift_label") or _shift_label(shift),
@@ -232,6 +233,12 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             extra["shift_label"]=_shift_label(shift)
 
         obj=serializer.save(**extra)
+
+        # Preserve legacy monthly/commission values only in historical payroll
+        # tables; active staff are enrolled in daily wages only.
+        if obj.payment_type != "daily":
+            obj.payment_type = "daily"
+            obj.save(update_fields=["payment_type", "updated_at"])
 
         if obj.user:
             fields=[]
