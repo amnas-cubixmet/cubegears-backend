@@ -163,15 +163,64 @@ class WageAPIView(APIView):
 class DailyWageDashboardView(WageAPIView):
     def get(self, request):
         workers = list(visible_workers(request))
-        now = timezone.localdate()
+        today = timezone.localdate()
+        ids = [w.pk for w in workers]
+        def sums(model, *, field="amount", **where):
+            return {
+                row["employee_id"]: row["total"] or Decimal("0")
+                for row in model.objects.filter(employee_id__in=ids, **where)
+                    .values("employee_id").annotate(total=Sum(field))
+            }
+        base = sums(DailyWageEntry, field="base_amount")
+        extras = sums(DailyWageExtra, status="Approved")
+        corrections = sums(WageAdjustment)
+        paid = sums(WagePayment, reversal__isnull=True)
+        todays = {
+            entry.employee_id: entry for entry in
+            DailyWageEntry.objects.filter(employee_id__in=ids, work_date=today)
+        }
+        today_extras = sums(DailyWageExtra, status="Approved", work_date=today)
+        today_adjustments = sums(WageAdjustment, work_date=today)
+        attendance = {
+            row.employee_id: row for row in
+            AttendanceRecord.objects.filter(employee_id__in=ids, date=today)
+        }
+        rates = {}
+        for r in EmployeeDailyWageRate.objects.filter(
+            employee_id__in=ids, effective_from__lte=today
+        ).order_by("employee_id", "-effective_from", "-created_at"):
+            rates.setdefault(r.employee_id, r)
+        latest_payments = {
+            row["employee_id"]: row["date"] for row in
+            WagePayment.objects.filter(
+                employee_id__in=ids, reversal__isnull=True
+            ).values("employee_id").annotate(date=Max("payment_date"))
+        }
         rows = []
-        for employee in workers:
-            a = account(employee)
+        for worker in workers:
+            pk = worker.pk
+            record = attendance.get(pk)
+            entry = todays.get(pk)
+            today_extra = today_extras.get(pk, Decimal("0")) + today_adjustments.get(pk, Decimal("0"))
+            today_base = entry.base_amount if entry else Decimal("0")
+            earned = base.get(pk, Decimal("0")) + extras.get(pk, Decimal("0")) + corrections.get(pk, Decimal("0"))
+            total_paid = paid.get(pk, Decimal("0"))
             rows.append({
-                **a["employee"], "dailyRate": a["currentRate"],
-                "today": a["today"], "totalEarned": a["totalEarned"],
-                "totalPaid": a["totalPaid"], "currentBalance": a["currentBalance"],
-                "lastPaymentDate": a["lastPaymentDate"],
+                "id": str(pk), "name": worker.name, "employeeCode": worker.employee_code,
+                "companyId": str(worker.company_id), "branchId": str(worker.branch_id or ""),
+                "branchName": worker.branch.name if worker.branch else "No Branch",
+                "designation": worker.designation,
+                "dailyRate": str(rates[pk].rate) if pk in rates else None,
+                "today": {
+                    "date": str(today),
+                    "attendance": record.status if record else "Pending",
+                    "finalized": bool(record and record.wage_finalized),
+                    "baseWage": str(today_base), "extraEarnings": str(today_extra),
+                    "totalWage": str(today_base + today_extra),
+                },
+                "totalEarned": str(earned), "totalPaid": str(total_paid),
+                "currentBalance": str(earned - total_paid),
+                "lastPaymentDate": str(latest_payments[pk]) if pk in latest_payments else None,
             })
         return Response({
             "employees": rows,
@@ -181,7 +230,7 @@ class DailyWageDashboardView(WageAPIView):
             "totalPayments": str(sum((Decimal(x["totalPaid"]) for x in rows), Decimal("0"))),
             "workersUnpaid": sum(Decimal(x["currentBalance"]) > 0 for x in rows),
             "todayAttendance": {
-                "full": sum(x["today"]["finalized"] and x["today"]["attendance"] == "Full Day" for x in rows),
+                "full": sum(x["today"]["finalized"] and x["today"]["attendance"] in {"Present", "Full Day"} for x in rows),
                 "half": sum(x["today"]["finalized"] and x["today"]["attendance"] == "Half Day" for x in rows),
                 "pending": sum(not x["today"]["finalized"] for x in rows),
             },
