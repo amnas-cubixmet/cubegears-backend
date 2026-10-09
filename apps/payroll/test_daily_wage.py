@@ -223,6 +223,19 @@ class DailyWageLedgerTests(TestCase):
         entries = {x["date"]: x for x in self.account()["history"]}
         self.assertEqual(entries[str(self.today)]["paymentStatus"], "Paid")
 
+    def test_attendance_manager_compat_updates_posted_day_without_duplicates(self):
+        self.setup_rate("800")
+        self.finalize(self.yesterday)
+        entry = DailyWageEntry.objects.get(employee=self.employee, work_date=self.yesterday)
+        edited = self.client.put(
+            f"/api/v1/attendance-manager/team/{entry.attendance_id}",
+            {"status": "Half Day", "auditReason": "Approved by attendance manager"},
+            format="json",
+        )
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(DailyWageEntry.objects.count(), 1)
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("400"))
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
