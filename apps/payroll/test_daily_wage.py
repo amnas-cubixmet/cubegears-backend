@@ -141,6 +141,52 @@ class DailyWageLedgerTests(TestCase):
         self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("400"))
         self.assertEqual(DailyWageEntry.objects.count(), 1)
 
+    def test_multiple_extras_same_day_are_distinct_and_do_not_duplicate(self):
+        self.setup_rate("900")
+        self.finalize(self.today)
+        ids = []
+        for i in range(2):
+            result = self.client.post(f"{self.url}/extras", {
+                "date": str(self.today), "category": "OD" if i else "OT",
+                "amount": "300", "reason": f"Approved work {i}",
+                "requestKey": f"extra-{i}",
+            }, format="json")
+            self.assertEqual(result.status_code, 201, result.data)
+            ids.append(result.data["id"])
+        self.assertEqual(len(set(ids)), 2)
+        for extra_id in ids:
+            reviewed = self.client.post(
+                f"/api/v1/payroll/daily-wages/extras/{extra_id}/approve",
+                {"status": "Approved"}, format="json",
+            )
+            self.assertEqual(reviewed.status_code, 200, reviewed.data)
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("1500"))
+        retried = self.client.post(f"{self.url}/extras", {
+            "date": str(self.today), "category": "OT", "amount": "300",
+            "reason": "Approved work 0", "requestKey": "extra-0",
+        }, format="json")
+        self.assertEqual(retried.status_code, 200, retried.data)
+        self.assertEqual(DailyWageExtra.objects.count(), 2)
+
+    def test_unfinalized_attendance_does_not_post_wages(self):
+        self.setup_rate("800")
+        from apps.attendance.models import AttendanceRecord
+        AttendanceRecord.objects.create(
+            company=self.company, branch=self.branch, employee=self.employee,
+            date=self.today, status="Present",
+        )
+        self.assertEqual(Decimal(self.account()["totalEarned"]), Decimal("0"))
+        self.assertEqual(DailyWageEntry.objects.count(), 0)
+
+    def test_rate_change_does_not_reprice_earlier_date_on_correction(self):
+        self.setup_rate("800")
+        self.finalize(self.yesterday)
+        self.assertEqual(self.setup_rate("900", when=self.today).status_code, 201)
+        self.finalize(self.yesterday, "Half Day")
+        old = DailyWageEntry.objects.get(work_date=self.yesterday)
+        self.assertEqual(old.applied_rate, Decimal("800"))
+        self.assertEqual(old.base_amount, Decimal("400"))
+
     def test_cross_company_employees_are_not_visible(self):
         other_company = Company.objects.create(name="Other", slug="other-daily-wages")
         other_branch = Branch.objects.create(company=other_company, name="Other", code="OTHER")
