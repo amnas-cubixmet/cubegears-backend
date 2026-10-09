@@ -46,6 +46,85 @@ class JobViewSet(CompanyScopedModelViewSet):
         self._guard_active_timers(self.get_object(),serializer.validated_data.get("status"))
         serializer.save()
 
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Accept the quick job form while preserving the UUID-based canonical API."""
+        from apps.customers.models import Customer
+        from apps.vehicles.models import Vehicle
+        from django.db.models import Value
+        from django.db.models.functions import Replace, Upper
+
+        data = request.data.copy()
+        vehicle_value = data.get("vehicle")
+        quick_create = not data.get("customer") and (
+            bool(data.get("vehicleReg")) or isinstance(vehicle_value, dict)
+        )
+
+        if quick_create:
+            name = str(data.get("customerName") or "").strip()
+            phone = str(data.get("customerPhone") or "").strip()
+            registration = str(
+                data.get("vehicleReg") or (vehicle_value or {}).get("registration", "")
+            ).strip().upper()
+            normalized_reg = "".join(registration.split())
+            if not name or not phone or not normalized_reg:
+                raise ValidationError({
+                    "customerName": "Customer name is required." if not name else [],
+                    "customerPhone": "Customer phone is required." if not phone else [],
+                    "vehicleReg": "Registration is required." if not normalized_reg else [],
+                })
+
+            company = request.user.company
+            branch = request.user.branch
+            vehicle = (
+                Vehicle.objects.filter(company=company)
+                .annotate(reg_key=Upper(Replace("registration", Value(" "), Value(""))))
+                .filter(reg_key=normalized_reg)
+                .select_related("customer")
+                .first()
+            )
+            if vehicle:
+                customer = vehicle.customer
+                if "".join(filter(str.isdigit, customer.phone)) != "".join(filter(str.isdigit, phone)):
+                    raise ValidationError({
+                        "vehicleReg": "This registration belongs to another customer. Open the vehicle record to verify ownership."
+                    })
+            else:
+                customer = Customer.objects.filter(company=company, phone=phone).first()
+                if customer is None:
+                    customer = Customer.objects.create(
+                        company=company, branch=branch, name=name, phone=phone,
+                        email=str(data.get("customerEmail") or "").strip(),
+                    )
+                make_model = str(data.get("vehicleInfo") or "").strip().split(maxsplit=1)
+                vehicle = Vehicle.objects.create(
+                    company=company, branch=branch, customer=customer,
+                    registration=registration, make=make_model[0] if make_model else "",
+                    model=make_model[1] if len(make_model) > 1 else "",
+                    vin=str(data.get("vin") or "").strip(),
+                )
+
+            data["customer"] = str(customer.id)
+            data["vehicle"] = str(vehicle.id)
+            raw_km = data.get("kilometre")
+            if raw_km not in (None, ""):
+                try:
+                    km = int(raw_km)
+                except (TypeError, ValueError):
+                    raise ValidationError({"kilometre": "Enter a valid non-negative odometer reading."})
+                if km < 0:
+                    raise ValidationError({"kilometre": "Odometer reading cannot be negative."})
+                data["odometer"] = km
+            if "fuelLevel" in data:
+                data["fuel_level"] = data["fuelLevel"]
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return response.Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
     def perform_create(self,serializer):
         company=self.request.user.company
         customer=serializer.validated_data.get("customer")

@@ -16,8 +16,11 @@ class JobSerializer(serializers.ModelSerializer):
     partsWorkflow=serializers.JSONField(source="parts_workflow",required=False)
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
+    customerPhone=serializers.CharField(source="customer.phone",read_only=True)
     vehicleId=serializers.UUIDField(source="vehicle_id",read_only=True)
     vehicleReg=serializers.CharField(source="vehicle.registration",read_only=True)
+    kilometre=serializers.IntegerField(source="odometer",read_only=True)
+    fuelLevel=serializers.CharField(source="fuel_level",read_only=True)
     vehicleInfo=serializers.SerializerMethodField()
     jobNumber=serializers.CharField(source="job_number",required=False)
     assignedEmployeeId=serializers.SerializerMethodField()
@@ -34,6 +37,7 @@ class JobSerializer(serializers.ModelSerializer):
         model=Job
         exclude=("company","branch")
         read_only_fields=("id","created_at","updated_at")
+        extra_kwargs={"job_number": {"required": False}}
     def get_vehicleInfo(self,obj):
         return " ".join(filter(None,[obj.vehicle.make,obj.vehicle.model,obj.vehicle.variant]))
 
