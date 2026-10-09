@@ -15,7 +15,7 @@ from apps.attendance.models import AttendanceRecord
 from apps.employees.models import Employee
 from .daily_wage_models import (
     DailyWageEntry, DailyWageExtra, EmployeeDailyWageRate,
-    WageAdjustment, WageAuditLog, WagePayment, WagePaymentReversal,
+    WageAdjustment, WageAuditLog, WagePayment, WagePaymentAllocation, WagePaymentReversal,
 )
 from .daily_wage_service import (
     amount, applied_rate, audit, day_amounts, finalize_attendance,
@@ -98,16 +98,27 @@ def history_for(employee=None, request=None):
     ).values("employee_id", "work_date").annotate(total=Sum("amount"))
     extras_map = {(x["employee_id"], x["work_date"]): x["total"] for x in extras}
     adjustments_map = {(x["employee_id"], x["work_date"]): x["total"] for x in adjustments}
+    paid_rows = WagePaymentAllocation.objects.filter(
+        employee_id__in=ids, work_date__in=dates,
+        payment__reversal__isnull=True,
+    ).values("employee_id", "work_date").annotate(total=Sum("amount"))
+    paid_map = {(x["employee_id"], x["work_date"]): x["total"] for x in paid_rows}
     rows = []
     for entry in entries:
         key = (entry.employee_id, entry.work_date)
         bonus, correction = extras_map.get(key, Decimal("0")), adjustments_map.get(key, Decimal("0"))
+        total_day = entry.base_amount + bonus + correction
+        allocated = paid_map.get(key, Decimal("0"))
+        payment_status = ("No Wage" if total_day <= 0
+                          else "Paid" if allocated >= total_day
+                          else "Part Paid" if allocated > 0 else "Unpaid")
         rows.append({
             "id": str(entry.pk), "employeeId": str(entry.employee_id),
             "employeeName": entry.employee.name, "date": str(entry.work_date),
             "attendance": entry.attendance_status, "dailyRate": str(entry.applied_rate),
             "baseWage": str(entry.base_amount), "extras": str(bonus),
-            "adjustments": str(correction), "total": str(entry.base_amount + bonus + correction),
+            "adjustments": str(correction), "total": str(total_day),
+            "allocatedPaid": str(allocated), "paymentStatus": payment_status,
             "status": "Posted", "approvedBy": str(entry.finalized_by_id or ""),
         })
     return rows
