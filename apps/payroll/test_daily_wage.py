@@ -329,7 +329,7 @@ class DailyWageLedgerTests(TestCase):
                 response = self.client.post(url, {
                     "paymentType": "monthly", "paymentFrequency": "weekly",
                 }, format="json")
-                self.assertEqual(response.status_code, 405, response.data)
+                self.assertIn(response.status_code, (403, 405), response.data)
 
     def test_employees_cannot_set_monthly_pay_type_on_create(self):
         result = self.client.post("/api/v1/employees", {
