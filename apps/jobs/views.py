@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
+from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
@@ -14,6 +15,7 @@ class JobViewSet(CompanyScopedModelViewSet):
     serializer_class=JobSerializer
     action_permission_map = {
         "status": "jobs.edit",
+        "workflow": {"GET": "jobs.view", "POST": "jobs.edit"},
         "inspection_detail": "jobs.view",
         "inspection_start": "jobs.edit",
         "inspection_checklist": "jobs.edit",
@@ -43,7 +45,13 @@ class JobViewSet(CompanyScopedModelViewSet):
                 })
 
     def perform_update(self,serializer):
-        self._guard_active_timers(self.get_object(),serializer.validated_data.get("status"))
+        job = self.get_object()
+        next_status = serializer.validated_data.get("status")
+        if next_status and (job.workflow_progress or {}).get("started"):
+            unlocked = workflow_state(job)["current"]
+            if stage_index_from_status(next_status) > STAGES.index(unlocked):
+                raise ValidationError({"status": "Complete the current Job Card stage first."})
+        self._guard_active_timers(job,next_status)
         serializer.save()
 
 
@@ -147,12 +155,88 @@ class JobViewSet(CompanyScopedModelViewSet):
     def status(self,request,pk=None):
         job=self.get_object(); new_status=request.data.get("status")
         if new_status not in FLOW: raise ValidationError({"status":"Invalid job status."})
+        if (job.workflow_progress or {}).get("started") and stage_index_from_status(new_status) > STAGES.index(workflow_state(job)["current"]):
+            raise ValidationError({"status":"Complete the current Job Card stage first."})
         old=job.status
         self._guard_active_timers(job,new_status)
         if new_status==Job.STATUS_DELIVERED: job.delivered_at=timezone.now()
         job.status=new_status; job.save(update_fields=["status","delivered_at","updated_at"])
         JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
         return response.Response(JobSerializer(job).data)
+
+    @decorators.action(detail=True,methods=["get","post"],url_path="workflow")
+    @transaction.atomic
+    def workflow(self,request,pk=None):
+        """Get durable current stage or explicitly complete one validated stage."""
+        job = self.get_object()
+        if request.method == "GET":
+            return response.Response(workflow_state(job))
+
+        job = Job.objects.select_for_update().get(pk=job.pk, company=job.company)
+        state = workflow_state(job)
+        stage = request.data.get("stage")
+        if stage not in STAGES:
+            raise ValidationError({"stage":"Unknown Job Card stage."})
+        if stage != state["current"]:
+            raise ValidationError({"stage": f"Complete {state['current']} before {stage}."})
+
+        if stage == "overview":
+            if not job.customer_id or not job.vehicle_id:
+                raise ValidationError({"stage":"Select a customer and vehicle first."})
+        elif stage == "inspection":
+            if (job.inspection or {}).get("status") != "Completed":
+                raise ValidationError({"stage":"Finish the vehicle inspection checklist first."})
+        elif stage == "estimate":
+            estimate = job.estimates.order_by("-created_at").first()
+            if not estimate:
+                raise ValidationError({"stage":"Create an estimate before approval."})
+            if not request.data.get("approveEstimate"):
+                raise ValidationError({"stage":"Confirm customer estimate approval to continue."})
+            estimate.status = "Approved"
+            estimate.approved_at = timezone.now()
+            estimate.save(update_fields=["status","approved_at","updated_at"])
+        elif stage == "work":
+            if not request.data.get("confirmWorkDone"):
+                raise ValidationError({"stage":"Confirm that workshop work is complete."})
+            self._guard_active_timers(job, "QC")
+        elif stage == "qc":
+            qc = job.qc or {}
+            if qc.get("status") != "Pass":
+                raise ValidationError({"stage":"Quality Check must pass before billing."})
+            self._guard_active_timers(job, "Ready for Delivery")
+        elif stage == "invoice":
+            from apps.invoices.models import Invoice
+            if not Invoice.objects.filter(
+                company=job.company, job=job, kind="invoice",
+                status__in=["Finalized","Paid"],
+            ).exists():
+                raise ValidationError({"stage":"Finalize a linked invoice before completing delivery."})
+            self._guard_active_timers(job, "Delivered")
+
+        progress = dict(job.workflow_progress or {})
+        completed = set(state["completed"])
+        completed.add(stage)
+        progress.update({
+            "started": True,
+            "completed": [name for name in STAGES if name in completed],
+            "lastCompletedAt": timezone.now().isoformat(),
+        })
+        old_status = job.status
+        job.workflow_progress = progress
+        job.status = NEXT_STATUS[stage]
+        if stage == "invoice":
+            job.delivered_at = timezone.now()
+        job.save(update_fields=["workflow_progress","status","delivered_at","updated_at"])
+        JobActivity.objects.create(
+            company=job.company,branch=job.branch,job=job,actor=request.user,
+            event="Workflow Stage Completed",description=f"{stage} completed",
+            from_status=old_status,to_status=job.status,
+            metadata={"stage":stage},
+        )
+        return response.Response({
+            **workflow_state(job),
+            "job": JobSerializer(job).data,
+        })
 
     @decorators.action(detail=True,methods=["get"],url_path="inspection")
     def inspection_detail(self,request,pk=None):
