@@ -191,6 +191,8 @@ class JobViewSet(CompanyScopedModelViewSet):
             estimate = job.estimates.order_by("-created_at").first()
             if not estimate:
                 raise ValidationError({"stage":"Create an estimate before approval."})
+            if estimate.status == "Rejected":
+                raise ValidationError({"stage":"Create a revised estimate after customer rejection."})
             if not request.data.get("approveEstimate"):
                 raise ValidationError({"stage":"Confirm customer estimate approval to continue."})
             estimate.status = "Approved"
@@ -204,6 +206,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             qc = job.qc or {}
             if qc.get("status") != "Pass":
                 raise ValidationError({"stage":"Quality Check must pass before billing."})
+            checklist = qc.get("checklist") or []
+            if not checklist or any(item.get("status") != "Pass" for item in checklist):
+                raise ValidationError({"stage":"Every Quality Check item must be marked Pass."})
             self._guard_active_timers(job, "Ready for Delivery")
         elif stage == "invoice":
             from apps.invoices.models import Invoice
@@ -303,7 +308,11 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
     def inspection_complete(self,request,pk=None):
-        job=self.get_object(); data=dict(job.inspection or {}); data["status"]="Completed"; data["completedAt"]=timezone.now().isoformat()
+        job=self.get_object(); data=dict(job.inspection or {})
+        checked = data.get("checklist") or {}
+        if not any(value in {"Good","Needs Attention","Critical"} for value in checked.values()):
+            raise ValidationError({"inspection":"Record inspection checks before completing."})
+        data["status"]="Completed"; data["completedAt"]=timezone.now().isoformat()
         job.inspection=data; job.status=Job.STATUS_ESTIMATE_PENDING if request.data.get("needsApproval",True) else job.status
         job.save(update_fields=["inspection","status","updated_at"])
         return response.Response({"inspection":data,"newJobStatus":job.status})
