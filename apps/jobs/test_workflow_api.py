@@ -60,6 +60,11 @@ class JobWorkflowApiTests(TestCase):
 
         start = self.client.post(f"{self.url}/inspection/start", {}, format="json")
         self.assertEqual(start.status_code, 200, start.data)
+        inspection_check = self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Engine oil", "status": "Good"}, format="json",
+        )
+        self.assertEqual(inspection_check.status_code, 200, inspection_check.data)
         done = self.client.post(
             f"{self.url}/inspection/complete", {"needsApproval": True}, format="json"
         )
@@ -87,7 +92,9 @@ class JobWorkflowApiTests(TestCase):
         self.assertEqual(self.finish("qc").status_code, 400)
 
         qc = self.client.patch(
-            self.url, {"qc": {"status": "Pass", "checklist": []}}, format="json"
+            self.url, {"qc": {"status": "Pass", "checklist": [
+                {"id": "QC-1", "item": "Brake test", "status": "Pass"}
+            ]}}, format="json"
         )
         self.assertEqual(qc.status_code, 200, qc.data)
         qc_done = self.finish("qc")
