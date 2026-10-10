@@ -73,6 +73,10 @@ class JobViewSet(CompanyScopedModelViewSet):
         next_status = serializer.validated_data.get("status")
         if "inspection" in serializer.validated_data:
             self._assert_inspection_editable(job)
+            if (job.inspection or {}).get("status") == "Completed":
+                raise ValidationError({
+                    "inspection": "Use inspection edit actions to preserve revision history."
+                })
         if next_status:
             unlocked = workflow_state(job)["current"]
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
