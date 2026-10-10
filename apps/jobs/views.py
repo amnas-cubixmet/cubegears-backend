@@ -51,7 +51,11 @@ class JobViewSet(CompanyScopedModelViewSet):
     def _assert_inspection_editable(self, job):
         """Completed checks may be corrected before customer approves an estimate."""
         current = workflow_state(job)["current"]
-        if current not in {"inspection", "estimate"} or job.estimates.filter(status="Approved").exists():
+        completed = (job.inspection or {}).get("status") == "Completed"
+        # The quick-create form can save initial inspection details in Overview.
+        # Completed inspections are strictly editable only at Estimate stage.
+        allowed = {"estimate"} if completed else {"overview", "inspection", "estimate"}
+        if current not in allowed or job.estimates.filter(status="Approved").exists():
             raise ValidationError({"inspection": "Inspection changes are locked after estimate approval."})
         if job.status == Job.STATUS_DELIVERED:
             raise ValidationError({"inspection": "Delivered Job Cards cannot be edited."})
