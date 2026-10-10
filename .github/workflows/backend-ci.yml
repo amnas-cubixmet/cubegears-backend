@@ -23,4 +23,4 @@ jobs:
       # Runtime model changes must not ship without their database tables.
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
-      - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.payments.test_payment_guards --noinput
+      - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.jobs.test_workflow apps.payments.test_payment_guards --noinput
