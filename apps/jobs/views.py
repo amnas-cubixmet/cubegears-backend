@@ -99,9 +99,10 @@ class JobViewSet(CompanyScopedModelViewSet):
 
         data = request.data.copy()
         vehicle_value = data.get("vehicle")
-        quick_create = not data.get("customer") and (
-            bool(data.get("vehicleReg")) or isinstance(vehicle_value, dict)
-        )
+        # Also support a preselected existing customer with a typed/new vehicle.
+        # A canonical customer+vehicle UUID payload without a registration still
+        # passes directly to the regular serializer, as before.
+        quick_create = bool(data.get("vehicleReg")) or isinstance(vehicle_value, dict)
 
         if quick_create:
             name = str(data.get("customerName") or "").strip()
@@ -119,6 +120,15 @@ class JobViewSet(CompanyScopedModelViewSet):
 
             company = request.user.company
             branch = request.user.branch
+            chosen_customer = None
+            chosen_id = data.get("customer")
+            if chosen_id:
+                chosen_customer = Customer.objects.filter(
+                    company=company, pk=chosen_id, status="active"
+                ).first()
+                if chosen_customer is None:
+                    raise ValidationError({"customer": "Select a valid active customer."})
+
             vehicle = (
                 Vehicle.objects.filter(company=company)
                 .annotate(reg_key=Upper(Replace("registration", Value(" "), Value(""))))
@@ -128,16 +138,27 @@ class JobViewSet(CompanyScopedModelViewSet):
             )
             if vehicle:
                 customer = vehicle.customer
-                if "".join(filter(str.isdigit, customer.phone)) != "".join(filter(str.isdigit, phone)):
+                if chosen_customer and vehicle.customer_id != chosen_customer.id:
+                    raise ValidationError({
+                        "vehicleReg": "This vehicle belongs to another customer. Verify ownership before continuing."
+                    })
+                if not chosen_customer and "".join(filter(str.isdigit, customer.phone)) != "".join(filter(str.isdigit, phone)):
                     raise ValidationError({
                         "vehicleReg": "This registration belongs to another customer. Open the vehicle record to verify ownership."
                     })
+                if isinstance(vehicle_value, str) and vehicle_value and str(vehicle.id) != vehicle_value:
+                    raise ValidationError({"vehicle": "Selected vehicle does not match registration."})
             else:
-                customer = Customer.objects.filter(company=company, phone=phone).first()
+                if isinstance(vehicle_value, str) and vehicle_value:
+                    raise ValidationError({"vehicle": "Selected vehicle does not match registration."})
+                customer = chosen_customer or Customer.objects.filter(
+                    company=company, phone=phone
+                ).first()
                 if customer is None:
                     customer = Customer.objects.create(
                         company=company, branch=branch, name=name, phone=phone,
                         email=str(data.get("customerEmail") or "").strip(),
+                        address=str(data.get("customerAddress") or "").strip(),
                     )
                 make_model = str(data.get("vehicleInfo") or "").strip().split(maxsplit=1)
                 vehicle = Vehicle.objects.create(
@@ -147,6 +168,13 @@ class JobViewSet(CompanyScopedModelViewSet):
                     vin=str(data.get("vin") or "").strip(),
                 )
 
+            if chosen_customer and (
+                chosen_customer.name != name or
+                "".join(filter(str.isdigit, chosen_customer.phone)) != "".join(filter(str.isdigit, phone))
+            ):
+                raise ValidationError({
+                    "customer": "Selected customer details changed. Select the customer again."
+                })
             data["customer"] = str(customer.id)
             data["vehicle"] = str(vehicle.id)
             raw_km = data.get("kilometre")
