@@ -401,6 +401,96 @@ class JobViewSet(CompanyScopedModelViewSet):
         estimate.save(update_fields=["status","updated_at"])
         return response.Response(JobEstimateSerializer(estimate).data)
 
+    def _quick_estimate_values(self, data):
+        lines = data.get("lines")
+        if not isinstance(lines, list) or not 1 <= len(lines) <= 75:
+            raise ValidationError({"lines": "Add 1 to 75 work or part items."})
+        try:
+            tax_rate = Decimal(str(data.get("taxPercent", 0)))
+            discount = Decimal(str(data.get("discount", 0)))
+        except (TypeError, ValueError, ArithmeticError):
+            raise ValidationError({"total": "Tax and discount must be valid numbers."})
+        if not (Decimal("0") <= tax_rate <= Decimal("100")) or discount < 0:
+            raise ValidationError({"total": "Tax must be 0-100%, and discount cannot be negative."})
+        items = []
+        subtotal = Decimal("0")
+        for row in lines:
+            if not isinstance(row, dict):
+                raise ValidationError({"lines": "Invalid estimate item."})
+            label = str(row.get("description") or "").strip()
+            if not label or len(label) > 250:
+                raise ValidationError({"lines": "Every item needs a description (max 250 characters)."})
+            try:
+                quantity = Decimal(str(row.get("quantity", 1)))
+                price = Decimal(str(row.get("unitPrice", 0)))
+            except (TypeError, ValueError, ArithmeticError):
+                raise ValidationError({"lines": "Quantity and price must be numbers."})
+            if not (Decimal("0") < quantity <= Decimal("10000")) or not (Decimal("0") <= price <= Decimal("10000000")):
+                raise ValidationError({"lines": "Enter a positive quantity and non-negative price."})
+            quantity = quantity.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            price = price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total = (quantity * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            subtotal += total
+            items.append({
+                "description": label,
+                "type": str(row.get("type") or "Service")[:30],
+                "quantity": str(quantity), "unitPrice": str(price), "total": str(total),
+            })
+        subtotal = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if discount > subtotal:
+            raise ValidationError({"discount": "Discount cannot exceed subtotal."})
+        discount = discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        grand = subtotal - discount + tax
+        items.append({"_pricing": {"taxPercent": str(tax_rate), "discount": str(discount)}})
+        return {"items": items, "subtotal": subtotal, "tax": tax, "total": grand}
+
+    @decorators.action(detail=True, methods=["post"], url_path="estimates/quick")
+    @transaction.atomic
+    def quick_estimate(self, request, pk=None):
+        job = Job.objects.select_for_update().get(pk=self.get_object().pk, company=request.user.company)
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate": "Only the active Estimate stage can create a quotation."})
+        values = self._quick_estimate_values(request.data)
+        version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
+        obj = JobEstimate.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            version=version, status="Draft", **values,
+        )
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Estimate Draft Saved",
+            description=f"Estimate V{version} created",
+            metadata={"estimateId": str(obj.pk), "total": str(obj.total)},
+        )
+        return response.Response(JobEstimateSerializer(obj).data, status=201)
+
+    @decorators.action(detail=True, methods=["patch"],
+                       url_path=r"estimates/quick/(?P<estimate_id>[^/.]+)")
+    @transaction.atomic
+    def quick_estimate_detail(self, request, pk=None, estimate_id=None):
+        job = self.get_object()
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate": "Estimate editing is closed after approval."})
+        draft = JobEstimate.objects.select_for_update().filter(
+            pk=estimate_id, job=job, company=job.company,
+        ).first()
+        if not draft:
+            raise ValidationError({"estimate": "Estimate not found for this Job Card."})
+        if draft.status != "Draft":
+            raise ValidationError({"estimate": "Only draft estimates can be edited."})
+        values = self._quick_estimate_values(request.data)
+        for field, value in values.items():
+            setattr(draft, field, value)
+        draft.save(update_fields=[*values.keys(), "updated_at"])
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Estimate Draft Updated",
+            description=f"Estimate V{draft.version} updated",
+            metadata={"estimateId": str(draft.pk), "total": str(draft.total)},
+        )
+        return response.Response(JobEstimateSerializer(draft).data)
+
     @decorators.action(detail=True,methods=["get","post"])
     def estimates(self,request,pk=None):
         job=self.get_object()
