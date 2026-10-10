@@ -48,7 +48,7 @@ class JobViewSet(CompanyScopedModelViewSet):
     def perform_update(self,serializer):
         job = self.get_object()
         next_status = serializer.validated_data.get("status")
-        if next_status and (job.workflow_progress or {}).get("started"):
+        if next_status:
             unlocked = workflow_state(job)["current"]
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
                 raise ValidationError({"status": "Complete the current Job Card stage first."})
@@ -156,7 +156,7 @@ class JobViewSet(CompanyScopedModelViewSet):
     def status(self,request,pk=None):
         job=self.get_object(); new_status=request.data.get("status")
         if new_status not in FLOW: raise ValidationError({"status":"Invalid job status."})
-        if (job.workflow_progress or {}).get("started") and stage_index_from_status(new_status) > STAGES.index(workflow_state(job)["current"]):
+        if stage_index_from_status(new_status) > STAGES.index(workflow_state(job)["current"]):
             raise ValidationError({"status":"Complete the current Job Card stage first."})
         old=job.status
         self._guard_active_timers(job,new_status)
@@ -250,7 +250,10 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/start")
     def inspection_start(self,request,pk=None):
-        job=self.get_object(); data=dict(job.inspection or {})
+        job=self.get_object()
+        if workflow_state(job)["current"] == "overview":
+            raise ValidationError({"stage":"Complete Overview before starting Inspection."})
+        data=dict(job.inspection or {})
         data.setdefault("checklist",{}); data.setdefault("findings",[]); data.setdefault("diagnosticScan",{"performed":False,"codes":[]}); data.setdefault("photos",[])
         data["status"]="In Progress"; data["startedAt"]=timezone.now().isoformat()
         job.inspection=data; job.status=Job.STATUS_INSPECTION; job.save(update_fields=["inspection","status","updated_at"])
