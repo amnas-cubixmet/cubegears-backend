@@ -46,6 +46,25 @@ class QuickCreateJobTests(TestCase):
         self.assertEqual(created.data["customerPhone"], "9876543210")
         self.assertEqual(created.data["vehicleReg"], "KL 10 AB 1001")
 
+    def test_job_overview_returns_km_fuel_and_vehicle_vin(self):
+        payload = {
+            **self.payload(),
+            "vin": "MA3EUA61S00123456",
+            "fuelLevel": "75%",
+            "kilometre": "150",
+        }
+        created = self.client.post(self.endpoint, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["vin"], payload["vin"])
+        self.assertEqual(created.data["fuelLevel"], "75%")
+        self.assertEqual(created.data["kilometre"], 150)
+
+        retrieved = self.client.get(f"{self.endpoint}/{created.data['id']}")
+        self.assertEqual(retrieved.status_code, 200, retrieved.data)
+        self.assertEqual(retrieved.data["vin"], payload["vin"])
+        self.assertEqual(retrieved.data["fuelLevel"], "75%")
+        self.assertEqual(retrieved.data["kilometre"], 150)
+
     def test_repeat_visit_reuses_vehicle_and_customer(self):
         first = self.client.post(self.endpoint, self.payload(), format="json")
         self.assertEqual(first.status_code, 201, first.data)
