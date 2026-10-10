@@ -467,11 +467,30 @@ class JobViewSet(CompanyScopedModelViewSet):
             price = price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total = (quantity * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             subtotal += total
-            items.append({
+            item_type = str(row.get("type") or "Service")[:30]
+            catalog_id = str(row.get("catalogId") or "").strip()
+            line = {
                 "description": label,
-                "type": str(row.get("type") or "Service")[:30],
+                "type": item_type,
                 "quantity": str(quantity), "unitPrice": str(price), "total": str(total),
-            })
+            }
+            if catalog_id:
+                # Quote lines keep their linked catalog identity without moving stock.
+                # Reject unrelated and cross-company catalog references.
+                from apps.services.models import Service
+                from apps.inventory.models import StockItem
+                from django.core.exceptions import ValidationError as DjangoValidationError
+                catalog_model = StockItem if item_type == "Part" else Service
+                try:
+                    linked = catalog_model.objects.filter(
+                        pk=catalog_id, company=self.request.user.company
+                    ).exists()
+                except (ValueError, DjangoValidationError):
+                    linked = False
+                if not linked:
+                    raise ValidationError({"catalogId": "Selected catalog item was not found in this workshop."})
+                line["catalogId"] = catalog_id
+            items.append(line)
         subtotal = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         if discount > subtotal:
             raise ValidationError({"discount": "Discount cannot exceed subtotal."})
