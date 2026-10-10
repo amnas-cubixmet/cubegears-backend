@@ -21,6 +21,7 @@ class Job(CompanyOwnedModel):
     inspection=models.JSONField(default=dict,blank=True)
     work=models.JSONField(default=list,blank=True)
     qc=models.JSONField(default=dict,blank=True)
+    workflow_progress=models.JSONField(default=dict,blank=True)
     parts_workflow=models.JSONField(default=dict,blank=True)
     notes=models.TextField(blank=True)
     estimate_total=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
