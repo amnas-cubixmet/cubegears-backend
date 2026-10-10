@@ -1,4 +1,5 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+from django.utils.dateparse import parse_datetime
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
@@ -26,6 +27,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_complete": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
+        "quick_estimate": "jobs.edit",
+        "quick_estimate_detail": "jobs.edit",
         "estimate_decision": "jobs.edit",
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
         "activity": "jobs.view",
@@ -45,9 +48,39 @@ class JobViewSet(CompanyScopedModelViewSet):
                     "status":"Pause and complete all active mechanic timers before QC or delivery."
                 })
 
+    def _assert_inspection_editable(self, job):
+        """Completed checks may be corrected before customer approves an estimate."""
+        current = workflow_state(job)["current"]
+        completed = (job.inspection or {}).get("status") == "Completed"
+        # The quick-create form can save initial inspection details in Overview.
+        # Completed inspections are strictly editable only at Estimate stage.
+        allowed = {"estimate"} if completed else {"overview", "inspection", "estimate"}
+        if current not in allowed or job.estimates.filter(status="Approved").exists():
+            raise ValidationError({"inspection": "Inspection changes are locked after estimate approval."})
+        if job.status == Job.STATUS_DELIVERED:
+            raise ValidationError({"inspection": "Delivered Job Cards cannot be edited."})
+
+    def _audit_inspection_change(self, job, label, before, after):
+        if (job.inspection or {}).get("status") == "Completed":
+            updated = dict(job.inspection or {})
+            updated["revisedAt"] = timezone.now().isoformat()
+            job.inspection = updated
+            job.save(update_fields=["inspection", "updated_at"])
+            JobActivity.objects.create(
+                company=job.company, branch=job.branch, job=job,
+                actor=self.request.user, event="Inspection Updated",
+                description=label, metadata={"before": before, "after": after},
+            )
+
     def perform_update(self,serializer):
         job = self.get_object()
         next_status = serializer.validated_data.get("status")
+        if "inspection" in serializer.validated_data:
+            self._assert_inspection_editable(job)
+            if (job.inspection or {}).get("status") == "Completed":
+                raise ValidationError({
+                    "inspection": "Use inspection edit actions to preserve revision history."
+                })
         if next_status:
             unlocked = workflow_state(job)["current"]
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
@@ -193,6 +226,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                 raise ValidationError({"stage":"Create an estimate before approval."})
             if estimate.status == "Rejected":
                 raise ValidationError({"stage":"Create a revised estimate after customer rejection."})
+            if (job.inspection or {}).get("revisedAt"):
+                revised = parse_datetime(job.inspection["revisedAt"])
+                if revised and estimate.created_at < revised:
+                    raise ValidationError({"stage": "Inspection changed. Save a revised estimate before approval."})
             if not request.data.get("approveEstimate"):
                 raise ValidationError({"stage":"Confirm customer estimate approval to continue."})
             estimate.status = "Approved"
@@ -266,49 +303,75 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["patch"],url_path="inspection/checklist")
     def inspection_checklist(self,request,pk=None):
-        job=self.get_object(); data=dict(job.inspection or {}); checklist=dict(data.get("checklist") or {})
-        checklist[request.data.get("itemName","")]=request.data.get("status","Not Checked")
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        item = str(request.data.get("itemName") or "").strip()
+        check_status = request.data.get("status", "Not Checked")
+        if not item or len(item) > 120 or check_status not in {"Good", "Needs Attention", "Critical", "Not Checked"}:
+            raise ValidationError({"checklist": "Select a valid inspection item and status."})
+        data=dict(job.inspection or {}); checklist=dict(data.get("checklist") or {})
+        previous = checklist.get(item,"Not Checked")
+        checklist[item] = check_status
         data["checklist"]=checklist; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
-        return response.Response(data)
+        if previous != check_status: self._audit_inspection_change(job, f"{item} updated", previous, check_status)
+        return response.Response(job.inspection)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/findings")
     def inspection_findings(self,request,pk=None):
         import uuid
-        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
         finding={"id":f"FND-{uuid.uuid4().hex[:10].upper()}","dateTime":timezone.now().isoformat(),"addedToEstimate":False,"estimateStatus":"Not Added",**request.data}
         findings.insert(0,finding); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        self._audit_inspection_change(job, "Finding added", None, finding)
         return response.Response(finding,status=status.HTTP_201_CREATED)
 
     @decorators.action(detail=True,methods=["put","delete"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)")
     def inspection_finding_detail(self,request,pk=None,finding_id=None):
-        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
         idx=next((i for i,x in enumerate(findings) if str(x.get("id"))==str(finding_id)),None)
         if idx is None: return response.Response({"message":"Finding not found."},status=404)
         if request.method=="DELETE":
             removed=findings.pop(idx); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+            self._audit_inspection_change(job, "Finding removed", removed, None)
             return response.Response(removed)
+        old_finding = dict(findings[idx])
         findings[idx]={**findings[idx],**request.data}; data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        self._audit_inspection_change(job, "Finding edited", old_finding, findings[idx])
         return response.Response(findings[idx])
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/diagnostic")
     def inspection_diagnostic(self,request,pk=None):
         import uuid
-        job=self.get_object(); data=dict(job.inspection or {}); scan=dict(data.get("diagnosticScan") or {})
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        data=dict(job.inspection or {}); scan=dict(data.get("diagnosticScan") or {})
         codes=list(scan.get("codes") or []); code={"id":f"OBD-{uuid.uuid4().hex[:8].upper()}",**request.data}
         codes.append(code); scan.update({"performed":True,"scanTime":timezone.now().isoformat(),"codes":codes}); data["diagnosticScan"]=scan
-        job.inspection=data; job.save(update_fields=["inspection","updated_at"]); return response.Response(code,status=201)
+        job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        self._audit_inspection_change(job, "Diagnostic code added", None, code)
+        return response.Response(code,status=201)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/photos")
     def inspection_photo(self,request,pk=None):
         import uuid
-        job=self.get_object(); data=dict(job.inspection or {}); photos=list(data.get("photos") or [])
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        data=dict(job.inspection or {}); photos=list(data.get("photos") or [])
         photo={"id":f"PH-{uuid.uuid4().hex[:8].upper()}","dateTime":timezone.now().isoformat(),**request.data}
         photos.append(photo); data["photos"]=photos; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        self._audit_inspection_change(job, "Inspection photo added", None, {"id": photo["id"], "caption": photo.get("caption")})
         return response.Response(photo,status=201)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
     def inspection_complete(self,request,pk=None):
         job=self.get_object(); data=dict(job.inspection or {})
+        if data.get("status") == "Completed":
+            raise ValidationError({"inspection": "Inspection is already completed. Use Edit Inspection before estimate approval."})
+        self._assert_inspection_editable(job)
         checked = data.get("checklist") or {}
         if not any(value in {"Good","Needs Attention","Critical"} for value in checked.values()):
             raise ValidationError({"inspection":"Record inspection checks before completing."})
@@ -319,11 +382,15 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["post"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)/add-to-estimate")
     def inspection_add_to_estimate(self,request,pk=None,finding_id=None):
-        job=self.get_object(); data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
+        job=self.get_object()
+        self._assert_inspection_editable(job)
+        data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
         finding=next((x for x in findings if str(x.get("id"))==str(finding_id)),None)
         if not finding: return response.Response({"message":"Finding not found."},status=404)
         finding["addedToEstimate"]=True; finding["estimateStatus"]="Added to Estimate"; job.inspection={**data,"findings":findings}
-        job.save(update_fields=["inspection","updated_at"]); return response.Response(finding)
+        job.save(update_fields=["inspection","updated_at"])
+        self._audit_inspection_change(job, "Finding marked for estimate", None, finding)
+        return response.Response(finding)
 
     @decorators.action(
         detail=True, methods=["post"],
@@ -341,6 +408,96 @@ class JobViewSet(CompanyScopedModelViewSet):
         estimate.status = "Rejected"
         estimate.save(update_fields=["status","updated_at"])
         return response.Response(JobEstimateSerializer(estimate).data)
+
+    def _quick_estimate_values(self, data):
+        lines = data.get("lines")
+        if not isinstance(lines, list) or not 1 <= len(lines) <= 75:
+            raise ValidationError({"lines": "Add 1 to 75 work or part items."})
+        try:
+            tax_rate = Decimal(str(data.get("taxPercent", 0)))
+            discount = Decimal(str(data.get("discount", 0)))
+        except (TypeError, ValueError, ArithmeticError):
+            raise ValidationError({"total": "Tax and discount must be valid numbers."})
+        if not (Decimal("0") <= tax_rate <= Decimal("100")) or discount < 0:
+            raise ValidationError({"total": "Tax must be 0-100%, and discount cannot be negative."})
+        items = []
+        subtotal = Decimal("0")
+        for row in lines:
+            if not isinstance(row, dict):
+                raise ValidationError({"lines": "Invalid estimate item."})
+            label = str(row.get("description") or "").strip()
+            if not label or len(label) > 250:
+                raise ValidationError({"lines": "Every item needs a description (max 250 characters)."})
+            try:
+                quantity = Decimal(str(row.get("quantity", 1)))
+                price = Decimal(str(row.get("unitPrice", 0)))
+            except (TypeError, ValueError, ArithmeticError):
+                raise ValidationError({"lines": "Quantity and price must be numbers."})
+            if not (Decimal("0") < quantity <= Decimal("10000")) or not (Decimal("0") <= price <= Decimal("10000000")):
+                raise ValidationError({"lines": "Enter a positive quantity and non-negative price."})
+            quantity = quantity.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            price = price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            total = (quantity * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            subtotal += total
+            items.append({
+                "description": label,
+                "type": str(row.get("type") or "Service")[:30],
+                "quantity": str(quantity), "unitPrice": str(price), "total": str(total),
+            })
+        subtotal = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if discount > subtotal:
+            raise ValidationError({"discount": "Discount cannot exceed subtotal."})
+        discount = discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        grand = subtotal - discount + tax
+        items.append({"_pricing": {"taxPercent": str(tax_rate), "discount": str(discount)}})
+        return {"items": items, "subtotal": subtotal, "tax": tax, "total": grand}
+
+    @decorators.action(detail=True, methods=["post"], url_path="estimates/quick")
+    @transaction.atomic
+    def quick_estimate(self, request, pk=None):
+        job = Job.objects.select_for_update().get(pk=self.get_object().pk, company=request.user.company)
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate": "Only the active Estimate stage can create a quotation."})
+        values = self._quick_estimate_values(request.data)
+        version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
+        obj = JobEstimate.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            version=version, status="Draft", **values,
+        )
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Estimate Draft Saved",
+            description=f"Estimate V{version} created",
+            metadata={"estimateId": str(obj.pk), "total": str(obj.total)},
+        )
+        return response.Response(JobEstimateSerializer(obj).data, status=201)
+
+    @decorators.action(detail=True, methods=["patch"],
+                       url_path=r"estimates/quick/(?P<estimate_id>[^/.]+)")
+    @transaction.atomic
+    def quick_estimate_detail(self, request, pk=None, estimate_id=None):
+        job = self.get_object()
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate": "Estimate editing is closed after approval."})
+        draft = JobEstimate.objects.select_for_update().filter(
+            pk=estimate_id, job=job, company=job.company,
+        ).first()
+        if not draft:
+            raise ValidationError({"estimate": "Estimate not found for this Job Card."})
+        if draft.status != "Draft":
+            raise ValidationError({"estimate": "Only draft estimates can be edited."})
+        values = self._quick_estimate_values(request.data)
+        for field, value in values.items():
+            setattr(draft, field, value)
+        draft.save(update_fields=[*values.keys(), "updated_at"])
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Estimate Draft Updated",
+            description=f"Estimate V{draft.version} updated",
+            metadata={"estimateId": str(draft.pk), "total": str(draft.total)},
+        )
+        return response.Response(JobEstimateSerializer(draft).data)
 
     @decorators.action(detail=True,methods=["get","post"])
     def estimates(self,request,pk=None):
