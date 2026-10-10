@@ -26,6 +26,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_complete": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
+        "estimate_decision": "jobs.edit",
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
         "activity": "jobs.view",
         "issue_part": ["jobs.edit", "stock.edit"],
@@ -311,6 +312,23 @@ class JobViewSet(CompanyScopedModelViewSet):
         if not finding: return response.Response({"message":"Finding not found."},status=404)
         finding["addedToEstimate"]=True; finding["estimateStatus"]="Added to Estimate"; job.inspection={**data,"findings":findings}
         job.save(update_fields=["inspection","updated_at"]); return response.Response(finding)
+
+    @decorators.action(
+        detail=True, methods=["post"],
+        url_path=r"estimates/(?P<estimate_id>[^/.]+)/decision",
+    )
+    @transaction.atomic
+    def estimate_decision(self,request,pk=None,estimate_id=None):
+        """Reject an estimate; approval is an explicit workflow completion."""
+        job = self.get_object()
+        if request.data.get("decision") != "Rejected":
+            raise ValidationError({"decision":"Use Complete & Continue to approve an estimate."})
+        estimate = job.estimates.filter(pk=estimate_id).first()
+        if not estimate:
+            raise ValidationError({"estimate":"Estimate not found for this Job Card."})
+        estimate.status = "Rejected"
+        estimate.save(update_fields=["status","updated_at"])
+        return response.Response(JobEstimateSerializer(estimate).data)
 
     @decorators.action(detail=True,methods=["get","post"])
     def estimates(self,request,pk=None):
