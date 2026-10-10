@@ -22,6 +22,7 @@ class JobSerializer(serializers.ModelSerializer):
     customerPhone=serializers.CharField(source="customer.phone",read_only=True)
     vehicleId=serializers.UUIDField(source="vehicle_id",read_only=True)
     vehicleReg=serializers.CharField(source="vehicle.registration",read_only=True)
+    vin=serializers.CharField(source="vehicle.vin",read_only=True)
     kilometre=serializers.IntegerField(source="odometer",read_only=True)
     fuelLevel=serializers.CharField(source="fuel_level",read_only=True)
     vehicleInfo=serializers.SerializerMethodField()
