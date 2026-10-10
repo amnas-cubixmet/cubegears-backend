@@ -1,4 +1,5 @@
 from decimal import Decimal
+from uuid import UUID
 
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
@@ -12,6 +13,17 @@ from .serializers import PaymentSerializer
 class PaymentViewSet(CompanyScopedModelViewSet):
     queryset = Payment.objects.select_related("customer", "invoice", "recorded_by").all()
     serializer_class = PaymentSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        invoice_id = self.request.query_params.get("invoice")
+        if invoice_id:
+            try:
+                UUID(str(invoice_id))
+            except (ValueError, TypeError, AttributeError):
+                return qs.none()
+            qs = qs.filter(invoice_id=invoice_id)
+        return qs
 
     @transaction.atomic
     def perform_create(self, serializer):
