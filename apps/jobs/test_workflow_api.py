@@ -175,3 +175,68 @@ class JobWorkflowApiTests(TestCase):
             f"{self.url}/estimates/quick/{revised.data['id']}", quote, format="json",
         )
         self.assertEqual(frozen_quote.status_code, 400)
+
+
+    def test_quick_estimate_catalog_service_and_part_links(self):
+        from apps.services.models import Service
+        from apps.inventory.models import StockItem
+
+        service = Service.objects.create(
+            company=self.company, branch=self.branch,
+            name="Brake cleaning", code="BR-CLN", price="650.00",
+        )
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch,
+            name="Brake pad set", sku="BR-PAD-01",
+            selling_price="1450.00", on_hand="0",
+        )
+
+        self.assertEqual(self.finish("overview").status_code, 200)
+        self.assertEqual(self.client.post(f"{self.url}/inspection/start", {}, format="json").status_code, 200)
+        self.assertEqual(self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Brakes", "status": "Good"}, format="json",
+        ).status_code, 200)
+        self.assertEqual(self.client.post(f"{self.url}/inspection/complete", {}, format="json").status_code, 200)
+
+        quote = {
+            "lines": [
+                {"description": service.name, "type": "Labour", "quantity": "1",
+                 "unitPrice": "650", "catalogId": str(service.pk)},
+                {"description": part.name, "type": "Part", "quantity": "2",
+                 "unitPrice": "1450", "catalogId": str(part.pk)},
+            ],
+            "discount": "0", "taxPercent": "0",
+        }
+        response = self.client.post(f"{self.url}/estimates/quick", quote, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["items"][0]["catalogId"], str(service.pk))
+        self.assertEqual(response.data["items"][1]["catalogId"], str(part.pk))
+        self.assertEqual(str(response.data["total"]), "3550.00")
+        part.refresh_from_db()
+        self.assertEqual(str(part.on_hand), "0.00")  # Quote must never deduct stock.
+
+        edited = self.client.patch(
+            f"{self.url}/estimates/quick/{response.data['id']}", quote, format="json"
+        )
+        self.assertEqual(edited.status_code, 200, edited.data)
+        self.assertEqual(edited.data["items"][1]["catalogId"], str(part.pk))
+
+        invalid = self.client.post(f"{self.url}/estimates/quick", {
+            **quote,
+            "lines": [{**quote["lines"][0], "catalogId": str(part.pk)}]
+        }, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("catalogId", invalid.data)
+
+        external_company = Company.objects.create(name="Other Workshop", slug="other-workshop-catalog")
+        external_part = StockItem.objects.create(
+            company=external_company, name="Other company's part", sku="EXTERNAL-001"
+        )
+        foreign = self.client.post(f"{self.url}/estimates/quick", {
+            **quote,
+            "lines": [{**quote["lines"][1], "catalogId": str(external_part.pk)}]
+        }, format="json")
+        self.assertEqual(foreign.status_code, 400)
+        self.assertIn("catalogId", foreign.data)
+
