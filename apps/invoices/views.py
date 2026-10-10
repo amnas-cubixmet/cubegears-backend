@@ -1,4 +1,6 @@
 from decimal import Decimal
+from uuid import UUID
+from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
@@ -16,8 +18,18 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         "convert": "invoices.create",
     }
     def get_queryset(self):
-        qs=super().get_queryset(); kind=self.request.query_params.get("kind")
-        return qs.filter(kind=kind) if kind else qs
+        qs = super().get_queryset()
+        kind = self.request.query_params.get("kind")
+        if kind:
+            qs = qs.filter(kind=kind)
+        job_id = self.request.query_params.get("jobId")
+        if job_id:
+            try:
+                UUID(str(job_id))
+            except (ValueError, TypeError, AttributeError):
+                return qs.none()
+            qs = qs.filter(Q(job_id=job_id) | Q(source_job_id=str(job_id)))
+        return qs
 
     def perform_create(self,serializer):
         company=self.request.user.company
