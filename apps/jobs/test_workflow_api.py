@@ -1,0 +1,108 @@
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from apps.accounts.models import User
+from apps.branches.models import Branch
+from apps.companies.models import Company
+from apps.invoices.models import Invoice
+from apps.roles.models import Role
+from .models import Job
+
+
+class JobWorkflowApiTests(TestCase):
+    def setUp(self):
+        company = Company.objects.create(name="Workflow Workshop", slug="workflow-api-test")
+        branch = Branch.objects.create(company=company, name="Main", code="MAIN")
+        role = Role.objects.create(
+            company=company, name="Manager", code="MANAGER",
+            permissions=["jobs.view", "jobs.create", "jobs.edit"],
+        )
+        user = User.objects.create(
+            company=company, branch=branch, role=role,
+            name="Manager", email="workflow-manager@test.local",
+        )
+        self.company = company
+        self.branch = branch
+        self.client = APIClient()
+        self.client.force_authenticate(user=user)
+        created = self.client.post("/api/v1/jobs", {
+            "customerName": "Customer",
+            "customerPhone": "9876543210",
+            "vehicleReg": "KL10AB1234",
+            "vehicleInfo": "Maruti Swift",
+            "status": "New",
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.id = created.data["id"]
+        self.url = f"/api/v1/jobs/{self.id}"
+
+    def finish(self, stage, **extras):
+        return self.client.post(
+            f"{self.url}/workflow", {"stage": stage, **extras}, format="json"
+        )
+
+    def test_stage_order_and_resume_endpoint(self):
+        initial = self.client.get(f"{self.url}/workflow")
+        self.assertEqual(initial.status_code, 200, initial.data)
+        self.assertEqual(initial.data["current"], "overview")
+        self.assertIn("inspection", initial.data["locked"])
+
+        skip = self.finish("inspection")
+        self.assertEqual(skip.status_code, 400)
+        jump = self.client.patch(f"{self.url}/status", {"status": "QC"}, format="json")
+        self.assertEqual(jump.status_code, 400)
+
+        overview = self.finish("overview")
+        self.assertEqual(overview.status_code, 200, overview.data)
+        self.assertEqual(overview.data["current"], "inspection")
+        self.assertEqual(self.finish("overview").status_code, 400)
+
+        start = self.client.post(f"{self.url}/inspection/start", {}, format="json")
+        self.assertEqual(start.status_code, 200, start.data)
+        done = self.client.post(
+            f"{self.url}/inspection/complete", {"needsApproval": True}, format="json"
+        )
+        self.assertEqual(done.status_code, 200, done.data)
+        self.assertEqual(self.client.get(f"{self.url}/workflow").data["current"], "estimate")
+
+        estimate = self.client.post(f"{self.url}/estimates", {
+            "version": 1,
+            "status": "Draft",
+            "items": [],
+            "subtotal": "250.00",
+            "tax": "0.00",
+            "total": "250.00",
+        }, format="json")
+        self.assertEqual(estimate.status_code, 201, estimate.data)
+        self.assertEqual(self.finish("estimate").status_code, 400)
+        approved = self.finish("estimate", approveEstimate=True)
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(approved.data["current"], "work")
+
+        self.assertEqual(self.finish("work").status_code, 400)
+        work = self.finish("work", confirmWorkDone=True)
+        self.assertEqual(work.status_code, 200, work.data)
+        self.assertEqual(work.data["current"], "qc")
+        self.assertEqual(self.finish("qc").status_code, 400)
+
+        qc = self.client.patch(
+            self.url, {"qc": {"status": "Pass", "checklist": []}}, format="json"
+        )
+        self.assertEqual(qc.status_code, 200, qc.data)
+        qc_done = self.finish("qc")
+        self.assertEqual(qc_done.status_code, 200, qc_done.data)
+        self.assertEqual(qc_done.data["current"], "invoice")
+        self.assertEqual(self.finish("invoice").status_code, 400)
+
+        job = Job.objects.get(pk=self.id)
+        Invoice.objects.create(
+            company=self.company, branch=self.branch, job=job,
+            customer=job.customer, vehicle=job.vehicle,
+            number="INV-WORKFLOW-001", kind="invoice",
+            status="Finalized", date=timezone.localdate(), total="250.00",
+        )
+        finished = self.finish("invoice")
+        self.assertEqual(finished.status_code, 200, finished.data)
+        self.assertTrue(finished.data["finished"])
+        self.assertEqual(Job.objects.get(pk=self.id).status, "Delivered")
