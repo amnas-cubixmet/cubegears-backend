@@ -2,7 +2,10 @@ from rest_framework import serializers
 from .models import Job,JobEstimate,JobPart,JobPhoto,JobActivity
 
 class JobEstimateSerializer(serializers.ModelSerializer):
-    class Meta: model=JobEstimate; exclude=("company","branch")
+    class Meta:
+        model = JobEstimate
+        exclude = ("company", "branch")
+        read_only_fields = ("id", "job", "created_at", "updated_at")
 class JobPartSerializer(serializers.ModelSerializer):
     itemName=serializers.CharField(source="item.name",read_only=True)
     sku=serializers.CharField(source="item.sku",read_only=True)
