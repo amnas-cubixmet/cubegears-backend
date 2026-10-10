@@ -113,3 +113,65 @@ class JobWorkflowApiTests(TestCase):
         self.assertEqual(finished.status_code, 200, finished.data)
         self.assertTrue(finished.data["finished"])
         self.assertEqual(Job.objects.get(pk=self.id).status, "Delivered")
+
+    def test_quick_estimate_inspection_edit_and_approval_guard(self):
+        self.assertEqual(self.finish("overview").status_code, 200)
+        self.assertEqual(self.client.post(f"{self.url}/inspection/start", {}, format="json").status_code, 200)
+        checked = self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Engine oil", "status": "Good"}, format="json",
+        )
+        self.assertEqual(checked.status_code, 200, checked.data)
+        self.assertEqual(self.client.post(f"{self.url}/inspection/complete", {}, format="json").status_code, 200)
+
+        quote = {
+            "lines": [
+                {"description": "Engine oil", "type": "Part", "quantity": 2, "unitPrice": 800},
+                {"description": "Oil change labour", "type": "Labour", "quantity": 1, "unitPrice": 500},
+            ],
+            "discount": 100, "taxPercent": 18,
+        }
+        created = self.client.post(f"{self.url}/estimates/quick", quote, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(str(created.data["subtotal"]), "2100.00")
+        self.assertEqual(str(created.data["tax"]), "360.00")
+        self.assertEqual(str(created.data["total"]), "2360.00")
+        estimate_id = created.data["id"]
+
+        invalid = self.client.patch(
+            f"{self.url}/estimates/quick/{estimate_id}",
+            {**quote, "discount": 5000}, format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+        updated = self.client.patch(
+            f"{self.url}/estimates/quick/{estimate_id}",
+            {**quote, "discount": 200}, format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(str(updated.data["total"]), "2242.00")
+
+        # Completed inspections can be corrected while Estimate is still active.
+        edit = self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Engine oil", "status": "Needs Attention"}, format="json",
+        )
+        self.assertEqual(edit.status_code, 200, edit.data)
+        self.assertIn("revisedAt", edit.data)
+        stale = self.finish("estimate", approveEstimate=True)
+        self.assertEqual(stale.status_code, 400, stale.data)
+
+        revised = self.client.post(f"{self.url}/estimates/quick", quote, format="json")
+        self.assertEqual(revised.status_code, 201, revised.data)
+        approved = self.finish("estimate", approveEstimate=True)
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertEqual(approved.data["current"], "work")
+
+        after = self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Engine oil", "status": "Good"}, format="json",
+        )
+        self.assertEqual(after.status_code, 400)
+        frozen_quote = self.client.patch(
+            f"{self.url}/estimates/quick/{revised.data['id']}", quote, format="json",
+        )
+        self.assertEqual(frozen_quote.status_code, 400)
