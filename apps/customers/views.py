@@ -31,9 +31,16 @@ class CustomerViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False, methods=["post"], url_path="check-duplicate")
     def check_duplicate(self, request):
-        phone, email = request.data.get("phone"), request.data.get("email")
+        phone = str(request.data.get("phone") or "").strip()
+        email = str(request.data.get("email") or "").strip()
         qs = self.get_queryset()
-        match = qs.filter(Q(phone=phone) | Q(email__iexact=email)).first() if phone or email else None
+        if phone or email:
+            match_filter = Q(phone=phone) if phone else Q(pk__isnull=True)
+            if email:
+                match_filter |= Q(email__iexact=email)
+            match = qs.filter(match_filter).first()
+        else:
+            match = None
         return response.Response({"duplicate": bool(match), "customer": CustomerSerializer(match).data if match else None})
 
     @decorators.action(detail=True, methods=["patch"])
