@@ -75,3 +75,85 @@ class QuickCreateJobTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["inspection"]["checklist"]["Tyres"], "Good")
+
+    def test_existing_customer_selection_creates_vehicle_for_that_customer(self):
+        selected = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="Selected Customer", phone="9001234567",
+            email="selected@test.local", address="Sample Street",
+        )
+        payload = {
+            **self.payload(),
+            "customer": str(selected.id),
+            "customerName": selected.name,
+            "customerPhone": selected.phone,
+            "customerEmail": selected.email,
+            "customerAddress": selected.address,
+            "vehicleReg": "KL 10 AB 4567",
+        }
+        created = self.client.post(self.endpoint, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(Customer.objects.filter(company=self.company).count(), 1)
+        job = Job.objects.get(pk=created.data["id"])
+        self.assertEqual(job.customer_id, selected.id)
+        self.assertEqual(job.vehicle.customer_id, selected.id)
+        self.assertEqual(job.vehicle.registration, "KL 10 AB 4567")
+
+    def test_selected_customer_reuses_owned_vehicle(self):
+        selected = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="Owned Customer", phone="9876543210",
+        )
+        vehicle = Vehicle.objects.create(
+            company=self.company, branch=self.branch, customer=selected,
+            registration="KL 10 AB 1001", make="Maruti", model="Swift",
+        )
+        payload = {
+            **self.payload(),
+            "customer": str(selected.id),
+            "vehicle": str(vehicle.id),
+            "customerName": selected.name,
+            "customerPhone": selected.phone,
+        }
+        created = self.client.post(self.endpoint, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(Vehicle.objects.filter(company=self.company).count(), 1)
+        self.assertEqual(Job.objects.get(pk=created.data["id"]).vehicle_id, vehicle.id)
+
+    def test_selected_customer_cannot_use_vehicle_owned_by_another_customer(self):
+        owner = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="Original Owner", phone="9876543210",
+        )
+        selected = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="Different Owner", phone="9001234567",
+        )
+        vehicle = Vehicle.objects.create(
+            company=self.company, branch=self.branch, customer=owner,
+            registration="KL 10 AB 1001",
+        )
+        created = self.client.post(self.endpoint, {
+            **self.payload(),
+            "customer": str(selected.id),
+            "customerName": selected.name,
+            "customerPhone": selected.phone,
+            "vehicle": str(vehicle.id),
+        }, format="json")
+        self.assertEqual(created.status_code, 400, created.data)
+        self.assertIn("vehicleReg", created.data)
+        self.assertEqual(Job.objects.count(), 0)
+
+    def test_selected_customer_name_must_match_saved_record(self):
+        customer = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="Saved Customer", phone="9876543210",
+        )
+        created = self.client.post(self.endpoint, {
+            **self.payload(),
+            "customer": str(customer.id),
+            "customerName": "Other Customer",
+        }, format="json")
+        self.assertEqual(created.status_code, 400, created.data)
+        self.assertIn("customer", created.data)
+        self.assertEqual(Vehicle.objects.count(), 0)
