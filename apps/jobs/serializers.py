@@ -39,7 +39,7 @@ class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model=Job
         exclude=("company","branch")
-        read_only_fields=("id","created_at","updated_at")
+        read_only_fields=("id","created_at","updated_at","workflow_progress")
         extra_kwargs={"job_number": {"required": False}}
     def get_vehicleInfo(self,obj):
         return " ".join(filter(None,[obj.vehicle.make,obj.vehicle.model,obj.vehicle.variant]))
