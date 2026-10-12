@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
 
 from .models import Job
+from .audit import record_job_event
 from apps.inventory.models import StockItem, StockMovement
 
 def _job(request, job_id):
@@ -75,6 +76,8 @@ class JobIssuesView(APIView):
             line.setdefault("issues",[]).insert(0,issue)
             state["transactions"].insert(0,{"id":issue["id"],"type":"Issue","partName":line.get("partName"),"qty":qty,"reference":issue["issueNo"],"createdAt":issue["issuedAt"],"createdBy":request.user.name})
             StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
+            record_job_event(job, request.user, "Part Issued", f"{item.name} × {qty}",
+                             {"itemId": str(item.pk), "issueId": issue["id"]})
         _save(job,state); return Response(state)
 
 class JobReturnsView(APIView):
@@ -95,6 +98,8 @@ class JobReturnsView(APIView):
             ret={"id":f"RET-{timezone.now().timestamp()}","returnNo":f"RET-{timezone.now().timestamp()}","qty":qty,"disposition":disposition,"returnedBy":request.user.name,"returnedAt":timezone.now().isoformat()}
             line.setdefault("returns",[]).insert(0,ret)
             state["transactions"].insert(0,{"id":ret["id"],"type":"Return","partName":line.get("partName"),"qty":qty,"reference":ret["returnNo"],"createdAt":ret["returnedAt"],"createdBy":request.user.name})
+            record_job_event(job, request.user, "Part Returned", f"{item.name} × {qty}",
+                             {"itemId": str(item.pk), "returnId": ret["id"]})
         _save(job,state); return Response(state)
 
 class CompletionEligibilityView(APIView):
@@ -120,7 +125,11 @@ class JobPurchaseOrderView(APIView):
         line=next((x for x in state["lines"] if str(x.get("id"))==str(request.data.get("job_card_part_id"))),None)
         if not line: raise ValidationError("Part line not found.")
         po={"id":f"PO-{timezone.now().timestamp()}","poNo":f"PO-{timezone.now().timestamp()}","jobId":str(job.id),"lineId":line.get("id"),"partId":line.get("partId"),"partName":line.get("partName"),"vendor":request.data.get("vendor") or "Supplier","type":request.data.get("type") or "Cash","orderDate":timezone.localdate().isoformat(),"requestedQty":line.get("requestedQty") or 0,"orderedQty":float(request.data.get("ordered_qty") or 0),"unitCost":float(request.data.get("unit_cost") or 0),"discount":float(request.data.get("discount") or 0),"tax":float(request.data.get("tax") or 0),"receivedQty":0,"status":"Ordered"}
-        state["purchaseOrders"].insert(0,po); _save(job,state); return Response(po,status=201)
+        state["purchaseOrders"].insert(0,po); _save(job,state)
+        record_job_event(job, request.user, "Purchase Order Created",
+                         f"{po['partName']} ordered from {po['vendor']}",
+                         {"orderId": po["id"]})
+        return Response(po,status=201)
 
 class PurchaseOrderInwardView(APIView):
     permission_classes=[IsAuthenticated]
@@ -146,6 +155,8 @@ class PurchaseOrderInwardView(APIView):
         state["transactions"].insert(0,{"id":f"GRN-{timezone.now().timestamp()}","type":"Inward","partName":po.get("partName"),"qty":qty,"reference":po.get("poNo"),"createdAt":timezone.now().isoformat(),"createdBy":request.user.name})
         _save(job,state)
         StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="purchase",quantity=qty,reference=po.get("poNo") or "",job=job,created_by=request.user)
+        record_job_event(job, request.user, "Parts Received",
+                         f"{item.name} × {qty} received", {"orderId": po_id})
         return Response(po)
 
 
