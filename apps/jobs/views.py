@@ -656,8 +656,8 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"image": "Choose an image under 5 MB."})
 
         allowed = {
-            "image/jpeg": (b"\\xff\\xd8\\xff", ".jpg"),
-            "image/png": (b"\\x89PNG\\r\\n\\x1a\\n", ".png"),
+            "image/jpeg": (b"\xff\xd8\xff", ".jpg"),
+            "image/png": (b"\x89PNG\r\n\x1a\n", ".png"),
             "image/gif": (b"GIF8", ".gif"),
             "image/webp": (b"RIFF", ".webp"),
         }
