@@ -240,3 +240,70 @@ class JobWorkflowApiTests(TestCase):
         self.assertEqual(foreign.status_code, 400)
         self.assertIn("catalogId", foreign.data)
 
+
+    def test_complaint_status_automatically_follows_work_and_qc(self):
+        complaint = {
+            "id": "CMP-AUTO-1", "description": "Engine warning light",
+            "wording": "Engine warning light", "status": "Completed",
+        }
+        started = self.client.patch(
+            self.url, {"complaints": [complaint]}, format="json",
+        )
+        self.assertEqual(started.status_code, 200, started.data)
+        self.assertEqual(started.data["complaints"][0]["status"], "Open")
+        self.assertEqual(Job.objects.get(pk=self.id).complaints[0]["status"], "Open")
+
+        self.assertEqual(self.finish("overview").status_code, 200)
+        self.assertEqual(self.client.post(
+            f"{self.url}/inspection/start", {}, format="json",
+        ).status_code, 200)
+        self.assertEqual(self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Engine oil", "status": "Good"}, format="json",
+        ).status_code, 200)
+        self.assertEqual(self.client.post(
+            f"{self.url}/inspection/complete", {}, format="json",
+        ).status_code, 200)
+        estimate = self.client.post(f"{self.url}/estimates", {
+            "version": 1, "status": "Draft", "items": [],
+            "subtotal": "100", "tax": "0", "total": "100",
+        }, format="json")
+        self.assertEqual(estimate.status_code, 201, estimate.data)
+
+        in_progress = self.finish("estimate", approveEstimate=True)
+        self.assertEqual(in_progress.status_code, 200, in_progress.data)
+        self.assertEqual(in_progress.data["job"]["complaints"][0]["status"], "In Progress")
+        self.assertEqual(Job.objects.get(pk=self.id).complaints[0]["status"], "In Progress")
+
+        # Status is read-only even through a direct PATCH of the complaint JSON.
+        manual = self.client.patch(self.url, {
+            "complaints": [{**complaint, "status": "Open"}]
+        }, format="json")
+        self.assertEqual(manual.status_code, 200, manual.data)
+        self.assertEqual(manual.data["complaints"][0]["status"], "In Progress")
+
+        work = self.finish("work", confirmWorkDone=True)
+        self.assertEqual(work.status_code, 200, work.data)
+        self.assertEqual(work.data["job"]["complaints"][0]["status"], "In Progress")
+
+        qc = self.client.patch(
+            self.url, {"qc": {"status": "Pass", "checklist": [
+                {"id": "QC-1", "item": "Road test", "status": "Pass"}
+            ]}}, format="json",
+        )
+        self.assertEqual(qc.status_code, 200, qc.data)
+        complete = self.finish("qc")
+        self.assertEqual(complete.status_code, 200, complete.data)
+        self.assertEqual(complete.data["job"]["complaints"][0]["status"], "Completed")
+        self.assertEqual(Job.objects.get(pk=self.id).complaints[0]["status"], "Completed")
+        self.assertEqual(
+            self.client.get(self.url).data["complaints"][0]["status"], "Completed",
+        )
+
+    def test_complaint_legacy_status_is_normalized_on_read(self):
+        job = Job.objects.get(pk=self.id)
+        job.complaints = [{"id": "CMP-OLD", "description": "Brake noise", "status": "Completed"}]
+        job.save(update_fields=["complaints"])
+        data = self.client.get(self.url)
+        self.assertEqual(data.status_code, 200)
+        self.assertEqual(data.data["complaints"][0]["status"], "Open")
