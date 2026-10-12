@@ -12,7 +12,15 @@ class JobPartSerializer(serializers.ModelSerializer):
     sku=serializers.CharField(source="item.sku",read_only=True)
     class Meta: model=JobPart; exclude=("company","branch")
 class JobPhotoSerializer(serializers.ModelSerializer):
-    class Meta: model=JobPhoto; exclude=("company","branch")
+    hasUpload=serializers.SerializerMethodField()
+
+    def get_hasUpload(self, obj):
+        return bool(obj.file)
+
+    class Meta:
+        model=JobPhoto
+        exclude=("company", "branch", "file")
+        read_only_fields=("id", "job", "uploaded_by", "created_at", "updated_at")
 class JobActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
     class Meta: model=JobActivity; exclude=("company","branch")
