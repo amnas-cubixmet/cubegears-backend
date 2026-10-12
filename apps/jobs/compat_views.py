@@ -146,3 +146,62 @@ class PurchaseOrderInwardView(APIView):
         _save(job,state)
         StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="purchase",quantity=qty,reference=po.get("poNo") or "",job=job,created_by=request.user)
         return Response(po)
+
+
+class OutsidePartsView(APIView):
+    """Direct purchases consumed on the job without inventory movement."""
+    from apps.accounts.permissions import RolePermission
+    permission_classes = [RolePermission]
+    permission_map = {"GET": "jobs.view", "POST": "jobs.edit"}
+
+    def get(self, request, job_id):
+        job = _job(request, job_id)
+        return Response({"items": _state(job).get("outsideParts", [])})
+
+    @transaction.atomic
+    def post(self, request, job_id):
+        from decimal import Decimal, InvalidOperation
+        from uuid import uuid4
+        from .models import JobActivity
+        qs = Job.objects.select_for_update()
+        if not request.user.is_superuser:
+            qs = qs.filter(company=request.user.company)
+        from django.shortcuts import get_object_or_404
+        job = get_object_or_404(qs, pk=job_id)
+        name = str(request.data.get("partName") or "").strip()
+        vendor = str(request.data.get("vendor") or "").strip()
+        key = str(request.data.get("requestId") or "").strip()
+        if not name or len(name) > 160 or not vendor or len(vendor) > 160 or not key or len(key) > 100:
+            raise ValidationError("Part name, supplier and request ID are required.")
+        try:
+            qty = Decimal(str(request.data.get("quantity", 0)))
+            cost = Decimal(str(request.data.get("unitCost", 0)))
+            selling = Decimal(str(request.data.get("sellingPrice", 0)))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError("Invalid quantity or price.")
+        if not qty.is_finite() or not cost.is_finite() or not selling.is_finite() or qty <= 0 or cost < 0 or selling < 0:
+            raise ValidationError("Quantity must be positive and prices cannot be negative.")
+        if qty > Decimal("999999.99") or cost > Decimal("999999999.99") or selling > Decimal("999999999.99"):
+            raise ValidationError("Quantity or price is too large.")
+        state = _state(job)
+        records = state.setdefault("outsideParts", [])
+        previous = next((part for part in records if part.get("requestId") == key), None)
+        if previous:
+            return Response(previous)
+        record = {
+            "id": str(uuid4()), "requestId": key, "partName": name,
+            "sku": str(request.data.get("sku") or "")[:80],
+            "vendor": vendor,
+            "invoiceNo": str(request.data.get("invoiceNo") or "")[:120],
+            "quantity": str(qty), "unitCost": str(cost),
+            "sellingPrice": str(selling), "totalCost": str(qty * cost),
+            "totalSelling": str(qty * selling),
+            "usedAt": timezone.now().isoformat(), "createdBy": request.user.name,
+        }
+        records.insert(0, record)
+        _save(job, state)
+        JobActivity.objects.create(company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="outside_part_used",
+            description=f"Outside part purchased and used: {name} × {qty}",
+            metadata={"outsidePartId": record["id"], "supplier": vendor})
+        return Response(record, status=201)
