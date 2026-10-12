@@ -1,6 +1,25 @@
 from decimal import Decimal
+import uuid
+from pathlib import Path
+from django.conf import settings
+from django.core.files.storage import FileSystemStorage
 from django.db import models
 from common.models import CompanyOwnedModel
+
+
+def job_photo_private_storage():
+    """Backend-private storage: images can only be fetched via permission-checked API."""
+    return FileSystemStorage(
+        location=getattr(settings, "PRIVATE_JOB_MEDIA_ROOT", settings.BASE_DIR / "private_job_media"),
+        base_url=None,
+    )
+
+
+def job_photo_upload_to(instance, filename):
+    extension = Path(filename).suffix.lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+        extension = ".jpg"
+    return f"jobs/{instance.company_id}/{instance.job_id}/{uuid.uuid4().hex}{extension}"
 
 class Job(CompanyOwnedModel):
     STATUS_NEW="New"; STATUS_INSPECTION="Inspection"; STATUS_ESTIMATE_PENDING="Estimate Pending"; STATUS_APPROVED="Approved"
@@ -53,7 +72,8 @@ class JobPart(CompanyOwnedModel):
 
 class JobPhoto(CompanyOwnedModel):
     job=models.ForeignKey(Job,on_delete=models.CASCADE,related_name="photos")
-    url=models.URLField()
+    url=models.URLField(blank=True)
+    file=models.FileField(upload_to=job_photo_upload_to, storage=job_photo_private_storage, blank=True)
     photo_type=models.CharField(max_length=30,default="general")
     caption=models.CharField(max_length=255,blank=True)
     uploaded_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
