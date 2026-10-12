@@ -73,7 +73,7 @@ class JobIssuesView(APIView):
             issue={"id":f"ISS-{timezone.now().timestamp()}","issueNo":f"ISS-{timezone.now().timestamp()}","qty":qty,"issuedTo":req_line.get("issued_to") or "Workshop","issuedBy":request.user.name,"issuedAt":timezone.now().isoformat()}
             line.setdefault("issues",[]).insert(0,issue)
             state["transactions"].insert(0,{"id":issue["id"],"type":"Issue","partName":line.get("partName"),"qty":qty,"reference":issue["issueNo"],"createdAt":issue["issuedAt"],"createdBy":request.user.name})
-            StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,reference=job.job_number,job=job,created_by=request.user)
+            StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
         _save(job,state); return Response(state)
 
 class JobReturnsView(APIView):
@@ -90,7 +90,7 @@ class JobReturnsView(APIView):
             disposition=req_line.get("disposition") or "Reusable"
             if disposition=="Reusable":
                 item.on_hand=float(item.on_hand)+qty; item.save(update_fields=["on_hand","updated_at"])
-                StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="return",quantity=qty,reference=job.job_number,job=job,created_by=request.user)
+                StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="return",quantity=qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
             ret={"id":f"RET-{timezone.now().timestamp()}","returnNo":f"RET-{timezone.now().timestamp()}","qty":qty,"disposition":disposition,"returnedBy":request.user.name,"returnedAt":timezone.now().isoformat()}
             line.setdefault("returns",[]).insert(0,ret)
             state["transactions"].insert(0,{"id":ret["id"],"type":"Return","partName":line.get("partName"),"qty":qty,"reference":ret["returnNo"],"createdAt":ret["returnedAt"],"createdBy":request.user.name})
