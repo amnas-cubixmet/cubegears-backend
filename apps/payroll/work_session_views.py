@@ -142,6 +142,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.status = JobWorkSession.PAUSED
         self._record(obj, "Paused", request.user)
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Paused",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True, methods=["post"])
@@ -162,6 +165,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.resumed_at = timezone.now()
         self._record(obj, "Resumed", request.user)
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Resumed",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True, methods=["post"])
@@ -178,6 +184,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.status = JobWorkSession.PENDING
         self._record(obj, "Submitted for review", request.user)
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Submitted",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
 
 
@@ -207,6 +216,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.status = JobWorkSession.PENDING
         self._record(obj, "Corrected", request.user, {"fromMinutes": previous, "toMinutes": minutes, "reason": reason})
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Corrected",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True, methods=["post"])
@@ -224,6 +236,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.reviewed_by = request.user
         self._record(obj, "Rejected", request.user, {"reason": reason})
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Rejected",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True, methods=["post"])
@@ -298,4 +313,7 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
         obj.reviewed_by = request.user
         self._record(obj, "Approved", request.user, {"minutes": minutes})
         obj.save()
+        record_job_event(obj.job, request.user, "Mechanic Work Approved",
+                         f"{obj.employee.name}: {obj.service_name}",
+                         {"sessionId": str(obj.pk)})
         return response.Response(self.get_serializer(obj).data)
