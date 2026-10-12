@@ -149,3 +149,64 @@ class JobCostSummaryTests(TestCase):
         other = Job.objects.create(company=outsider, customer=customer, vehicle=vehicle, job_number="OUT-01")
         response = self.client.get(f"/api/v1/jobs/{other.id}/cost-summary")
         self.assertEqual(response.status_code, 404)
+
+    def test_outside_shop_purchase_is_idempotent_and_added_to_direct_job_cost(self):
+        self.role.permissions = ["jobs.view", "jobs.edit", "payroll.view", "expenses.view", "stock.view"]
+        self.role.save(update_fields=["permissions"])
+        url = f"/api/v1/job-cards/{self.job.id}/outside-parts"
+        payload = {
+            "requestId": "outside-part-req-0001",
+            "partName": "Alternator belt",
+            "sku": "ALT-BELT",
+            "vendor": "Roadside Spare Shop",
+            "invoiceNo": "BILL-021",
+            "quantity": "2",
+            "unitCost": "120.00",
+            "sellingPrice": "190.00",
+        }
+        created = self.client.post(url, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["totalCost"], "240.00")
+        same = self.client.post(url, payload, format="json")
+        self.assertEqual(same.status_code, 200, same.data)
+        self.assertEqual(same.data["id"], created.data["id"])
+        listed = self.client.get(url)
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual(len(listed.data["items"]), 1)
+        self.assertEqual(StockMovement.objects.filter(job=self.job).count(), 0)
+
+        total = self.client.get(self.url)
+        self.assertEqual(total.status_code, 200, total.data)
+        self.assertEqual(total.data["outsidePartsCost"], "240.00")
+        self.assertEqual(total.data["partsCost"], "240.00")
+        self.assertEqual(total.data["totalCost"], "240.00")
+
+        invalid = self.client.post(url, {**payload, "requestId": "next-purchase", "quantity": "-1"}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(len(self.client.get(url).data["items"]), 1)
+        self.job.status = Job.STATUS_DELIVERED
+        self.job.save(update_fields=["status"])
+        delivered = self.client.post(
+            url, {**payload, "requestId": "after-delivery"}, format="json"
+        )
+        self.assertEqual(delivered.status_code, 400)
+
+    def test_outside_shop_purchase_respects_job_edit_permission_and_tenant(self):
+        url = f"/api/v1/job-cards/{self.job.id}/outside-parts"
+        payload = {
+            "requestId": "outside-not-allowed", "partName": "Filter",
+            "vendor": "Shop", "quantity": "1", "unitCost": "10",
+            "sellingPrice": "15",
+        }
+        result = self.client.post(url, payload, format="json")
+        self.assertEqual(result.status_code, 403)
+        self.assertEqual(self.client.get(url).status_code, 200)
+        # The lookup must not expose another company's Job Card.
+        other = Company.objects.create(name="Outside Tenant", slug="outside-parts-tenant")
+        owner = Customer.objects.create(company=other, name="Foreign", phone="9090900000")
+        car = Vehicle.objects.create(company=other, customer=owner, registration="KL08ZZ9900")
+        foreign = Job.objects.create(company=other, customer=owner, vehicle=car, job_number="FOREIGN")
+        self.assertEqual(
+            self.client.get(f"/api/v1/job-cards/{foreign.id}/outside-parts").status_code,
+            404
+        )

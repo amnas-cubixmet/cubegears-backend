@@ -13,7 +13,8 @@ def _job(request, job_id):
     qs=Job.objects.filter(pk=job_id)
     if not request.user.is_superuser:
         qs=qs.filter(company=request.user.company)
-    return qs.get()
+    from django.shortcuts import get_object_or_404
+    return get_object_or_404(qs)
 
 def _state(job):
     data=deepcopy(job.parts_workflow or {})
@@ -168,6 +169,8 @@ class OutsidePartsView(APIView):
             qs = qs.filter(company=request.user.company)
         from django.shortcuts import get_object_or_404
         job = get_object_or_404(qs, pk=job_id)
+        if job.status == Job.STATUS_DELIVERED:
+            raise ValidationError("Cannot add outside purchases after Job Card delivery.")
         name = str(request.data.get("partName") or "").strip()
         vendor = str(request.data.get("vendor") or "").strip()
         key = str(request.data.get("requestId") or "").strip()
