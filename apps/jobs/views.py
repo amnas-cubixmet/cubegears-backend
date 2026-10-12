@@ -82,6 +82,14 @@ class JobViewSet(CompanyScopedModelViewSet):
                 used_current_cost = True
             part_cost -= movement.quantity * price
         part_cost = max(Decimal("0"), part_cost)
+        # Direct purchases are used on the job, not added to StockMovement.
+        # Include them once from the job's persisted outsideParts ledger.
+        outside_parts = (job.parts_workflow or {}).get("outsideParts") or []
+        outside_parts_cost = sum(
+            (Decimal(str(part.get("totalCost") or "0")) for part in outside_parts),
+            Decimal("0"),
+        )
+        part_cost += outside_parts_cost
 
         def amount(number):
             return str(number.quantize(Decimal("0.01")))
@@ -90,6 +98,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             "mechanicCost": amount(mechanic_cost),
             "outsideStaffCost": amount(outside_cost),
             "partsCost": amount(part_cost),
+            "outsidePartsCost": amount(outside_parts_cost),
             "totalCost": amount(mechanic_cost + outside_cost + part_cost),
             "outsidePending": amount(outside_pending),
             "unallocatedDailyWages": unallocated_mechanic,
