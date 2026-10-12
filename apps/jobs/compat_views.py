@@ -13,7 +13,8 @@ def _job(request, job_id):
     qs=Job.objects.filter(pk=job_id)
     if not request.user.is_superuser:
         qs=qs.filter(company=request.user.company)
-    return qs.get()
+    from django.shortcuts import get_object_or_404
+    return get_object_or_404(qs)
 
 def _state(job):
     data=deepcopy(job.parts_workflow or {})
