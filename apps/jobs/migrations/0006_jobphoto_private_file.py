@@ -6,6 +6,11 @@ class Migration(migrations.Migration):
     dependencies = [("jobs", "0005_job_workflow_progress")]
 
     operations = [
+        migrations.AddField(
+            model_name="job",
+            name="work_updates",
+            field=models.JSONField(default=list, blank=True),
+        ),
         migrations.AlterField(
             model_name="jobphoto",
             name="url",
