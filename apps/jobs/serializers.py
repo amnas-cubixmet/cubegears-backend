@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Job,JobEstimate,JobPart,JobPhoto,JobActivity
+from .complaint_status import complaint_status_for_job, normalize_complaints
 
 class JobEstimateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,6 +43,19 @@ class JobSerializer(serializers.ModelSerializer):
         exclude=("company","branch")
         read_only_fields=("id","created_at","updated_at","workflow_progress")
         extra_kwargs={"job_number": {"required": False}}
+    def validate_complaints(self, value):
+        if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+            raise serializers.ValidationError("Complaints must be a list of complaint records.")
+        status = complaint_status_for_job(self.instance) if self.instance else "Open"
+        return normalize_complaints(value, status)
+
+    def to_representation(self, instance):
+        result = super().to_representation(instance)
+        result["complaints"] = normalize_complaints(
+            instance.complaints, complaint_status_for_job(instance)
+        )
+        return result
+
     def get_vehicleInfo(self,obj):
         return " ".join(filter(None,[obj.vehicle.make,obj.vehicle.model,obj.vehicle.variant]))
 
