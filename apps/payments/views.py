@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError
 
 from common.viewsets import CompanyScopedModelViewSet
 from apps.invoices.models import Invoice
+from apps.jobs.audit import record_job_event
 from .models import Payment
 from .serializers import PaymentSerializer
 
@@ -71,3 +72,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             locked_invoice.save(
                 update_fields=["paid", "balance", "status", "updated_at"]
             )
+            if locked_invoice.job_id:
+                record_job_event(locked_invoice.job, self.request.user, 'Payment Received',
+                                 f'Payment registered against {locked_invoice.number}',
+                                 {'paymentId': str(payment.pk), 'invoiceId': str(locked_invoice.pk)})
