@@ -1,6 +1,7 @@
 from django.urls import path
 from .compat_views import *
 urlpatterns=[
+    path("job-cards/<uuid:job_id>/outside-parts", OutsidePartsView.as_view()),
     path("job-cards/<uuid:job_id>/parts/availability",PartsAvailabilityView.as_view()),
     path("job-cards/<uuid:job_id>/issues",JobIssuesView.as_view()),
     path("job-cards/<uuid:job_id>/returns",JobReturnsView.as_view()),
