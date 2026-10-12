@@ -9,6 +9,7 @@ from apps.accounts.permissions import user_has_permission
 from apps.employees.models import Employee
 from common.viewsets import CompanyScopedModelViewSet
 from .models import EmployeeWorkLog, JobCardEmployeeAssignment, JobWorkSession
+from apps.jobs.audit import record_job_event
 
 
 def valid_amount(value):
@@ -125,6 +126,9 @@ class JobWorkSessionViewSet(CompanyScopedModelViewSet):
             started_at=now, resumed_at=now,
             history=[event_entry(request.user, "Started")],
         )
+        record_job_event(session.job, request.user, "Mechanic Work Started",
+                         f"{session.employee.name}: {session.service_name}",
+                         {"sessionId": str(session.pk)})
         return response.Response(self.get_serializer(session).data, status=201)
 
     @decorators.action(detail=True, methods=["post"])
