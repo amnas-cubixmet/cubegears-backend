@@ -184,6 +184,12 @@ class JobCostSummaryTests(TestCase):
         invalid = self.client.post(url, {**payload, "requestId": "next-purchase", "quantity": "-1"}, format="json")
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(len(self.client.get(url).data["items"]), 1)
+        self.job.status = Job.STATUS_DELIVERED
+        self.job.save(update_fields=["status"])
+        delivered = self.client.post(
+            url, {**payload, "requestId": "after-delivery"}, format="json"
+        )
+        self.assertEqual(delivered.status_code, 400)
 
     def test_outside_shop_purchase_respects_job_edit_permission_and_tenant(self):
         url = f"/api/v1/job-cards/{self.job.id}/outside-parts"
