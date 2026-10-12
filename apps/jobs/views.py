@@ -8,6 +8,7 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
+from .complaint_status import sync_complaint_status
 
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
@@ -146,7 +147,10 @@ class JobViewSet(CompanyScopedModelViewSet):
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
                 raise ValidationError({"status": "Complete the current Job Card stage first."})
         self._guard_active_timers(job,next_status)
-        serializer.save()
+        updated = serializer.save()
+        if "status" in serializer.validated_data or "complaints" in serializer.validated_data:
+            if sync_complaint_status(updated):
+                updated.save(update_fields=["complaints", "updated_at"])
 
 
     @transaction.atomic
@@ -282,7 +286,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         old=job.status
         self._guard_active_timers(job,new_status)
         if new_status==Job.STATUS_DELIVERED: job.delivered_at=timezone.now()
-        job.status=new_status; job.save(update_fields=["status","delivered_at","updated_at"])
+        job.status=new_status
+        fields = ["status", "delivered_at", "updated_at"]
+        if sync_complaint_status(job):
+            fields.append("complaints")
+        job.save(update_fields=fields)
         JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
         return response.Response(JobSerializer(job).data)
 
@@ -357,7 +365,10 @@ class JobViewSet(CompanyScopedModelViewSet):
         job.status = NEXT_STATUS[stage]
         if stage == "invoice":
             job.delivered_at = timezone.now()
-        job.save(update_fields=["workflow_progress","status","delivered_at","updated_at"])
+        fields = ["workflow_progress", "status", "delivered_at", "updated_at"]
+        if sync_complaint_status(job):
+            fields.append("complaints")
+        job.save(update_fields=fields)
         JobActivity.objects.create(
             company=job.company,branch=job.branch,job=job,actor=request.user,
             event="Workflow Stage Completed",description=f"{stage} completed",
