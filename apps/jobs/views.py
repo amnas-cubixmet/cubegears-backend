@@ -33,10 +33,70 @@ class JobViewSet(CompanyScopedModelViewSet):
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
         "activity": "jobs.view",
         "issue_part": ["jobs.edit", "stock.edit"],
+        "cost_summary": ["jobs.view", "payroll.view", "expenses.view", "stock.view"],
     }
     def get_queryset(self):
         qs=super().get_queryset(); st=self.request.query_params.get("status")
         return qs.filter(status=st) if st else qs
+    @decorators.action(detail=True, methods=["get"], url_path="cost-summary")
+    def cost_summary(self, request, pk=None):
+        """Recorded direct job costs, never customer charges or estimated selling prices.
+
+        Daily-wage overhead is not allocated to individual jobs. This endpoint
+        therefore explicitly indicates if wages are not included in its total.
+        """
+        from apps.inventory.models import StockMovement
+        from apps.payroll.models import JobWorkSession
+        from .models import OutsideLabourCharge
+
+        job = self.get_object()  # Company-scoped + permission-checked.
+        internal = JobWorkSession.objects.filter(
+            company=job.company, job=job, status=JobWorkSession.APPROVED
+        )
+        mechanic_cost = sum((row.worker_charge for row in internal), Decimal("0"))
+        unallocated_mechanic = internal.filter(worker_charge=0).exists()
+        pending_mechanic = JobWorkSession.objects.filter(
+            company=job.company, job=job,
+        ).exclude(status=JobWorkSession.APPROVED).exists()
+
+        contractors = OutsideLabourCharge.objects.filter(company=job.company, job=job)
+        outside_cost = sum((row.worker_charge for row in contractors), Decimal("0"))
+        outside_pending = sum(
+            (row.worker_charge for row in contractors if row.status == OutsideLabourCharge.STATUS_PENDING),
+            Decimal("0"),
+        )
+
+        # Issue quantities are negative, returns positive. Older movements did
+        # not snapshot unit_cost; for those only, use current item cost_price.
+        movements = StockMovement.objects.select_related("item").filter(
+            company=job.company, job=job,
+            movement_type__in=("job_issue", "return"),
+        )
+        part_cost = Decimal("0")
+        used_current_cost = False
+        for movement in movements:
+            price = movement.unit_cost
+            if price <= 0:
+                price = movement.item.cost_price
+                used_current_cost = True
+            part_cost -= movement.quantity * price
+        part_cost = max(Decimal("0"), part_cost)
+
+        def amount(number):
+            return str(number.quantize(Decimal("0.01")))
+
+        return response.Response({
+            "mechanicCost": amount(mechanic_cost),
+            "outsideStaffCost": amount(outside_cost),
+            "partsCost": amount(part_cost),
+            "totalCost": amount(mechanic_cost + outside_cost + part_cost),
+            "outsidePending": amount(outside_pending),
+            "unallocatedDailyWages": unallocated_mechanic,
+            "unapprovedMechanicWork": pending_mechanic,
+            "partsAtCurrentCost": used_current_cost,
+            "note": "Total is recorded direct cost, excludes unallocated daily wages and workshop overhead.",
+        })
+
     def _guard_active_timers(self,job,next_status):
         if next_status in {"QC","Ready for Delivery","Delivered"}:
             from apps.payroll.models import JobWorkSession
@@ -577,5 +637,5 @@ class JobViewSet(CompanyScopedModelViewSet):
         if qty<=0 or item.available_quantity<qty: raise ValidationError("Insufficient stock.")
         item.on_hand=item.on_hand-qty; item.save(update_fields=["on_hand","updated_at"])
         part=JobPart.objects.create(company=job.company,branch=job.branch,job=job,item=item,quantity=qty,unit_price=item.selling_price,issued=True)
-        StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,reference=job.job_number,job=job,created_by=request.user)
+        StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
         return response.Response(JobPartSerializer(part).data,status=status.HTTP_201_CREATED)
