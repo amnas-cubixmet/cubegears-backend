@@ -127,6 +127,9 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+# Outside MEDIA_ROOT: public /media/ routes must never expose private job photos.
+PRIVATE_JOB_MEDIA_ROOT = Path(env("PRIVATE_JOB_MEDIA_ROOT", str(BASE_DIR / "private_job_media")))
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
