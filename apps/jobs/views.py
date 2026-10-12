@@ -757,7 +757,8 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["get"])
     def activity(self,request,pk=None):
-        return response.Response(JobActivitySerializer(self.get_object().activities.all(),many=True).data)
+        job = self.get_object()  # Company-scoped; never expose another workshop's records.
+        return response.Response(JobActivitySerializer(job.activities.select_related('actor'), many=True).data)
 
     @decorators.action(detail=True,methods=["post"],url_path="issue-part")
     @transaction.atomic
