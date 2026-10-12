@@ -72,7 +72,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             locked_invoice.save(
                 update_fields=["paid", "balance", "status", "updated_at"]
             )
-            if locked_invoice.job_id:
+            if getattr(locked_invoice, 'job_id', None):
                 record_job_event(locked_invoice.job, self.request.user, 'Payment Received',
                                  f'Payment registered against {locked_invoice.number}',
                                  {'paymentId': str(payment.pk), 'invoiceId': str(locked_invoice.pk)})
