@@ -307,3 +307,45 @@ class JobWorkflowApiTests(TestCase):
         data = self.client.get(self.url)
         self.assertEqual(data.status_code, 200)
         self.assertEqual(data.data["complaints"][0]["status"], "Open")
+
+
+    def test_activity_endpoint_records_real_job_changes(self):
+        initial = self.client.get(f"{self.url}/activity")
+        self.assertEqual(initial.status_code, 200, initial.data)
+        self.assertTrue(any(row["event"] == "Job Created" for row in initial.data))
+
+        updates = self.client.patch(self.url, {
+            "workUpdates": [{"id": "UP-1", "note": "Found worn brake pads", "type": "Inspection"}],
+            "complaints": [{"id": "C-1", "description": "Brake noise"}],
+        }, format="json")
+        self.assertEqual(updates.status_code, 200, updates.data)
+        events = self.client.get(f"{self.url}/activity")
+        self.assertEqual(events.status_code, 200, events.data)
+        names = [row["event"] for row in events.data]
+        self.assertIn("Customer Complaints Updated", names)
+        self.assertIn("Technician Updates Saved", names)
+        updated = next(row for row in events.data if row["event"] == "Customer Complaints Updated")
+        self.assertIn("created_at", updated)
+        self.assertEqual(updated["actorName"], "Manager")
+        self.assertEqual(updated["metadata"]["count"], 1)
+
+        # A failed write does not fabricate audit history.
+        before = len(events.data)
+        rejected = self.client.patch(self.url, {
+            "customerRating": 7
+        }, format="json")
+        self.assertEqual(rejected.status_code, 400)
+        after = self.client.get(f"{self.url}/activity")
+        self.assertEqual(len(after.data), before)
+
+    def test_activity_rejects_cross_company_job_access(self):
+        from apps.customers.models import Customer
+        from apps.vehicles.models import Vehicle
+        other = Company.objects.create(name="Other Activity Shop", slug="activity-other")
+        customer = Customer.objects.create(company=other, name="Another Customer", phone="9999999999")
+        vehicle = Vehicle.objects.create(company=other, customer=customer, registration="KL99AB4444")
+        another_job = Job.objects.create(
+            company=other, customer=customer, vehicle=vehicle, job_number="OTHER-ACTIVITY-1"
+        )
+        response = self.client.get(f"/api/v1/jobs/{another_job.pk}/activity")
+        self.assertEqual(response.status_code, 404)

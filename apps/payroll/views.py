@@ -9,6 +9,7 @@ from rest_framework.exceptions import ValidationError
 
 from common.viewsets import CompanyScopedModelViewSet
 from apps.employees.models import Employee
+from apps.jobs.audit import record_job_event
 from .models import (
     CommissionRule,
     CompensationComponent,
@@ -235,10 +236,12 @@ class JobCardEmployeeAssignmentViewSet(CompanyScopedModelViewSet):
         employee=serializer.validated_data["employee"]
         allocation=serializer.validated_data.get("commission_allocation_percent",Decimal("100"))
         self._validate_allocation(job,employee,allocation)
-        serializer.save(
+        assignment = serializer.save(
             company=self.request.user.company,
             branch=job.branch or employee.branch,
         )
+        record_job_event(job, self.request.user, "Mechanic Assigned",
+                         f"{employee.name} assigned to Job Card", {"assignmentId": str(assignment.pk)})
 
     @transaction.atomic
     def perform_update(self,serializer):
@@ -247,7 +250,9 @@ class JobCardEmployeeAssignmentViewSet(CompanyScopedModelViewSet):
         employee=serializer.validated_data.get("employee",obj.employee)
         allocation=serializer.validated_data.get("commission_allocation_percent",obj.commission_allocation_percent)
         self._validate_allocation(job,employee,allocation,obj.id)
-        serializer.save()
+        updated = serializer.save()
+        record_job_event(job, self.request.user, "Mechanic Assignment Updated",
+                         f"{employee.name} assignment updated", {"assignmentId": str(updated.pk)})
 
 
 class EmployeeWorkLogViewSet(CompanyScopedModelViewSet):

@@ -12,7 +12,7 @@ from apps.expenses.models import Expense
 from apps.roles.models import Role
 from apps.vehicles.models import Vehicle
 from apps.payroll.models import EmployeeCompensationPlan
-from .models import Job, OutsideLabourCharge
+from .models import Job, OutsideLabourCharge, JobActivity
 
 
 class ManualOutsideLabourTests(TestCase):
@@ -59,6 +59,9 @@ class ManualOutsideLabourTests(TestCase):
         self.assertEqual(Expense.objects.count(), 0)
         self.assertEqual(Employee.objects.count(), 0)
         self.assertEqual(EmployeeCompensationPlan.objects.count(), 0)
+        self.assertEqual(
+            JobActivity.objects.filter(job=self.job, event="Outside Staff Added").count(), 1
+        )
 
         record_id = created.data["id"]
         paid = self.client.post(f"{self.endpoint}/{record_id}/pay", {
@@ -77,6 +80,9 @@ class ManualOutsideLabourTests(TestCase):
         }, format="json")
         self.assertEqual(repeated.status_code, 200)
         self.assertEqual(Expense.objects.count(), 1)
+        self.assertEqual(
+            JobActivity.objects.filter(job=self.job, event="Outside Staff Paid").count(), 1
+        )
         self.assertEqual(Employee.objects.count(), 0)
 
     def test_paid_record_cannot_be_edited_or_deleted(self):

@@ -11,6 +11,7 @@ from apps.accounts.permissions import user_has_permission
 from apps.expenses.models import Expense
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Job, OutsideLabourCharge
+from .audit import record_job_event
 
 
 class OutsideLabourSerializer(serializers.ModelSerializer):
@@ -85,17 +86,28 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
     def perform_create(self, serializer):
         job = serializer.validated_data["job"]
         user = self.request.user
-        serializer.save(company=job.company, branch=job.branch, created_by=user)
+        record = serializer.save(company=job.company, branch=job.branch, created_by=user)
+        record_job_event(job, user, 'Outside Staff Added',
+                         f'{record.worker_name}: {record.work_description}',
+                         {'outsideLabourId': str(record.pk)})
 
     def perform_update(self, serializer):
         if serializer.instance.status == OutsideLabourCharge.STATUS_PAID:
             raise ValidationError({"status": "Paid labour cannot be edited."})
-        serializer.save()
+        record = serializer.save()
+        record_job_event(record.job, self.request.user, 'Outside Staff Updated',
+                         f'{record.worker_name}: {record.work_description}',
+                         {'outsideLabourId': str(record.pk)})
 
     def perform_destroy(self, instance):
         if instance.status == OutsideLabourCharge.STATUS_PAID:
             raise ValidationError({"status": "Paid labour cannot be deleted."})
+        job = instance.job
+        name = instance.worker_name
+        identifier = str(instance.pk)
         instance.delete()
+        record_job_event(job, self.request.user, 'Outside Staff Removed', name,
+                         {'outsideLabourId': identifier})
 
     @decorators.action(detail=True, methods=["post"])
     @transaction.atomic
@@ -145,6 +157,9 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
             "expense", "status", "paid_at", "paid_by", "payment_method",
             "payment_reference", "updated_at",
         ])
+        record_job_event(record.job, request.user, "Outside Staff Paid",
+                         f"Payment recorded for {record.worker_name}",
+                         {"outsideLabourId": str(record.pk), "expenseId": str(exp.pk)})
         return response.Response(self.get_serializer(record).data)
 
     @decorators.action(detail=False, methods=["get"])
