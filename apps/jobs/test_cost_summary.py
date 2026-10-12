@@ -1,0 +1,151 @@
+from datetime import timedelta
+from decimal import Decimal
+
+from django.test import TestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from apps.accounts.models import User
+from apps.branches.models import Branch
+from apps.companies.models import Company
+from apps.customers.models import Customer
+from apps.employees.models import Employee
+from apps.inventory.models import StockItem, StockMovement
+from apps.payroll.models import JobCardEmployeeAssignment, JobWorkSession
+from apps.roles.models import Role
+from apps.vehicles.models import Vehicle
+from .models import Job, OutsideLabourCharge
+
+
+class JobCostSummaryTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(name="Cost Workshop", slug="job-cost-test")
+        self.branch = Branch.objects.create(company=self.company, name="Main", code="MAIN")
+        self.role = Role.objects.create(
+            company=self.company, name="Owner", code="OWNER",
+            permissions=["jobs.view", "payroll.view", "expenses.view", "stock.view"],
+        )
+        self.user = User.objects.create(
+            company=self.company, branch=self.branch, role=self.role,
+            name="Owner", email="owner@cost.local",
+        )
+        self.customer = Customer.objects.create(
+            company=self.company, branch=self.branch, name="Customer", phone="9900112233",
+        )
+        self.vehicle = Vehicle.objects.create(
+            company=self.company, branch=self.branch, customer=self.customer,
+            registration="KL10AB1234",
+        )
+        self.job = Job.objects.create(
+            company=self.company, branch=self.branch, customer=self.customer,
+            vehicle=self.vehicle, job_number="COST-01", status="In Progress",
+            labour_total=Decimal("9000.00"),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        self.url = f"/api/v1/jobs/{self.job.id}/cost-summary"
+
+    def test_only_records_direct_cost_not_customer_revenue(self):
+        employee = Employee.objects.create(
+            company=self.company, branch=self.branch,
+            name="Mechanic", employee_code="MECH-1", payment_type="per_job",
+        )
+        assignment = JobCardEmployeeAssignment.objects.create(
+            company=self.company, branch=self.branch, job=self.job, employee=employee,
+        )
+        JobWorkSession.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            employee=employee, assignment=assignment, service_name="Brake repair",
+            labour_charge=Decimal("2200.00"), worker_charge=Decimal("500.00"),
+            status="Approved", started_at=timezone.now(), elapsed_seconds=3600,
+            approved_minutes=60,
+        )
+        JobWorkSession.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            employee=employee, assignment=assignment, service_name="Pending tune-up",
+            labour_charge=Decimal("3000.00"), worker_charge=Decimal("400.00"),
+            status="PendingApproval", started_at=timezone.now(),
+        )
+        OutsideLabourCharge.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            worker_name="External painter", work_description="Paint bumper",
+            customer_charge=Decimal("4000.00"), worker_charge=Decimal("700.00"),
+            status="Pending",
+        )
+        OutsideLabourCharge.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            worker_name="Electrician", work_description="Electrical repair",
+            customer_charge=Decimal("2000.00"), worker_charge=Decimal("300.00"),
+            status="Paid",
+        )
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch, name="Filter", sku="FILTER-1",
+            cost_price=Decimal("80.00"), selling_price=Decimal("190.00"),
+        )
+        StockMovement.objects.create(
+            company=self.company, branch=self.branch, job=self.job, item=part,
+            movement_type="job_issue", quantity=Decimal("-3"),
+            unit_cost=Decimal("80.00"),
+        )
+        StockMovement.objects.create(
+            company=self.company, branch=self.branch, job=self.job, item=part,
+            movement_type="return", quantity=Decimal("1"), unit_cost=Decimal("80.00"),
+        )
+        data = self.client.get(self.url)
+        self.assertEqual(data.status_code, 200, data.data)
+        self.assertEqual(data.data["mechanicCost"], "500.00")
+        self.assertEqual(data.data["outsideStaffCost"], "1000.00")
+        self.assertEqual(data.data["partsCost"], "160.00")
+        self.assertEqual(data.data["outsidePending"], "700.00")
+        self.assertEqual(data.data["totalCost"], "1660.00")
+        self.assertFalse(data.data["partsAtCurrentCost"])
+        self.assertTrue(data.data["unapprovedMechanicWork"])
+
+    def test_legacy_stock_movements_flag_current_price_fallback(self):
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch, name="Old part", sku="OLD-PART",
+            cost_price=Decimal("120.00"), selling_price=Decimal("250.00"),
+        )
+        StockMovement.objects.create(
+            company=self.company, branch=self.branch, item=part, job=self.job,
+            movement_type="job_issue", quantity=Decimal("-2"),
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["partsCost"], "240.00")
+        self.assertTrue(response.data["partsAtCurrentCost"])
+
+    def test_omits_unallocated_wages_instead_of_counting_customer_charges(self):
+        employee = Employee.objects.create(
+            company=self.company, branch=self.branch,
+            name="Daily mechanic", employee_code="DAY-01", payment_type="daily",
+        )
+        assignment = JobCardEmployeeAssignment.objects.create(
+            company=self.company, branch=self.branch, job=self.job, employee=employee
+        )
+        JobWorkSession.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            employee=employee, assignment=assignment, service_name="Check brakes",
+            status="Approved", labour_charge=Decimal("1800.00"),
+            worker_charge=Decimal("0.00"), started_at=timezone.now(),
+            approved_minutes=60,
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["mechanicCost"], "0.00")
+        self.assertEqual(response.data["totalCost"], "0.00")
+        self.assertTrue(response.data["unallocatedDailyWages"])
+
+    def test_cost_data_requires_financial_and_stock_permissions(self):
+        self.role.permissions = ["jobs.view"]
+        self.role.save(update_fields=["permissions"])
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_other_company_job_cannot_be_read(self):
+        outsider = Company.objects.create(name="Other Workshop", slug="different-cost-tenant")
+        customer = Customer.objects.create(company=outsider, name="Other", phone="9876500000")
+        vehicle = Vehicle.objects.create(company=outsider, customer=customer, registration="KL11AB4000")
+        other = Job.objects.create(company=outsider, customer=customer, vehicle=vehicle, job_number="OUT-01")
+        response = self.client.get(f"/api/v1/jobs/{other.id}/cost-summary")
+        self.assertEqual(response.status_code, 404)
