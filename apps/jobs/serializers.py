@@ -12,12 +12,21 @@ class JobPartSerializer(serializers.ModelSerializer):
     sku=serializers.CharField(source="item.sku",read_only=True)
     class Meta: model=JobPart; exclude=("company","branch")
 class JobPhotoSerializer(serializers.ModelSerializer):
-    class Meta: model=JobPhoto; exclude=("company","branch")
+    hasUpload=serializers.SerializerMethodField()
+
+    def get_hasUpload(self, obj):
+        return bool(obj.file)
+
+    class Meta:
+        model=JobPhoto
+        exclude=("company", "branch", "file")
+        read_only_fields=("id", "job", "uploaded_by", "created_at", "updated_at")
 class JobActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
     class Meta: model=JobActivity; exclude=("company","branch")
 class JobSerializer(serializers.ModelSerializer):
     partsWorkflow=serializers.JSONField(source="parts_workflow",required=False)
+    workUpdates=serializers.JSONField(source="work_updates",required=False)
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
     customerPhone=serializers.CharField(source="customer.phone",read_only=True)
@@ -43,6 +52,14 @@ class JobSerializer(serializers.ModelSerializer):
         exclude=("company","branch")
         read_only_fields=("id","created_at","updated_at","workflow_progress")
         extra_kwargs={"job_number": {"required": False}}
+    def validate_workUpdates(self, value):
+        if not isinstance(value, list) or len(value) > 500:
+            raise serializers.ValidationError("Updates must be a list of at most 500 records.")
+        for record in value:
+            if not isinstance(record, dict) or len(str(record.get("note") or "")) > 2000:
+                raise serializers.ValidationError("Each update needs a valid note (maximum 2000 characters).")
+        return value
+
     def validate_complaints(self, value):
         if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
             raise serializers.ValidationError("Complaints must be a list of complaint records.")
