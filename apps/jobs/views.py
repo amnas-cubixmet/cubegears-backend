@@ -1,4 +1,9 @@
 from decimal import Decimal, ROUND_HALF_UP
+import mimetypes
+from django.http import FileResponse
+from django.shortcuts import get_object_or_404
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import NotFound
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
 from django.utils import timezone
@@ -32,6 +37,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         "quick_estimate_detail": "jobs.edit",
         "estimate_decision": "jobs.edit",
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
+        "upload_work_photo": "jobs.edit",
+        "work_photo_file": "jobs.view",
         "activity": "jobs.view",
         "issue_part": ["jobs.edit", "stock.edit"],
         "cost_summary": ["jobs.view", "payroll.view", "expenses.view", "stock.view"],
@@ -634,6 +641,77 @@ class JobViewSet(CompanyScopedModelViewSet):
             obj=s.save(company=job.company,branch=job.branch,job=job)
             return response.Response(JobEstimateSerializer(obj).data,status=status.HTTP_201_CREATED)
         return response.Response(JobEstimateSerializer(job.estimates.all(),many=True).data)
+
+    @decorators.action(
+        detail=True, methods=["post"], url_path="photos/upload",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def upload_work_photo(self, request, pk=None):
+        """Attach a private work photo with an editable caption to this Job Card."""
+        job = self.get_object()
+        image = request.FILES.get("image")
+        if image is None:
+            raise ValidationError({"image": "Select an image to upload."})
+        if image.size <= 0 or image.size > 5 * 1024 * 1024:
+            raise ValidationError({"image": "Choose an image under 5 MB."})
+
+        allowed = {
+            "image/jpeg": (b"\\xff\\xd8\\xff", ".jpg"),
+            "image/png": (b"\\x89PNG\\r\\n\\x1a\\n", ".png"),
+            "image/gif": (b"GIF8", ".gif"),
+            "image/webp": (b"RIFF", ".webp"),
+        }
+        media_type = str(image.content_type or "").split(";")[0].lower().strip()
+        if media_type not in allowed:
+            raise ValidationError({"image": "Only JPEG, PNG, WebP and GIF photos are supported."})
+        image.seek(0)
+        header = image.read(16)
+        image.seek(0)
+        signature, extension = allowed[media_type]
+        if not header.startswith(signature) or (media_type == "image/webp" and header[8:12] != b"WEBP"):
+            raise ValidationError({"image": "Invalid image file contents."})
+
+        caption = str(request.data.get("caption") or "").strip()
+        if len(caption) > 255:
+            raise ValidationError({"caption": "Caption must be 255 characters or fewer."})
+
+        photo = JobPhoto(
+            company=job.company, branch=job.branch, job=job,
+            uploaded_by=request.user, photo_type="work_update",
+            caption=caption,
+        )
+        photo.file.save(f"work-photo{extension}", image, save=False)
+        try:
+            photo.save()
+        except Exception:
+            photo.file.delete(save=False)
+            raise
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Work Photo Added",
+            description=caption or "Technician uploaded a work photo",
+            metadata={"photoId": str(photo.pk)},
+        )
+        return response.Response(JobPhotoSerializer(photo).data, status=status.HTTP_201_CREATED)
+
+    @decorators.action(
+        detail=True, methods=["get"],
+        url_path=r"photos/(?P<photo_id>[^/.]+)/file",
+    )
+    def work_photo_file(self, request, pk=None, photo_id=None):
+        """Serve original bytes only after Job View permission and tenant scoping."""
+        job = self.get_object()
+        photo = get_object_or_404(JobPhoto, pk=photo_id, company=job.company, job=job)
+        if not photo.file:
+            raise NotFound("No uploaded file exists for this photo.")
+        photo.file.open("rb")
+        media_type = mimetypes.guess_type(photo.file.name)[0] or "application/octet-stream"
+        if media_type not in {"image/jpeg", "image/png", "image/webp", "image/gif"}:
+            media_type = "application/octet-stream"
+        result = FileResponse(photo.file, content_type=media_type)
+        result["Cache-Control"] = "private, no-store"
+        result["X-Content-Type-Options"] = "nosniff"
+        return result
 
     @decorators.action(detail=True,methods=["get","post"])
     def photos(self,request,pk=None):
