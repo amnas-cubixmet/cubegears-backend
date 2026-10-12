@@ -39,6 +39,7 @@ class Job(CompanyOwnedModel):
     complaints=models.JSONField(default=list,blank=True)
     inspection=models.JSONField(default=dict,blank=True)
     work=models.JSONField(default=list,blank=True)
+    work_updates=models.JSONField(default=list,blank=True)
     qc=models.JSONField(default=dict,blank=True)
     workflow_progress=models.JSONField(default=dict,blank=True)
     parts_workflow=models.JSONField(default=dict,blank=True)
