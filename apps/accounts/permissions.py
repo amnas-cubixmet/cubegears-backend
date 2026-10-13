@@ -52,15 +52,19 @@ MODEL_PERMISSION_PREFIX = {
 
 
 def user_has_permission(user, permission_code):
-    if not user or not user.is_authenticated:
+    """Authorize a tenant action only for an active user/tenant/local role.
+
+    Django is_superuser is reserved for platform administration; it is not a
+    wildcard grant to another company's API.
+    """
+    if not user or not user.is_authenticated or not user.is_active:
         return False
 
-    # Django/platform superusers bypass tenant RBAC.
-    if user.is_superuser:
-        return True
+    if not user.company_id or not user.company or not user.company.is_active:
+        return False
 
     role = getattr(user, "role", None)
-    if not role or not role.is_active:
+    if not role or not role.is_active or role.company_id != user.company_id:
         return False
 
     permissions = role.permissions or []
@@ -111,9 +115,6 @@ class RolePermission(BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
 
-        if request.user.is_superuser:
-            return True
-
         action_map = getattr(view, "action_permission_map", None) or {}
         action_rule = action_map.get(getattr(view, "action", None))
         if isinstance(action_rule, dict):
@@ -157,11 +158,4 @@ class IsCompanyAdmin(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated:
             return False
-        if request.user.is_superuser:
-            return True
-
-        role = getattr(request.user, "role", None)
-        if not role or not role.is_active:
-            return False
-
-        return bool(role.allows("company.manage"))
+        return user_has_permission(request.user, "company.manage")

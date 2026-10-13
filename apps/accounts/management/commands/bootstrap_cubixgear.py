@@ -38,8 +38,9 @@ class Command(BaseCommand):
                 "company": company,
                 "branch": branch,
                 "role": role,
-                "is_staff": True,
-                "is_superuser": True,
+                # Company owner is NOT the platform/Django superuser.
+                "is_staff": False,
+                "is_superuser": False,
                 "is_active": True,
                 "email_verified": True,
             },

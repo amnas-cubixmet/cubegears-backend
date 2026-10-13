@@ -8,8 +8,6 @@ class BranchListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsCompanyAdmin]
 
     def get_queryset(self):
-        if self.request.user.is_superuser and self.request.query_params.get("company"):
-            return Branch.objects.filter(company_id=self.request.query_params["company"])
         return Branch.objects.filter(company=self.request.user.company)
 
     def perform_create(self, serializer):
@@ -20,6 +18,4 @@ class BranchDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsCompanyAdmin]
 
     def get_queryset(self):
-        if self.request.user.is_superuser:
-            return Branch.objects.all()
         return Branch.objects.filter(company=self.request.user.company)
