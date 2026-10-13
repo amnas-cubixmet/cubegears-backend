@@ -2,6 +2,9 @@ from django.urls import path
 from .compat_views import *
 urlpatterns=[
     path("job-cards/<uuid:job_id>/outside-parts", OutsidePartsView.as_view()),
+    path("job-cards/<uuid:job_id>/outside-parts/<uuid:purchase_id>/decision", OutsidePartDecisionView.as_view()),
+    path("job-cards/<uuid:job_id>/outside-parts/<uuid:purchase_id>/complete", OutsidePartCompleteView.as_view()),
+    path("job-cards/<uuid:job_id>/outside-parts/<uuid:purchase_id>/bill", OutsidePartBillView.as_view()),
     path("job-cards/<uuid:job_id>/parts/availability",PartsAvailabilityView.as_view()),
     path("job-cards/<uuid:job_id>/issues",JobIssuesView.as_view()),
     path("job-cards/<uuid:job_id>/returns",JobReturnsView.as_view()),

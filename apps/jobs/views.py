@@ -93,8 +93,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         # Direct purchases are used on the job, not added to StockMovement.
         # Include them once from the job's persisted outsideParts ledger.
         outside_parts = (job.parts_workflow or {}).get("outsideParts") or []
+        # Pending, approved and rejected quotations are NOT spent money.
+        # Missing status marks a historical direct purchase.
         outside_parts_cost = sum(
-            (Decimal(str(part.get("totalCost") or "0")) for part in outside_parts),
+            (Decimal(str(part.get("totalCost") or "0"))
+             for part in outside_parts if part.get("status", "Purchased") == "Purchased"),
             Decimal("0"),
         )
         part_cost += outside_parts_cost

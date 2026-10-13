@@ -151,7 +151,7 @@ class JobCostSummaryTests(TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_outside_shop_purchase_is_idempotent_and_added_to_direct_job_cost(self):
-        self.role.permissions = ["jobs.view", "jobs.edit", "payroll.view", "expenses.view", "stock.view"]
+        self.role.permissions = ["jobs.view", "jobs.edit", "payroll.view", "expenses.view", "expenses.edit", "stock.view"]
         self.role.save(update_fields=["permissions"])
         url = f"/api/v1/job-cards/{self.job.id}/outside-parts"
         payload = {
@@ -166,7 +166,8 @@ class JobCostSummaryTests(TestCase):
         }
         created = self.client.post(url, payload, format="json")
         self.assertEqual(created.status_code, 201, created.data)
-        self.assertEqual(created.data["totalCost"], "240.00")
+        self.assertEqual(created.data["totalCost"], "0.00")
+        self.assertEqual(created.data["status"], "Pending Approval")
         same = self.client.post(url, payload, format="json")
         self.assertEqual(same.status_code, 200, same.data)
         self.assertEqual(same.data["id"], created.data["id"])
@@ -177,9 +178,28 @@ class JobCostSummaryTests(TestCase):
 
         total = self.client.get(self.url)
         self.assertEqual(total.status_code, 200, total.data)
+        self.assertEqual(total.data["outsidePartsCost"], "0.00")
+        approved = self.client.post(
+            f"{url}/{created.data['id']}/decision", {"decision": "approve"}, format="json",
+        )
+        self.assertEqual(approved.status_code, 200, approved.data)
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        bill = SimpleUploadedFile(
+            "shop-bill.pdf", b"%PDF-1.4\\n%%EOF", content_type="application/pdf"
+        )
+        completed = self.client.post(
+            f"{url}/{created.data['id']}/complete",
+            {"invoiceNo": "BILL-021", "bill": bill}, format="multipart",
+        )
+        self.assertEqual(completed.status_code, 200, getattr(completed, "data", completed.content[:1000]))
+        self.assertEqual(completed.data["totalCost"], "240.00")
+        total = self.client.get(self.url)
         self.assertEqual(total.data["outsidePartsCost"], "240.00")
         self.assertEqual(total.data["partsCost"], "240.00")
         self.assertEqual(total.data["totalCost"], "240.00")
+        from .models import OutsidePartBill
+        for doc in OutsidePartBill.objects.filter(job=self.job):
+            doc.file.delete(save=False)
 
         invalid = self.client.post(url, {**payload, "requestId": "next-purchase", "quantity": "-1"}, format="json")
         self.assertEqual(invalid.status_code, 400)
