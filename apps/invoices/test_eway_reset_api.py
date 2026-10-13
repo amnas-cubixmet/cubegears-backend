@@ -26,7 +26,7 @@ class EWayBillResetApiTests(TestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(user=user)
-        self.base = "/api/v1/billing/e-way-bills"
+        self.base = "/api/v1/e-way-bills"
 
     def draft(self, **extra):
         return {
