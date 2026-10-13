@@ -98,7 +98,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
         phone = str(value.get("phone") or "").strip()
         email = str(value.get("email") or "").strip()
-        name = str(value.get("name") or "Walk-in Customer").strip()
+        name = str(value.get("name") or value.get("companyName") or "Walk-in Customer").strip()
         customer_type = value.get("customerType") or value.get("customer_type") or "individual"
         if customer_type not in {"individual", "business"}:
             raise serializers.ValidationError({"customerType": "Select Individual or Company."})
