@@ -1,80 +1,69 @@
-# CubixGear production rollout (Django + PostgreSQL)
+# CubixGear production rollout — SQLite-only Django backend
 
-> This is a deployment checklist, not a claim that the project is production-certified.
+> SQLite is the selected database. This checklist does not guarantee production readiness.
 
-## 1. Rotate exposed credentials
+## Architecture and hosting
 
-If a Prisma PostgreSQL connection URL has appeared in chat, a ticket, a repository, or logs, rotate/revoke its database password/token in the provider console first. Update only deployment secret settings with the **new** connection value. Do not paste connection URLs into GitHub code, frontend `VITE_*` values, or public logs.
+- **Company Panel (React/Vite):** deploy to Vercel with `VITE_API_URL=https://api.example.com/api/v1`.
+- **Django backend:** deploy to a VPS or service providing a persistent writable disk, as a *single application instance*.
+- **Database:** SQLite at `db.sqlite3` locally or an absolute `SQLITE_DATABASE_PATH` on a persistent disk. No Prisma, `DATABASE_URL`, `POSTGRES_URL`, or `PRISMA_DATABASE_URL` is used.
+- **Email + scheduled tasks:** run the email provider and worker/beat dependencies configured for your environment.
 
-The backend already uses `dj_database_url` and `psycopg`. It reads the single `DATABASE_URL` variable; duplicate `POSTGRES_URL` and `PRISMA_DATABASE_URL` values are not required for Django.
+**Never run a writable production SQLite database on Vercel Functions**. Their file storage is ephemeral, and concurrent function instances do not share a durable SQLite file. The backend detects `VERCEL=1` in production and refuses to start to avoid customer and invoice data loss.
 
-## 2. Backend environment
+## Production environment
 
-Provide these on the backend hosting platform (example names only; never commit real values):
+Set the following values in your backend host's private environment settings:
 
 ```dotenv
 DJANGO_DEBUG=False
-DJANGO_SECRET_KEY=<random-32+-byte-secret>
-JWT_SIGNING_KEY=<independent-random-32+-byte-secret>
+DJANGO_SECRET_KEY=<independent-random-secret-32+-bytes>
+JWT_SIGNING_KEY=<independent-random-jwt-key-32+-bytes>
 DJANGO_ALLOWED_HOSTS=api.example.com
-DATABASE_URL=<ROTATED-PRISMA-POSTGRESQL-URL>
+SQLITE_DATABASE_PATH=/var/lib/cubixgear/db.sqlite3
 CORS_ALLOWED_ORIGINS=https://app.example.com
 CSRF_TRUSTED_ORIGINS=https://app.example.com
 FRONTEND_URL=https://app.example.com
 SECURE_SSL_REDIRECT=True
 SECURE_HSTS_SECONDS=3600
 EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=<SMTP-HOST>
+EMAIL_HOST=<smtp-host>
 EMAIL_PORT=587
-EMAIL_HOST_USER=<SMTP-USER>
-EMAIL_HOST_PASSWORD=<SMTP-SECRET>
+EMAIL_HOST_USER=<smtp-username>
+EMAIL_HOST_PASSWORD=<smtp-secret>
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=accounts@example.com
-CELERY_BROKER_URL=<REDIS-BROKER-URL>
-CELERY_RESULT_BACKEND=<REDIS-RESULT-URL>
+CELERY_BROKER_URL=<redis-broker>
+CELERY_RESULT_BACKEND=<redis-result>
 CELERY_TASK_ALWAYS_EAGER=False
 ```
 
-Choose valid real hostnames and deploy behind a trusted TLS-terminating reverse proxy. Increase HSTS only after HTTPS works on all production paths.
+Use a directory mounted from durable storage, writable by the Django OS user. Store the database **outside** the Git checkout/deployment release folder, so application upgrades do not overwrite it. Avoid a network filesystem without reliable SQLite locking.
 
-The frontend requires `VITE_API_URL=https://api.example.com/api/v1` set in its deployment build environment. Frontend builds intentionally fail without this variable. No database secret belongs in the frontend.
-
-## 3. Deploy and validate
+## Installation and migrations
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python manage.py check --deploy
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 gunicorn config.wsgi:application --bind 0.0.0.0:8000
 ```
 
-Run a separate Redis-backed worker:
+Configure reverse-proxy HTTPS + static file serving. Keep **private job media** in separate persistent storage with authorization checks. SQLite does not store uploaded media files by itself.
 
-```bash
-celery -A config worker --loglevel=info
-```
+## Safe SQLite backup and restore
 
-Run Celery Beat for scheduled attendance tasks, as a separate process:
+- Back up SQLite periodically using the SQLite Online Backup API (`sqlite3.Connection.backup`) or a backup service that safely handles open database connections. Do **not** rely on copying an in-use `db.sqlite3` file.
+- Encrypt backups, store at least one copy off-server, and regularly verify restoration.
+- Before schema migrations, take a tested backup; keep a migration rollback plan.
+- Start with a single Django writer instance. SQLite serializes writes; monitor for `database is locked` errors as traffic increases.
+- If SQLite becomes a bottleneck, migrate to a durable managed database as a separate future project, not as part of this rollout.
 
-```bash
-celery -A config beat --loglevel=info
-```
+## RBAC and launch smoke tests
 
-Ensure a static file server/CDN serves collected static files; Django alone does not serve those in production. Secure private job media in persistent object storage with access checks (not public /media/). Use encrypted, tested backups and database migration rollback procedures.
-
-## 4. Onboarding & access verification
-
-- Public signup creates a new company, Head Office, and a **company** `SUPER_ADMIN` role.
-- The first user is **not** a Django/platform `is_superuser` or `is_staff` user.
-- Email password setup must complete through a live SMTP + Celery worker.
-- The owner can manage only their own company's roles, jobs and branches.
-- A tenant role from another company never authorizes access.
-- Inactive tenants/roles lose access, and custom roles cannot receive wildcard `*` permissions.
-- Test role changes after a fresh login; never rely solely on hidden frontend navigation.
-
-## 5. Remaining release blockers
-
-The feature branches do not assert full production certification. Before merging, audit cross-tenant foreign-key writes and every custom API action, implement enforced branch-level role scopes if needed, review file/media security, verify signup + mail delivery + token refresh against the live deployment, add monitoring and rate limiting using a shared cache/proxy, and conduct load, backup/restore and security testing.
-
-The two pull requests remain drafts until their validation and deployment dependencies are approved.
+- Public workshop signup creates Company, Head Office, and a tenant `SUPER_ADMIN` owner, **not** a platform superuser.
+- Email setup flow, login, JWT refresh, logout, password recovery and company separation work end-to-end.
+- Permissions are enforced on the backend, not only by hiding frontend routes.
+- Jobs, stock, invoices, GST estimates/e-way bills and daily wages must be tested with real permission combinations and distinct company accounts.
+- Verify database durability across app restarts and redeployments, as well as backup and restore.

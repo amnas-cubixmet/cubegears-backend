@@ -1,7 +1,7 @@
 from copy import deepcopy
 from django.db import transaction
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
+from apps.accounts.permissions import RolePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
@@ -44,7 +44,8 @@ def _line_state(line, item=None):
     return {**line,"qtyOnHand":on_hand,"availableQty":available,"grossIssued":gross,"returnedQty":returned,"netIssued":net,"pendingQty":pending,"stockState":stock_state}
 
 class PartsAvailabilityView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     def get(self,request,job_id):
         job=_job(request,job_id); state=_state(job); lines=[]
         for line in state["lines"]:
@@ -53,7 +54,8 @@ class PartsAvailabilityView(APIView):
         return Response({"lines":lines,"purchaseOrders":state["purchaseOrders"]})
 
 class JobIssuesView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     def get(self,request,job_id):
         job=_job(request,job_id); state=_state(job); lines=[]
         for line in state["lines"]:
@@ -81,7 +83,8 @@ class JobIssuesView(APIView):
         _save(job,state); return Response(state)
 
 class JobReturnsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     @transaction.atomic
     def post(self,request,job_id):
         job=_job(request,job_id); state=_state(job)
@@ -103,7 +106,8 @@ class JobReturnsView(APIView):
         _save(job,state); return Response(state)
 
 class CompletionEligibilityView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     def get(self,request,job_id):
         job=_job(request,job_id); state=_state(job); blocking=[]
         for line in state["lines"]:
@@ -114,12 +118,14 @@ class CompletionEligibilityView(APIView):
         return Response({"can_complete":not blocking,"blocking_reasons":blocking})
 
 class PartsTransactionsView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     def get(self,request,job_id):
         job=_job(request,job_id); return Response({"items":_state(job)["transactions"]})
 
 class JobPurchaseOrderView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     def post(self,request,job_id):
         job=_job(request,job_id); state=_state(job)
         line=next((x for x in state["lines"] if str(x.get("id"))==str(request.data.get("job_card_part_id"))),None)
@@ -132,7 +138,8 @@ class JobPurchaseOrderView(APIView):
         return Response(po,status=201)
 
 class PurchaseOrderInwardView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[RolePermission]
+    permission_map={"GET": "jobs.view", "POST": ["jobs.edit", "stock.edit"]}
     @transaction.atomic
     def post(self,request,po_id):
         qs=Job.objects.filter(company=request.user.company) if not request.user.is_superuser else Job.objects.all()

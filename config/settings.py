@@ -21,14 +21,18 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
 
-# Production refuses local/demo credentials and a local SQLite fallback.
+# Keep strong security settings for production; SQLite is supported on
+# a server with persistent local storage, never an ephemeral Vercel function.
 if not DEBUG:
     if not env("DJANGO_SECRET_KEY") or len(SECRET_KEY.encode("utf-8")) < 32:
         raise ImproperlyConfigured("DJANGO_SECRET_KEY must be a strong value (32+ bytes) in production.")
-    if not env("DATABASE_URL"):
-        raise ImproperlyConfigured("DATABASE_URL is required for production PostgreSQL.")
     if not env("DJANGO_ALLOWED_HOSTS"):
         raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must list your production backend hosts.")
+    if env_bool("VERCEL", False):
+        raise ImproperlyConfigured(
+            "SQLite needs persistent writable storage. Vercel Functions cannot persist db.sqlite3; "
+            "host this Django backend on a VPS or service with a persistent disk."
+        )
 
 JWT_SIGNING_KEY = env("JWT_SIGNING_KEY", SECRET_KEY)
 if len(JWT_SIGNING_KEY.encode("utf-8")) < 32:
@@ -102,22 +106,22 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-if env("DATABASE_URL"):
-    import dj_database_url
-    DATABASES = {
-        "default": dj_database_url.parse(
-            env("DATABASE_URL"),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
+# SQLite-only: no Prisma/PostgreSQL connection or DATABASE_URL is used.
+# For a persistent deployment, mount a writable volume and point this variable
+# to an absolute filename, e.g. /var/lib/cubixgear/db.sqlite3.
+SQLITE_DATABASE_PATH = Path(
+    env("SQLITE_DATABASE_PATH", str(BASE_DIR / "db.sqlite3"))
+).expanduser()
+if not SQLITE_DATABASE_PATH.is_absolute():
+    SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": SQLITE_DATABASE_PATH,
+        "OPTIONS": {"timeout": 30},
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -176,6 +180,7 @@ EMAIL_HOST = env("EMAIL_HOST", "")
 EMAIL_PORT = int(env("EMAIL_PORT", 587))
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
+EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", 15))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.com>")
 
@@ -190,9 +195,13 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
 
-LOGIN_URL = "/panel/login/"
-LOGIN_REDIRECT_URL = "/panel/"
-LOGOUT_REDIRECT_URL = "/panel/login/"
+SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
+SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS", 0 if DEBUG else 3600))
+CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
+
+LOGIN_URL = "panel:login"
+LOGIN_REDIRECT_URL = "panel:dashboard"
+LOGOUT_REDIRECT_URL = "panel:login"
 
 
 # Celery / Redis

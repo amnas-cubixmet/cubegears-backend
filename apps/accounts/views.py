@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
-from .tasks import send_email_task
+from .email import queue_email
 from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
@@ -54,18 +54,6 @@ def ensure_tenant_super_admin_role(user):
     # SUPER_ADMIN role and unexpectedly mutate all users sharing that role.
     # New public signups already create their own protected SUPER_ADMIN.
     return user
-
-
-def queue_email(subject, message, recipient_list):
-    transaction.on_commit(
-        lambda: send_email_task.delay(
-            subject=subject,
-            message=message,
-            recipient_list=recipient_list,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-        ),
-        robust=True,
-    )
 
 
 def issue_tokens(user):

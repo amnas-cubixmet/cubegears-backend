@@ -32,6 +32,12 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             "supplierState": state_code(gstin[:2] if len(gstin) == 15 else ""),
             "companyName": company.legal_name or company.name,
             "companyState": company.state,
+            "companyAddress": company.address,
+            "companyCity": company.city,
+            "companyPincode": company.pincode,
+            "companyPhone": company.phone,
+            "companyEmail": company.email,
+            "invoiceType": "gst" if gstin else "regular",
         })
     def get_queryset(self):
         qs = super().get_queryset()
@@ -131,6 +137,11 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         obj=self.get_object()
         if obj.status in {"Finalized","Paid","Issued","Converted"}: return response.Response(InvoiceSerializer(obj).data)
         if obj.kind=="invoice":
+            expected_type = "gst" if str(obj.company.gstin or "").strip() else "regular"
+            if obj.invoice_type != expected_type:
+                raise ValidationError({
+                    "invoiceType": "Invoice type does not match workshop GST registration. Update Company Settings and recreate the draft as needed."
+                })
             if obj.invoice_type == "gst":
                 lines = list(obj.items.all())
                 if not lines or any(not line.hsn_sac.strip() for line in lines):

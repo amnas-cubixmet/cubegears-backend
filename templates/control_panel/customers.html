@@ -1,14 +1,15 @@
 {% extends "control_panel/base.html" %}
+{% load panel_access %}
 {% block content %}
 <div class="toolbar"><form class="search-form search-form-wide" method="get">
   <input type="search" name="q" value="{{ q }}" placeholder="Search customer, phone or email">
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Filter</button>
-</form><a class="btn btn-primary" href="{% url 'panel:customer-create' %}">Add Customer</a></div>
+</form>{% panel_can 'panel:customer-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:customer-create' %}">Add Customer</a>{% endif %}</div>
 <section class="panel-card"><div class="responsive-table"><table>
 <thead><tr><th>Customer</th><th>Company</th><th>Phone</th><th>Email</th><th>Type</th><th>City</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>{% for row in rows %}<tr>
 <td data-label="Customer"><strong>{{ row.name }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="Phone">{{ row.phone }}</td><td data-label="Email">{{ row.email|default:"—" }}</td><td data-label="Type">{{ row.get_customer_type_display }}</td><td data-label="City">{{ row.city|default:"—" }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td>
-<td data-label="Actions"><div class="row-actions"><a href="{% url 'panel:customer-detail' row.id %}">View</a><a href="{% url 'panel:customer-edit' row.id %}">Edit</a><a class="danger-link" href="{% url 'panel:customer-delete' row.id %}">Delete</a></div></td></tr>{% empty %}<tr><td colspan="7" class="empty-cell">No customers found.</td></tr>{% endfor %}</tbody>
+<td data-label="Actions"><div class="row-actions">{% panel_can 'panel:customer-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:customer-detail' row.id %}">View</a>{% endif %}{% panel_can 'panel:customer-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:customer-edit' row.id %}">Edit</a>{% endif %}{% panel_can 'panel:customer-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:customer-delete' row.id %}">Delete</a>{% endif %}</div></td></tr>{% empty %}<tr><td colspan="7" class="empty-cell">No customers found.</td></tr>{% endfor %}</tbody>
 </table></div></section>
 {% endblock %}

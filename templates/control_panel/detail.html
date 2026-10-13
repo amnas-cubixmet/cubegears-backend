@@ -1,10 +1,11 @@
 {% extends "control_panel/base.html" %}
+{% load panel_access %}
 {% block content %}
 <div class="page-actions">
   <a class="btn" href="javascript:history.back()">Back</a>
   <div class="page-actions-right">
-    <a class="btn" href="{% url edit_url object.id %}">Edit</a>
-    <a class="btn btn-danger" href="{% url delete_url object.id %}">Delete</a>
+    {% panel_can edit_url as allowed %}{% if allowed %}<a class="btn" href="{% url edit_url object.id %}">Edit</a>{% endif %}
+    {% panel_can delete_url as allowed %}{% if allowed %}<a class="btn btn-danger" href="{% url delete_url object.id %}">Delete</a>{% endif %}
   </div>
 </div>
 

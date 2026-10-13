@@ -46,9 +46,31 @@ class InvoiceSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at", "updated_at")
 
     def validate(self, attrs):
-        invoice_type = attrs.get("invoice_type") or (
-            self.instance.invoice_type if self.instance else "regular"
+        request = self.context.get("request")
+        company = self.instance.company if self.instance else getattr(
+            getattr(request, "user", None), "company", None
         )
+        if not company:
+            raise serializers.ValidationError({"company": "Select a workshop company."})
+        registered = bool(str(company.gstin or "").strip())
+        expected_type = "gst" if registered else "regular"
+        invoice_type = attrs.get("invoice_type") or (
+            self.instance.invoice_type if self.instance else expected_type
+        )
+        if invoice_type not in ("gst", "regular"):
+            raise serializers.ValidationError({"invoiceType": "Unsupported invoice type."})
+        # Invoice tax mode follows the *seller workshop*, never customer GSTIN.
+        # A different registered-seller scheme (exempt/composition bill of supply)
+        # needs an explicit separate workflow and must not bypass this guard.
+        if invoice_type != expected_type:
+            message = (
+                "This workshop has GSTIN. Issue a GST Tax Invoice for taxable supplies."
+                if registered else
+                "This workshop has no GSTIN. Only a Normal Invoice without GST is allowed."
+            )
+            raise serializers.ValidationError({"invoiceType": message})
+        if self.instance is None:
+            attrs["invoice_type"] = expected_type
         rows = attrs.get("items")
         if invoice_type == "gst" and rows is not None:
             for index, row in enumerate(rows, 1):
@@ -76,7 +98,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
         phone = str(value.get("phone") or "").strip()
         email = str(value.get("email") or "").strip()
-        name = str(value.get("name") or "Walk-in Customer").strip()
+        name = str(value.get("name") or value.get("companyName") or "Walk-in Customer").strip()
+        customer_type = value.get("customerType") or value.get("customer_type") or "individual"
+        if customer_type not in {"individual", "business"}:
+            raise serializers.ValidationError({"customerType": "Select Individual or Company."})
         qs = Customer.objects.filter(company=company)
         customer = None
         if phone:
@@ -88,6 +113,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 company=company,
                 branch=getattr(getattr(self.context.get("request"), "user", None), "branch", None),
                 name=name,
+                customer_type=customer_type,
+                company_name=str(value.get("companyName") or "").strip() if customer_type == "business" else "",
                 phone=phone or "NA",
                 email=email,
                 gstin=value.get("gstin") or "",
@@ -140,6 +167,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
         vehicle_payload = validated_data.pop("vehicle", None)
         job_number = validated_data.pop("jobCardNo", "")
         company = self._company(validated_data)
+        # Seller tax identity is server-owned. A client cannot type a fake GSTIN.
+        validated_data["seller_snapshot"] = {
+            "name": company.legal_name or company.name,
+            "address": company.address or "",
+            "city": company.city or "",
+            "state": company.state or "",
+            "pincode": company.pincode or "",
+            "phone": company.phone or "",
+            "email": company.email or "",
+            "gstin": str(company.gstin or "").strip().upper(),
+            "stateCode": str(company.gstin or "").strip()[:2] if company.gstin else "",
+        }
 
         job = self._resolve_job(job_number, company)
         customer = self._resolve_customer(customer_payload, company) or (job.customer if job else None)
@@ -167,6 +206,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
         vehicle_payload = validated_data.pop("vehicle", None)
         job_number = validated_data.pop("jobCardNo", None)
         company = instance.company
+        # Draft edits must not overwrite the authoritative workshop GSTIN.
+        if "seller_snapshot" in validated_data:
+            submitted = validated_data.pop("seller_snapshot") or {}
+            if submitted and not isinstance(submitted, dict):
+                raise serializers.ValidationError({"seller": "Invalid seller details."})
+            existing = dict(instance.seller_snapshot or {})
+            validated_data["seller_snapshot"] = {
+                **existing,
+                "name": company.legal_name or company.name,
+                "gstin": str(company.gstin or "").strip().upper(),
+                "stateCode": str(company.gstin or "").strip()[:2] if company.gstin else "",
+            }
 
         if customer_payload is not None:
             customer = self._resolve_customer(customer_payload, company)
@@ -195,6 +246,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         customer = dict(instance.customer_snapshot or {})
+        customer.setdefault("customerType", instance.customer.customer_type)
+        customer.setdefault("companyName", instance.customer.company_name)
         customer.setdefault("name", instance.customer.name)
         customer.setdefault("phone", instance.customer.phone)
         customer.setdefault("email", instance.customer.email)
