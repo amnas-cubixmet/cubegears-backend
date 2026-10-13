@@ -104,13 +104,20 @@ VITE_USE_MOCK_API=false
 
 The frontend already sends `Authorization: Bearer <access-token>`.
 
-## Database
+## Database — SQLite only
 
-Local development defaults to SQLite. Production can use PostgreSQL by setting:
+CubixGear now uses a SQLite database file by default, at `db.sqlite3` in the backend folder. No Prisma or PostgreSQL connection variables are needed.
 
 ```env
-DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
+# optional; leave unset for ./db.sqlite3 during local development
+SQLITE_DATABASE_PATH=/var/lib/cubixgear/db.sqlite3
 ```
+
+Use `python manage.py migrate` to create/update tables. Do not add `db.sqlite3` to Git; it is ignored.
+
+For a live business backend, use a **single Django application instance** on a server that has durable writable storage (for example, a VPS with a persistent disk). Mount the database path outside the deployment source tree and schedule safe SQLite backups, including restore tests. SQLite permits many readers but only one writer at a time; it is not a replacement for a distributed database with many concurrent workers.
+
+**Vercel Functions cannot persist a live SQLite database.** Keep the React/Vite frontend on Vercel, but host Django on a VPS or another service with a persistent volume. Deployment with `VERCEL=1` and `DJANGO_DEBUG=False` intentionally fails rather than risking data loss.
 
 ## Security notes
 
