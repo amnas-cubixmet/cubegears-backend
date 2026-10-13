@@ -83,7 +83,7 @@ class OutsidePartBill(CompanyOwnedModel):
     job = models.ForeignKey("jobs.Job", on_delete=models.CASCADE, related_name="outside_part_bills")
     purchase_id = models.UUIDField(db_index=True)
     file = models.FileField(
-        storage=job_photo_private_storage, upload_to=outside_part_bill_upload_to
+        storage=job_photo_private_storage, upload_to=outside_part_bill_upload_to, max_length=255
     )
     original_filename = models.CharField(max_length=180)
     uploaded_by = models.ForeignKey(
