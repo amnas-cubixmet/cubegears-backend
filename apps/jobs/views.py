@@ -580,6 +580,10 @@ class JobViewSet(CompanyScopedModelViewSet):
             discount = Decimal(str(data.get("discount", 0)))
         except (TypeError, ValueError, ArithmeticError):
             raise ValidationError({"total": "Tax and discount must be valid numbers."})
+        if not tax_rate.is_finite() or not discount.is_finite():
+            raise ValidationError({"total": "Tax and discount must be finite amounts."})
+        if tax_rate.as_tuple().exponent < -2 or discount.as_tuple().exponent < -2:
+            raise ValidationError({"total": "Tax and discount may have at most two decimal places."})
         if not (Decimal("0") <= tax_rate <= Decimal("100")) or discount < 0:
             raise ValidationError({"total": "Tax must be 0-100%, and discount cannot be negative."})
         items = []
@@ -595,6 +599,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                 price = Decimal(str(row.get("unitPrice", 0)))
             except (TypeError, ValueError, ArithmeticError):
                 raise ValidationError({"lines": "Quantity and price must be numbers."})
+            if not quantity.is_finite() or not price.is_finite():
+                raise ValidationError({"lines": "Quantity and price must be finite numbers."})
+            if quantity.as_tuple().exponent < -2 or price.as_tuple().exponent < -2:
+                raise ValidationError({"lines": "Quantity and price may have at most two decimal places."})
             if not (Decimal("0") < quantity <= Decimal("10000")) or not (Decimal("0") <= price <= Decimal("10000000")):
                 raise ValidationError({"lines": "Enter a positive quantity and non-negative price."})
             quantity = quantity.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
