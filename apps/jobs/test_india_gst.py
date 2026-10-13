@@ -128,6 +128,14 @@ class IndianWorkshopGstTests(TestCase):
         invalid["lines"][0]["taxRate"] = "18.999"
         self.assertEqual(self.client.post(self.url, invalid, format="json").status_code, 400)
 
+    def test_discount_allocation_works_for_many_one_paisa_lines(self):
+        rows = [{"total": "0.01", "taxRate": "18"} for _ in range(100)]
+        result = calculate_tax(rows, Decimal("0.40"), "cgst_sgst")
+        self.assertEqual(result["taxable"], Decimal("0.60"))
+        self.assertEqual(sum(
+            Decimal(row["discountAllocation"]) for row in result["lines"]
+        ), Decimal("0.40"))
+
     def test_paise_split_on_one_paisa_tax_amount(self):
         rows = [{"total": "0.06", "taxRate": "18"}]
         intra = calculate_tax(rows, Decimal("0"), "cgst_sgst")
