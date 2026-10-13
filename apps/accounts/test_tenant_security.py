@@ -5,6 +5,8 @@ from rest_framework.test import APITestCase
 from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
+from apps.customers.models import Customer
+from apps.vehicles.models import Vehicle
 from apps.roles.models import Role
 
 
@@ -120,3 +122,31 @@ class TenantSecurityTests(APITestCase):
         self.assertEqual(self.company_a.plan, "starter")
         self.assertEqual(self.company_a.slug, "workshop-a")
         self.assertTrue(self.company_a.is_active)
+
+    def test_vehicle_create_rejects_foreign_company_customer(self):
+        foreign_customer = Customer.objects.create(
+            company=self.company_b, branch=self.branch_b,
+            name="Other Tenant Customer", phone="9000000000",
+        )
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/vehicles",
+            {"registration": "KL10-FR-2026", "customer": str(foreign_customer.id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertEqual(Vehicle.objects.filter(company=self.company_a).count(), 0)
+
+    def test_vehicle_create_accepts_own_company_customer(self):
+        own_customer = Customer.objects.create(
+            company=self.company_a, branch=self.branch_a,
+            name="Local Customer", phone="9000000001",
+        )
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/v1/vehicles",
+            {"registration": "KL10-OWN-2026", "customer": str(own_customer.id)},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(Vehicle.objects.get(registration="KL10-OWN-2026").company_id, self.company_a.id)
