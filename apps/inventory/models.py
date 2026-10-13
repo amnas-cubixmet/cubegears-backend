@@ -53,6 +53,7 @@ class StockMovement(CompanyOwnedModel):
     movement_type=models.CharField(max_length=30,choices=TYPES)
     quantity=models.DecimalField(max_digits=12,decimal_places=2)
     unit_cost=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
+    unit_selling_price=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     reference=models.CharField(max_length=100,blank=True)
     job=models.ForeignKey("jobs.Job",on_delete=models.SET_NULL,null=True,blank=True,related_name="stock_movements")
     note=models.TextField(blank=True)
