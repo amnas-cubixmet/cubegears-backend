@@ -38,40 +38,48 @@ class SecurityEventViewSet(CompanyScopedModelViewSet):
     http_method_names=["get","head","options"]
 
 class SubscriptionSummaryView(APIView):
-    permission_classes=[RolePermission]
-    permission_map={"GET":"billing.view","PUT":"billing.edit"}
-    def get(self,request):
-        company=request.user.company
-        sub=Subscription.objects.filter(company=company,status__iexact="Active").order_by("-created_at").first()
-        storage_bytes=MediaFile.objects.filter(company=company).aggregate(v=Sum("size_bytes"))["v"] or 0
-        seats_used=company.users.filter(is_active=True).count()
-        usage_setting=CompanySetting.objects.filter(company=company,category="saas_usage").first()
-        if usage_setting and usage_setting.data.get("seatsUsed") is not None:
-            seats_used=usage_setting.data["seatsUsed"]
-        plan_name=sub.plan if sub else company.plan
-        included_seats=sub.seats if sub else 5
+    permission_classes = [RolePermission]
+    permission_code = "billing.view"
+
+    def get(self, request):
+        """Authoritative plan and actual active account count, not editable usage."""
+        company = request.user.company
+        if not company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+        sub = Subscription.objects.filter(
+            company=company, status__iexact="Active"
+        ).order_by("-created_at").first()
+        storage_bytes = MediaFile.objects.filter(company=company).aggregate(
+            value=Sum("size_bytes")
+        )["value"] or 0
+        seats_used = company.users.filter(is_active=True).count()
         return response.Response({
-            "plan":{
-                "id":str(plan_name).lower().replace(" ","-"),
-                "name":plan_name,
-                "status":(sub.status if sub else "active").lower(),
-                "billingCycle":sub.billing_cycle if sub else "monthly",
-                "basePrice":float(sub.amount) if sub else 0,
-                "includedStorageGb":25,
-                "extraStorageRate":15,
-                "includedSeats":included_seats,
-                "extraSeatRate":199,
-                "nextBillingDate":sub.renews_at.date().isoformat() if sub and sub.renews_at else None,
+            "plan": {
+                "id": str(sub.plan if sub else company.plan or "").lower().replace(" ", "-"),
+                "name": sub.plan if sub else "No active subscription",
+                "status": sub.status.lower() if sub else "not_configured",
+                "billingCycle": sub.billing_cycle if sub else None,
+                "basePrice": float(sub.amount) if sub else None,
+                "includedStorageGb": None,
+                "extraStorageRate": None,
+                "includedSeats": sub.seats if sub else None,
+                "extraSeatRate": None,
+                "nextBillingDate": sub.renews_at.date().isoformat()
+                if sub and sub.renews_at else None,
             },
-            "usage":{"storageUsedGb":round(storage_bytes/(1024**3),3),"seatsUsed":seats_used},
-            "paymentMethod":{"type":"UPI / Card","label":"Primary billing method","status":"ready"},
-            "invoices":[],
+            "usage": {
+                "storageUsedGb": round(storage_bytes / (1024 ** 3), 3),
+                "seatsUsed": seats_used,
+            },
+            "paymentMethod": None,
+            "invoices": [],
+            "billingDataAvailable": bool(sub),
+            "billingNote": (
+                "Subscription invoices and payment method are not connected to a "
+                "billing provider yet. No historical charges are being reported."
+            ),
         })
-    def put(self,request):
-        obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="saas_usage",defaults={"branch":request.user.branch,"data":{}})
-        obj.data={**obj.data,"seatsUsed":max(1,int(request.data.get("seatsUsed",1)))}
-        obj.save(update_fields=["data","updated_at"])
-        return self.get(request)
+
 
 class StorageSummaryView(APIView):
     permission_classes=[RolePermission]
@@ -125,6 +133,50 @@ class StorageSettingsView(APIView):
         obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
         obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
+
+class StorageHistoryListView(APIView):
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request):
+        """Return stored company-scoped snapshots only, never invented daily usage."""
+        company = request.user.company
+        if not company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+
+        from_date = request.query_params.get("from", "")
+        to_date = request.query_params.get("to", "")
+        from django.utils.dateparse import parse_date
+        if from_date and not parse_date(from_date):
+            return response.Response({"from": ["Use YYYY-MM-DD."]}, status=400)
+        if to_date and not parse_date(to_date):
+            return response.Response({"to": ["Use YYYY-MM-DD."]}, status=400)
+        if from_date and to_date and from_date > to_date:
+            return response.Response({"message": "From date must be before To date."}, status=400)
+
+        entries = StorageUsage.objects.filter(company=company)
+        if from_date:
+            entries = entries.filter(date__gte=from_date)
+        if to_date:
+            entries = entries.filter(date__lte=to_date)
+        grouped = {}
+        for entry in entries:
+            key = entry.date.isoformat()
+            day = grouped.setdefault(key, {"date": key, "bytes": 0, "fileCount": 0})
+            day["bytes"] += max(0, entry.bytes_used)
+            day["fileCount"] += entry.file_count
+        return response.Response([
+            {
+                "date": item["date"],
+                "usedGb": round(item["bytes"] / (1024 ** 3), 3),
+                "fileCount": item["fileCount"],
+                "rate": None,
+                "charge": None,
+                "snapshotType": "stored",
+            }
+            for _, item in sorted(grouped.items(), reverse=True)
+        ])
+
 
 class StorageHistoryDateView(APIView):
     permission_classes=[RolePermission]
