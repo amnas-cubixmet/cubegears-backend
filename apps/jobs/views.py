@@ -656,11 +656,36 @@ class JobViewSet(CompanyScopedModelViewSet):
         if discount > subtotal:
             raise ValidationError({"discount": "Discount cannot exceed subtotal."})
         discount = discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        grand = subtotal - discount + tax
+        gst_input = data.get("gst")
+        if gst_input is not None:
+            job = self.get_object()
+            context = gst_context(
+                company=job.company, branch=job.branch, customer=job.customer,
+                config=gst_input,
+            )
+            if context["mode"] == "gst":
+                for line in items:
+                    if "taxRate" not in line:
+                        raise ValidationError({"taxRate": "Set a classified GST rate for every work and part item."})
+            calculated = calculate_tax(items, discount, context["taxMode"])
+            items = calculated["lines"]
+            tax = calculated["tax"]
+            grand = calculated["total"]
+            context.update({
+                "cgst": str(calculated["cgst"]),
+                "sgst": str(calculated["sgst"]),
+                "igst": str(calculated["igst"]),
+                "taxable": str(calculated["taxable"]),
+            })
+            pricing = {"taxPercent": "0", "discount": str(discount), "gst": context}
+        else:
+            # Preserve existing callers and historical non-GST quote behavior.
+            tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            grand = subtotal - discount + tax
+            pricing = {"taxPercent": str(tax_rate), "discount": str(discount)}
         if subtotal >= Decimal("10000000000") or grand >= Decimal("10000000000"):
             raise ValidationError({"total": "Estimate total is too large."})
-        items.append({"_pricing": {"taxPercent": str(tax_rate), "discount": str(discount)}})
+        items.append({"_pricing": pricing})
         return {"items": items, "subtotal": subtotal, "tax": tax, "total": grand}
 
     @decorators.action(detail=True, methods=["post"], url_path="estimates/quick")
