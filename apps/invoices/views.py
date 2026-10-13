@@ -15,6 +15,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
     serializer_class=InvoiceSerializer
     action_permission_map = {
         "finalize": ["invoices.edit", "stock.edit"],
+        "pdf": "invoices.view",
         "cancel": "invoices.edit",
         "convert": "invoices.create",
     }
@@ -31,6 +32,14 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
                 return qs.none()
             qs = qs.filter(Q(job_id=job_id) | Q(source_job_id=str(job_id)))
         return qs
+
+    @decorators.action(detail=True, methods=["get"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        # get_object enforces the same company scoping as invoice detail.
+        # invoices.view is required, even for a finalized invoice.
+        from .pdf import pdf_response
+        invoice = self.get_object()
+        return pdf_response(invoice)
 
     def perform_create(self,serializer):
         company=self.request.user.company
