@@ -1,4 +1,4 @@
-{% load static %}
+{% load static panel_access %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -21,24 +21,24 @@
 
       <nav class="nav-list">
         <p class="nav-label">Overview</p>
-        <a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>
+        {% panel_can 'dashboard' as allowed %}{% if allowed %}<a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>{% endif %}
 
         <p class="nav-label">Platform</p>
-        <a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}">Companies</a>
-        <a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}">Users & Access</a>
-        <a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Plans & Billing</a>
-        <a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}">Storage</a>
-        <a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}">Security & Activity</a>
+        {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}">Companies</a>{% endif %}
+        {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}">Users & Access</a>{% endif %}
+        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Plans & Billing</a>{% endif %}
+        {% panel_can 'storage' as allowed %}{% if allowed %}<a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}">Storage</a>{% endif %}
+        {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}">Security & Activity</a>{% endif %}
 
-        <a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}">Branches</a>
-        <a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}">Roles & Permissions</a>
+        {% panel_can 'branches' as allowed %}{% if allowed %}<a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}">Branches</a>{% endif %}
+        {% panel_can 'roles' as allowed %}{% if allowed %}<a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}">Roles & Permissions</a>{% endif %}
         <p class="nav-label">All Workshop Data</p>
-        <a href="{% url 'panel:vehicles' %}" class="nav-item {% if active == 'vehicles' %}active{% endif %}">Vehicles</a>
-        <a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}">Customers</a>
-        <a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}">Job Cards</a>
-        <a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}">Stock</a>
-        <a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}">Invoices</a>
-        <a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}">Staff</a>
+        {% panel_can 'vehicles' as allowed %}{% if allowed %}<a href="{% url 'panel:vehicles' %}" class="nav-item {% if active == 'vehicles' %}active{% endif %}">Vehicles</a>{% endif %}
+        {% panel_can 'customers' as allowed %}{% if allowed %}<a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}">Customers</a>{% endif %}
+        {% panel_can 'jobs' as allowed %}{% if allowed %}<a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}">Job Cards</a>{% endif %}
+        {% panel_can 'stock' as allowed %}{% if allowed %}<a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}">Stock</a>{% endif %}
+        {% panel_can 'invoices' as allowed %}{% if allowed %}<a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}">Invoices</a>{% endif %}
+        {% panel_can 'staff' as allowed %}{% if allowed %}<a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}">Staff</a>{% endif %}
       </nav>
 
       <div class="sidebar-footer">
@@ -87,10 +87,10 @@
   </div>
 
   <nav class="mobile-bottom-nav" aria-label="Mobile control panel navigation">
-    <a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>
-    <a href="{% url 'panel:companies' %}" class="{% if active == 'companies' %}active{% endif %}">Companies</a>
-    <a href="{% url 'panel:users' %}" class="{% if active == 'users' %}active{% endif %}">Users</a>
-    <a href="{% url 'panel:subscriptions' %}" class="{% if active == 'subscriptions' %}active{% endif %}">Billing</a>
+    {% panel_can 'dashboard' as allowed %}{% if allowed %}<a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>{% endif %}
+    {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="{% if active == 'companies' %}active{% endif %}">Companies</a>{% endif %}
+    {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="{% if active == 'users' %}active{% endif %}">Users</a>{% endif %}
+    {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="{% if active == 'subscriptions' %}active{% endif %}">Billing</a>{% endif %}
     <button type="button" data-sidebar-open>More</button>
   </nav>
 

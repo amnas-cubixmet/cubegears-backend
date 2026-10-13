@@ -71,7 +71,7 @@ class PanelTests(TestCase):
                 self.client.logout()
                 self.assertEqual(self.client.get(url).status_code, 302)
                 self.client.force_login(regular)
-                self.assertEqual(self.client.get(url).status_code, 403)
+                self.assertEqual(self.client.get(url).status_code, 405 if route.name == "logout" else 403)
 
     def test_login_redirect_is_safe_and_preserves_filters(self):
         self.client.logout()
@@ -143,7 +143,7 @@ class PanelTests(TestCase):
     def test_supporting_resource_crud(self):
         cases = [
             ('branch', 'branches', Branch, {'company': self.company.pk, 'name': 'Second', 'code': 'SECOND', 'is_active': 'on'}),
-            ('role', 'roles', Role, {'company': self.company.pk, 'name': 'Manager', 'code': 'manager', 'permissions': '["jobs.view"]', 'is_active': 'on'}),
+            ('role', 'roles', Role, {'company': self.company.pk, 'name': 'Manager', 'code': 'manager', 'permissions': ['jobs.view'], 'is_active': 'on'}),
             ('vehicle', 'vehicles', Vehicle, {'company': self.company.pk, 'customer': self.customer.pk, 'registration': 'KL10AA5678', 'odometer': '0', 'status': 'Active'}),
         ]
         for singular, resource, model, data in cases:

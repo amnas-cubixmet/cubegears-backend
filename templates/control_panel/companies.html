@@ -1,11 +1,12 @@
 {% extends "control_panel/base.html" %}
+{% load panel_access %}
 {% block content %}
 <div class="toolbar">
   <form class="search-form" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="Search company, GST, city or email">
     <button class="btn" type="submit">Search</button>
   </form>
-  <a class="btn btn-primary" href="{% url 'panel:company-create' %}">Add Company</a>
+  {% panel_can 'panel:company-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">Add Company</a>{% endif %}
 </div>
 <section class="panel-card">
   <div class="responsive-table">
@@ -23,10 +24,10 @@
           <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
           <td data-label="Actions">
             <div class="row-actions">
-              <a href="{% url 'panel:company-detail' row.id %}">View</a>
-              <a href="{% url 'panel:company-edit' row.id %}">Edit</a>
-              <form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>
-              <a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>
+              {% panel_can 'panel:company-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:company-detail' row.id %}">View</a>{% endif %}
+              {% panel_can 'panel:company-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:company-edit' row.id %}">Edit</a>{% endif %}
+              {% panel_can 'panel:company-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
+              {% panel_can 'panel:company-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>{% endif %}
             </div>
           </td>
         </tr>

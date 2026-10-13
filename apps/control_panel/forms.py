@@ -3,6 +3,7 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 
 from apps.accounts.models import User
+from apps.accounts.permissions import can_delegate
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.customers.models import Customer
@@ -106,6 +107,10 @@ class UserForm(AdminModelForm):
                 validate_password(password, candidate)
             except forms.ValidationError as exc:
                 self.add_error("password", exc)
+        actor = getattr(self, 'actor', None)
+        role = data.get('role')
+        if actor and role and not can_delegate(actor, role.permissions):
+            self.add_error('role', 'You cannot assign permissions beyond your own role.')
         company = data.get("company")
         branch = data.get("branch")
         role = data.get("role")
@@ -318,6 +323,19 @@ class VehicleForm(AdminModelForm):
 
 
 class RoleForm(AdminModelForm):
+    permissions = forms.MultipleChoiceField(required=False, widget=forms.CheckboxSelectMultiple,
+        help_text="Select required actions. Panel permissions are for platform staff; workshop permissions are company scoped.")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from apps.roles.permission_catalog import TENANT_PERMISSIONS, PANEL_PERMISSIONS
+        current = self.instance.permissions or []
+        if not isinstance(current, list):
+            current = []
+        choices = sorted(set(TENANT_PERMISSIONS + PANEL_PERMISSIONS + [v for v in current if isinstance(v, str)]))
+        self.fields['permissions'].choices = [('*', 'Full access (administrator only)')] + [(code, code) for code in choices if code != '*']
+        self.fields['permissions'].widget.attrs['class'] = 'permission-checkboxes'
+
     class Meta:
         model = Role
         fields = ['company', 'name', 'code', 'permissions', 'is_active']
@@ -326,4 +344,7 @@ class RoleForm(AdminModelForm):
         permissions = self.cleaned_data.get('permissions') or []
         if not isinstance(permissions, list) or any(not isinstance(value, str) for value in permissions):
             raise forms.ValidationError('Enter a JSON list of permission codes.')
+        actor = getattr(self, 'actor', None)
+        if actor and not can_delegate(actor, permissions):
+            raise forms.ValidationError('You cannot grant permissions beyond your own role.')
         return permissions

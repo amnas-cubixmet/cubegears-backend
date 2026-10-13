@@ -329,3 +329,7 @@ a{color:inherit}
   .form-actions,.delete-actions{display:grid;grid-template-columns:1fr}
   .form-actions .btn,.delete-actions .btn{width:100%}
 }
+
+.permission-checkboxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;max-height:420px;overflow:auto;padding:12px;border:1px solid #dce1e8;border-radius:8px}
+.permission-checkboxes input{width:auto;margin-right:8px}
+.permission-checkboxes label{font-weight:400;overflow-wrap:anywhere}

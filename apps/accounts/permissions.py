@@ -52,7 +52,7 @@ MODEL_PERMISSION_PREFIX = {
 
 
 def user_has_permission(user, permission_code):
-    if not user or not user.is_authenticated:
+    if not user or not user.is_authenticated or not user.is_active:
         return False
 
     # Django/platform superusers bypass tenant RBAC.
@@ -62,8 +62,19 @@ def user_has_permission(user, permission_code):
     role = getattr(user, "role", None)
     if not role or not role.is_active:
         return False
-
+    if role.company_id and role.company_id != user.company_id:
+        return False
+    if user.company_id and not user.company.is_active:
+        return False
+    if permission_code.startswith("panel."):
+        # Platform delegation is separate from tenant/workshop administration.
+        if user.company_id or role.company_id or not user.is_staff:
+            return False
+    elif not user.company_id:
+        return False
     permissions = role.permissions or []
+    if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
+        return False
     return "*" in permissions or permission_code in permissions
 
 
@@ -108,7 +119,7 @@ class RolePermission(BasePermission):
     message = "You do not have permission to perform this action."
 
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
+        if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
 
         if request.user.is_superuser:
@@ -155,13 +166,20 @@ class HasRolePermission(RolePermission):
 
 class IsCompanyAdmin(BasePermission):
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
+        if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
         if request.user.is_superuser:
             return True
 
-        role = getattr(request.user, "role", None)
-        if not role or not role.is_active:
-            return False
+        return user_has_permission(request.user, "company.manage")
 
-        return bool(role.allows("company.manage"))
+
+def can_delegate(user, permissions):
+    """A manager cannot grant authority they do not possess."""
+    if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
+        return False
+    return all(user_has_permission(user, code) for code in permissions)
+
+
+def panel_permission(user, resource, action="view"):
+    return user_has_permission(user, f"panel.{resource}.{action}")

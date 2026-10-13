@@ -251,7 +251,7 @@ python manage.py runserver
 | `/companies/` | Companies and enable/disable actions |
 | `/users/` | Accounts, passwords and enable/disable actions |
 | `/branches/` | Company branches |
-| `/roles/` | Roles and JSON permission-code lists |
+| `/roles/` | Roles and permission checkboxes |
 | `/subscriptions/` | Subscription plans and billing records |
 | `/customers/` | Customers |
 | `/vehicles/` | Customer vehicles |
@@ -270,3 +270,47 @@ related records are checked against the selected company. Administrators cannot
 remove their own access flags, disable themselves or delete themselves.
 
 Run panel regression checks with `python manage.py test apps.control_panel`.
+
+
+## Role access and direct email delivery
+
+- Active Django superusers have full platform and API access. `is_staff` alone
+  never grants access to the custom control panel or workshop APIs.
+- Workshop accounts require an active role from the same company (or an assigned
+  shared role) and an active company. Permissions use codes such as `jobs.view`,
+  `jobs.edit`, `stock.edit`, `payroll.view`, and `company.manage`. Unassigned
+  permissions are denied server-side. Stock issue/return/inward compatibility
+  actions require both `jobs.edit` and `stock.edit`.
+- Workshop roles, including a tenant `*` owner, cannot access the global panel.
+  To delegate platform administration, a superuser creates a companyless role
+  with explicit `panel.<resource>.<view|create|edit|delete>` permissions and assigns
+  it to an active companyless staff account. Dashboard/storage/security are view
+  only. Navigation and action links follow the same permission checks.
+- Managers cannot grant or assign permissions beyond their own authority, modify
+  more privileged roles/accounts, attach another company's login account, or set
+  `is_system` through the roles API. A superuser should manage privileged accounts.
+- `/api/v1/auth/me` and login responses include `effectivePermissions` for frontend
+  navigation/actions. Refresh this data after role changes; backend checks apply
+  immediately on every new request. The separate company-panel frontend must use
+  this field to hide its own controls.
+- Roles in the root panel use permission checkboxes. `*` is full administration
+  within the account's scope, so assign it only to owners/administrators.
+
+Account reset, signup, magic-link and staff invitation emails now call Django's
+email backend synchronously after the database transaction commits. No Redis or
+Celery worker is needed for email. `apps/accounts/tasks.py` retains the retrying
+Celery task; the equivalent queue call is commented in `apps/accounts/email.py`
+for a later switch. Scheduled attendance tasks still need their existing worker.
+SMTP failures are logged by the commit callback; public account-recovery endpoints
+retain their generic response. Direct delivery has no automatic retry/outbox, so
+monitor SMTP errors and retry a failed invitation/reset request as appropriate.
+
+For production configure `DJANGO_DEBUG=False`, strong unique secret/JWT keys,
+explicit allowed hosts, PostgreSQL, an HTTPS reverse proxy, and
+`CSRF_TRUSTED_ORIGINS=https://<backend-host>`. HTTPS redirect and secure cookies
+are enabled when DEBUG is false; HSTS defaults to one hour and is configurable.
+Set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`, SMTP host, port,
+username, password, TLS and a verified sender. `EMAIL_TIMEOUT` defaults to 15s.
+The console backend is for local development and does not deliver email.
+Run `python manage.py check --deploy`, migrations and a real SMTP smoke test in
+staging before release. No deployment or live SMTP credentials are bundled.

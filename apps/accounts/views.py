@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
-from .tasks import send_email_task
+from .email import queue_email
 from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
@@ -48,18 +48,6 @@ def ensure_tenant_super_admin_role(user):
         role.is_active = True
         role.save(update_fields=["name", "code", "is_system", "is_active"])
     return user
-
-
-def queue_email(subject, message, recipient_list):
-    transaction.on_commit(
-        lambda: send_email_task.delay(
-            subject=subject,
-            message=message,
-            recipient_list=recipient_list,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-        ),
-        robust=True,
-    )
 
 
 def issue_tokens(user):

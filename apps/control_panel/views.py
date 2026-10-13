@@ -24,6 +24,9 @@ from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent
 from apps.vehicles.models import Vehicle
+from .permissions import route_allowed, landing_route
+from apps.accounts.permissions import can_delegate
+from apps.roles.models import Role
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
@@ -36,7 +39,7 @@ def panel_admin_required(view_func):
     def wrapped(request, *args, **kwargs):
         if not request.user.is_authenticated:
             return redirect_to_login(request.get_full_path(), reverse("panel:login"))
-        if not request.user.is_active or not (request.user.is_superuser or request.user.is_staff):
+        if not route_allowed(request.user, request.resolver_match.url_name):
             return HttpResponseForbidden("Control Panel access is restricted to CubixGear administrators.")
         if request.GET.get("company"):
             try:
@@ -61,18 +64,20 @@ def _paginate(request, queryset):
 
 def panel_login(request):
     if request.user.is_authenticated:
-        if request.user.is_superuser or request.user.is_staff:
-            return redirect("panel:dashboard")
+        destination = landing_route(request.user)
+        if destination:
+            return redirect("panel:" + destination)
         logout(request)
 
     form = PanelLoginForm(request.POST if request.method == "POST" else None, request=request)
     if request.method == "POST" and form.is_valid():
         user = form.get_user()
-        if not (user.is_superuser or user.is_staff):
+        destination = landing_route(user)
+        if not destination:
             form.add_error(None, "This account does not have Control Panel access.")
         else:
             login(request, user)
-            return _safe_redirect(request, request.GET.get("next"), "panel:dashboard")
+            return _safe_redirect(request, request.GET.get("next"), "panel:" + destination)
 
     return render(request, "control_panel/login.html", {"form": form})
 
@@ -195,6 +200,8 @@ def user_toggle(request, pk):
     if request.method != "POST":
         return HttpResponseForbidden("POST required.")
     user = get_object_or_404(User, pk=pk)
+    if not _can_manage_account(request.user, user):
+        return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
     if user == request.user:
         return HttpResponseForbidden("You cannot disable your own Control Panel account.")
     user.is_active = not user.is_active
@@ -380,8 +387,24 @@ def _display_rows(obj, fields):
     return rows
 
 
+def _can_manage_account(actor, obj):
+    if actor.is_superuser:
+        return True
+    if isinstance(obj, User):
+        return not obj.is_superuser and (not obj.role or can_delegate(actor, obj.role.permissions))
+    if isinstance(obj, Role):
+        return can_delegate(actor, obj.permissions)
+    return True
+
+
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
+    if not _can_manage_account(request.user, instance):
+        return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
     form = form_class(request.POST if request.method == "POST" else None, instance=instance)
+    form.actor = request.user
+    if isinstance(form, UserForm) and not request.user.is_superuser:
+        for field in ("is_staff", "is_superuser"):
+            form.fields[field].disabled = True
     if isinstance(form, UserForm) and instance == request.user:
         for field in ("is_active", "is_staff", "is_superuser"):
             form.fields[field].disabled = True
@@ -399,6 +422,8 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
 
 
 def _delete_object(request, obj, *, title, active, cancel_url):
+    if not _can_manage_account(request.user, obj):
+        return HttpResponseForbidden("You cannot manage an account or role with greater permissions.")
     if request.method == "POST":
         try:
             obj.delete()
@@ -484,6 +509,8 @@ def user_edit(request, pk):
 @panel_admin_required
 def user_delete(request, pk):
     obj = get_object_or_404(User, pk=pk)
+    if not _can_manage_account(request.user, obj):
+        return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
     if obj == request.user:
         messages.error(request, "You cannot delete your own Control Panel account.")
         return redirect("panel:users")
