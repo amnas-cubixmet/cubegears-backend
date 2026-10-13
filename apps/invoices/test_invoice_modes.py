@@ -123,3 +123,38 @@ class CompanyInvoiceModesTests(TestCase):
             self.assertEqual(res.status_code, 200, res.data)
             self.assertEqual(res.data["invoiceType"], expected)
             self.assertEqual(res.data["registered"], expected == "gst")
+
+    def test_same_gst_for_company_and_individual_recipients(self):
+        # Buyer identity controls layout only; seller registration determines tax.
+        self.login("gst")
+        first = self.data(customer={
+            "customerType": "business",
+            "companyName": "ACME Engineering",
+            "name": "",
+            "phone": "9973000001",
+            "gstin": "32ABCDE6789P1Z6",
+            "placeOfSupply": "32",
+        })
+        second = self.data(customer={
+            "customerType": "individual",
+            "name": "Walk-in Customer",
+            "phone": "9973000002",
+            "gstin": "",
+            "placeOfSupply": "32",
+        })
+        business = self.client.post(self.url, first, format="json")
+        individual = self.client.post(self.url, second, format="json")
+        self.assertEqual(business.status_code, 201, business.data)
+        self.assertEqual(individual.status_code, 201, individual.data)
+        self.assertEqual(business.data["customer"]["customerType"], "business")
+        self.assertEqual(individual.data["customer"]["customerType"], "individual")
+        self.assertEqual(business.data["customer"]["companyName"], "ACME Engineering")
+        for data in (business.data, individual.data):
+            self.assertEqual(data["invoiceType"], "gst")
+            self.assertEqual(Decimal(data["total"]), Decimal("3540"))
+            self.assertEqual(Decimal(data["cgst"]), Decimal("270"))
+            self.assertEqual(Decimal(data["sgst"]), Decimal("270"))
+            self.assertTrue(data["number"])
+            pdf = self.client.get(f"{self.url}/{data['id']}/pdf")
+            self.assertEqual(pdf.status_code, 200)
+            self.assertTrue(pdf.content.startswith(b"%PDF-"))
