@@ -18,7 +18,21 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         "pdf": "invoices.view",
         "cancel": "invoices.edit",
         "convert": "invoices.create",
+        "gst_context": "invoices.view",
     }
+
+    @decorators.action(detail=False, methods=["get"], url_path="gst-context")
+    def gst_context(self, request):
+        from apps.jobs.india_gst import state_code
+        company = request.user.company
+        gstin = str(company.gstin or "").strip().upper()
+        return response.Response({
+            "registered": bool(gstin),
+            "gstin": gstin,
+            "supplierState": state_code(gstin[:2] if len(gstin) == 15 else ""),
+            "companyName": company.legal_name or company.name,
+            "companyState": company.state,
+        })
     def get_queryset(self):
         qs = super().get_queryset()
         kind = self.request.query_params.get("kind")
