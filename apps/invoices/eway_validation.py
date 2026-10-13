@@ -8,6 +8,8 @@ from a service invoice total.
 from decimal import Decimal, InvalidOperation
 import re
 from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from apps.jobs.india_gst import STATE_CODES
 
 GSTIN = re.compile(r"^[0-9]{2}[A-Z0-9]{13}$")
 STATE = re.compile(r"^[0-9]{2}$")
@@ -41,7 +43,7 @@ def validate_party(name, value):
         raise ValidationError({name: "Full address and place are required."})
     if not PIN.fullmatch(str(value.get("pincode") or "")):
         raise ValidationError({name: "Enter a valid six-digit PIN code."})
-    if not STATE.fullmatch(str(value.get("stateCode") or "")):
+    if not STATE.fullmatch(str(value.get("stateCode") or "")) or str(value.get("stateCode")) not in STATE_CODES:
         raise ValidationError({name: "State code must be two digits."})
 
 
@@ -71,7 +73,7 @@ def validate_preparation(payload):
         document_date = date.fromisoformat(str(payload["documentDate"]))
     except (ValueError, TypeError):
         raise ValidationError({"documentDate": "Enter a valid YYYY-MM-DD date."})
-    if document_date > date.today():
+    if document_date > timezone.localdate():
         raise ValidationError({"documentDate": "Document date cannot be in the future."})
 
     validate_party("from", payload.get("from"))
@@ -112,8 +114,8 @@ def validate_preparation(payload):
         distance = int(str(transport.get("distanceKm") or "0"))
     except ValueError:
         raise ValidationError({"transport": "Distance must be a whole number."})
-    if distance <= 0 or distance > 4000:
-        raise ValidationError({"transport": "Enter approximate distance (1–4000 km)."})
+    if distance <= 0 or distance > 99999:
+        raise ValidationError({"transport": "Enter approximate distance in whole kilometres."})
     if transport["mode"] == "Road":
         if not (str(transport.get("vehicleNo") or "").strip()
                 or str(transport.get("transporterId") or "").strip()):
