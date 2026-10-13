@@ -1,6 +1,6 @@
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import parsers, response, status
+from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
@@ -38,40 +38,48 @@ class SecurityEventViewSet(CompanyScopedModelViewSet):
     http_method_names=["get","head","options"]
 
 class SubscriptionSummaryView(APIView):
-    permission_classes=[RolePermission]
-    permission_map={"GET":"billing.view","PUT":"billing.edit"}
-    def get(self,request):
-        company=request.user.company
-        sub=Subscription.objects.filter(company=company,status__iexact="Active").order_by("-created_at").first()
-        storage_bytes=MediaFile.objects.filter(company=company).aggregate(v=Sum("size_bytes"))["v"] or 0
-        seats_used=company.users.filter(is_active=True).count()
-        usage_setting=CompanySetting.objects.filter(company=company,category="saas_usage").first()
-        if usage_setting and usage_setting.data.get("seatsUsed") is not None:
-            seats_used=usage_setting.data["seatsUsed"]
-        plan_name=sub.plan if sub else company.plan
-        included_seats=sub.seats if sub else 5
+    permission_classes = [RolePermission]
+    permission_code = "billing.view"
+
+    def get(self, request):
+        """Authoritative plan and actual active account count, not editable usage."""
+        company = request.user.company
+        if not company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+        sub = Subscription.objects.filter(
+            company=company, status__iexact="Active"
+        ).order_by("-created_at").first()
+        storage_bytes = MediaFile.objects.filter(company=company).aggregate(
+            value=Sum("size_bytes")
+        )["value"] or 0
+        seats_used = company.users.filter(is_active=True).count()
         return response.Response({
-            "plan":{
-                "id":str(plan_name).lower().replace(" ","-"),
-                "name":plan_name,
-                "status":(sub.status if sub else "active").lower(),
-                "billingCycle":sub.billing_cycle if sub else "monthly",
-                "basePrice":float(sub.amount) if sub else 0,
-                "includedStorageGb":25,
-                "extraStorageRate":15,
-                "includedSeats":included_seats,
-                "extraSeatRate":199,
-                "nextBillingDate":sub.renews_at.date().isoformat() if sub and sub.renews_at else None,
+            "plan": {
+                "id": str(sub.plan if sub else company.plan or "").lower().replace(" ", "-"),
+                "name": sub.plan if sub else "No active subscription",
+                "status": sub.status.lower() if sub else "not_configured",
+                "billingCycle": sub.billing_cycle if sub else None,
+                "basePrice": float(sub.amount) if sub else None,
+                "includedStorageGb": None,
+                "extraStorageRate": None,
+                "includedSeats": sub.seats if sub else None,
+                "extraSeatRate": None,
+                "nextBillingDate": sub.renews_at.date().isoformat()
+                if sub and sub.renews_at else None,
             },
-            "usage":{"storageUsedGb":round(storage_bytes/(1024**3),3),"seatsUsed":seats_used},
-            "paymentMethod":{"type":"UPI / Card","label":"Primary billing method","status":"ready"},
-            "invoices":[],
+            "usage": {
+                "storageUsedGb": round(storage_bytes / (1024 ** 3), 3),
+                "seatsUsed": seats_used,
+            },
+            "paymentMethod": None,
+            "invoices": [],
+            "billingDataAvailable": bool(sub),
+            "billingNote": (
+                "Subscription invoices and payment method are not connected to a "
+                "billing provider yet. No historical charges are being reported."
+            ),
         })
-    def put(self,request):
-        obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="saas_usage",defaults={"branch":request.user.branch,"data":{}})
-        obj.data={**obj.data,"seatsUsed":max(1,int(request.data.get("seatsUsed",1)))}
-        obj.save(update_fields=["data","updated_at"])
-        return self.get(request)
+
 
 class StorageSummaryView(APIView):
     permission_classes=[RolePermission]
@@ -126,6 +134,50 @@ class StorageSettingsView(APIView):
         obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
 
+class StorageHistoryListView(APIView):
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request):
+        """Return stored company-scoped snapshots only, never invented daily usage."""
+        company = request.user.company
+        if not company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+
+        from_date = request.query_params.get("from", "")
+        to_date = request.query_params.get("to", "")
+        from django.utils.dateparse import parse_date
+        if from_date and not parse_date(from_date):
+            return response.Response({"from": ["Use YYYY-MM-DD."]}, status=400)
+        if to_date and not parse_date(to_date):
+            return response.Response({"to": ["Use YYYY-MM-DD."]}, status=400)
+        if from_date and to_date and from_date > to_date:
+            return response.Response({"message": "From date must be before To date."}, status=400)
+
+        entries = StorageUsage.objects.filter(company=company)
+        if from_date:
+            entries = entries.filter(date__gte=from_date)
+        if to_date:
+            entries = entries.filter(date__lte=to_date)
+        grouped = {}
+        for entry in entries:
+            key = entry.date.isoformat()
+            day = grouped.setdefault(key, {"date": key, "bytes": 0, "fileCount": 0})
+            day["bytes"] += max(0, entry.bytes_used)
+            day["fileCount"] += entry.file_count
+        return response.Response([
+            {
+                "date": item["date"],
+                "usedGb": round(item["bytes"] / (1024 ** 3), 3),
+                "fileCount": item["fileCount"],
+                "rate": None,
+                "charge": None,
+                "snapshotType": "stored",
+            }
+            for _, item in sorted(grouped.items(), reverse=True)
+        ])
+
+
 class StorageHistoryDateView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.view"
@@ -137,6 +189,20 @@ class StorageHistoryDateView(APIView):
             "usage":StorageUsageSerializer(usage,many=True).data,
             "files":MediaFileSerializer(files,many=True,context={"request":request}).data,
         })
+
+class CompanyAccountSettingsSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=180, required=False, allow_blank=False)
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    gstNo = serializers.RegexField(
+        regex=r"^([0-9]{2}[A-Z0-9]{13})?$", required=False,
+        allow_blank=True, max_length=20,
+    )
+    address = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+    currency = serializers.ChoiceField(
+        choices=["INR", "USD", "AED", "SAR"], required=False,
+    )
+
 
 class SettingsView(APIView):
     permission_classes=[RolePermission]
@@ -156,12 +222,53 @@ class SettingsView(APIView):
         result["company"]={**result["company"],"name":c.name,"phone":c.phone,"email":c.email,"gstNo":c.gstin,"address":c.address,"currency":c.currency,"logo":c.logo}
         return response.Response(result)
     def put(self,request,category=None):
-        if not category: return response.Response({"message":"Category is required."},status=400)
-        if category=="company":
-            c=request.user.company
-            mapping={"name":"name","phone":"phone","email":"email","gstNo":"gstin","address":"address","currency":"currency","logo":"logo"}
-            for incoming,attr in mapping.items():
-                if incoming in request.data: setattr(c,attr,request.data[incoming])
-            c.save()
-        obj,_=CompanySetting.objects.update_or_create(company=request.user.company,category=category,defaults={"branch":request.user.branch,"data":request.data})
-        return response.Response(obj.data)
+        if not category:
+            return response.Response({"message": "Category is required."}, status=400)
+        if not request.user.company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+        payload = request.data
+        if not isinstance(payload, dict):
+            return response.Response({"message": "A settings object is required."}, status=400)
+        if category == "company":
+            # Reject unknown keys rather than silently saving shadow company data.
+            allowed = set(CompanyAccountSettingsSerializer().fields) | {"timezone", "dateFormat"}
+            unknown = set(payload) - allowed
+            if unknown:
+                return response.Response(
+                    {"message": "Unsupported company fields: " + ", ".join(sorted(unknown))},
+                    status=400,
+                )
+            serializer = CompanyAccountSettingsSerializer(data=payload, partial=True)
+            serializer.is_valid(raise_exception=True)
+            payload = dict(serializer.validated_data)
+            if "timezone" in request.data:
+                timezone = request.data["timezone"]
+                if timezone not in ("Asia/Kolkata", "Asia/Dubai", "Asia/Riyadh", "UTC"):
+                    return response.Response({"timezone": ["Choose a supported timezone."]}, status=400)
+                payload["timezone"] = timezone
+            if "dateFormat" in request.data:
+                date_format = request.data["dateFormat"]
+                if date_format not in ("DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"):
+                    return response.Response({"dateFormat": ["Choose a supported date format."]}, status=400)
+                payload["dateFormat"] = date_format
+            company = request.user.company
+            mapping = {
+                "name": "name", "phone": "phone", "email": "email",
+                "gstNo": "gstin", "address": "address", "currency": "currency",
+            }
+            updated = []
+            for key, target in mapping.items():
+                if key in serializer.validated_data:
+                    setattr(company, target, serializer.validated_data[key])
+                    updated.append(target)
+            if updated:
+                company.save(update_fields=updated + ["updated_at"])
+        setting, _ = CompanySetting.objects.get_or_create(
+            company=request.user.company, category=category,
+            defaults={"branch": request.user.branch, "data": {}},
+        )
+        # Account profile editor sends only five company fields; preserve other
+        # previously saved company locale and document preferences.
+        setting.data = {**setting.data, **payload}
+        setting.save(update_fields=["data", "updated_at"])
+        return self.get(request, category)

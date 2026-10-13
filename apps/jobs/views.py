@@ -15,6 +15,7 @@ from .audit import record_job_event
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status
+from .india_gst import gst_context, calculate_tax, gst_rate
 
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
@@ -627,6 +628,13 @@ class JobViewSet(CompanyScopedModelViewSet):
                 "type": item_type,
                 "quantity": str(quantity), "unitPrice": str(price), "total": str(total),
             }
+            if "taxRate" in row and row["taxRate"] not in (None, ""):
+                line["taxRate"] = str(gst_rate(row["taxRate"]))
+            hsn = str(row.get("hsnSac") or "").strip()
+            if len(hsn) > 20 or (hsn and not hsn.isdigit()):
+                raise ValidationError({"hsnSac": "HSN/SAC must contain up to 20 digits."})
+            if hsn:
+                line["hsnSac"] = hsn
             if catalog_id:
                 # Quote lines keep their linked catalog identity without moving stock.
                 # Reject unrelated and cross-company catalog references.

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Job,JobEstimate,JobPart,JobPhoto,JobActivity
 from .complaint_status import complaint_status_for_job, normalize_complaints
+from .india_gst import state_code
 
 class JobEstimateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -25,6 +26,21 @@ class JobActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
     class Meta: model=JobActivity; exclude=("company","branch")
 class JobSerializer(serializers.ModelSerializer):
+    gstInfo=serializers.SerializerMethodField()
+
+    def get_gstInfo(self, obj):
+        gstin = str(obj.company.gstin or "").strip().upper()
+        supplier = state_code(gstin[:2] if len(gstin) == 15 else "") or state_code(
+            getattr(obj.branch, "state", "") or obj.company.state
+        )
+        recipient = state_code(obj.customer.state or "")
+        return {
+            "registered": bool(gstin),
+            "supplierState": supplier,
+            "placeOfSupply": recipient or supplier,
+            "customerGstin": obj.customer.gstin or "",
+        }
+
     partsWorkflow=serializers.JSONField(source="parts_workflow",read_only=True)
     workUpdates=serializers.JSONField(source="work_updates",required=False)
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
