@@ -1,7 +1,14 @@
 from functools import wraps
+from uuid import UUID
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
+from django.contrib.auth.views import redirect_to_login
+from django.core.paginator import Paginator
+from django.http import HttpResponseBadRequest
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 from django.db.models import F, Q, Sum, Count
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponseForbidden
@@ -18,7 +25,8 @@ from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent
 from apps.vehicles.models import Vehicle
 from .forms import (
-    CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
+    BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
+    RoleForm, VehicleForm,
     PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
 )
 
@@ -27,11 +35,28 @@ def panel_admin_required(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
         if not request.user.is_authenticated:
-            return redirect(f"/panel/login/?next={request.path}")
-        if not (request.user.is_superuser or request.user.is_staff):
+            return redirect_to_login(request.get_full_path(), reverse("panel:login"))
+        if not request.user.is_active or not (request.user.is_superuser or request.user.is_staff):
             return HttpResponseForbidden("Control Panel access is restricted to CubixGear administrators.")
+        if request.GET.get("company"):
+            try:
+                UUID(request.GET["company"].strip())
+            except ValueError:
+                return HttpResponseBadRequest("Invalid company filter.")
         return view_func(request, *args, **kwargs)
     return wrapped
+
+
+def _safe_redirect(request, target, fallback):
+    if target and url_has_allowed_host_and_scheme(
+        target, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return redirect(target)
+    return redirect(fallback)
+
+
+def _paginate(request, queryset):
+    return Paginator(queryset, 50).get_page(request.GET.get("page"))
 
 
 def panel_login(request):
@@ -40,20 +65,20 @@ def panel_login(request):
             return redirect("panel:dashboard")
         logout(request)
 
-    form = PanelLoginForm(request.POST or None, request=request)
+    form = PanelLoginForm(request.POST if request.method == "POST" else None, request=request)
     if request.method == "POST" and form.is_valid():
         user = form.get_user()
         if not (user.is_superuser or user.is_staff):
             form.add_error(None, "This account does not have Control Panel access.")
         else:
             login(request, user)
-            next_url = request.GET.get("next")
-            return redirect(next_url or "panel:dashboard")
+            return _safe_redirect(request, request.GET.get("next"), "panel:dashboard")
 
     return render(request, "control_panel/login.html", {"form": form})
 
 
 @panel_admin_required
+@require_POST
 def panel_logout(request):
     logout(request)
     return redirect("panel:login")
@@ -133,7 +158,7 @@ def companies(request):
     return render(request, "control_panel/companies.html", {
         "page_title": "Companies",
         "active": "companies",
-        "rows": qs[:300],
+        "rows": _paginate(request, qs),
         "q": q,
     })
 
@@ -145,7 +170,7 @@ def company_toggle(request, pk):
     company = get_object_or_404(Company, pk=pk)
     company.is_active = not company.is_active
     company.save(update_fields=["is_active", "updated_at"])
-    return redirect(request.POST.get("next") or "panel:companies")
+    return _safe_redirect(request, request.POST.get("next"), "panel:companies")
 
 
 @panel_admin_required
@@ -158,7 +183,7 @@ def users(request):
     return render(request, "control_panel/users.html", {
         "page_title": "Users & Access",
         "active": "users",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
@@ -174,7 +199,7 @@ def user_toggle(request, pk):
         return HttpResponseForbidden("You cannot disable your own Control Panel account.")
     user.is_active = not user.is_active
     user.save(update_fields=["is_active", "updated_at"])
-    return redirect(request.POST.get("next") or "panel:users")
+    return _safe_redirect(request, request.POST.get("next"), "panel:users")
 
 
 @panel_admin_required
@@ -187,7 +212,7 @@ def subscriptions(request):
     return render(request, "control_panel/subscriptions.html", {
         "page_title": "Plans & Billing",
         "active": "subscriptions",
-        "rows": qs[:300],
+        "rows": _paginate(request, qs),
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
@@ -202,7 +227,7 @@ def storage(request):
     return render(request, "control_panel/storage.html", {
         "page_title": "Storage",
         "active": "storage",
-        "rows": qs[:300],
+        "rows": _paginate(request, qs),
         "total_bytes": totals["bytes"] or 0,
         "total_files": totals["files"] or 0,
         "company_id": company_id,
@@ -217,7 +242,7 @@ def security(request):
     return render(request, "control_panel/security.html", {
         "page_title": "Security & Activity",
         "active": "security",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "company_id": company_id,
         "companies": _company_choices(),
     })
@@ -238,7 +263,7 @@ def customers(request):
     return render(request, "control_panel/customers.html", {
         "page_title": "All Customers",
         "active": "customers",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
@@ -263,7 +288,7 @@ def jobs(request):
     return render(request, "control_panel/jobs.html", {
         "page_title": "All Job Cards",
         "active": "jobs",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "status_choices": Job.STATUS_CHOICES,
         "status_value": status_value,
         "q": q,
@@ -287,7 +312,7 @@ def stock(request):
     return render(request, "control_panel/stock.html", {
         "page_title": "Global Stock",
         "active": "stock",
-        "rows": qs[:500],
+        "rows": _paginate(request, qs),
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
@@ -311,7 +336,7 @@ def invoices(request):
     return render(request, "control_panel/invoices.html", {
         "page_title": "Global Billing Documents",
         "active": "invoices",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "q": q,
         "kind": kind,
         "company_id": company_id,
@@ -334,7 +359,7 @@ def staff(request):
     return render(request, "control_panel/staff.html", {
         "page_title": "All Workshop Staff",
         "active": "staff",
-        "rows": qs[:400],
+        "rows": _paginate(request, qs),
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
@@ -356,7 +381,10 @@ def _display_rows(obj, fields):
 
 
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
-    form = form_class(request.POST or None, instance=instance)
+    form = form_class(request.POST if request.method == "POST" else None, instance=instance)
+    if isinstance(form, UserForm) and instance == request.user:
+        for field in ("is_active", "is_staff", "is_superuser"):
+            form.fields[field].disabled = True
     if request.method == "POST" and form.is_valid():
         obj = form.save()
         messages.success(request, f"{title} saved successfully.")
@@ -662,3 +690,47 @@ def staff_edit(request, pk):
 def staff_delete(request, pk):
     obj = get_object_or_404(Employee, pk=pk)
     return _delete_object(request, obj, title="Staff", active="staff", cancel_url="panel:staff")
+
+
+# Supporting records needed to configure companies and create job cards.
+PANEL_RESOURCES = {
+    'branches': (BranchForm, 'Branches', 'branch', ['name', 'code', 'company__name']),
+    'roles': (RoleForm, 'Roles & Permissions', 'role', ['name', 'code', 'company__name']),
+    'vehicles': (VehicleForm, 'Vehicles', 'vehicle', ['registration', 'make', 'model', 'customer__name']),
+}
+
+
+@panel_admin_required
+def resource_list(request, resource):
+    form_class, title, singular, search_fields = PANEL_RESOURCES[resource]
+    queryset = form_class._meta.model.objects.select_related('company').order_by('-created_at', 'pk')
+    queryset, company_id = _company_filter(request, queryset)
+    query = request.GET.get('q', '').strip()
+    if query:
+        condition = Q()
+        for field in search_fields:
+            condition |= Q(**{field + '__icontains': query})
+        queryset = queryset.filter(condition)
+    return render(request, 'control_panel/resource_list.html', {
+        'page_title': title, 'active': resource, 'rows': _paginate(request, queryset),
+        'companies': _company_choices(), 'company_id': company_id, 'q': query,
+        'create_url': f'panel:{singular}-create', 'detail_url': f'panel:{singular}-detail',
+        'edit_url': f'panel:{singular}-edit', 'delete_url': f'panel:{singular}-delete',
+    })
+
+
+@panel_admin_required
+def resource_action(request, resource, action, pk=None):
+    form_class, title, singular, _ = PANEL_RESOURCES[resource]
+    obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
+    cancel_url = f'panel:{resource}'
+    if action == 'detail':
+        return render(request, 'control_panel/detail.html', {
+            'page_title': title, 'active': resource, 'object': obj,
+            'rows': _display_rows(obj, [(name, field.label) for name, field in form_class.base_fields.items()]),
+            'edit_url': f'panel:{singular}-edit', 'delete_url': f'panel:{singular}-delete',
+        })
+    if action == 'delete':
+        return _delete_object(request, obj, title=title, active=resource, cancel_url=cancel_url)
+    return _save_form(request, form_class, instance=obj, title=('Edit ' if obj else 'Add ') + title,
+                      active=resource, cancel_url=cancel_url)

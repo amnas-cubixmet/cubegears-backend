@@ -1,5 +1,6 @@
 from django import forms
 from django.contrib.auth import authenticate
+from django.contrib.auth.password_validation import validate_password
 
 from apps.accounts.models import User
 from apps.branches.models import Branch
@@ -56,6 +57,19 @@ class AdminModelForm(forms.ModelForm):
             if isinstance(field.widget, forms.Textarea):
                 field.widget.attrs.setdefault("rows", 4)
 
+    def clean(self):
+        data = super().clean()
+        company = data.get("company")
+        # Every company-owned relation must belong to the selected tenant.
+        for name, value in list(data.items()):
+            if name == "company" or not hasattr(value, "company_id"):
+                continue
+            if value.company_id and (not company or value.company_id != company.pk):
+                self.add_error(name, "Select a record belonging to this company.")
+        if not self.instance._state.adding and getattr(self.instance, "company_id", None) and "company" in self.changed_data:
+            self.add_error("company", "Existing records cannot be moved to another company.")
+        return data
+
 
 class CompanyForm(AdminModelForm):
     class Meta:
@@ -83,6 +97,15 @@ class UserForm(AdminModelForm):
 
     def clean(self):
         data = super().clean()
+        password = data.get("password")
+        if self.instance._state.adding and not password:
+            self.add_error("password", "Set a password for the new account.")
+        elif password:
+            candidate = User(email=data.get("email", ""), name=data.get("name", ""))
+            try:
+                validate_password(password, candidate)
+            except forms.ValidationError as exc:
+                self.add_error("password", exc)
         company = data.get("company")
         branch = data.get("branch")
         role = data.get("role")
@@ -243,6 +266,10 @@ class InvoiceForm(AdminModelForm):
             self.add_error("job", "Selected job does not belong to this company.")
         if customer and vehicle and vehicle.customer_id != customer.id:
             self.add_error("vehicle", "Selected vehicle does not belong to this customer.")
+        if job and customer and job.customer_id != customer.id:
+            self.add_error("job", "Selected job does not belong to this customer.")
+        if job and vehicle and job.vehicle_id != vehicle.id:
+            self.add_error("job", "Selected job does not belong to this vehicle.")
         return data
 
 
@@ -275,3 +302,28 @@ class EmployeeForm(AdminModelForm):
         if shift and company and shift.company_id != company.id:
             self.add_error("shift", "Selected shift belongs to another company.")
         return data
+
+
+class BranchForm(AdminModelForm):
+    class Meta:
+        model = Branch
+        fields = ['company', 'name', 'code', 'phone', 'email', 'address', 'city', 'state', 'pincode', 'is_head_office', 'is_active']
+
+
+class VehicleForm(AdminModelForm):
+    class Meta:
+        model = Vehicle
+        fields = ['company', 'branch', 'customer', 'registration', 'make', 'model', 'variant', 'year', 'fuel_type', 'transmission', 'color', 'odometer', 'vin', 'engine_no', 'last_service_date', 'next_service_due', 'insurance_expiry', 'notes', 'status']
+        widgets = {name: forms.DateInput(attrs={'type': 'date'}) for name in ['last_service_date', 'next_service_due', 'insurance_expiry']}
+
+
+class RoleForm(AdminModelForm):
+    class Meta:
+        model = Role
+        fields = ['company', 'name', 'code', 'permissions', 'is_active']
+
+    def clean_permissions(self):
+        permissions = self.cleaned_data.get('permissions') or []
+        if not isinstance(permissions, list) or any(not isinstance(value, str) for value in permissions):
+            raise forms.ValidationError('Enter a JSON list of permission codes.')
+        return permissions

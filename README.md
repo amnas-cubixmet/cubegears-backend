@@ -227,3 +227,46 @@ python manage.py runserver
 ```
 
 The Celery Beat schedule checks open attendance sessions every 5 minutes. Auto-closed sessions are recorded at the configured shift-end time, not at the later worker execution time.
+
+## Root control panel
+
+Open `http://127.0.0.1:8000/` for the SaaS control panel. Anonymous visitors
+are sent to `/login/`; active staff or superusers can sign in. Platform
+administrators do not need a linked company. `/panel/` is no longer mounted.
+The workshop frontend API stays under `/api/v1/`, and Django admin stays at `/admin/`.
+
+Before starting a new installation (Python 3.12+):
+
+```bash
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+| Route | Function |
+| --- | --- |
+| `/` | Platform dashboard and subscription revenue |
+| `/login/` | Administrator sign-in |
+| `/logout/` | POST sign-out, with CSRF protection |
+| `/companies/` | Companies and enable/disable actions |
+| `/users/` | Accounts, passwords and enable/disable actions |
+| `/branches/` | Company branches |
+| `/roles/` | Roles and JSON permission-code lists |
+| `/subscriptions/` | Subscription plans and billing records |
+| `/customers/` | Customers |
+| `/vehicles/` | Customer vehicles |
+| `/jobs/` | Job cards |
+| `/stock/` | Stock items |
+| `/invoices/` | Billing documents |
+| `/staff/` | Workshop employees |
+| `/storage/` | Storage usage records |
+| `/security/` | Security event records |
+
+Management lists support `/add/`, `/<uuid>/`, `/<uuid>/edit/` and
+`/<uuid>/delete/` below their base path, except read-only storage/security.
+Deletes require a confirmation POST. Lists paginate at 50 records and preserve
+search/filter parameters. Existing records cannot be reassigned between companies;
+related records are checked against the selected company. Administrators cannot
+remove their own access flags, disable themselves or delete themselves.
+
+Run panel regression checks with `python manage.py test apps.control_panel`.

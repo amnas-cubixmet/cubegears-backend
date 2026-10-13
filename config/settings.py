@@ -177,9 +177,9 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
 
-LOGIN_URL = "/panel/login/"
-LOGIN_REDIRECT_URL = "/panel/"
-LOGOUT_REDIRECT_URL = "/panel/login/"
+LOGIN_URL = "panel:login"
+LOGIN_REDIRECT_URL = "panel:dashboard"
+LOGOUT_REDIRECT_URL = "panel:login"
 
 
 # Celery / Redis

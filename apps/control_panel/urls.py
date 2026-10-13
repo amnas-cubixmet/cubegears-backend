@@ -61,3 +61,11 @@ urlpatterns = [
     path("staff/<uuid:pk>/edit/", views.staff_edit, name="staff-edit"),
     path("staff/<uuid:pk>/delete/", views.staff_delete, name="staff-delete"),
 ]
+
+for resource, (_, _, singular, _) in views.PANEL_RESOURCES.items():
+    urlpatterns.append(path(f'{resource}/', views.resource_list, {'resource': resource}, name=resource))
+    urlpatterns.append(path(f'{resource}/add/', views.resource_action,
+                            {'resource': resource, 'action': 'create'}, name=f'{singular}-create'))
+    for action, suffix in [('detail', ''), ('edit', 'edit/'), ('delete', 'delete/')]:
+        urlpatterns.append(path(f'{resource}/<uuid:pk>/{suffix}', views.resource_action,
+                                {'resource': resource, 'action': action}, name=f'{singular}-{action}'))

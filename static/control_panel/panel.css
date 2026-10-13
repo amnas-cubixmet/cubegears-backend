@@ -62,7 +62,7 @@ a{color:inherit}
 .account-copy strong,.account-copy span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .account-copy strong{font-size:12px}
 .account-copy span{margin-top:2px;color:var(--muted-2);font-size:10px}
-.logout-link{display:inline-flex;margin-top:11px;color:var(--sidebar-text);font-size:11px;text-decoration:none}
+.logout-link{background:none;border:0;padding:0;cursor:pointer;font-family:inherit;display:inline-flex;margin-top:11px;color:var(--sidebar-text);font-size:11px;text-decoration:none}
 .logout-link:hover{color:#fff}
 
 .main-area{min-height:100dvh;margin-left:var(--sidebar-w)}

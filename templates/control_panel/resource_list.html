@@ -1,0 +1,19 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar">
+  <form class="search-form" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search {{ page_title|lower }}" aria-label="Search">
+    <select name="company" aria-label="Company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    <button class="btn" type="submit">Search</button>
+  </form>
+  <a class="btn btn-primary" href="{% url create_url %}">Add {{ page_title }}</a>
+</div>
+<section class="panel-card"><div class="responsive-table"><table>
+  <thead><tr><th>Record</th><th>Company</th><th>Actions</th></tr></thead>
+  <tbody>{% for row in rows %}<tr>
+    <td data-label="Record"><strong>{{ row }}</strong></td>
+    <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
+    <td data-label="Actions"><div class="row-actions"><a href="{% url detail_url row.pk %}">View</a><a href="{% url edit_url row.pk %}">Edit</a><a class="danger-link" href="{% url delete_url row.pk %}">Delete</a></div></td>
+  </tr>{% empty %}<tr><td colspan="3" class="empty-cell">No records found.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}
