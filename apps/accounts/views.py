@@ -9,6 +9,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -32,6 +33,19 @@ from apps.employees.services import resolve_employee_for_user
 from apps.roles.models import Role
 
 User = get_user_model()
+
+
+class PublicSignupRateThrottle(AnonRateThrottle):
+    rate = "5/hour"
+
+
+class LoginRateThrottle(AnonRateThrottle):
+    rate = "10/minute"
+
+
+class RecoveryRateThrottle(AnonRateThrottle):
+    rate = "5/hour"
+
 
 
 def ensure_tenant_super_admin_role(user):
@@ -74,6 +88,7 @@ def issue_tokens(user):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -101,6 +116,7 @@ class MeView(APIView):
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
 
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
@@ -143,6 +159,7 @@ class ResetPasswordView(APIView):
 
 class MagicLinkRequestView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
 
     def post(self, request):
         serializer = MagicLinkRequestSerializer(data=request.data)
@@ -188,6 +205,7 @@ class ChangePasswordView(APIView):
 
 class PublicWorkshopSignupView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [PublicSignupRateThrottle]
 
     @transaction.atomic
     def post(self, request):
