@@ -80,15 +80,24 @@ def calculate_tax(lines, discount, tax_mode):
     base = sum((Decimal(str(row["total"])) for row in lines), Decimal("0"))
     if discount < 0 or discount > base:
         raise ValidationError({"discount": "Discount cannot exceed taxable subtotal."})
-    remainder = discount
+    allocated = Decimal("0")
+    cumulative_gross = Decimal("0")
     result = []
     total_cgst = total_sgst = total_igst = total_taxable = Decimal("0")
     for index, row in enumerate(lines):
         gross = Decimal(str(row["total"]))
-        allocation = (discount * gross / base).quantize(CENT, rounding=ROUND_HALF_UP) if base else Decimal("0")
-        allocation = min(remainder, allocation) if index < len(lines) - 1 else remainder
-        allocation = min(gross, allocation)
-        remainder -= allocation
+        cumulative_gross += gross
+        # Cumulative allocation ensures paise-level discounts work even when
+        # there are many small items: no unpaid discount gets dumped on the last.
+        target = (discount * cumulative_gross / base).quantize(
+            CENT, rounding=ROUND_HALF_UP
+        ) if base else Decimal("0")
+        if index == len(lines) - 1:
+            target = discount
+        allocation = target - allocated
+        if allocation < 0 or allocation > gross:
+            raise ValidationError({"discount": "Discount allocation is inconsistent."})
+        allocated = target
         taxable = gross - allocation
         rate = gst_rate(row.get("taxRate", "0")) if tax_mode != "none" else Decimal("0")
         if tax_mode == "cgst_sgst":
@@ -109,7 +118,7 @@ def calculate_tax(lines, discount, tax_mode):
             "taxable": str(taxable), "cgst": str(cgst), "sgst": str(sgst),
             "igst": str(igst), "tax": str(cgst + sgst + igst),
         })
-    if remainder:
+    if allocated != discount:
         raise ValidationError({"discount": "Unable to allocate discount to estimate lines."})
     taxes = total_cgst + total_sgst + total_igst
     return {
