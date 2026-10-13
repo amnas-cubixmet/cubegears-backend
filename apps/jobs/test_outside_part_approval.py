@@ -102,7 +102,7 @@ class OutsidePartsApprovalTests(TestCase):
                 {"invoiceNo": "BILL-1", "unitCost": "95.00", "bill": self.pdf()},
                 format="multipart",
             )
-        self.assertEqual(purchased.status_code, 200, getattr(purchased, "data", purchased.content[:1000]))
+        self.assertEqual(purchased.status_code, 200, getattr(purchased, "data", purchased.content[:10000]))
         self.assertEqual(purchased.data["status"], "Purchased")
         self.assertEqual(purchased.data["totalCost"], "190.00")
         self.assertTrue(purchased.data["billId"])
