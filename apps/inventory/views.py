@@ -26,6 +26,30 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         if self.request.query_params.get("low_stock") in {"1","true","True"}: qs=qs.filter(on_hand__lte=F("minimum_stock")+F("reserved"))
         return qs
 
+    @transaction.atomic
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        item = serializer.instance
+        if item.on_hand > 0:
+            StockMovement.objects.create(
+                company=item.company,
+                branch=item.branch,
+                item=item,
+                movement_type="opening",
+                quantity=item.on_hand,
+                unit_cost=item.cost_price,
+                note="Initial stock entered when the part was created.",
+                created_by=self.request.user,
+            )
+
+    def perform_update(self, serializer):
+        item = serializer.instance
+        next_qty = serializer.validated_data.get("on_hand", item.on_hand)
+        if next_qty != item.on_hand:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"onHand": "Use Stock In, Stock Out, or Adjustment to change quantity."})
+        serializer.save()
+
     @decorators.action(detail=False,methods=["get"])
     def dashboard(self,request):
         from django.db.models import Sum
@@ -42,24 +66,61 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             "pendingPurchases":PurchaseOrder.objects.filter(company=request.user.company,status__in=["Draft","Ordered","Partially Received"]).count(),
         })
 
-    def _movement(self,request,movement_type,sign=1):
-        item_id=request.data.get("itemId") or request.data.get("item")
-        item=StockItem.objects.get(pk=item_id,company=request.user.company)
-        qty=float(request.data.get("quantity",1))
-        if qty<=0: return response.Response({"message":"Quantity must be greater than zero."},status=400)
-        delta=qty*sign
-        if delta<0 and float(item.available_quantity)<qty:
-            return response.Response({"message":"Insufficient stock."},status=400)
-        item.on_hand=float(item.on_hand)+delta
-        item.save(update_fields=["on_hand","updated_at"])
-        mv=StockMovement.objects.create(company=request.user.company,branch=request.user.branch,item=item,movement_type=movement_type,quantity=delta,reference=request.data.get("jobId") or request.data.get("invoiceNo") or "",note=request.data.get("notes") or "",created_by=request.user)
-        return response.Response(StockMovementSerializer(mv).data,status=201)
+    @transaction.atomic
+    def _movement(self, request, movement_type, sign=1):
+        """The inventory balance and its ledger entry must commit together."""
+        from decimal import Decimal, InvalidOperation
+        from django.shortcuts import get_object_or_404
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        item_id = request.data.get("itemId") or request.data.get("item")
+        if not item_id:
+            return response.Response({"message": "Select a stock item."}, status=400)
+        try:
+            qty = Decimal(str(request.data.get("quantity", "1")))
+        except (InvalidOperation, ValueError, TypeError):
+            return response.Response({"message": "Enter a valid quantity."}, status=400)
+        if not qty.is_finite() or qty <= 0 or qty.as_tuple().exponent < -2:
+            return response.Response({"message": "Quantity must be positive, with at most two decimal places."}, status=400)
+        try:
+            item = get_object_or_404(
+                StockItem.objects.select_for_update(),
+                pk=item_id,
+                company=request.user.company,
+            )
+        except (ValueError, DjangoValidationError):
+            return response.Response({"message": "Invalid stock item."}, status=400)
+
+        user_branch_id = getattr(request.user, "branch_id", None)
+        if item.branch_id is not None and item.branch_id != user_branch_id:
+            return response.Response({"message": "This part belongs to another branch."}, status=403)
+
+        delta = qty * sign
+        if delta < 0 and item.available_quantity < qty:
+            return response.Response({"message": "Insufficient available stock."}, status=400)
+        if item.on_hand + delta < 0:
+            return response.Response({"message": "Stock cannot be negative."}, status=400)
+
+        item.on_hand += delta
+        item.save(update_fields=["on_hand", "updated_at"])
+        movement = StockMovement.objects.create(
+            company=item.company,
+            branch=item.branch or request.user.branch,
+            item=item,
+            movement_type=movement_type,
+            quantity=delta,
+            unit_cost=item.cost_price,
+            reference=str(request.data.get("jobId") or request.data.get("invoiceNo") or "")[:100],
+            note=request.data.get("notes") or "",
+            created_by=request.user,
+        )
+        return response.Response(StockMovementSerializer(movement).data, status=201)
 
     @decorators.action(detail=False,methods=["post"],url_path="in")
     def stock_in(self,request): return self._movement(request,"purchase",1)
 
     @decorators.action(detail=False,methods=["post"])
-    def issue(self,request): return self._movement(request,"job_issue",-1)
+    def issue(self,request): return self._movement(request,"sale",-1)
 
     @decorators.action(detail=False,methods=["post"],url_path="return")
     def stock_return(self,request):
@@ -111,6 +172,18 @@ class SupplierViewSet(CompanyScopedModelViewSet):
     queryset=Supplier.objects.all(); serializer_class=SupplierSerializer
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
+    def create(self, request, *args, **kwargs):
+        return response.Response(
+            {"message": "Use Stock In, Internal Use, Return, or Adjustment actions to record movements."},
+            status=405,
+        )
+    def update(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock movements are immutable."}, status=405)
+    def partial_update(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock movements are immutable."}, status=405)
+    def destroy(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock movements are immutable."}, status=405)
+
     def perform_create(self,serializer):
         with transaction.atomic():
             item=StockItem.objects.select_for_update().get(pk=self.request.data["item"],company=self.request.user.company)
