@@ -15,6 +15,7 @@ urlpatterns=[
     path("storage/files",StorageFilesView.as_view(),name="storage-files"),
     path("storage/files/delete",StorageFilesDeleteView.as_view(),name="storage-files-delete"),
     path("storage/settings",StorageSettingsView.as_view(),name="storage-settings"),
+    path("storage/history",StorageHistoryListView.as_view(),name="storage-history-list"),
     path("storage/history/<str:date>",StorageHistoryDateView.as_view(),name="storage-history-date"),
     path("settings",SettingsView.as_view(),name="settings-all"),
     path("settings/<str:category>",SettingsView.as_view(),name="settings-category"),
