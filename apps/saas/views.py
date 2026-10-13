@@ -231,7 +231,7 @@ class SettingsView(APIView):
             return response.Response({"message": "A settings object is required."}, status=400)
         if category == "company":
             # Reject unknown keys rather than silently saving shadow company data.
-            allowed = set(CompanyAccountSettingsSerializer().fields)
+            allowed = set(CompanyAccountSettingsSerializer().fields) | {"timezone", "dateFormat"}
             unknown = set(payload) - allowed
             if unknown:
                 return response.Response(
@@ -241,6 +241,16 @@ class SettingsView(APIView):
             serializer = CompanyAccountSettingsSerializer(data=payload, partial=True)
             serializer.is_valid(raise_exception=True)
             payload = dict(serializer.validated_data)
+            if "timezone" in request.data:
+                timezone = request.data["timezone"]
+                if timezone not in ("Asia/Kolkata", "Asia/Dubai", "Asia/Riyadh", "UTC"):
+                    return response.Response({"timezone": ["Choose a supported timezone."]}, status=400)
+                payload["timezone"] = timezone
+            if "dateFormat" in request.data:
+                date_format = request.data["dateFormat"]
+                if date_format not in ("DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"):
+                    return response.Response({"dateFormat": ["Choose a supported date format."]}, status=400)
+                payload["dateFormat"] = date_format
             company = request.user.company
             mapping = {
                 "name": "name", "phone": "phone", "email": "email",
