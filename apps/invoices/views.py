@@ -131,6 +131,10 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         obj=self.get_object()
         if obj.status in {"Finalized","Paid","Issued","Converted"}: return response.Response(InvoiceSerializer(obj).data)
         if obj.kind=="invoice":
+            if obj.invoice_type == "gst":
+                lines = list(obj.items.all())
+                if not lines or any(not line.hsn_sac.strip() for line in lines):
+                    raise ValidationError({"items": "Classify every GST invoice item with its applicable HSN/SAC before finalizing."})
             for line in obj.items.select_related("stock_item"):
                 if not line.stock_item_id: continue
                 try:
@@ -157,10 +161,15 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         return response.Response(InvoiceSerializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"],url_path="convert-to-invoice")
+    @transaction.atomic
     def convert(self,request,pk=None):
         src=self.get_object()
         if src.kind!="estimate": raise ValidationError("Only estimates can be converted.")
-        invoice=Invoice.objects.create(company=src.company,branch=src.branch,number=f"INV-{timezone.now().year}-{Invoice.objects.filter(company=src.company,kind='invoice').count()+1:04d}",kind="invoice",invoice_type=src.invoice_type,status="Draft",date=timezone.localdate(),customer=src.customer,vehicle=src.vehicle,job=src.job,notes=src.notes,discount=src.discount,adjustment=src.adjustment,payment_mode=src.payment_mode,payment_terms=src.payment_terms,source_estimate=src)
+        invoice=Invoice.objects.create(company=src.company,branch=src.branch,
+            seller_snapshot=src.seller_snapshot, customer_snapshot=src.customer_snapshot,
+            vehicle_snapshot=src.vehicle_snapshot,
+            tax_mode=src.tax_mode,
+            number=f"INV-{timezone.now().year}-{Invoice.objects.filter(company=src.company,kind='invoice').count()+1:04d}",kind="invoice",invoice_type=src.invoice_type,status="Draft",date=timezone.localdate(),customer=src.customer,vehicle=src.vehicle,job=src.job,notes=src.notes,discount=src.discount,adjustment=src.adjustment,payment_mode=src.payment_mode,payment_terms=src.payment_terms,source_estimate=src)
         for line in src.items.all():
             line.pk=None; line.invoice=invoice; line.save()
         self._recalculate(invoice); src.status="Converted"; src.save(update_fields=["status","updated_at"])
