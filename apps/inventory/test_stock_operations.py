@@ -109,3 +109,76 @@ class StockSafetyTests(TestCase):
         self.assertEqual(response.status_code, 405)
         self.item.refresh_from_db()
         self.assertEqual(self.item.on_hand, Decimal("5.00"))
+
+    def test_receive_with_new_prices_requires_explicit_decision(self):
+        result = self.client.post("/api/v1/stock/in", {
+            "itemId": str(self.item.id), "quantity": "3",
+            "costPrice": "180.00", "sellingPrice": "240.00",
+        }, format="json")
+        self.assertEqual(result.status_code, 400)
+        self.assertTrue(result.data["priceChoiceRequired"])
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.on_hand, Decimal("5.00"))
+        self.assertFalse(StockMovement.objects.filter(item=self.item).exists())
+
+    def test_keep_old_price_records_new_purchase_and_sale_snapshots(self):
+        result = self.client.post("/api/v1/stock/in", {
+            "itemId": str(self.item.id), "quantity": "3",
+            "costPrice": "180.00", "sellingPrice": "240.00",
+            "priceMode": "keep_existing", "invoiceNo": "INV-PRICE-01",
+        }, format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertFalse(result.data["pricesUpdated"])
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.on_hand, Decimal("8.00"))
+        self.assertEqual(self.item.cost_price, Decimal("125.00"))
+        self.assertEqual(self.item.selling_price, Decimal("0.00"))
+        receipt = StockMovement.objects.get(item=self.item)
+        self.assertEqual(receipt.unit_cost, Decimal("180.00"))
+        self.assertEqual(receipt.unit_selling_price, Decimal("240.00"))
+        self.assertEqual(receipt.reference, "INV-PRICE-01")
+
+    def test_apply_new_prices_updates_product_for_old_and_new_units(self):
+        result = self.client.post("/api/v1/stock/in", {
+            "itemId": str(self.item.id), "quantity": "2",
+            "costPrice": "200.00", "sellingPrice": "300.00",
+            "priceMode": "apply_new",
+        }, format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        self.assertTrue(result.data["pricesUpdated"])
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.on_hand, Decimal("7.00"))
+        self.assertEqual(self.item.cost_price, Decimal("200.00"))
+        self.assertEqual(self.item.selling_price, Decimal("300.00"))
+        self.assertEqual(StockMovement.objects.get(item=self.item).unit_cost, Decimal("200.00"))
+
+    def test_invalid_receipt_prices_do_not_mutate_stock(self):
+        for invalid in ("NaN", "-1", "100.001", "invalid"):
+            result = self.client.post("/api/v1/stock/in", {
+                "itemId": str(self.item.id), "quantity": 2,
+                "costPrice": invalid, "sellingPrice": 200, "priceMode": "apply_new",
+            }, format="json")
+            self.assertEqual(result.status_code, 400, invalid)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.on_hand, Decimal("5.00"))
+        self.assertEqual(self.item.cost_price, Decimal("125.00"))
+
+    def test_price_update_requires_edit_permission(self):
+        limited_role = Role.objects.create(
+            company=self.company, name="Receiver", code="RECEIVE", permissions=["stock.create"],
+        )
+        self.user.role = limited_role
+        self.user.save(update_fields=["role"])
+        attempt = self.client.post("/api/v1/stock/in", {
+            "itemId": str(self.item.id), "quantity": 1,
+            "costPrice": "150", "sellingPrice": "270", "priceMode": "apply_new",
+        }, format="json")
+        self.assertEqual(attempt.status_code, 403)
+        receipt = self.client.post("/api/v1/stock/in", {
+            "itemId": str(self.item.id), "quantity": 1,
+            "costPrice": "150", "sellingPrice": "270", "priceMode": "keep_existing",
+        }, format="json")
+        self.assertEqual(receipt.status_code, 201, receipt.data)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.cost_price, Decimal("125.00"))
+        self.assertEqual(self.item.on_hand, Decimal("6.00"))
