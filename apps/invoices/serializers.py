@@ -19,6 +19,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializer(serializers.ModelSerializer):
     number = serializers.CharField(required=False)
+    invoiceType = serializers.CharField(source="invoice_type", required=False)
     items = InvoiceItemSerializer(many=True, required=False)
     customer = serializers.JSONField(write_only=True, required=False)
     vehicle = serializers.JSONField(write_only=True, required=False)
