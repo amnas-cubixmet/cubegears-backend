@@ -130,3 +130,29 @@ class AccountBackendIntegrationTests(TestCase):
         self.assertEqual(self.client.get(
             "/api/v1/settings/company"
         ).data["name"], "New Garage")
+
+    def test_company_settings_reject_unknown_fields_without_mutating_profile(self):
+        before_name = self.company.name
+        result = self.client.put(
+            "/api/v1/settings/company",
+            {"name": "Untrusted Update", "is_active": False},
+            format="json",
+        )
+        self.assertEqual(result.status_code, 400)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.name, before_name)
+        self.assertTrue(self.company.is_active)
+        self.assertIn("Unsupported company fields", result.data["message"])
+
+    def test_company_settings_save_only_validated_fields(self):
+        result = self.client.put(
+            "/api/v1/settings/company",
+            {"name": "  Updated Garage  ", "gstNo": "32ABCDE1234F1Z5"},
+            format="json",
+        )
+        self.assertEqual(result.status_code, 200)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.name, "Updated Garage")
+        self.assertEqual(self.company.gstin, "32ABCDE1234F1Z5")
+        obj = CompanySetting.objects.get(company=self.company, category="company")
+        self.assertEqual(obj.data["name"], "Updated Garage")
