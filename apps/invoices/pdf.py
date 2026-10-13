@@ -179,7 +179,7 @@ def create_invoice_pdf(invoice):
         description = _txt(item.description)
         if item.code:
             description += f"\nCode: {item.code}"
-        if item.hsn_sac:
+        if is_gst and item.hsn_sac:
             description += f"\nHSN/SAC: {item.hsn_sac}"
         if item.discount:
             description += f"\nDiscount: {_money(item.discount)}"
