@@ -176,3 +176,23 @@ class QuickCreateJobTests(TestCase):
         self.assertEqual(created.status_code, 400, created.data)
         self.assertIn("customer", created.data)
         self.assertEqual(Vehicle.objects.count(), 0)
+
+    def test_job_list_exposes_customer_phone_and_separate_whatsapp(self):
+        created = self.client.post(self.endpoint, self.payload(), format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        customer = Customer.objects.get(company=self.company, phone="9876543210")
+        customer.whatsapp = "919876543210"
+        customer.save(update_fields=["whatsapp"])
+
+        listing = self.client.get(self.endpoint)
+        self.assertEqual(listing.status_code, 200, listing.data)
+        records = listing.data if isinstance(listing.data, list) else listing.data.get("results", [])
+        job = next(row for row in records if str(row["id"]) == str(created.data["id"]))
+        self.assertEqual(job["customerPhone"], "9876543210")
+        self.assertEqual(job["customerWhatsapp"], "919876543210")
+
+    def test_empty_whatsapp_still_returns_phone_for_frontend_fallback(self):
+        created = self.client.post(self.endpoint, self.payload(), format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["customerPhone"], "9876543210")
+        self.assertEqual(created.data["customerWhatsapp"], "")
