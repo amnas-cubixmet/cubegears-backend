@@ -30,7 +30,7 @@ STATE_CODES = set(STATE_NAMES.values())
 
 def state_code(value):
     label = str(value or "").strip()
-    match = re.match(r"^(\\d{2})(?:\\b|[-\\s])", label)
+    match = re.match(r"^(\d{2})(?:\b|[-\s])", label)
     if match and match.group(1) in STATE_CODES:
         return match.group(1)
     return STATE_NAMES.get(label.lower(), "")
@@ -44,7 +44,7 @@ def gst_context(*, company, branch, customer, config):
             raise ValidationError({"gst": "A GST-registered workshop must classify each supply (use 0% only for eligible exempt/nil-rated lines)."})
         return {"mode": "non_gst", "taxMode": "none", "supplierState": "", "placeOfSupply": ""}
     gstin = str(company.gstin or "").strip().upper()
-    if not re.fullmatch(r"\\d{2}[A-Z0-9]{13}", gstin) or gstin[:2] not in STATE_CODES:
+    if not re.fullmatch(r"\d{2}[A-Z0-9]{13}", gstin) or gstin[:2] not in STATE_CODES:
         raise ValidationError({"gst": "Configure a valid 15-character workshop GSTIN in Company Settings."})
     supplier = gstin[:2]
     branch_state = state_code(getattr(branch, "state", "") or company.state)
