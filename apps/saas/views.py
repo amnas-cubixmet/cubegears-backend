@@ -1,6 +1,6 @@
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import parsers, response, status
+from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
@@ -190,6 +190,20 @@ class StorageHistoryDateView(APIView):
             "files":MediaFileSerializer(files,many=True,context={"request":request}).data,
         })
 
+class CompanyAccountSettingsSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=180, required=False, allow_blank=False)
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    gstNo = serializers.RegexField(
+        regex=r"^([0-9]{2}[A-Z0-9]{13})?$", required=False,
+        allow_blank=True, max_length=20,
+    )
+    address = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+    currency = serializers.ChoiceField(
+        choices=["INR", "USD", "AED", "SAR"], required=False,
+    )
+
+
 class SettingsView(APIView):
     permission_classes=[RolePermission]
     permission_map={"GET":"settings.view","PUT":"settings.manage"}
@@ -208,12 +222,34 @@ class SettingsView(APIView):
         result["company"]={**result["company"],"name":c.name,"phone":c.phone,"email":c.email,"gstNo":c.gstin,"address":c.address,"currency":c.currency,"logo":c.logo}
         return response.Response(result)
     def put(self,request,category=None):
-        if not category: return response.Response({"message":"Category is required."},status=400)
-        if category=="company":
-            c=request.user.company
-            mapping={"name":"name","phone":"phone","email":"email","gstNo":"gstin","address":"address","currency":"currency","logo":"logo"}
-            for incoming,attr in mapping.items():
-                if incoming in request.data: setattr(c,attr,request.data[incoming])
-            c.save()
-        obj,_=CompanySetting.objects.update_or_create(company=request.user.company,category=category,defaults={"branch":request.user.branch,"data":request.data})
-        return response.Response(obj.data)
+        if not category:
+            return response.Response({"message": "Category is required."}, status=400)
+        if not request.user.company:
+            return response.Response({"message": "No company linked to this account."}, status=400)
+        payload = request.data
+        if not isinstance(payload, dict):
+            return response.Response({"message": "A settings object is required."}, status=400)
+        if category == "company":
+            serializer = CompanyAccountSettingsSerializer(data=payload, partial=True)
+            serializer.is_valid(raise_exception=True)
+            company = request.user.company
+            mapping = {
+                "name": "name", "phone": "phone", "email": "email",
+                "gstNo": "gstin", "address": "address", "currency": "currency",
+            }
+            updated = []
+            for key, target in mapping.items():
+                if key in serializer.validated_data:
+                    setattr(company, target, serializer.validated_data[key])
+                    updated.append(target)
+            if updated:
+                company.save(update_fields=updated + ["updated_at"])
+        setting, _ = CompanySetting.objects.get_or_create(
+            company=request.user.company, category=category,
+            defaults={"branch": request.user.branch, "data": {}},
+        )
+        # Account profile editor sends only five company fields; preserve other
+        # previously saved company locale and document preferences.
+        setting.data = {**setting.data, **payload}
+        setting.save(update_fields=["data", "updated_at"])
+        return self.get(request, category)
