@@ -24,3 +24,33 @@ jobs:
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
       - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.jobs.test_workflow apps.jobs.test_workflow_api apps.jobs.test_india_gst apps.invoices.test_india_gst apps.jobs.test_qc_login apps.jobs.test_cost_summary apps.invoices.test_invoice_pdf apps.jobs.test_outside_part_approval apps.jobs.test_work_photos apps.payments.test_payment_guards apps.inventory.test_stock_operations apps.saas.tests_account apps.accounts.tests apps.accounts.test_tenant_security --noinput
+
+  postgres-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: cubix_ci
+          POSTGRES_USER: cubix_ci
+          POSTGRES_PASSWORD: ci-only-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cubix_ci -d cubix_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Non-production throwaway database, never the user's Prisma credentials.
+      DATABASE_URL: postgres://cubix_ci:ci-only-test-password@localhost:5432/cubix_ci?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py migrate --noinput
+      - run: python manage.py test apps.accounts.test_tenant_security apps.accounts.tests --noinput
