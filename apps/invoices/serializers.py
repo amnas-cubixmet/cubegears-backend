@@ -240,7 +240,8 @@ class EWayBillSerializer(serializers.ModelSerializer):
         allowed = {"invoiceId", "vehicle_no", "transporter_name",
                    "transporter_id", "distance_km", "payload"}
         raw = {k: v for k, v in data.items() if k in allowed}
-        payload = dict(raw.get("payload") or {})
+        payload = dict(self.instance.payload or {}) if self.instance else {}
+        payload.update(dict(raw.get("payload") or {}))
         payload.update({k: v for k, v in data.items() if k not in allowed
                         and k not in {"number", "id", "status", "company", "branch"}})
         raw["payload"] = strip_official_fields(payload)
