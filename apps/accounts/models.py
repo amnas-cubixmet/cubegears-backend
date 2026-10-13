@@ -4,7 +4,7 @@ import uuid
 from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from .managers import UserManager
 
@@ -52,9 +52,12 @@ class MagicLink(models.Model):
         return raw
 
     @classmethod
+    @transaction.atomic
     def consume(cls, raw_token):
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        link = cls.objects.select_related("user").filter(token_hash=token_hash, used_at__isnull=True).first()
+        link = cls.objects.select_for_update().select_related("user").filter(
+            token_hash=token_hash, used_at__isnull=True,
+        ).first()
         if not link or link.expires_at <= timezone.now() or not link.user.is_active:
             return None
         link.used_at = timezone.now()

@@ -6,6 +6,8 @@ from django.core.mail import send_mail
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
+from apps.accounts.permissions import user_has_permission
 
 from common.viewsets import CompanyScopedModelViewSet
 from .models import (
@@ -143,6 +145,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             company=self.request.user.company,
             name__iexact=role_name,
             is_active=True,
+            is_system=False,
         ).first()
 
     def _ensure_login_user(self,employee):
@@ -177,6 +180,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         email=serializer.validated_data.get("email") or ""
         name=serializer.validated_data.get("name") or code
         role_name=serializer.validated_data.get("role_name") or ""
+        requested_role=self._resolve_role(role_name)
+        if requested_role and not user_has_permission(self.request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can grant login roles.")
         branch=serializer.validated_data.get("branch",self.request.user.branch)
         team=serializer.validated_data.get("team")
         shift=serializer.validated_data.get("shift")
@@ -216,6 +222,14 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
 
     def perform_update(self,serializer):
         instance=self.get_object()
+        if instance.user and instance.user.role and instance.user.role.is_system:
+            raise PermissionDenied("Protected company owner accounts cannot be edited here.")
+        requested_name=serializer.validated_data.get("role_name")
+        if requested_name is not None and requested_name != instance.role_name:
+            if not user_has_permission(self.request.user, "company.manage"):
+                raise PermissionDenied("Only a company admin can change a login role.")
+            if requested_name.strip().upper().replace(" ", "_") in {"SUPER_ADMIN", "PLATFORM_ADMIN"}:
+                raise PermissionDenied("Protected admin roles cannot be assigned through staff editing.")
         before={
             "role":instance.role_name,
             "team":instance.team.name if instance.team else "",
@@ -290,6 +304,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["patch"],url_path="toggle-account")
     def toggle_account(self,request,pk=None):
         obj=self.get_object()
+        if obj.user_id == request.user.id or (obj.user and obj.user.role and obj.user.role.is_system):
+            raise PermissionDenied("Company owner and current user accounts cannot be disabled here.")
         obj.status="Inactive" if obj.status=="Active" else "Active"
         obj.save(update_fields=["status","updated_at"])
         if obj.user:
