@@ -190,30 +190,44 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         return response.Response(InvoiceSerializer(invoice).data,status=status.HTTP_201_CREATED)
 
 class EWayBillViewSet(CompanyScopedModelViewSet):
-    queryset=EWayBill.objects.select_related("invoice").all()
-    serializer_class=EWayBillSerializer
-    action_permission_map={"generate": "invoices.edit"}
+    queryset = EWayBill.objects.select_related("invoice").all()
+    serializer_class = EWayBillSerializer
+    action_permission_map = {
+        "generate": "invoices.edit",
+        "reset_draft": "invoices.edit",
+    }
 
-    @decorators.action(detail=True,methods=["post"])
-    def generate(self,request,pk=None):
-        obj=self.get_object()
-        payload=dict(obj.payload or {})
-        required=[
-            payload.get("supplyType"),
-            payload.get("subSupplyType"),
-            payload.get("transactionType"),
-            payload.get("documentType"),
-            payload.get("documentNo"),
-            payload.get("documentDate"),
-        ]
-        if not all(required):
-            raise ValidationError("Complete the required E-Way Bill fields before submitting.")
-        items=payload.get("items") or []
-        if not items:
-            raise ValidationError("Add at least one goods item.")
-        obj.status="Ready for API"
-        payload["status"]="Ready for API"
-        payload["updatedAt"]=timezone.now().isoformat()
-        obj.payload=payload
-        obj.save(update_fields=["status","payload","updated_at"])
-        return response.Response(EWayBillSerializer(obj).data)
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        if obj.status != "Draft" or obj.number:
+            raise ValidationError({
+                "status": "Only local drafts can be deleted. An official E-Way Bill cannot be deleted here."
+            })
+        return super().destroy(request, *args, **kwargs)
+
+    @decorators.action(detail=True, methods=["post"], url_path="reset-draft")
+    @transaction.atomic
+    def reset_draft(self, request, pk=None):
+        """Reopen a LOCAL prepared draft; never modify an NIC-issued bill."""
+        obj = self.get_object()
+        if obj.number or obj.status not in {"Draft", "Ready for API"}:
+            raise ValidationError({
+                "status": "Only locally prepared drafts can be reset. Cancel official bills through the GST portal."
+            })
+        obj.status = "Draft"
+        obj.save(update_fields=["status", "updated_at"])
+        return response.Response(self.get_serializer(obj).data)
+
+    @decorators.action(detail=True, methods=["post"])
+    @transaction.atomic
+    def generate(self, request, pk=None):
+        """Prepare for future NIC API handoff. Never invent an official EBN."""
+        from .eway_validation import validate_preparation
+        obj = self.get_object()
+        if obj.number or obj.status not in {"Draft", "Ready for API"}:
+            raise ValidationError({"status": "This E-Way Bill cannot be prepared again."})
+        validate_preparation(obj.payload or {})
+        if obj.status == "Draft":
+            obj.status = "Ready for API"
+            obj.save(update_fields=["status", "updated_at"])
+        return response.Response(self.get_serializer(obj).data)

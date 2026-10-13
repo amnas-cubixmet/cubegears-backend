@@ -284,26 +284,49 @@ class EWayBillSerializer(serializers.ModelSerializer):
     class Meta:
         model = EWayBill
         exclude = ("company", "branch", "invoice")
+        read_only_fields = ("id", "number", "status", "created_at", "updated_at")
 
     def to_internal_value(self, data):
-        known = {"id", "invoiceId", "number", "status", "vehicle_no", "transporter_name", "transporter_id", "distance_km", "payload"}
-        raw = dict(data)
-        payload = dict(raw.get("payload") or {})
-        for key, value in raw.items():
-            if key not in known:
-                payload[key] = value
-
-        transport = raw.get("transport") or payload.get("transport") or {}
-        raw["vehicle_no"] = raw.get("vehicle_no") or transport.get("vehicleNo") or ""
-        raw["transporter_name"] = raw.get("transporter_name") or transport.get("transporterName") or ""
-        raw["transporter_id"] = raw.get("transporter_id") or transport.get("transporterId") or ""
+        from .eway_validation import strip_official_fields
+        if not isinstance(data, dict):
+            raise serializers.ValidationError("E-Way Bill draft must be an object.")
+        allowed = {"invoiceId", "vehicle_no", "transporter_name",
+                   "transporter_id", "distance_km", "payload"}
+        raw = {k: v for k, v in data.items() if k in allowed}
+        payload = dict(self.instance.payload or {}) if self.instance else {}
+        payload.update(dict(raw.get("payload") or {}))
+        payload.update({k: v for k, v in data.items() if k not in allowed
+                        and k not in {"number", "id", "status", "company", "branch"}})
+        raw["payload"] = strip_official_fields(payload)
+        transport = raw["payload"].get("transport") or {}
+        if not isinstance(transport, dict):
+            raise serializers.ValidationError({"transport": "Invalid transport object."})
+        raw["vehicle_no"] = str(transport.get("vehicleNo") or raw.get("vehicle_no") or "")
+        raw["transporter_name"] = str(transport.get("transporterName") or raw.get("transporter_name") or "")
+        raw["transporter_id"] = str(transport.get("transporterId") or raw.get("transporter_id") or "")
         try:
-            raw["distance_km"] = int(raw.get("distance_km") or transport.get("distanceKm") or 0)
+            raw["distance_km"] = int(transport.get("distanceKm") or raw.get("distance_km") or 0)
         except (TypeError, ValueError):
-            raw["distance_km"] = 0
-        raw["payload"] = payload
-        filtered = {k: v for k, v in raw.items() if k in known}
-        return super().to_internal_value(filtered)
+            raise serializers.ValidationError({"distanceKm": "Distance must be a whole number."})
+        return super().to_internal_value(raw)
+
+    def validate(self, attrs):
+        from .eway_validation import READONLY_PORTAL_FIELDS
+        from .models import Invoice
+        if self.instance and self.instance.status != "Draft":
+            raise serializers.ValidationError({
+                "status": "Only drafts can be edited. Reset a local API-ready draft first."
+            })
+        invoice_id = attrs.get("invoice_id")
+        if invoice_id:
+            company = self.instance.company if self.instance else getattr(
+                self.context["request"].user, "company", None
+            )
+            if not Invoice.objects.filter(pk=invoice_id, company=company).exists():
+                raise serializers.ValidationError({
+                    "invoiceId": "Select an invoice belonging to your workshop."
+                })
+        return attrs
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -312,7 +335,8 @@ class EWayBillSerializer(serializers.ModelSerializer):
             "id": str(instance.id),
             "invoiceId": str(instance.invoice_id) if instance.invoice_id else "",
             "status": instance.status,
-            "ewayBillNo": instance.number or merged.get("ewayBillNo", ""),
+            "ewayBillNo": instance.number or "",
+            "number": instance.number or "",
         })
         transport = dict(merged.get("transport") or {})
         transport.update({
