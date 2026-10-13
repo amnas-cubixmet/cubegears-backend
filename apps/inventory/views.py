@@ -116,8 +116,92 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         )
         return response.Response(StockMovementSerializer(movement).data, status=201)
 
-    @decorators.action(detail=False,methods=["post"],url_path="in")
-    def stock_in(self,request): return self._movement(request,"purchase",1)
+    @decorators.action(detail=False, methods=["post"], url_path="in")
+    @transaction.atomic
+    def stock_in(self, request):
+        """Receive goods at their actual cost; change catalogue prices only by explicit choice.
+
+        One SKU has one current catalogue selling price. New receipt prices are stored
+        as movement snapshots even when catalogue prices are intentionally retained.
+        """
+        from decimal import Decimal, InvalidOperation
+        from django.shortcuts import get_object_or_404
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.accounts.permissions import user_has_permission
+
+        item_id = request.data.get("itemId") or request.data.get("item")
+        if not item_id:
+            return response.Response({"message": "Select an existing product."}, status=400)
+        try:
+            item = get_object_or_404(
+                StockItem.objects.select_for_update(),
+                pk=item_id, company=request.user.company,
+            )
+        except (ValueError, DjangoValidationError):
+            return response.Response({"message": "Invalid product."}, status=400)
+        if item.branch_id is not None and item.branch_id != getattr(request.user, "branch_id", None):
+            return response.Response({"message": "This product belongs to another branch."}, status=403)
+
+        def money_field(value, label):
+            try:
+                result = Decimal(str(value))
+            except (InvalidOperation, ValueError, TypeError):
+                raise ValueError(label + " must be a valid amount.")
+            if not result.is_finite() or result < 0 or result.as_tuple().exponent < -2 or result >= Decimal("10000000000"):
+                raise ValueError(label + " must be nonnegative, with at most two decimals.")
+            return result
+
+        try:
+            quantity = money_field(request.data.get("quantity"), "Quantity")
+            if quantity <= 0:
+                return response.Response({"message": "Quantity must be greater than zero."}, status=400)
+            purchase_cost = money_field(
+                request.data.get("costPrice", item.cost_price), "Purchase cost")
+            selling_price = money_field(
+                request.data.get("sellingPrice", item.selling_price), "Selling price")
+        except ValueError as exc:
+            return response.Response({"message": str(exc)}, status=400)
+
+        prices_changed = purchase_cost != item.cost_price or selling_price != item.selling_price
+        mode = request.data.get("priceMode") or ""
+        if mode and mode not in {"apply_new", "keep_existing"}:
+            return response.Response({"message": "Invalid price choice."}, status=400)
+        if prices_changed and mode not in {"apply_new", "keep_existing"}:
+            return response.Response({
+                "message": "Prices differ from existing stock. Choose whether to apply the new prices to all units.",
+                "priceChoiceRequired": True,
+            }, status=400)
+        if mode == "apply_new" and prices_changed and not user_has_permission(request.user, "stock.edit"):
+            return response.Response({
+                "message": "Stock edit permission is required to change catalogue prices."
+            }, status=403)
+
+        if mode == "apply_new":
+            item.cost_price = purchase_cost
+            item.selling_price = selling_price
+            item.on_hand += quantity
+            item.save(update_fields=["cost_price", "selling_price", "on_hand", "updated_at"])
+        else:
+            item.on_hand += quantity
+            item.save(update_fields=["on_hand", "updated_at"])
+
+        movement = StockMovement.objects.create(
+            company=item.company,
+            branch=item.branch or request.user.branch,
+            item=item,
+            movement_type="purchase",
+            quantity=quantity,
+            unit_cost=purchase_cost,
+            unit_selling_price=selling_price,
+            reference=str(request.data.get("invoiceNo") or "")[:100],
+            note=request.data.get("notes") or "",
+            created_by=request.user,
+        )
+        result = StockMovementSerializer(movement).data
+        result["pricesUpdated"] = mode == "apply_new" and prices_changed
+        result["catalogCostPrice"] = str(item.cost_price)
+        result["catalogSellingPrice"] = str(item.selling_price)
+        return response.Response(result, status=201)
 
     @decorators.action(detail=False,methods=["post"])
     def issue(self,request): return self._movement(request,"sale",-1)
