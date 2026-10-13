@@ -99,6 +99,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         phone = str(value.get("phone") or "").strip()
         email = str(value.get("email") or "").strip()
         name = str(value.get("name") or "Walk-in Customer").strip()
+        customer_type = value.get("customerType") or value.get("customer_type") or "individual"
+        if customer_type not in {"individual", "business"}:
+            raise serializers.ValidationError({"customerType": "Select Individual or Company."})
         qs = Customer.objects.filter(company=company)
         customer = None
         if phone:
@@ -110,6 +113,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 company=company,
                 branch=getattr(getattr(self.context.get("request"), "user", None), "branch", None),
                 name=name,
+                customer_type=customer_type,
+                company_name=str(value.get("companyName") or "").strip() if customer_type == "business" else "",
                 phone=phone or "NA",
                 email=email,
                 gstin=value.get("gstin") or "",
@@ -241,6 +246,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         customer = dict(instance.customer_snapshot or {})
+        customer.setdefault("customerType", instance.customer.customer_type)
+        customer.setdefault("companyName", instance.customer.company_name)
         customer.setdefault("name", instance.customer.name)
         customer.setdefault("phone", instance.customer.phone)
         customer.setdefault("email", instance.customer.email)
