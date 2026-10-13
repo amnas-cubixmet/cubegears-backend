@@ -24,6 +24,7 @@ jobs:
       - name: Verify SQLite-only production settings
         env:
           DJANGO_DEBUG: "False"
+          DJANGO_SETTINGS_MODULE: config.settings
           DJANGO_SECRET_KEY: ci-only-test-secret-at-least-32-characters-not-for-production
           JWT_SIGNING_KEY: ci-only-separate-signing-key-at-least-32-characters
           DJANGO_ALLOWED_HOSTS: api.example.test
