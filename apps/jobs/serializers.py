@@ -30,6 +30,7 @@ class JobSerializer(serializers.ModelSerializer):
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
     customerPhone=serializers.CharField(source="customer.phone",read_only=True)
+    customerWhatsapp=serializers.CharField(source="customer.whatsapp",read_only=True)
     vehicleId=serializers.UUIDField(source="vehicle_id",read_only=True)
     vehicleReg=serializers.CharField(source="vehicle.registration",read_only=True)
     vin=serializers.CharField(source="vehicle.vin",read_only=True)
