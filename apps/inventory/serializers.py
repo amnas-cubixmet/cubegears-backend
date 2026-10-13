@@ -30,6 +30,7 @@ class StockItemSerializer(serializers.ModelSerializer):
         exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand")
 
 class StockMovementSerializer(serializers.ModelSerializer):
+    unitSellingPrice=serializers.DecimalField(source="unit_selling_price",max_digits=12,decimal_places=2,read_only=True)
     itemName=serializers.CharField(source="item.name",read_only=True)
     partName=serializers.CharField(source="item.name",read_only=True)
     sku=serializers.CharField(source="item.sku",read_only=True)
