@@ -9,10 +9,11 @@ class CompanyScopedModelViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         user = self.request.user
-        if user.is_superuser:
-            company_id = self.request.query_params.get("company")
-            return qs.filter(company_id=company_id) if company_id else qs
-        return qs.filter(company=user.company)
+        # Never expose every company's records through a query parameter or
+        # the Django platform superuser flag. Tenant APIs are always scoped.
+        if not user.company_id:
+            return qs.none()
+        return qs.filter(company_id=user.company_id)
 
     def perform_create(self, serializer):
         serializer.save(
