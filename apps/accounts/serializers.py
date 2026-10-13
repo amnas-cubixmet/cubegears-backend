@@ -30,8 +30,14 @@ class UserSerializer(serializers.ModelSerializer):
     company = CompanyMiniSerializer(read_only=True)
     branch = BranchMiniSerializer(read_only=True)
     role = RoleMiniSerializer(read_only=True)
+    effectivePermissions = serializers.SerializerMethodField()
     employeeProfileId = serializers.SerializerMethodField()
     employeeDisplayNo = serializers.SerializerMethodField()
+
+    def get_effectivePermissions(self, obj):
+        from apps.accounts.permissions import user_has_permission
+        from apps.roles.permission_catalog import TENANT_PERMISSIONS, PANEL_PERMISSIONS
+        return [code for code in TENANT_PERMISSIONS + PANEL_PERMISSIONS if user_has_permission(obj, code)]
 
     def _employee(self, obj):
         try:
@@ -55,7 +61,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "email", "phone", "avatar",
             "company", "branch", "role",
-            "employeeProfileId", "employeeDisplayNo",
+            "employeeProfileId", "employeeDisplayNo", "effectivePermissions",
             "is_staff", "is_superuser", "email_verified",
             "created_at",
         ]

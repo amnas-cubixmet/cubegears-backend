@@ -1,4 +1,5 @@
 {% extends "control_panel/base.html" %}
+{% load panel_access %}
 {% block content %}
 <div class="toolbar">
   <form class="search-form search-form-wide" method="get">
@@ -6,7 +7,7 @@
     <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
     <button class="btn" type="submit">Filter</button>
   </form>
-  <a class="btn btn-primary" href="{% url 'panel:user-create' %}">Add User</a>
+  {% panel_can 'panel:user-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:user-create' %}">Add User</a>{% endif %}
 </div>
 <section class="panel-card">
   <div class="responsive-table"><table>
@@ -21,11 +22,11 @@
         <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
         <td data-label="Actions">
           <div class="row-actions">
-            <a href="{% url 'panel:user-detail' row.id %}">View</a>
-            <a href="{% url 'panel:user-edit' row.id %}">Edit</a>
+            {% panel_can 'panel:user-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:user-detail' row.id %}">View</a>{% endif %}
+            {% panel_can 'panel:user-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:user-edit' row.id %}">Edit</a>{% endif %}
             {% if row.id != request.user.id %}
-            <form method="post" action="{% url 'panel:user-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>
-            <a class="danger-link" href="{% url 'panel:user-delete' row.id %}">Delete</a>
+            {% panel_can 'panel:user-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:user-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
+            {% panel_can 'panel:user-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:user-delete' row.id %}">Delete</a>{% endif %}
             {% else %}<span class="table-sub">Current user</span>{% endif %}
           </div>
         </td>

@@ -2,10 +2,13 @@ import re
 from urllib.parse import quote
 
 from django.conf import settings
-from django.core.mail import send_mail
+from apps.accounts.email import queue_email
+from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied
+from apps.accounts.permissions import user_has_permission
 
 from common.viewsets import CompanyScopedModelViewSet
 from .models import (
@@ -135,15 +138,29 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         "invite": "staff.edit",
     }
 
+    def get_object(self):
+        obj = super().get_object()
+        user = obj.user
+        if self.request.method not in {"GET", "HEAD", "OPTIONS"} and user:
+            if not self.request.user.is_superuser and (user.company_id != obj.company_id or user.is_staff or user.is_superuser or (user.role and not can_delegate(self.request.user, user.role.permissions))):
+                raise ValidationError("You cannot manage an account with greater permissions.")
+            if self.action == "toggle_account" and user.pk == self.request.user.pk:
+                raise ValidationError("You cannot disable your own account.")
+        return obj
+
     def _resolve_role(self,role_name):
         from apps.roles.models import Role
         if not role_name:
             return None
-        return Role.objects.filter(
+        role = Role.objects.filter(
             company=self.request.user.company,
             name__iexact=role_name,
             is_active=True,
+            is_system=False,
         ).first()
+        if role and not can_delegate(self.request.user, role.permissions):
+            raise ValidationError({"role": "You cannot assign a role with permissions beyond your own."})
+        return role
 
     def _ensure_login_user(self,employee):
         from apps.accounts.models import User
@@ -154,7 +171,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             return None
 
         user=User.objects.filter(email__iexact=employee.email).first()
-        if user and user.company_id not in {None, employee.company_id}:
+        if user and (user.company_id != employee.company_id or user.is_superuser or user.is_staff):
             raise ValidationError({"email":"This login email belongs to another company."})
 
         if not user:
@@ -167,6 +184,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 role=self._resolve_role(employee.role_name),
                 is_active=True,
             )
+        if user.role and not can_delegate(self.request.user, user.role.permissions):
+            raise ValidationError("You cannot invite an account with greater permissions.")
         employee.user=user
         employee.save(update_fields=["user","updated_at"])
         return user
@@ -177,6 +196,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         email=serializer.validated_data.get("email") or ""
         name=serializer.validated_data.get("name") or code
         role_name=serializer.validated_data.get("role_name") or ""
+        requested_role=self._resolve_role(role_name)
+        if requested_role and not user_has_permission(self.request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can grant login roles.")
         branch=serializer.validated_data.get("branch",self.request.user.branch)
         team=serializer.validated_data.get("team")
         shift=serializer.validated_data.get("shift")
@@ -185,7 +207,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         user=None
         if email:
             user=User.objects.filter(email__iexact=email).first()
-            if user and user.company_id not in {None,company.id}:
+            if user and (user.company_id != company.id or user.is_superuser or user.is_staff):
                 raise ValidationError({"email":"This login email belongs to another company."})
             if not user:
                 user=User.objects.create_user(
@@ -198,6 +220,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                     is_active=True,
                 )
 
+        if user and user.role and not can_delegate(self.request.user, user.role.permissions):
+            raise ValidationError("You cannot link an account with greater permissions.")
         obj=serializer.save(
             company=company,
             branch=branch,
@@ -216,6 +240,14 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
 
     def perform_update(self,serializer):
         instance=self.get_object()
+        if instance.user and instance.user.role and instance.user.role.is_system:
+            raise PermissionDenied("Protected company owner accounts cannot be edited here.")
+        requested_name=serializer.validated_data.get("role_name")
+        if requested_name is not None and requested_name != instance.role_name:
+            if not user_has_permission(self.request.user, "company.manage"):
+                raise PermissionDenied("Only a company admin can change a login role.")
+            if requested_name.strip().upper().replace(" ", "_") in {"SUPER_ADMIN", "PLATFORM_ADMIN"}:
+                raise PermissionDenied("Protected admin roles cannot be assigned through staff editing.")
         before={
             "role":instance.role_name,
             "team":instance.team.name if instance.team else "",
@@ -245,10 +277,11 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if obj.user.name!=obj.name:
                 obj.user.name=obj.name
                 fields.append("name")
-            role=self._resolve_role(obj.role_name)
-            if role and obj.user.role_id!=role.id:
-                obj.user.role=role
-                fields.append("role")
+            if "role_name" in serializer.validated_data:
+                role=self._resolve_role(obj.role_name)
+                if obj.user.role_id != (role.pk if role else None):
+                    obj.user.role=role
+                    fields.append("role")
             if fields:
                 obj.user.save(update_fields=fields)
 
@@ -290,6 +323,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["patch"],url_path="toggle-account")
     def toggle_account(self,request,pk=None):
         obj=self.get_object()
+        if obj.user_id == request.user.id or (obj.user and obj.user.role and obj.user.role.is_system):
+            raise PermissionDenied("Company owner and current user accounts cannot be disabled here.")
         obj.status="Inactive" if obj.status=="Active" else "Active"
         obj.save(update_fields=["status","updated_at"])
         if obj.user:
@@ -326,7 +361,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             f"{settings.FRONTEND_URL}/magic-link/verify"
             f"?token={token}&next={quote(next_path,safe='')}"
         )
-        send_mail(
+        queue_email(
             "Your CubixGear staff access",
             (
                 f"Hi {obj.name},\n\n"
@@ -334,9 +369,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 f"Open this secure link to sign in and view your staff workspace:\n{url}\n\n"
                 f"Employee number: {_employee_display_no(obj)}"
             ),
-            settings.DEFAULT_FROM_EMAIL,
             [user.email],
-            fail_silently=True,
         )
         _record_activity(
             obj,

@@ -9,12 +9,13 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
-from .tasks import send_email_task
+from .email import queue_email
 from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
@@ -34,32 +35,25 @@ from apps.roles.models import Role
 User = get_user_model()
 
 
+class PublicSignupRateThrottle(AnonRateThrottle):
+    rate = "5/hour"
+
+
+class LoginRateThrottle(AnonRateThrottle):
+    rate = "10/minute"
+
+
+class RecoveryRateThrottle(AnonRateThrottle):
+    rate = "5/hour"
+
+
+
 def ensure_tenant_super_admin_role(user):
-    role = getattr(user, "role", None)
-    if (
-        role
-        and role.company_id == user.company_id
-        and role.code == "ADMIN"
-        and "*" in (role.permissions or [])
-    ):
-        role.name = "Super Admin"
-        role.code = "SUPER_ADMIN"
-        role.is_system = True
-        role.is_active = True
-        role.save(update_fields=["name", "code", "is_system", "is_active"])
+    # Compatibility shim for existing code paths. Never rewrite an existing
+    # role during login or /auth/me: doing so can collide with another tenant
+    # SUPER_ADMIN role and unexpectedly mutate all users sharing that role.
+    # New public signups already create their own protected SUPER_ADMIN.
     return user
-
-
-def queue_email(subject, message, recipient_list):
-    transaction.on_commit(
-        lambda: send_email_task.delay(
-            subject=subject,
-            message=message,
-            recipient_list=recipient_list,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-        ),
-        robust=True,
-    )
 
 
 def issue_tokens(user):
@@ -74,6 +68,7 @@ def issue_tokens(user):
 
 class LoginView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data, context={"request": request})
@@ -101,6 +96,7 @@ class MeView(APIView):
 
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
 
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
@@ -143,6 +139,7 @@ class ResetPasswordView(APIView):
 
 class MagicLinkRequestView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
 
     def post(self, request):
         serializer = MagicLinkRequestSerializer(data=request.data)
@@ -188,6 +185,7 @@ class ChangePasswordView(APIView):
 
 class PublicWorkshopSignupView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [PublicSignupRateThrottle]
 
     @transaction.atomic
     def post(self, request):
@@ -299,6 +297,9 @@ class SetupPasswordView(APIView):
 
         if not default_token_generator.check_token(user, serializer.validated_data["token"]):
             return Response({"message": "Invalid or expired setup link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if user.has_usable_password():
+            return Response({"message": "Account is already set up. Use password reset."}, status=status.HTTP_400_BAD_REQUEST)
 
         ensure_tenant_super_admin_role(user)
 
