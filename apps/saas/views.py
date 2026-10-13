@@ -230,8 +230,17 @@ class SettingsView(APIView):
         if not isinstance(payload, dict):
             return response.Response({"message": "A settings object is required."}, status=400)
         if category == "company":
+            # Reject unknown keys rather than silently saving shadow company data.
+            allowed = set(CompanyAccountSettingsSerializer().fields)
+            unknown = set(payload) - allowed
+            if unknown:
+                return response.Response(
+                    {"message": "Unsupported company fields: " + ", ".join(sorted(unknown))},
+                    status=400,
+                )
             serializer = CompanyAccountSettingsSerializer(data=payload, partial=True)
             serializer.is_valid(raise_exception=True)
+            payload = dict(serializer.validated_data)
             company = request.user.company
             mapping = {
                 "name": "name", "phone": "phone", "email": "email",
