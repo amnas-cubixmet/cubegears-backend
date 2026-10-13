@@ -1,5 +1,7 @@
 from rest_framework import serializers
 from apps.branches.models import Branch
+from apps.accounts.permissions import can_delegate
+from apps.roles.models import Role
 from .models import Team,Shift,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
@@ -121,6 +123,19 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not company:
             return attrs
 
+        actor = request.user
+        linked = attrs.get("user", getattr(self.instance, "user", None))
+        if linked and (linked.company_id != company.id or linked.is_staff or linked.is_superuser):
+            raise serializers.ValidationError({"user": "Select a workshop account in this company."})
+        if linked and linked.role and not can_delegate(actor, linked.role.permissions):
+            raise serializers.ValidationError({"user": "You cannot manage an account with greater permissions."})
+        role_name = attrs.get("role_name")
+        if role_name:
+            role = Role.objects.filter(company=company, name__iexact=role_name, is_active=True).first()
+            if not role:
+                raise serializers.ValidationError({"role": "Select an active role belonging to this company."})
+            if not can_delegate(actor, role.permissions):
+                raise serializers.ValidationError({"role": "You cannot assign this role."})
         branch=attrs.get("branch")
         team=attrs.get("team")
         shift=attrs.get("shift")

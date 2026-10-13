@@ -27,9 +27,11 @@
         {% if form.non_field_errors %}
           <div class="form-error">{{ form.non_field_errors|striptags }}</div>
         {% endif %}
-        <label>Email</label>
+        <label for="{{ form.email.id_for_label }}">Email</label>
+        {{ form.email.errors }}
         {{ form.email }}
-        <label>Password</label>
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password.errors }}
         {{ form.password }}
         <button class="btn btn-primary btn-block" type="submit">Sign in</button>
       </form>
