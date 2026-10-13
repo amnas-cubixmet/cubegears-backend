@@ -7,6 +7,7 @@ from rest_framework import decorators,response,status
 from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Invoice,EWayBill
+from apps.jobs.audit import record_job_event
 from .serializers import InvoiceSerializer,EWayBillSerializer
 
 class InvoiceViewSet(CompanyScopedModelViewSet):
@@ -39,9 +40,15 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         number=serializer.validated_data.get("number") or f"{prefix}-{timezone.now().year}-{count:04d}"
         obj=serializer.save(company=company,branch=self.request.user.branch,number=number)
         self._recalculate(obj)
+        if obj.job_id:
+            record_job_event(obj.job, self.request.user, 'Invoice Created',
+                             f'{obj.number} created', {'invoiceId': str(obj.pk)})
 
     def perform_update(self,serializer):
         obj=serializer.save(); self._recalculate(obj)
+        if obj.job_id:
+            record_job_event(obj.job, self.request.user, 'Invoice Updated',
+                             f'{obj.number} updated', {'invoiceId': str(obj.pk)})
 
     def _recalculate(self,obj):
         subtotal=Decimal("0"); tax=Decimal("0")
@@ -76,11 +83,17 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             obj.status="Paid" if obj.balance<=0 else "Finalized"
         else: obj.status="Issued"
         obj.finalized_at=timezone.now(); obj.save(update_fields=["status","finalized_at","updated_at"])
+        if obj.job_id:
+            record_job_event(obj.job, request.user, "Invoice Finalized",
+                             f"{obj.number} {obj.status.lower()}", {"invoiceId": str(obj.pk)})
         return response.Response(InvoiceSerializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"])
     def cancel(self,request,pk=None):
         obj=self.get_object(); obj.status="Cancelled"; obj.cancelled_at=timezone.now(); obj.save(update_fields=["status","cancelled_at","updated_at"])
+        if obj.job_id:
+            record_job_event(obj.job, request.user, "Invoice Cancelled",
+                             f"{obj.number} cancelled", {"invoiceId": str(obj.pk)})
         return response.Response(InvoiceSerializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"],url_path="convert-to-invoice")
@@ -91,6 +104,9 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         for line in src.items.all():
             line.pk=None; line.invoice=invoice; line.save()
         self._recalculate(invoice); src.status="Converted"; src.save(update_fields=["status","updated_at"])
+        if invoice.job_id:
+            record_job_event(invoice.job, request.user, "Estimate Converted",
+                             f"{src.number} converted to {invoice.number}", {"invoiceId": str(invoice.pk)})
         return response.Response(InvoiceSerializer(invoice).data,status=status.HTTP_201_CREATED)
 
 class EWayBillViewSet(CompanyScopedModelViewSet):

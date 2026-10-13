@@ -6,6 +6,7 @@ from rest_framework.exceptions import ValidationError
 
 from apps.accounts.permissions import RolePermission
 from apps.jobs.models import Job
+from apps.jobs.audit import record_job_event
 from apps.employees.models import Employee
 from .models import JobCardEmployeeAssignment
 
@@ -35,7 +36,7 @@ class JobTimerAssignmentsViewSet(viewsets.ViewSet):
             raise ValidationError({"assignment": "Select a Job Card and staff member in your workshop."})
         if job.status in {"Cancelled", "Delivered"}:
             raise ValidationError({"job": "Cannot assign new work to a closed Job Card."})
-        item, _ = JobCardEmployeeAssignment.objects.get_or_create(
+        item, created = JobCardEmployeeAssignment.objects.get_or_create(
             company=request.user.company, job=job, employee=employee,
             defaults={
                 "branch": job.branch or employee.branch,
@@ -45,6 +46,9 @@ class JobTimerAssignmentsViewSet(viewsets.ViewSet):
                 "metadata": {"source": "manual", "paymentMode": "fixed_work_charge"},
             },
         )
+        if created:
+            record_job_event(job, request.user, "Mechanic Assigned",
+                             f"{employee.name} assigned to Job Card", {"assignmentId": str(item.pk)})
         return Response({
             "id": str(item.id), "staffId": str(item.employee_id),
             "staffName": item.employee.name, "role": item.role,
@@ -61,5 +65,10 @@ class JobTimerAssignmentsViewSet(viewsets.ViewSet):
             return Response({
                 "message": "Worker has work records. Keep assignment for audit history."
             }, status=status.HTTP_409_CONFLICT)
+        job = assignment.job
+        employee_name = assignment.employee.name
+        assignment_id = str(assignment.pk)
         assignment.delete()
+        record_job_event(job, request.user, 'Mechanic Unassigned',
+                         f'{employee_name} removed from Job Card', {'assignmentId': assignment_id})
         return Response(status=status.HTTP_204_NO_CONTENT)

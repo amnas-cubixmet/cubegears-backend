@@ -11,6 +11,7 @@ from rest_framework import decorators,response,status
 from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
+from .audit import record_job_event
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status
@@ -149,8 +150,16 @@ class JobViewSet(CompanyScopedModelViewSet):
                 description=label, metadata={"before": before, "after": after},
             )
 
+    @transaction.atomic
     def perform_update(self,serializer):
         job = self.get_object()
+        tracked = {
+            key: getattr(job, key)
+            for key in ("complaints", "work_updates", "qc", "work", "technician_id", "priority")
+            if key in serializer.validated_data or
+            (key == "technician_id" and "technician" in serializer.validated_data)
+        }
+        previous_status = job.status
         next_status = serializer.validated_data.get("status")
         if "inspection" in serializer.validated_data:
             self._assert_inspection_editable(job)
@@ -167,6 +176,26 @@ class JobViewSet(CompanyScopedModelViewSet):
         if "status" in serializer.validated_data or "complaints" in serializer.validated_data:
             if sync_complaint_status(updated):
                 updated.save(update_fields=["complaints", "updated_at"])
+        if previous_status != updated.status:
+            record_job_event(updated, self.request.user, "Status Changed",
+                             f"{previous_status} → {updated.status}")
+        tracked_events = {
+            "complaints": "Customer Complaints Updated",
+            "work_updates": "Technician Updates Saved",
+            "qc": "Quality Check Updated",
+            "work": "Work Records Updated",
+            "technician_id": "Mechanic Assignment Changed",
+            "priority": "Job Priority Changed",
+        }
+        for key, before in tracked.items():
+            after = getattr(updated, key)
+            if before != after:
+                label = tracked_events[key]
+                metadata = {"section": key}
+                if isinstance(after, list):
+                    metadata["count"] = len(after)
+                record_job_event(updated, self.request.user, label,
+                                 f"{label} for {updated.job_number}", metadata)
 
 
     @transaction.atomic
@@ -639,6 +668,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         if request.method=="POST":
             s=JobEstimateSerializer(data=request.data); s.is_valid(raise_exception=True)
             obj=s.save(company=job.company,branch=job.branch,job=job)
+            record_job_event(job, request.user, "Estimate Created",
+                             f"Estimate V{obj.version} created", {"estimateId": str(obj.pk)})
             return response.Response(JobEstimateSerializer(obj).data,status=status.HTTP_201_CREATED)
         return response.Response(JobEstimateSerializer(job.estimates.all(),many=True).data)
 
@@ -719,12 +750,15 @@ class JobViewSet(CompanyScopedModelViewSet):
         if request.method=="POST":
             s=JobPhotoSerializer(data=request.data); s.is_valid(raise_exception=True)
             obj=s.save(company=job.company,branch=job.branch,job=job,uploaded_by=request.user)
+            record_job_event(job, request.user, "Job Photo Added",
+                             obj.caption or "Job Card photo added", {"photoId": str(obj.pk)})
             return response.Response(JobPhotoSerializer(obj).data,status=status.HTTP_201_CREATED)
         return response.Response(JobPhotoSerializer(job.photos.all(),many=True).data)
 
     @decorators.action(detail=True,methods=["get"])
     def activity(self,request,pk=None):
-        return response.Response(JobActivitySerializer(self.get_object().activities.all(),many=True).data)
+        job = self.get_object()  # Company-scoped; never expose another workshop's records.
+        return response.Response(JobActivitySerializer(job.activities.select_related('actor'), many=True).data)
 
     @decorators.action(detail=True,methods=["post"],url_path="issue-part")
     @transaction.atomic
@@ -736,4 +770,6 @@ class JobViewSet(CompanyScopedModelViewSet):
         item.on_hand=item.on_hand-qty; item.save(update_fields=["on_hand","updated_at"])
         part=JobPart.objects.create(company=job.company,branch=job.branch,job=job,item=item,quantity=qty,unit_price=item.selling_price,issued=True)
         StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
+        record_job_event(job, request.user, "Part Issued",
+                         f"{item.name} × {qty}", {"partId": str(part.pk)})
         return response.Response(JobPartSerializer(part).data,status=status.HTTP_201_CREATED)
