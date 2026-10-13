@@ -108,8 +108,13 @@ def create_invoice_pdf(invoice):
     })
     transport = invoice.transport or {}
     is_gst = invoice.invoice_type == "gst"
+    recipient_type = (invoice.customer_snapshot or {}).get("customerType") or invoice.customer.customer_type
+    is_business = recipient_type == "business"
+    # Presentation follows the buyer, tax liability follows the supplier.
+    # A taxable B2C service bill is still a tax invoice under GST law.
     title = "ESTIMATE / QUOTATION" if invoice.kind == "estimate" else (
-        "TAX INVOICE" if is_gst else "SERVICE INVOICE"
+        ("TAX INVOICE" if is_gst else "BUSINESS INVOICE") if is_business else
+        ("SERVICE BILL / TAX INVOICE" if is_gst else "SERVICE BILL")
     )
     story = []
     header = Table([[
@@ -119,7 +124,7 @@ def create_invoice_pdf(invoice):
                                    str(seller.get("pincode") or "")])), "small"),
          P(f"Phone: {_txt(seller.get('phone'))}  |  Email: {_txt(seller.get('email'))}", "small"),
          P(f"GSTIN: {_txt(seller.get('gstin'))}", "small") if seller.get("gstin") else P("", "small")],
-        [P(title, "title"), P(f"No: {invoice.number}", "tdright"),
+        [P(title, "title"), P(f"{'Invoice No' if is_business else 'Bill No'}: {invoice.number}", "tdright"),
          P(f"Date: {invoice.date:%d %b %Y}", "tdright"),
          P(f"Status: {invoice.status}", "tdright")],
     ]], colWidths=[doc.width * .55, doc.width * .45])
@@ -137,12 +142,13 @@ def create_invoice_pdf(invoice):
                 cells.append(P(f"{label}: {value}", "small"))
         return cells
 
-    bill_to = block("BILL TO", [
+    bill_to = block("BILL TO" if is_business else "CUSTOMER", [
+        ("Company", customer.get("companyName") if is_business else None),
         ("Name", customer.get("name")),
         ("Phone", customer.get("phone")),
         ("Email", customer.get("email")),
         ("Address", customer.get("address")),
-        ("GSTIN", customer.get("gstin")),
+        ("GSTIN", customer.get("gstin") if is_business else None),
         ("Place of supply", customer.get("placeOfSupply")),
     ])
     vehicle_info = block("JOB / VEHICLE", [
