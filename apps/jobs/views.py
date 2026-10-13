@@ -174,6 +174,20 @@ class JobViewSet(CompanyScopedModelViewSet):
             unlocked = workflow_state(job)["current"]
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
                 raise ValidationError({"status": "Complete the current Job Card stage first."})
+        if "qc" in serializer.validated_data:
+            # The client can edit checklist/notes, but the inspector's identity
+            # must always come from the authenticated user actually saving QC.
+            qc_data = serializer.validated_data["qc"]
+            if not isinstance(qc_data, dict):
+                raise ValidationError({"qc": "Quality Check must be an object."})
+            inspector_name = str(getattr(self.request.user, "name", "") or "").strip()
+            if not inspector_name:
+                raise ValidationError({"qc": "Your login account needs a name to save QC."})
+            serializer.validated_data["qc"] = {
+                **qc_data,
+                "inspector": inspector_name,
+                "inspectorUserId": str(self.request.user.pk),
+            }
         self._guard_active_timers(job,next_status)
         updated = serializer.save()
         if "status" in serializer.validated_data or "complaints" in serializer.validated_data:
