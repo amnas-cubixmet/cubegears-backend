@@ -19,6 +19,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializer(serializers.ModelSerializer):
     number = serializers.CharField(required=False)
+    invoiceType = serializers.CharField(source="invoice_type", required=False)
     items = InvoiceItemSerializer(many=True, required=False)
     customer = serializers.JSONField(write_only=True, required=False)
     vehicle = serializers.JSONField(write_only=True, required=False)
@@ -43,6 +44,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
         model = Invoice
         exclude = ("company", "branch")
         read_only_fields = ("id", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        invoice_type = attrs.get("invoice_type") or (
+            self.instance.invoice_type if self.instance else "regular"
+        )
+        rows = attrs.get("items")
+        if invoice_type == "gst" and rows is not None:
+            for index, row in enumerate(rows, 1):
+                if "tax_rate" not in row:
+                    raise serializers.ValidationError({
+                        "items": f"Line {index} must specify the classified GST percentage (0% only if legally applicable)."
+                    })
+        return attrs
 
     def _company(self, validated_data):
         company = validated_data.get("company")
