@@ -21,6 +21,16 @@ jobs:
       - run: python manage.py check
       # Exercise the full migration graph on a fresh SQLite database.
       # Runtime model changes must not ship without their database tables.
+      - name: Verify SQLite-only production settings
+        env:
+          DJANGO_DEBUG: "False"
+          DJANGO_SECRET_KEY: ci-only-test-secret-at-least-32-characters-not-for-production
+          JWT_SIGNING_KEY: ci-only-separate-signing-key-at-least-32-characters
+          DJANGO_ALLOWED_HOSTS: api.example.test
+          SQLITE_DATABASE_PATH: /tmp/cubixgear-ci-test.sqlite3
+        run: |
+          python manage.py check
+          python -c "from django.conf import settings; assert settings.DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3'; assert str(settings.DATABASES['default']['NAME']) == '/tmp/cubixgear-ci-test.sqlite3'"
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
       - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.jobs.test_workflow apps.jobs.test_workflow_api apps.jobs.test_india_gst apps.invoices.test_india_gst apps.invoices.test_invoice_modes apps.jobs.test_qc_login apps.jobs.test_cost_summary apps.invoices.test_invoice_pdf apps.jobs.test_outside_part_approval apps.jobs.test_work_photos apps.payments.test_payment_guards apps.inventory.test_stock_operations apps.saas.tests_account --noinput
