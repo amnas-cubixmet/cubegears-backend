@@ -83,6 +83,14 @@ class InvoiceIndiaGstTests(TestCase):
         self.assertEqual(data.status_code, 400, data.data)
         self.assertEqual(Invoice.objects.filter(company=self.company).count(), 0)
 
+    def test_gst_invoice_requires_explicit_classified_tax_rate(self):
+        body = self.payload()
+        body["items"][0].pop("taxRate")
+        response = self.client.post(self.url, body, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("items", response.data)
+        self.assertEqual(Invoice.objects.filter(company=self.company).count(), 0)
+
     def test_gst_settings_are_available_to_billing_clerk(self):
         settings = self.client.get(self.url + "/gst-context")
         self.assertEqual(settings.status_code, 200, settings.data)
