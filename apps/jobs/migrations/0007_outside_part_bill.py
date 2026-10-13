@@ -23,6 +23,7 @@ class Migration(migrations.Migration):
                 ("file", models.FileField(
                     storage=apps.jobs.models.job_photo_private_storage,
                     upload_to=apps.jobs.models.outside_part_bill_upload_to,
+                    max_length=255,
                 )),
                 ("original_filename", models.CharField(max_length=180)),
                 ("branch", models.ForeignKey(
