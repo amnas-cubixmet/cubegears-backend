@@ -25,7 +25,7 @@ class JobActivitySerializer(serializers.ModelSerializer):
     actorName=serializers.CharField(source="actor.name",read_only=True)
     class Meta: model=JobActivity; exclude=("company","branch")
 class JobSerializer(serializers.ModelSerializer):
-    partsWorkflow=serializers.JSONField(source="parts_workflow",required=False)
+    partsWorkflow=serializers.JSONField(source="parts_workflow",read_only=True)
     workUpdates=serializers.JSONField(source="work_updates",required=False)
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
@@ -50,7 +50,7 @@ class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model=Job
         exclude=("company","branch")
-        read_only_fields=("id","created_at","updated_at","workflow_progress")
+        read_only_fields=("id","created_at","updated_at","workflow_progress","parts_workflow")
         extra_kwargs={"job_number": {"required": False}}
     def validate_workUpdates(self, value):
         if not isinstance(value, list) or len(value) > 500:
