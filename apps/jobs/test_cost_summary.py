@@ -191,7 +191,7 @@ class JobCostSummaryTests(TestCase):
             f"{url}/{created.data['id']}/complete",
             {"invoiceNo": "BILL-021", "bill": bill}, format="multipart",
         )
-        self.assertEqual(completed.status_code, 200, completed.data)
+        self.assertEqual(completed.status_code, 200, getattr(completed, "data", completed.content[:1000]))
         self.assertEqual(completed.data["totalCost"], "240.00")
         total = self.client.get(self.url)
         self.assertEqual(total.data["outsidePartsCost"], "240.00")
