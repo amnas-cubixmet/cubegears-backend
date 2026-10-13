@@ -95,11 +95,13 @@ class OutsidePartsApprovalTests(TestCase):
         )
         self.assertEqual(invalid_file.status_code, 400, invalid_file.data)
 
-        purchased = self.client.post(
-            f"{self.base}/{requested['id']}/complete",
-            {"invoiceNo": "BILL-1", "unitCost": "95.00", "bill": self.pdf()},
-            format="multipart",
-        )
+        from django.test import override_settings
+        with override_settings(DEBUG=True):
+            purchased = self.client.post(
+                f"{self.base}/{requested['id']}/complete",
+                {"invoiceNo": "BILL-1", "unitCost": "95.00", "bill": self.pdf()},
+                format="multipart",
+            )
         self.assertEqual(purchased.status_code, 200, getattr(purchased, "data", purchased.content[:1000]))
         self.assertEqual(purchased.data["status"], "Purchased")
         self.assertEqual(purchased.data["totalCost"], "190.00")
