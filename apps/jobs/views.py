@@ -15,6 +15,7 @@ from .audit import record_job_event
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status
+from .india_gst import gst_context, calculate_tax, gst_rate
 
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
@@ -607,6 +608,13 @@ class JobViewSet(CompanyScopedModelViewSet):
                 "type": item_type,
                 "quantity": str(quantity), "unitPrice": str(price), "total": str(total),
             }
+            if "taxRate" in row and row["taxRate"] not in (None, ""):
+                line["taxRate"] = str(gst_rate(row["taxRate"]))
+            hsn = str(row.get("hsnSac") or "").strip()
+            if len(hsn) > 20 or (hsn and not hsn.isdigit()):
+                raise ValidationError({"hsnSac": "HSN/SAC must contain up to 20 digits."})
+            if hsn:
+                line["hsnSac"] = hsn
             if catalog_id:
                 # Quote lines keep their linked catalog identity without moving stock.
                 # Reject unrelated and cross-company catalog references.
@@ -628,9 +636,34 @@ class JobViewSet(CompanyScopedModelViewSet):
         if discount > subtotal:
             raise ValidationError({"discount": "Discount cannot exceed subtotal."})
         discount = discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        grand = subtotal - discount + tax
-        items.append({"_pricing": {"taxPercent": str(tax_rate), "discount": str(discount)}})
+        gst_input = data.get("gst")
+        if gst_input is not None:
+            job = self.get_object()
+            context = gst_context(
+                company=job.company, branch=job.branch, customer=job.customer,
+                config=gst_input,
+            )
+            if context["mode"] == "gst":
+                for line in items:
+                    if "taxRate" not in line:
+                        raise ValidationError({"taxRate": "Set a classified GST rate for every work and part item."})
+            calculated = calculate_tax(items, discount, context["taxMode"])
+            items = calculated["lines"]
+            tax = calculated["tax"]
+            grand = calculated["total"]
+            context.update({
+                "cgst": str(calculated["cgst"]),
+                "sgst": str(calculated["sgst"]),
+                "igst": str(calculated["igst"]),
+                "taxable": str(calculated["taxable"]),
+            })
+            pricing = {"taxPercent": "0", "discount": str(discount), "gst": context}
+        else:
+            # Preserve existing pre-GST estimate records and historical API callers.
+            tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            grand = subtotal - discount + tax
+            pricing = {"taxPercent": str(tax_rate), "discount": str(discount)}
+        items.append({"_pricing": pricing})
         return {"items": items, "subtotal": subtotal, "tax": tax, "total": grand}
 
     @decorators.action(detail=True, methods=["post"], url_path="estimates/quick")
