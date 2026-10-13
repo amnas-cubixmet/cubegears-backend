@@ -71,6 +71,34 @@ class JobPart(CompanyOwnedModel):
     unit_price=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     issued=models.BooleanField(default=False)
 
+def outside_part_bill_upload_to(instance, filename):
+    extension = Path(filename).suffix.lower()
+    if extension not in {".pdf", ".jpg", ".jpeg", ".png", ".webp"}:
+        extension = ".bin"
+    return f"jobs/{instance.company_id}/{instance.job_id}/outside-bills/{uuid.uuid4().hex}{extension}"
+
+
+class OutsidePartBill(CompanyOwnedModel):
+    """Private supplier invoice attached to one approved direct outside purchase."""
+    job = models.ForeignKey("jobs.Job", on_delete=models.CASCADE, related_name="outside_part_bills")
+    purchase_id = models.UUIDField(db_index=True)
+    file = models.FileField(
+        storage=job_photo_private_storage, upload_to=outside_part_bill_upload_to
+    )
+    original_filename = models.CharField(max_length=180)
+    uploaded_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "job", "purchase_id"],
+                name="unique_outside_part_bill_per_purchase",
+            )
+        ]
+
+
 class JobPhoto(CompanyOwnedModel):
     job=models.ForeignKey(Job,on_delete=models.CASCADE,related_name="photos")
     url=models.URLField(blank=True)
