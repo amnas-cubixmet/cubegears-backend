@@ -8,6 +8,5 @@ class MyCompanyView(generics.RetrieveUpdateAPIView):
     permission_classes = [IsCompanyAdmin]
 
     def get_object(self):
-        if self.request.user.is_superuser and self.request.query_params.get("company"):
-            return Company.objects.get(pk=self.request.query_params["company"])
+        # The platform-admin flag never selects a different tenant via query string.
         return self.request.user.company

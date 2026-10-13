@@ -1,4 +1,3 @@
-from django.db.models import Q
 from rest_framework import generics
 from apps.accounts.permissions import IsCompanyAdmin, can_delegate
 from rest_framework.exceptions import PermissionDenied
@@ -11,7 +10,7 @@ class RoleListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         company = self.request.user.company
-        return Role.objects.filter(Q(company=company) | Q(company__isnull=True))
+        return Role.objects.filter(company=company)
 
     def perform_create(self, serializer):
         serializer.save(company=self.request.user.company, is_system=False)

@@ -55,12 +55,11 @@ def user_has_permission(user, permission_code):
     if not user or not user.is_authenticated or not user.is_active:
         return False
 
-    # Django/platform superusers bypass tenant RBAC.
-    if user.is_superuser:
-        return True
+    if not user.company_id or not user.company or not user.company.is_active:
+        return False
 
     role = getattr(user, "role", None)
-    if not role or not role.is_active:
+    if not role or not role.is_active or role.company_id != user.company_id:
         return False
     if role.company_id and role.company_id != user.company_id:
         return False
@@ -121,9 +120,6 @@ class RolePermission(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
-
-        if request.user.is_superuser:
-            return True
 
         action_map = getattr(view, "action_permission_map", None) or {}
         action_rule = action_map.get(getattr(view, "action", None))

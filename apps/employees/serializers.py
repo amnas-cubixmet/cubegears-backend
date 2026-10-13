@@ -110,7 +110,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model=Employee
         exclude=("company","branch","employee_code","role_name","department_name","shift_label","joining_date","status","emergency_contact","payment_type")
-        extra_kwargs={"user":{"required":False,"allow_null":True}}
+        # Never allow an employee payload to bind a different user's login.
+        read_only_fields=("user",)
 
     def get_displayEmployeeNo(self,obj):
         digits="".join(ch for ch in str(obj.employee_code or "") if ch.isdigit())
