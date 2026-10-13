@@ -167,8 +167,12 @@ def create_invoice_pdf(invoice):
     ]))
     story.extend([contacts, Spacer(1, 17), P("WORK, SERVICES & PARTS", "heading"), Spacer(1, 5)])
 
-    col_widths = [24, doc.width - 24 - 55 - 36 - 49 - 59 - 43 - 66, 55, 36, 49, 59, 43, 66]
-    headers = ["#", "Description / HSN", "Type", "Qty", "Unit", "Rate", "Tax %", "Amount"]
+    if is_gst:
+        col_widths = [24, doc.width - 24 - 55 - 36 - 49 - 59 - 43 - 66, 55, 36, 49, 59, 43, 66]
+        headers = ["#", "Description / HSN", "Type", "Qty", "Unit", "Rate", "GST %", "Amount"]
+    else:
+        col_widths = [24, doc.width - 24 - 55 - 36 - 49 - 59 - 66, 55, 36, 49, 59, 66]
+        headers = ["#", "Description", "Type", "Qty", "Unit", "Rate", "Amount"]
     table_rows = [[P(h, "thead") for h in headers]]
     for idx, item in enumerate(invoice.items.all().order_by("id"), 1):
         line_amount = max(Decimal("0"), item.quantity * item.rate - item.discount)
@@ -179,14 +183,17 @@ def create_invoice_pdf(invoice):
             description += f"\nHSN/SAC: {item.hsn_sac}"
         if item.discount:
             description += f"\nDiscount: {_money(item.discount)}"
-        table_rows.append([
+        line_cells = [
             P(str(idx), "td"), P(description, "td"),
             P(item.item_type, "td"), P(str(item.quantity), "tdright"),
             P(item.unit, "td"), P(_money(item.rate), "tdright"),
-            P(str(item.tax_rate), "tdright"), P(_money(line_amount), "tdright"),
-        ])
+        ]
+        if is_gst:
+            line_cells.append(P(str(item.tax_rate), "tdright"))
+        line_cells.append(P(_money(line_amount), "tdright"))
+        table_rows.append(line_cells)
     if len(table_rows) == 1:
-        table_rows.append([P("—", "td"), P("No saved invoice items", "td")] + [P("", "td")] * 6)
+        table_rows.append([P("—", "td"), P("No saved invoice items", "td")] + [P("", "td")] * (len(headers) - 2))
 
     lines_table = Table(table_rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     lines_table.setStyle(TableStyle([
@@ -202,7 +209,7 @@ def create_invoice_pdf(invoice):
     story.extend([lines_table, Spacer(1, 13)])
 
     sums = [
-        ("Taxable amount", invoice.taxable),
+        ("Taxable amount" if is_gst else "Subtotal (after discounts)", invoice.taxable),
         ("Invoice discount", invoice.discount),
     ]
     if invoice.cgst:
