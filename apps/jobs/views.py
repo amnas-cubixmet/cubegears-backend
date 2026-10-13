@@ -383,8 +383,8 @@ class JobViewSet(CompanyScopedModelViewSet):
             estimate = job.estimates.order_by("-created_at").first()
             if not estimate:
                 raise ValidationError({"stage":"Create an estimate before approval."})
-            if estimate.status == "Rejected":
-                raise ValidationError({"stage":"Create a revised estimate after customer rejection."})
+            if estimate.status != "Draft":
+                raise ValidationError({"stage":"Only the latest draft estimate can be approved. Save a revised estimate first."})
             if (job.inspection or {}).get("revisedAt"):
                 revised = parse_datetime(job.inspection["revisedAt"])
                 if revised and estimate.created_at < revised:
@@ -561,14 +561,24 @@ class JobViewSet(CompanyScopedModelViewSet):
     @transaction.atomic
     def estimate_decision(self,request,pk=None,estimate_id=None):
         """Reject an estimate; approval is an explicit workflow completion."""
-        job = self.get_object()
+        job = Job.objects.select_for_update().get(pk=self.get_object().pk, company=request.user.company)
         if request.data.get("decision") != "Rejected":
             raise ValidationError({"decision":"Use Complete & Continue to approve an estimate."})
-        estimate = job.estimates.filter(pk=estimate_id).first()
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate":"Estimate decisions are locked after customer approval."})
+        estimate = job.estimates.select_for_update().filter(pk=estimate_id).first()
         if not estimate:
             raise ValidationError({"estimate":"Estimate not found for this Job Card."})
+        latest = job.estimates.order_by("-version", "-created_at").first()
+        if not latest or latest.pk != estimate.pk:
+            raise ValidationError({"estimate":"Only the latest estimate can be rejected."})
+        if estimate.status != "Draft":
+            raise ValidationError({"estimate":"Only a draft estimate can be rejected."})
         estimate.status = "Rejected"
         estimate.save(update_fields=["status","updated_at"])
+        record_job_event(job, request.user, "Estimate Rejected",
+                         f"Estimate V{estimate.version} rejected",
+                         {"estimateId": str(estimate.pk), "version": estimate.version})
         return response.Response(JobEstimateSerializer(estimate).data)
 
     def _quick_estimate_values(self, data):
@@ -581,7 +591,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         except (TypeError, ValueError, ArithmeticError):
             raise ValidationError({"total": "Tax and discount must be valid numbers."})
         if not tax_rate.is_finite() or not discount.is_finite():
-            raise ValidationError({"total": "Tax and discount must be finite amounts."})
+            raise ValidationError({"total": "Tax and discount must be finite numbers."})
         if tax_rate.as_tuple().exponent < -2 or discount.as_tuple().exponent < -2:
             raise ValidationError({"total": "Tax and discount may have at most two decimal places."})
         if not (Decimal("0") <= tax_rate <= Decimal("100")) or discount < 0:
@@ -609,7 +619,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             price = price.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             total = (quantity * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             subtotal += total
-            item_type = str(row.get("type") or "Service")[:30]
+            item_type = str(row.get("type") or "Service")
+            if item_type not in {"Part", "Labour", "Service", "Other"}:
+                raise ValidationError({"lines": "Choose Part, Labour, Service or Other for the item type."})
             catalog_id = str(row.get("catalogId") or "").strip()
             line = {
                 "description": label,
@@ -644,34 +656,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         if discount > subtotal:
             raise ValidationError({"discount": "Discount cannot exceed subtotal."})
         discount = discount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        gst_input = data.get("gst")
-        if gst_input is not None:
-            job = self.get_object()
-            context = gst_context(
-                company=job.company, branch=job.branch, customer=job.customer,
-                config=gst_input,
-            )
-            if context["mode"] == "gst":
-                for line in items:
-                    if "taxRate" not in line:
-                        raise ValidationError({"taxRate": "Set a classified GST rate for every work and part item."})
-            calculated = calculate_tax(items, discount, context["taxMode"])
-            items = calculated["lines"]
-            tax = calculated["tax"]
-            grand = calculated["total"]
-            context.update({
-                "cgst": str(calculated["cgst"]),
-                "sgst": str(calculated["sgst"]),
-                "igst": str(calculated["igst"]),
-                "taxable": str(calculated["taxable"]),
-            })
-            pricing = {"taxPercent": "0", "discount": str(discount), "gst": context}
-        else:
-            # Preserve existing pre-GST estimate records and historical API callers.
-            tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            grand = subtotal - discount + tax
-            pricing = {"taxPercent": str(tax_rate), "discount": str(discount)}
-        items.append({"_pricing": pricing})
+        tax = ((subtotal - discount) * tax_rate / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        grand = subtotal - discount + tax
+        if subtotal >= Decimal("10000000000") or grand >= Decimal("10000000000"):
+            raise ValidationError({"total": "Estimate total is too large."})
+        items.append({"_pricing": {"taxPercent": str(tax_rate), "discount": str(discount)}})
         return {"items": items, "subtotal": subtotal, "tax": tax, "total": grand}
 
     @decorators.action(detail=True, methods=["post"], url_path="estimates/quick")
@@ -724,8 +713,14 @@ class JobViewSet(CompanyScopedModelViewSet):
     def estimates(self,request,pk=None):
         job=self.get_object()
         if request.method=="POST":
+            if workflow_state(job)["current"] != "estimate":
+                raise ValidationError({"estimate": "Create estimates only during the Estimate stage."})
+            if request.data.get("status", "Draft") != "Draft":
+                raise ValidationError({"status": "Only draft estimates can be created."})
             s=JobEstimateSerializer(data=request.data); s.is_valid(raise_exception=True)
-            obj=s.save(company=job.company,branch=job.branch,job=job)
+            version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
+            obj=s.save(company=job.company,branch=job.branch,job=job,
+                       version=version,status="Draft",approved_at=None)
             record_job_event(job, request.user, "Estimate Created",
                              f"Estimate V{obj.version} created", {"estimateId": str(obj.pk)})
             return response.Response(JobEstimateSerializer(obj).data,status=status.HTTP_201_CREATED)
