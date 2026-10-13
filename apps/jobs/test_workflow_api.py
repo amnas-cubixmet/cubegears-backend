@@ -241,6 +241,81 @@ class JobWorkflowApiTests(TestCase):
         self.assertIn("catalogId", foreign.data)
 
 
+    def _advance_to_estimate_for_guard_test(self):
+        self.assertEqual(self.finish("overview").status_code, 200)
+        self.assertEqual(self.client.post(f"{self.url}/inspection/start", {}, format="json").status_code, 200)
+        self.assertEqual(self.client.patch(
+            f"{self.url}/inspection/checklist",
+            {"itemName": "Brakes", "status": "Good"}, format="json",
+        ).status_code, 200)
+        self.assertEqual(self.client.post(
+            f"{self.url}/inspection/complete", {}, format="json",
+        ).status_code, 200)
+
+    def test_estimate_rejection_only_applies_to_latest_unapproved_draft(self):
+        self._advance_to_estimate_for_guard_test()
+        payload = {"lines": [
+            {"description": "Brake service", "type": "Labour", "quantity": "1", "unitPrice": "500"},
+        ], "discount": "0", "taxPercent": "0"}
+        first = self.client.post(f"{self.url}/estimates/quick", payload, format="json")
+        second = self.client.post(f"{self.url}/estimates/quick", payload, format="json")
+        self.assertEqual(first.status_code, 201, first.data)
+        self.assertEqual(second.status_code, 201, second.data)
+
+        spoofed = self.client.post(f"{self.url}/estimates", {
+            "version": 99, "status": "Approved", "items": [],
+        }, format="json")
+        self.assertEqual(spoofed.status_code, 400, spoofed.data)
+
+        old_rejection = self.client.post(
+            f"{self.url}/estimates/{first.data['id']}/decision",
+            {"decision": "Rejected"}, format="json",
+        )
+        self.assertEqual(old_rejection.status_code, 400, old_rejection.data)
+
+        rejected = self.client.post(
+            f"{self.url}/estimates/{second.data['id']}/decision",
+            {"decision": "Rejected"}, format="json",
+        )
+        self.assertEqual(rejected.status_code, 200, rejected.data)
+        self.assertEqual(rejected.data["status"], "Rejected")
+        self.assertEqual(self.finish("estimate", approveEstimate=True).status_code, 400)
+        history = self.client.get(f"{self.url}/activity")
+        self.assertTrue(any(event["event"] == "Estimate Rejected" for event in history.data))
+
+        third = self.client.post(f"{self.url}/estimates/quick", payload, format="json")
+        self.assertEqual(third.status_code, 201, third.data)
+        self.assertEqual(self.finish("estimate", approveEstimate=True).status_code, 200)
+        after_approval = self.client.post(
+            f"{self.url}/estimates/{third.data['id']}/decision",
+            {"decision": "Rejected"}, format="json",
+        )
+        self.assertEqual(after_approval.status_code, 400, after_approval.data)
+        self.assertEqual(self.client.post(
+            f"{self.url}/estimates", {"status": "Draft", "items": []}, format="json",
+        ).status_code, 400)
+
+    def test_quick_estimate_rejects_nonfinite_overprecision_and_unsupported_types(self):
+        self._advance_to_estimate_for_guard_test()
+        payload = {"lines": [
+            {"description": "Oil", "type": "Part", "quantity": "1", "unitPrice": "500"},
+        ], "discount": "0", "taxPercent": "18"}
+        for field, invalid in [
+            ("quantity", "NaN"), ("quantity", "1.001"), ("unitPrice", "Infinity"),
+            ("unitPrice", "1.234"), ("type", "MadeUp"),
+        ]:
+            quote = {**payload, "lines": [{**payload["lines"][0], field: invalid}]}
+            result = self.client.post(f"{self.url}/estimates/quick", quote, format="json")
+            self.assertEqual(result.status_code, 400, (field, invalid, result.data))
+        for field, invalid in [("discount", "NaN"), ("discount", "0.001"),
+                               ("taxPercent", "Infinity"), ("taxPercent", "0.001")]:
+            quote = {**payload, field: invalid}
+            result = self.client.post(f"{self.url}/estimates/quick", quote, format="json")
+            self.assertEqual(result.status_code, 400, (field, invalid, result.data))
+        self.assertEqual(self.client.post(
+            f"{self.url}/estimates/quick", payload, format="json",
+        ).status_code, 201)
+
     def test_complaint_status_automatically_follows_work_and_qc(self):
         complaint = {
             "id": "CMP-AUTO-1", "description": "Engine warning light",
