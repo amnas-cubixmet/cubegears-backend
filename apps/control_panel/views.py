@@ -505,23 +505,57 @@ def invoices(request):
 
 @panel_admin_required
 def staff(request):
-    qs = Employee.objects.select_related("company", "team", "shift").order_by("company__name", "name")
+    # Summary cards represent all workshop staff, not a filtered subset.
+    all_staff = Employee.objects.all()
+    total_staff = all_staff.count()
+    active_staff = all_staff.filter(status__iexact="active").count()
+    linked_staff = all_staff.filter(user__isnull=False).count()
+    staff_companies = all_staff.values("company_id").distinct().count()
+    status_options = sorted(
+        (value for value in all_staff.order_by().values_list("status", flat=True).distinct() if value),
+        key=str.casefold,
+    )
+
+    qs = all_staff.select_related("company", "branch", "team", "shift", "user").order_by("company__name", "name")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    login = request.GET.get("login", "").strip().lower()
     if q:
         qs = qs.filter(
             Q(name__icontains=q)
             | Q(employee_code__icontains=q)
             | Q(phone__icontains=q)
+            | Q(email__icontains=q)
+            | Q(designation__icontains=q)
             | Q(company__name__icontains=q)
         )
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
+    if login == "linked":
+        qs = qs.filter(user__isnull=False)
+    elif login == "unlinked":
+        qs = qs.filter(user__isnull=True)
+    else:
+        login = ""
+
     return render(request, "control_panel/staff.html", {
         "page_title": "All Workshop Staff",
         "active": "staff",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "login": login,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_staff": total_staff,
+        "active_staff": active_staff,
+        "linked_staff": linked_staff,
+        "staff_companies": staff_companies,
     })
 
 
