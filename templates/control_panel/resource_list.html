@@ -24,7 +24,7 @@
     <label class="sr-only" for="resource-status">Status</label>
     <select id="resource-status" name="status"><option value="">All statuses</option><option value="active" {% if status == 'active' %}selected{% endif %}>Active</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option></select>
     <button class="btn btn-primary" type="submit">Filter</button>
-    {% if q or company_id or status %}<a class="btn" href="{% url 'panel:dashboard' %}" hidden>Dashboard</a><a class="btn" href="{% if active == 'vehicles' %}{% url 'panel:vehicles' %}{% elif active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% endif %}">Clear</a>{% endif %}
+    {% if q or company_id or status %}<a class="btn" href="{% if active == 'vehicles' %}{% url 'panel:vehicles' %}{% elif active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% endif %}">Clear</a>{% endif %}
   </form>
   <div class="responsive-table remaining-table">
     <table>
