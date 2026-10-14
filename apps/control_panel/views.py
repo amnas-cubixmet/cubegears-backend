@@ -383,49 +383,78 @@ def storage(request):
     qs = StorageUsage.objects.select_related("company").order_by("-date")
     qs, company_id = _company_filter(request, qs)
     totals = qs.aggregate(bytes=Sum("bytes_used"), files=Sum("file_count"))
+    snapshot_count = qs.count()
+    covered_companies = qs.values("company_id").distinct().count()
     return render(request, "control_panel/storage.html", {
-        "page_title": "Storage",
-        "active": "storage",
+        "page_title": "Storage", "active": "storage",
         "rows": _paginate(request, qs),
         "total_bytes": totals["bytes"] or 0,
         "total_files": totals["files"] or 0,
-        "company_id": company_id,
-        "companies": _company_choices(),
+        "snapshot_count": snapshot_count,
+        "covered_companies": covered_companies,
+        "company_id": company_id, "companies": _company_choices(),
     })
 
 
 @panel_admin_required
 def security(request):
-    qs = SecurityEvent.objects.select_related("company", "user").order_by("-created_at")
+    all_events = SecurityEvent.objects.all()
+    total_events = all_events.count()
+    recent_events = all_events.filter(
+        created_at__gte=timezone.now() - timedelta(days=7)
+    ).count()
+    tracked_companies = all_events.exclude(company__isnull=True).values("company_id").distinct().count()
+    qs = all_events.select_related("company", "user").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
+    q = request.GET.get("q", "").strip()
+    if q:
+        qs = qs.filter(
+            Q(event__icontains=q) | Q(user__email__icontains=q)
+            | Q(ip_address__icontains=q)
+        )
     return render(request, "control_panel/security.html", {
-        "page_title": "Security & Activity",
-        "active": "security",
+        "page_title": "Security & Activity", "active": "security",
         "rows": _paginate(request, qs),
-        "company_id": company_id,
-        "companies": _company_choices(),
+        "company_id": company_id, "companies": _company_choices(), "q": q,
+        "total_events": total_events, "recent_events": recent_events,
+        "tracked_companies": tracked_companies,
     })
 
 
 @panel_admin_required
 def customers(request):
-    qs = Customer.objects.select_related("company", "branch").order_by("-created_at")
+    all_customers = Customer.objects.all()
+    total_customers = all_customers.count()
+    active_customers = all_customers.filter(status="active").count()
+    business_customers = all_customers.filter(customer_type="business").count()
+    customer_companies = all_customers.values("company_id").distinct().count()
+
+    qs = all_customers.select_related("company", "branch").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    customer_type = request.GET.get("type", "").strip().lower()
     if q:
         qs = qs.filter(
-            Q(name__icontains=q)
-            | Q(phone__icontains=q)
-            | Q(email__icontains=q)
-            | Q(company_name__icontains=q)
+            Q(name__icontains=q) | Q(phone__icontains=q)
+            | Q(email__icontains=q) | Q(company_name__icontains=q)
         )
+    if status in {"active", "archived"}:
+        qs = qs.filter(status=status)
+    else:
+        status = ""
+    if customer_type in {"individual", "business"}:
+        qs = qs.filter(customer_type=customer_type)
+    else:
+        customer_type = ""
+
     return render(request, "control_panel/customers.html", {
-        "page_title": "All Customers",
-        "active": "customers",
+        "page_title": "All Customers", "active": "customers",
         "rows": _paginate(request, qs),
-        "q": q,
-        "company_id": company_id,
-        "companies": _company_choices(),
+        "q": q, "status": status, "customer_type": customer_type,
+        "company_id": company_id, "companies": _company_choices(),
+        "total_customers": total_customers, "active_customers": active_customers,
+        "business_customers": business_customers, "customer_companies": customer_companies,
     })
 
 
@@ -1130,19 +1159,47 @@ PANEL_RESOURCES = {
 @panel_admin_required
 def resource_list(request, resource):
     form_class, title, singular, search_fields = PANEL_RESOURCES[resource]
-    queryset = form_class._meta.model.objects.select_related('company').order_by('-created_at', 'pk')
+    all_records = form_class._meta.model.objects.all()
+    total_records = all_records.count()
+    companies_count = all_records.exclude(company__isnull=True).values("company_id").distinct().count()
+    if resource in {"branches", "roles"}:
+        active_records = all_records.filter(is_active=True).count()
+        special_records = (
+            all_records.filter(is_head_office=True).count()
+            if resource == "branches" else all_records.filter(is_system=True).count()
+        )
+    else:
+        active_records = all_records.filter(status__iexact="active").count()
+        special_records = all_records.filter(status__iexact="inactive").count()
+
+    queryset = all_records.select_related("company")
+    if resource == "vehicles":
+        queryset = queryset.select_related("customer", "branch")
+    queryset = queryset.order_by("-created_at", "pk")
     queryset, company_id = _company_filter(request, queryset)
-    query = request.GET.get('q', '').strip()
+    query = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
     if query:
         condition = Q()
         for field in search_fields:
-            condition |= Q(**{field + '__icontains': query})
+            condition |= Q(**{field + "__icontains": query})
         queryset = queryset.filter(condition)
-    return render(request, 'control_panel/resource_list.html', {
-        'page_title': title, 'active': resource, 'rows': _paginate(request, queryset),
-        'companies': _company_choices(), 'company_id': company_id, 'q': query,
-        'create_url': f'panel:{singular}-create', 'detail_url': f'panel:{singular}-detail',
-        'edit_url': f'panel:{singular}-edit', 'delete_url': f'panel:{singular}-delete',
+    if status in {"active", "inactive"}:
+        if resource in {"branches", "roles"}:
+            queryset = queryset.filter(is_active=(status == "active"))
+        else:
+            queryset = queryset.filter(status__iexact=status)
+    else:
+        status = ""
+    return render(request, "control_panel/resource_list.html", {
+        "page_title": title, "active": resource,
+        "rows": _paginate(request, queryset),
+        "companies": _company_choices(), "company_id": company_id, "q": query,
+        "status": status, "total_records": total_records,
+        "active_records": active_records, "special_records": special_records,
+        "companies_count": companies_count,
+        "create_url": f"panel:{singular}-create", "detail_url": f"panel:{singular}-detail",
+        "edit_url": f"panel:{singular}-edit", "delete_url": f"panel:{singular}-delete",
     })
 
 
@@ -1227,9 +1284,15 @@ def plan_edit(request, pk):
 
 @panel_admin_required
 def feature_catalog(request):
+    all_features = PlanFeature.objects.all()
+    groups = FeatureGroup.objects.select_related("parent").prefetch_related("features")
     return render(request, "control_panel/feature_catalog.html", {
         "page_title": "Feature Groups", "active": "features",
-        "groups": FeatureGroup.objects.select_related("parent").prefetch_related("features").all(),
+        "groups": groups.all(),
+        "group_total": groups.count(),
+        "feature_total": all_features.count(),
+        "enabled_features": all_features.filter(is_active=True).count(),
+        "disabled_features": all_features.filter(is_active=False).count(),
     })
 
 
