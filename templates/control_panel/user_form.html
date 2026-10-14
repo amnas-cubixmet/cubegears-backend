@@ -14,7 +14,7 @@
 
   <form method="post" class="user-editor-form" novalidate>
     {% csrf_token %}
-    {{ form.password.as_hidden }}
+    {% if not is_edit %}{{ form.password }}{% endif %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
 
     <section class="panel-card user-editor-section">
