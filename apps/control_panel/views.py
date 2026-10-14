@@ -515,10 +515,12 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         else:
             messages.success(request, f"{title} saved successfully.")
         return redirect(cancel_url)
-    return render(request, (
-        "control_panel/company_form.html"
-        if isinstance(form, CompanyForm) else "control_panel/form.html"
-    ), {
+    template = (
+        "control_panel/company_form.html" if isinstance(form, CompanyForm)
+        else "control_panel/user_form.html" if isinstance(form, UserForm)
+        else "control_panel/form.html"
+    )
+    return render(request, template, {
         "page_title": title,
         "active": active,
         "form": form,
