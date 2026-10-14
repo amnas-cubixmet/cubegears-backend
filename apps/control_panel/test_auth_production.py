@@ -98,6 +98,26 @@ class PanelAccountRecoveryTests(TestCase):
         self.assertTrue(invited.has_usable_password())
         self.assertEqual(self.client.session["_auth_user_id"], str(invited.pk))
 
+    def test_platform_user_creation_invites_without_admin_password(self):
+        actor = User.objects.create_superuser(
+            email="owner-panel@test.local", name="Platform Owner",
+            password="OwnerPlatform2026!",
+        )
+        self.client.force_login(actor)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("panel:user-create"), {
+                "email": "new-panel@test.local", "name": "New Platform Admin",
+                "role": str(self.role.pk), "is_active": "on",
+                "is_staff": "on",
+            })
+        self.assertEqual(response.status_code, 302, response.content)
+        invited = User.objects.get(email="new-panel@test.local")
+        self.assertFalse(invited.has_usable_password())
+        self.assertFalse(invited.email_verified)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/login/password-setup/", mail.outbox[0].body)
+        self.assertTrue(mail.outbox[0].alternatives)
+
     def test_non_platform_user_cannot_use_platform_recovery(self):
         tenant = User.objects.create_user(
             email="tenant@test.local", name="Tenant", password="TenantStrong2026!",
