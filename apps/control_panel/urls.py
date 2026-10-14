@@ -41,6 +41,7 @@ urlpatterns = [
     path("features/groups/<int:pk>/edit/", views.feature_group_edit, name="featuregroup-edit"),
     path("requests/", views.plan_requests, name="requests"),
     path("subscriptions/", views.subscriptions, name="subscriptions"),
+    path("subscriptions/payments/", views.subscription_payments, name="subscription-payments"),
     path("subscriptions/add/", views.subscription_create, name="subscription-create"),
     path("subscriptions/<uuid:pk>/", views.subscription_detail, name="subscription-detail"),
     path("subscriptions/<uuid:pk>/edit/", views.subscription_edit, name="subscription-edit"),

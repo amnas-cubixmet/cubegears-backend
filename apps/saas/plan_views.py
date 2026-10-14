@@ -7,6 +7,7 @@ from django.db.models import Sum
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
 from apps.accounts.permissions import RolePermission
 from .models import (
     Subscription, SubscriptionPlan, FeatureGroup, PlanFeature,
@@ -61,13 +62,14 @@ def plan_payload(plan):
         "includedStorageGb": plan.included_storage_gb,
         "extraStorageRate": str(plan.extra_storage_rate),
         "trialDays": plan.trial_days,
+        "accessDurationDays": plan.access_duration_days,
+        "checkoutPrice": str(plan.checkout_price),
         "features": features,
     }
 
 
 class PlanCatalogView(APIView):
-    permission_classes = [RolePermission]
-    permission_code = "billing.view"
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True, is_public=True).prefetch_related("feature_access")

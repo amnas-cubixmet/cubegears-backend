@@ -502,7 +502,7 @@ class PlanBuilderForm(AdminModelForm):
         model = SubscriptionPlan
         fields = ["name", "description", "monthly_price", "yearly_price",
                   "promo_percent", "promo_ends_at", "max_branches", "max_users",
-                  "included_storage_gb", "extra_storage_rate", "trial_days",
+                  "included_storage_gb", "extra_storage_rate", "trial_days", "access_duration_days", "checkout_price",
                   "sort_order", "is_public", "is_active"]
         widgets = {"promo_ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"})}
 
@@ -517,6 +517,18 @@ class PlanBuilderForm(AdminModelForm):
             self.fields["enabled_features"].initial = list(
                 self.instance.feature_access.filter(enabled=True).values_list("feature_id", flat=True)
             )
+
+    def clean_checkout_price(self):
+        price = self.cleaned_data["checkout_price"]
+        if price < 0 or price > 10000000:
+            raise forms.ValidationError("Enter a valid one-time plan price.")
+        return price
+
+    def clean_access_duration_days(self):
+        days = self.cleaned_data["access_duration_days"]
+        if days < 1 or days > 730:
+            raise forms.ValidationError("Plan validity must be between 1 and 730 days.")
+        return days
 
     def clean_promo_percent(self):
         discount = self.cleaned_data["promo_percent"]
