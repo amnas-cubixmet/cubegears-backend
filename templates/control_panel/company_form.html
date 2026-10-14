@@ -24,7 +24,7 @@
         {% include "control_panel/company_field.html" with field=form.legal_name %}
         <div class="company-editor-field is-wide">
           <label for="company-slug-preview">Company Slug <span class="auto-badge">Automatic</span></label>
-          <input id="company-slug-preview" type="text" class="form-control" value="{% if is_edit %}{{ form.instance.slug }}{% endif %}" placeholder="Generated from company name" readonly aria-describedby="company-slug-help">
+          <input id="company-slug-preview" type="text" class="form-control" value="{% if is_edit %}{{ form.instance.slug }}{% endif %}" {% if is_edit %}data-fixed-slug{% endif %} placeholder="Generated from company name" readonly aria-describedby="company-slug-help">
           <small id="company-slug-help" class="field-hint">{% if is_edit %}The existing slug is preserved to prevent breaking company links.{% else %}Generated automatically when saved. Duplicate names receive a unique suffix.{% endif %}</small>
         </div>
         {% include "control_panel/company_field.html" with field=form.gstin %}
