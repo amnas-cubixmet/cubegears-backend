@@ -176,6 +176,10 @@ class RazorpayPlanPayment(CompanyOwnedModel):
     period_start = models.DateTimeField(null=True, blank=True)
     period_end = models.DateTimeField(null=True, blank=True)
 
+    @property
+    def amount_inr(self):
+        return Decimal(self.amount_paise) / Decimal(100)
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["company", "status"], name="saas_rp_company_status")]
