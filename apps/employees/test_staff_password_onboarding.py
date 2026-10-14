@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs, urlparse
 
 from django.core import mail
+from django.core.cache import cache
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
@@ -16,6 +17,9 @@ from apps.roles.models import Role
 )
 class StaffPasswordOnboardingTests(APITestCase):
     def setUp(self):
+        # DRF throttles use the shared cache; keep isolated signup/login test runs
+        # independent of previous authentication test requests.
+        cache.clear()
         self.company = Company.objects.create(name="Workshop A", slug="workshop-a")
         self.other = Company.objects.create(name="Workshop B", slug="workshop-b")
         self.admin_role = Role.objects.create(
