@@ -103,7 +103,7 @@ class CompanyEditorTests(TestCase):
         self.assertContains(directory, company.logo_image.url)
         detail = self.client.get(reverse("panel:company-detail", args=[company.pk]))
         self.assertContains(detail, company.logo_image.url)
-        self.assertContains(detail, 'class="company-profile-header"')
+        self.assertContains(detail, 'class="panel-card company-profile-header"')
 
     def test_wrong_extension_and_non_images_are_rejected(self):
         url = reverse("panel:company-create")
