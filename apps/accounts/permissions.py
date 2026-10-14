@@ -52,25 +52,34 @@ MODEL_PERMISSION_PREFIX = {
 
 
 def user_has_permission(user, permission_code):
-    if not user or not user.is_authenticated or not user.is_active:
+    if (
+        not user
+        or not user.is_authenticated
+        or not user.is_active
+        or not isinstance(permission_code, str)
+    ):
         return False
 
-    if not user.company_id or not user.company or not user.company.is_active:
-        return False
-
-    role = getattr(user, "role", None)
-    if not role or not role.is_active or role.company_id != user.company_id:
-        return False
-    if role.company_id and role.company_id != user.company_id:
-        return False
-    if user.company_id and not user.company.is_active:
-        return False
     if permission_code.startswith("panel."):
-        # Platform delegation is separate from tenant/workshop administration.
-        if user.company_id or role.company_id or not user.is_staff:
+        # The SaaS platform is not a workshop tenant. Platform superusers and
+        # explicitly delegated platform staff must have NO company attached.
+        # A workshop's company-level wildcard must never grant platform access.
+        if user.company_id or not user.is_staff:
             return False
-    elif not user.company_id:
-        return False
+        if user.is_superuser:
+            return True
+        role = getattr(user, "role", None)
+        if not role or not role.is_active or role.company_id is not None:
+            return False
+    else:
+        # Existing tenant RBAC: never cross company boundaries, even when a
+        # platform administrator is logged in.
+        if not user.company_id or not user.company or not user.company.is_active:
+            return False
+        role = getattr(user, "role", None)
+        if not role or not role.is_active or role.company_id != user.company_id:
+            return False
+
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False
