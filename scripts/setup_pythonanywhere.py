@@ -117,6 +117,7 @@ def configure(env_path, host, frontend_url=None):
     if frontend:
         set_env("FRONTEND_URL", frontend)
         set_env("CORS_ALLOWED_ORIGINS", add_csv(config.get("CORS_ALLOWED_ORIGINS"), frontend))
+        set_env("CSRF_TRUSTED_ORIGINS", add_csv(config.get("CSRF_TRUSTED_ORIGINS"), frontend))
 
     if config.get("EMAIL_BACKEND") in {
         None, "", "django.core.mail.backends.console.EmailBackend"
@@ -137,10 +138,19 @@ def environment_warnings(env_path):
         if exported is not None and not valid_secret(exported):
             warnings.append(
                 f"{name} is set to an invalid value in the shell environment; "
-                f'unset it or fix the PythonAnywhere WSGI environment before running Django.'
+                "unset it or fix the PythonAnywhere WSGI environment before running Django."
+            )
+        elif exported is not None and values.get(name) != exported:
+            warnings.append(
+                f"{name} in the shell environment differs from .env and overrides it. "
+                "Ensure WSGI and Bash use the same signing key."
             )
     if os.environ.get("DJANGO_DEBUG", "").lower() in {"true", "1", "yes", "on"}:
         warnings.append("DJANGO_DEBUG is exported as True and overrides .env.")
+    if os.environ.get("DJANGO_ALLOWED_HOSTS") and (
+        os.environ["DJANGO_ALLOWED_HOSTS"] != values.get("DJANGO_ALLOWED_HOSTS")
+    ):
+        warnings.append("DJANGO_ALLOWED_HOSTS is exported and overrides .env; verify production host.")
     if not values.get("FRONTEND_URL") or "localhost" in values.get("FRONTEND_URL", ""):
         warnings.append(
             "FRONTEND_URL still points to localhost. Set --frontend-url to your HTTPS frontend."
@@ -175,7 +185,7 @@ def main(argv=None):
     warnings = environment_warnings(args.env_file)
     for message in warnings:
         print(f"WARNING: {message}", file=sys.stderr)
-    if any(("shell environment" in message or "overrides .env" in message) for message in warnings):
+    if any(("shell environment" in message or "overrides .env" in message or "differs from .env" in message) for message in warnings):
         return 2
     print("Next: python manage.py check && python manage.py migrate --noinput")
     return 0
