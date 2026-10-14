@@ -80,3 +80,52 @@ VITE_API_WITH_CREDENTIALS=false
 8. Inspect production logs and email delivery without sharing signed links or secret values.
 
 Deployment is not complete merely because CI passes; live HTTPS, mail delivery, backups and browser flows require staging smoke testing.
+
+
+## Staff onboarding and password-reset email troubleshooting
+
+In local development the default `EMAIL_BACKEND` is
+`django.core.mail.backends.console.EmailBackend`. This prints the signed
+setup/reset email to the Django terminal. **It does not send to Gmail or any
+other inbox.** Staff creation can succeed while the account remains in
+`Password Setup Pending` until the person follows a valid setup link.
+
+For real emails, set the following values in your **private backend `.env`**
+(not React/Vite `.env`). Use your own verified sender and SMTP app password:
+
+```dotenv
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-smtp-account@example.com
+EMAIL_HOST_PASSWORD=YOUR_PRIVATE_SMTP_APP_PASSWORD
+EMAIL_USE_TLS=True
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=CubixGear <your-smtp-account@example.com>
+FRONTEND_URL=http://localhost:5173
+```
+
+Then restart Django and run these diagnostic commands from the backend directory:
+
+```bash
+python manage.py check_email_delivery
+python manage.py check_email_delivery --to your-test-recipient@example.com
+```
+
+The second command sends only a non-sensitive test message. A successful
+result means SMTP accepted it, not that it reached the inbox. Check spam and
+provider reputation/SPF/DKIM for production. Do not paste app passwords,
+SMTP secrets, tokens or password setup URLs into issues or chat.
+
+When creating staff, select a valid company-specific login role, enter a
+valid email and keep the staff account active. The Staff Profile now shows
+the create/invite email state. If email delivery failed, **do not create
+the staff again**: fix SMTP and choose **Send Login Invite** on the existing
+Staff Profile. Only company admins are authorized to send login invites.
+
+Password-reset and magic-link request endpoints always return the same
+public response for registered and unknown emails. This is intentional
+protection against identifying which accounts exist. A generic confirmation
+does not prove that email was delivered. For account access problems,
+verify the staff's email and active account/role privately as an authorized
+workshop admin.

@@ -84,6 +84,31 @@ class StaffPasswordOnboardingTests(APITestCase):
         self.assertEqual(self.create_employee(role="Nonexistent").status_code, 400)
         self.assertEqual(User.objects.filter(email="staff@example.com").count(), 0)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend")
+    def test_console_backend_reports_no_inbox_delivery_on_create(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        # Console output contains signed setup credentials and is never logged.
+        with redirect_stdout(StringIO()):
+            with self.captureOnCommitCallbacks(execute=True):
+                created = self.create_employee()
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["emailDeliveryStatus"], "console_only")
+        self.assertTrue(Employee.objects.filter(pk=created.data["id"]).exists())
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend")
+    def test_resend_invitation_reports_console_only_not_sent(self):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        with redirect_stdout(StringIO()):
+            with self.captureOnCommitCallbacks(execute=True):
+                created = self.create_employee()
+            with self.captureOnCommitCallbacks(execute=True):
+                invited = self.client.post(f"/api/v1/employees/{created.data['id']}/invite")
+        self.assertEqual(invited.status_code, 200, invited.data)
+        self.assertEqual(invited.data["emailDeliveryStatus"], "console_only")
+        self.assertIn("terminal", invited.data["message"].lower())
+
     def test_without_email_creates_profile_but_no_account_or_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             result = self.create_employee(email="")

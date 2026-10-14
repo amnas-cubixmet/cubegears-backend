@@ -148,6 +148,29 @@ class DirectEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('reset-password', mail.outbox[0].body)
 
+    def test_unregistered_email_has_same_public_reset_response_without_email(self):
+        User.objects.create_user(email='registered@example.com', name='Existing',
+                                 password='Secure-pass-482!')
+        with self.captureOnCommitCallbacks(execute=True):
+            existing = self.client.post('/api/v1/auth/forgot-password', {
+                'email': 'registered@example.com'
+            })
+            unknown = self.client.post('/api/v1/auth/forgot-password', {
+                'email': 'does-not-exist@example.com'
+            })
+        self.assertEqual(existing.status_code, 200)
+        self.assertEqual(unknown.status_code, 200)
+        self.assertEqual(existing.data, unknown.data)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_delivery_tracking_is_diagnostic_only(self):
+        from apps.accounts.email import email_delivery_mode
+        self.assertEqual(email_delivery_mode(), 'local_only')
+        with self.captureOnCommitCallbacks(execute=True):
+            state = queue_email('Check', 'Hello', ['someone@example.com'])
+            self.assertEqual(state['status'], 'local_only')
+        self.assertEqual(state['status'], 'local_only')
+
     def test_smtp_error_is_logged_without_public_account_disclosure(self):
         with patch('apps.accounts.email.send_mail', side_effect=OSError('SMTP unavailable')):
             with self.assertLogs('django.test', level='ERROR'):
