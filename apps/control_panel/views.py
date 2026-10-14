@@ -29,7 +29,7 @@ from apps.employees.models import Employee
 from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
-from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest
+from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment
 from apps.vehicles.models import Vehicle
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
