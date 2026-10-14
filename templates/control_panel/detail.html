@@ -9,6 +9,27 @@
   </div>
 </div>
 
+{% if active == 'subscriptions' %}
+<section class="panel-card subscription-profile-header">
+  <div class="subscription-profile-symbol" aria-hidden="true">{{ object.company.name|slice:":1"|upper }}</div>
+  <div class="subscription-profile-info">
+    <p class="eyebrow">Subscription details</p>
+    <h2>{{ object.company.name }} · {{ object.plan|default:"Subscription" }}</h2>
+    <p>{{ object.currency }} {{ object.amount|floatformat:2 }} / {{ object.billing_cycle|title }} · {{ object.seats }} seats</p>
+    <div class="subscription-profile-tags">
+      {% if object.status|lower == "active" %}
+        <span class="subscription-status-pill is-active">Active</span>
+      {% elif object.status|lower == "cancelled" or object.status|lower == "canceled" or object.status|lower == "expired" %}
+        <span class="subscription-status-pill is-inactive">{{ object.status|title }}</span>
+      {% else %}
+        <span class="subscription-status-pill is-pending">{{ object.status|default:"Not set"|title }}</span>
+      {% endif %}
+      <span class="subscription-cycle-pill">{{ object.billing_cycle|title }}</span>
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'users' %}
 <section class="panel-card user-profile-header">
   <div class="user-profile-avatar" aria-hidden="true">{{ object.name|default:object.email|slice:":1"|upper }}</div>
