@@ -1,0 +1,81 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="staff-editor-page">
+  <header class="staff-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:staff' %}">Staff Management</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Staff{% else %}Add Staff{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit Staff Member{% else %}Add Staff Member{% endif %}</h2>
+      <p>{% if is_edit %}Update employment details and workshop assignments.{% else %}Create a company-scoped staff profile and schedule a secure password-setup email.{% endif %}</p>
+    </div>
+    <a href="{% url cancel_url %}" class="btn">← Back to Staff</a>
+  </header>
+
+  <form method="post" class="staff-editor-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">01</span><div><h3>Personal Details</h3><p>Identity and contact details of the staff member.</p></div></header>
+      <div class="staff-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        {% include "control_panel/company_field.html" with field=form.employee_code %}
+        {% include "control_panel/company_field.html" with field=form.email %}
+        {% include "control_panel/company_field.html" with field=form.phone %}
+        {% include "control_panel/company_field.html" with field=form.address wide=True %}
+        {% include "control_panel/company_field.html" with field=form.emergency_contact %}
+      </div>
+    </section>
+
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">02</span><div><h3>Workshop &amp; Role</h3><p>Choose the company, branch and day-to-day team assignments.</p></div></header>
+      <div class="staff-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.designation %}
+        {% include "control_panel/company_field.html" with field=form.role_name %}
+        {% include "control_panel/company_field.html" with field=form.department_name %}
+        {% include "control_panel/company_field.html" with field=form.team %}
+        {% include "control_panel/company_field.html" with field=form.shift %}
+        {% include "control_panel/company_field.html" with field=form.shift_label %}
+      </div>
+      <div class="staff-editor-note">
+        <strong>Company role validation</strong>
+        {% if is_edit %}
+          <p>The role name shown here is part of the staff profile. Editing it does not automatically change the permissions of an existing linked login account. Manage login permissions through the appropriate company role workflow.</p>
+        {% else %}
+          <p>For a new login, Role Name must match an active, non-system staff role belonging to the selected company. The staff email must not already be registered.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">03</span><div><h3>Employment &amp; Compensation</h3><p>Configure joining date, employment type and saved payroll reference fields.</p></div></header>
+      <div class="staff-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.joining_date %}
+        {% include "control_panel/company_field.html" with field=form.employment_type %}
+        {% include "control_panel/company_field.html" with field=form.payment_type %}
+        {% include "control_panel/company_field.html" with field=form.base_salary %}
+        {% include "control_panel/company_field.html" with field=form.status %}
+        {% include "control_panel/company_field.html" with field=form.notes wide=True %}
+      </div>
+    </section>
+
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">04</span><div><h3>Account &amp; Access</h3><p>Staff sign-in is handled through secure email/password setup, not admin-chosen passwords.</p></div></header>
+      <div class="staff-account-section">
+        {% if is_edit %}
+          {% include "control_panel/company_field.html" with field=form.user %}
+          <p class="staff-account-help">This links the profile to an existing account. It does not reset the account's password or grant additional permissions. Verify its company, role and email before changing it.</p>
+        {% else %}
+          <div class="staff-invitation-info"><strong>Secure invitation</strong><p>A new company-scoped login is created with an unusable password. The existing email invitation flow sends a password-setup link when the account is eligible. Passwords are never displayed or emailed.</p></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <footer class="staff-editor-actions">
+      <a href="{% url cancel_url %}" class="btn">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create Staff &amp; Invite{% endif %}</button>
+    </footer>
+  </form>
+</section>
+{% endblock %}
