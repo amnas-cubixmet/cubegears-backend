@@ -8,6 +8,8 @@ SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 
 
 
 def route_allowed(user, route):
+    if route == 'payment-settings':
+        return panel_permission(user, 'subscriptions', 'edit')
     if route == 'logout':
         return bool(user.is_authenticated and user.is_active)
     if '-' in route:
