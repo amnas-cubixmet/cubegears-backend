@@ -9,6 +9,22 @@
   </div>
 </div>
 
+{% if active == 'companies' %}
+<section class="panel-card company-profile-header">
+  <div class="company-profile-logo">
+    {% if object.logo_image %}<img src="{{ object.logo_image.url }}" alt="{{ object.name }} logo">
+    {% elif object.logo %}<img src="{{ object.logo }}" alt="{{ object.name }} logo">
+    {% else %}<span aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>{% endif %}
+  </div>
+  <div class="company-profile-info">
+    <div class="eyebrow">Company profile</div>
+    <h2>{{ object.name }}</h2>
+    <p>{{ object.email|default:"No email provided" }}{% if object.city %} · {{ object.city }}{% endif %}</p>
+    <span class="company-status-tag {% if object.is_active %}is-active{% else %}is-disabled{% endif %}">{% if object.is_active %}Active{% else %}Disabled{% endif %}</span>
+  </div>
+</section>
+{% endif %}
+
 <section class="panel-card detail-card">
   <div class="detail-grid">
     {% for label, value in rows %}
