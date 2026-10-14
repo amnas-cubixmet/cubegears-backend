@@ -1,4 +1,7 @@
 from django.utils.dateparse import parse_date
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
+from .models import MediaFile
 from rest_framework import response
 from rest_framework.views import APIView
 from apps.accounts.permissions import RolePermission
@@ -31,3 +34,23 @@ class StorageEventsView(APIView):
         if end: qs=qs.filter(occurred_at__date__lte=end)
         if kind: qs=qs.filter(event_type=kind)
         return response.Response({"count":qs.count(),"results":[as_dict(e) for e in qs[offset:offset+limit]]})
+
+class StorageFileDownloadView(APIView):
+    """Private tenant-scoped download; do not expose MEDIA_ROOT through Nginx."""
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request, file_id):
+        media = get_object_or_404(MediaFile, company=request.user.company, pk=file_id)
+        if not media.file:
+            raise Http404()
+        try:
+            media.file.open("rb")
+        except (FileNotFoundError, OSError):
+            raise Http404()
+        result = FileResponse(media.file, content_type=media.mime_type or "application/octet-stream")
+        result["Content-Disposition"] = 'attachment; filename="storage-file-%s"' % media.id
+        result["Cache-Control"] = "private, no-store"
+        result["X-Content-Type-Options"] = "nosniff"
+        return result
