@@ -1,0 +1,84 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="invoice-editor-page">
+  <header class="invoice-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:invoices' %}">Invoices &amp; Estimates</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Document{% else %}Add Document{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit Invoice / Estimate{% else %}Create Invoice / Estimate{% endif %}</h2>
+      <p>Configure the billing document, customer, Indian tax fields and recorded totals.</p>
+    </div>
+    <a href="{% url cancel_url %}" class="btn">← Back to Documents</a>
+  </header>
+
+  <form method="post" class="invoice-editor-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card invoice-editor-section">
+      <header class="invoice-section-heading"><span class="invoice-section-number">01</span><div><h3>Document Details</h3><p>Set document number, type, status and issue date.</p></div></header>
+      <div class="invoice-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.number %}
+        {% include "control_panel/company_field.html" with field=form.date %}
+        {% include "control_panel/company_field.html" with field=form.kind %}
+        {% include "control_panel/company_field.html" with field=form.invoice_type %}
+        {% include "control_panel/company_field.html" with field=form.status %}
+      </div>
+    </section>
+
+    <section class="panel-card invoice-editor-section">
+      <header class="invoice-section-heading"><span class="invoice-section-number">02</span><div><h3>Company, Customer &amp; Job</h3><p>Select the owning workshop and matching customer and vehicle details.</p></div></header>
+      <div class="invoice-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.customer %}
+        {% include "control_panel/company_field.html" with field=form.vehicle %}
+        {% include "control_panel/company_field.html" with field=form.job %}
+        {% include "control_panel/company_field.html" with field=form.staff_name %}
+      </div>
+      <p class="invoice-editor-hint">Customer, vehicle, job and branch must belong to the selected company. Changing an existing billing document to another company is not allowed.</p>
+    </section>
+
+    <section class="panel-card invoice-editor-section">
+      <header class="invoice-section-heading"><span class="invoice-section-number">03</span><div><h3>Tax Configuration</h3><p>Record applicable tax mode and CGST, SGST or IGST rates and amounts.</p></div></header>
+      <div class="invoice-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.tax_mode %}
+        {% include "control_panel/company_field.html" with field=form.taxable %}
+        {% include "control_panel/company_field.html" with field=form.cgst_rate %}
+        {% include "control_panel/company_field.html" with field=form.sgst_rate %}
+        {% include "control_panel/company_field.html" with field=form.igst_rate %}
+        {% include "control_panel/company_field.html" with field=form.cgst %}
+        {% include "control_panel/company_field.html" with field=form.sgst %}
+        {% include "control_panel/company_field.html" with field=form.igst %}
+      </div>
+    </section>
+
+    <section class="panel-card invoice-editor-section">
+      <header class="invoice-section-heading"><span class="invoice-section-number">04</span><div><h3>Amount &amp; Recorded Payment</h3><p>Review the recorded discount, totals, paid amount and balance.</p></div></header>
+      <div class="invoice-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.discount %}
+        {% include "control_panel/company_field.html" with field=form.adjustment %}
+        {% include "control_panel/company_field.html" with field=form.total %}
+        {% include "control_panel/company_field.html" with field=form.paid %}
+        {% include "control_panel/company_field.html" with field=form.balance %}
+        {% include "control_panel/company_field.html" with field=form.payment_type %}
+        {% include "control_panel/company_field.html" with field=form.payment_mode %}
+        {% include "control_panel/company_field.html" with field=form.payment_terms %}
+      </div>
+      <div class="invoice-editor-notice"><strong>Stored accounting values</strong><p>This platform control form edits saved invoice fields. It does not automatically recalculate line items, tax or balances, or charge a customer. Verify entered amounts against the workshop's source billing records.</p></div>
+    </section>
+
+    <section class="panel-card invoice-editor-section">
+      <header class="invoice-section-heading"><span class="invoice-section-number">05</span><div><h3>Terms &amp; Notes</h3><p>Additional conditions and internal document notes.</p></div></header>
+      <div class="invoice-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.terms_conditions wide=True %}
+        {% include "control_panel/company_field.html" with field=form.notes wide=True %}
+      </div>
+    </section>
+
+    <footer class="invoice-editor-actions">
+      <a class="btn" href="{% url cancel_url %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create Document{% endif %}</button>
+    </footer>
+  </form>
+</section>
+{% endblock %}
