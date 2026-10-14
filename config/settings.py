@@ -175,7 +175,13 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
 
-EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+# Use console mail locally, direct Django SMTP by default in production.
+# Override EMAIL_BACKEND in .env when a different provider is required.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
 EMAIL_HOST = env("EMAIL_HOST", "")
 EMAIL_PORT = int(env("EMAIL_PORT", 587))
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
@@ -204,23 +210,26 @@ LOGIN_REDIRECT_URL = "panel:dashboard"
 LOGOUT_REDIRECT_URL = "panel:login"
 
 
-# Celery / Redis
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = TIME_ZONE
-CELERY_TASK_TRACK_STARTED = True
-CELERY_TASK_TIME_LIMIT = int(env("CELERY_TASK_TIME_LIMIT", 120))
-CELERY_TASK_SOFT_TIME_LIMIT = int(env("CELERY_TASK_SOFT_TIME_LIMIT", 90))
-CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
-CELERY_TASK_EAGER_PROPAGATES = env_bool("CELERY_TASK_EAGER_PROPAGATES", True)
+# Celery / Redis configuration is disabled for PythonAnywhere WSGI.
+# Do not remove it: these settings can be restored when a worker + Redis
+# broker are available. The attendance auto-close beat task will NOT run
+# automatically while Celery is disabled.
+# CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+# CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
+# CELERY_ACCEPT_CONTENT = ["json"]
+# CELERY_TASK_SERIALIZER = "json"
+# CELERY_RESULT_SERIALIZER = "json"
+# CELERY_TIMEZONE = TIME_ZONE
+# CELERY_TASK_TRACK_STARTED = True
+# CELERY_TASK_TIME_LIMIT = int(env("CELERY_TASK_TIME_LIMIT", 120))
+# CELERY_TASK_SOFT_TIME_LIMIT = int(env("CELERY_TASK_SOFT_TIME_LIMIT", 90))
+# CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
+# CELERY_TASK_EAGER_PROPAGATES = env_bool("CELERY_TASK_EAGER_PROPAGATES", True)
 
 
-CELERY_BEAT_SCHEDULE = {
-    "auto-close-attendance-sessions": {
-        "task": "apps.attendance.tasks.auto_close_attendance_sessions",
-        "schedule": 300.0,
-    },
-}
+# CELERY_BEAT_SCHEDULE = {
+#     "auto-close-attendance-sessions": {
+#         "task": "apps.attendance.tasks.auto_close_attendance_sessions",
+#         "schedule": 300.0,
+#     },
+# }
