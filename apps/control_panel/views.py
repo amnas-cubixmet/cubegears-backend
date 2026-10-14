@@ -480,12 +480,31 @@ def stock(request):
 
 @panel_admin_required
 def invoices(request):
-    qs = Invoice.objects.select_related("company", "customer").order_by("-date", "-created_at")
+    # Counts are across actual platform records, independent of directory filters.
+    all_documents = Invoice.objects.all()
+    total_documents = all_documents.count()
+    invoice_count = all_documents.filter(kind="invoice").count()
+    estimate_count = all_documents.filter(kind="estimate").count()
+    outstanding_count = all_documents.filter(kind="invoice", balance__gt=0).count()
+    status_options = sorted(
+        (value for value in all_documents.order_by().values_list("status", flat=True).distinct() if value),
+        key=str.casefold,
+    )
+
+    qs = all_documents.select_related("company", "branch", "customer").order_by("-date", "-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
-    kind = request.GET.get("kind", "").strip()
-    if kind:
+    kind = request.GET.get("kind", "").strip().lower()
+    status = request.GET.get("status", "").strip()
+    if kind in {"invoice", "estimate"}:
         qs = qs.filter(kind=kind)
+    else:
+        kind = ""
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
     if q:
         qs = qs.filter(
             Q(number__icontains=q)
@@ -498,8 +517,14 @@ def invoices(request):
         "rows": _paginate(request, qs),
         "q": q,
         "kind": kind,
+        "status": status,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_documents": total_documents,
+        "invoice_count": invoice_count,
+        "estimate_count": estimate_count,
+        "outstanding_count": outstanding_count,
     })
 
 
