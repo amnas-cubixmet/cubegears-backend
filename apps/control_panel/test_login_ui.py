@@ -3,6 +3,9 @@ from django.test import Client, TestCase
 from django.urls import reverse
 
 from apps.accounts.models import User
+from apps.accounts.permissions import user_has_permission
+from apps.companies.models import Company
+from apps.roles.models import Role
 
 
 class ControlPanelLoginUITests(TestCase):
@@ -61,3 +64,81 @@ class ControlPanelLoginUITests(TestCase):
             },
         )
         self.assertRedirects(response, "/companies/", fetch_redirect_response=False)
+
+
+class PlatformLoginPermissionTests(TestCase):
+    def test_platform_superuser_can_open_control_panel_but_not_tenant_resources(self):
+        user = User.objects.create_superuser(
+            email="superadmin@example.com",
+            name="Platform Admin",
+            password="Super-secure-123!",
+        )
+        self.assertTrue(user_has_permission(user, "panel.dashboard.view"))
+        self.assertTrue(user_has_permission(user, "panel.companies.edit"))
+        self.assertFalse(user_has_permission(user, "jobs.view"))
+
+        self.assertRedirects(
+            self.client.post(
+                "/login/",
+                {"email": user.email, "password": "Super-secure-123!"},
+            ),
+            "/",
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(self.client.get("/").status_code, 200)
+
+    def test_delegated_platform_staff_are_limited_to_granted_routes(self):
+        role = Role.objects.create(
+            name="Platform Reader",
+            code="PLATFORM_READER",
+            permissions=["panel.companies.view"],
+        )
+        user = User.objects.create_user(
+            email="reader@example.com",
+            name="Platform Reader",
+            password="Reader-secure-123!",
+            is_staff=True,
+            role=role,
+        )
+        self.assertTrue(user_has_permission(user, "panel.companies.view"))
+        self.assertFalse(user_has_permission(user, "panel.users.view"))
+        self.assertFalse(user_has_permission(user, "jobs.view"))
+        self.assertRedirects(
+            self.client.post(
+                "/login/",
+                {"email": user.email, "password": "Reader-secure-123!"},
+            ),
+            "/companies/",
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(self.client.get("/companies/").status_code, 200)
+        self.assertEqual(self.client.get("/users/").status_code, 403)
+
+    def test_company_admin_wildcard_cannot_enter_platform_control_panel(self):
+        company = Company.objects.create(name="Company A", slug="company-a")
+        role = Role.objects.create(
+            company=company,
+            name="Company Super Admin",
+            code="SUPER_ADMIN",
+            permissions=["*"],
+        )
+        user = User.objects.create_user(
+            email="owner@example.com",
+            name="Company Owner",
+            password="Owner-secure-123!",
+            company=company,
+            role=role,
+            is_staff=True,
+        )
+        self.assertTrue(user_has_permission(user, "jobs.view"))
+        self.assertFalse(user_has_permission(user, "panel.dashboard.view"))
+        self.assertFalse(user_has_permission(user, "panel.companies.view"))
+        response = self.client.post(
+            "/login/",
+            {"email": user.email, "password": "Owner-secure-123!"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "This account does not have Control Panel access.",
+        )
