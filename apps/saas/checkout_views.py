@@ -181,13 +181,16 @@ class RazorpayWebhookView(APIView):
                         capture_order(row, entity)
                     except ValueError:
                         return Response({"message": "Unmatched captured payment."}, status=400)
-            elif event_type == "payment.refunded":
-                entity = ((payload.get("payment") or {}).get("entity") or {})
+            elif event_type == "refund.processed":
+                payment = ((payload.get("payment") or {}).get("entity") or {})
+                refund = ((payload.get("refund") or {}).get("entity") or {})
                 row = RazorpayPlanPayment.objects.filter(
-                    razorpay_payment_id=entity.get("id"), status="captured",
+                    razorpay_payment_id=payment.get("id"), status="captured",
                 ).first()
-                # Partial refunds do not revoke the full subscription.
-                if row and int(entity.get("amount_refunded") or 0) >= row.amount_paise:
+                # Only a processed, fully refunded order revokes paid access.
+                if (row and refund.get("status") == "processed"
+                    and refund.get("payment_id") == row.razorpay_payment_id
+                    and int(payment.get("amount_refunded") or 0) >= row.amount_paise):
                     refund_order(row)
             RazorpayWebhookDelivery.objects.create(event_id=delivery_id, event_type=event_type)
         return Response({"received": True})
