@@ -9,6 +9,24 @@
   </div>
 </div>
 
+{% if active == 'invoices' %}
+<section class="panel-card invoice-profile-header">
+  <div class="invoice-profile-symbol" aria-hidden="true">{% if object.kind == 'estimate' %}E{% else %}I{% endif %}</div>
+  <div class="invoice-profile-info">
+    <p class="eyebrow">Billing document details</p>
+    <h2>{{ object.number }} · {{ object.kind|title }}</h2>
+    <p>{{ object.company.name }} · {{ object.customer.name }} · {{ object.date|date:"d M Y" }}</p>
+    <div class="invoice-profile-tags">
+      <span class="invoice-type-tag {% if object.kind == 'estimate' %}is-estimate{% endif %}">{{ object.kind|title }}</span>
+      {% if object.status|lower == 'paid' or object.status|lower == 'completed' %}<span class="invoice-status-tag is-paid">{{ object.status }}</span>
+      {% elif object.status|lower == 'cancelled' or object.status|lower == 'canceled' %}<span class="invoice-status-tag is-cancelled">{{ object.status }}</span>
+      {% else %}<span class="invoice-status-tag is-other">{{ object.status|default:"Not set" }}</span>{% endif %}
+    </div>
+  </div>
+  <div class="invoice-profile-amount"><span>Recorded total</span><strong>₹{{ object.total|floatformat:2 }}</strong><span>Balance: ₹{{ object.balance|floatformat:2 }}</span></div>
+</section>
+{% endif %}
+
 {% if active == 'staff' %}
 <section class="panel-card staff-profile-header">
   <div class="staff-profile-avatar" aria-hidden="true">{{ object.name|slice:":1"|upper }}</div>
