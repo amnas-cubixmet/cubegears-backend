@@ -43,7 +43,9 @@
       <tbody>
       {% for row in rows %}
         <tr>
-          <td data-label="Company"><div class="company-identity"><span class="company-monogram" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.email|default:"No email available" }}</span></div></div></td>
+          <td data-label="Company"><div class="company-identity">{% if row.logo_image %}<img class="company-monogram company-logo-image" src="{{ row.logo_image.url }}" alt="">
+            {% elif row.logo %}<img class="company-monogram company-logo-image" src="{{ row.logo }}" alt="">
+            {% else %}<span class="company-monogram" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}<div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.email|default:"No email available" }}</span></div></div></td>
           <td data-label="Plan"><span class="company-plan-tag">{{ row.plan|title }}</span></td>
           <td data-label="Users">{{ row.user_count }}</td>
           <td data-label="Branches">{{ row.branch_count }}</td>
