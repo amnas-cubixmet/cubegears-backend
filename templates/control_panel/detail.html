@@ -9,6 +9,34 @@
   </div>
 </div>
 
+{% if active == 'jobs' %}
+<section class="panel-card jobs-profile-header">
+  <span class="jobs-profile-icon" aria-hidden="true">J</span>
+  <div class="jobs-profile-info">
+    <p class="eyebrow">Workshop job card</p>
+    <h2>{{ object.job_number }}</h2>
+    <p>{{ object.company.name }} · {{ object.customer.name }} · {{ object.vehicle.registration }}</p>
+    <div class="jobs-profile-tags">
+      {% if object.status == "Delivered" or object.status == "Ready for Delivery" %}
+        <span class="jobs-status-pill is-complete">{{ object.status }}</span>
+      {% elif object.status == "Waiting for Parts" or object.status == "Estimate Pending" %}
+        <span class="jobs-status-pill is-waiting">{{ object.status }}</span>
+      {% elif object.status == "In Progress" or object.status == "QC" %}
+        <span class="jobs-status-pill is-progress">{{ object.status }}</span>
+      {% else %}
+        <span class="jobs-status-pill is-neutral">{{ object.status }}</span>
+      {% endif %}
+      <span class="jobs-priority-pill {% if object.priority|lower == 'high' or object.priority|lower == 'urgent' %}is-high{% endif %}">{{ object.priority }} priority</span>
+    </div>
+  </div>
+  <div class="jobs-profile-summary">
+    <span>Saved estimate</span>
+    <strong>₹{{ object.estimate_total|floatformat:2 }}</strong>
+    <span>{{ object.technician.name|default:"No technician assigned" }}</span>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'stock' %}
 <section class="panel-card stock-profile-header">
   <span class="stock-profile-icon" aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>
