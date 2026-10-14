@@ -9,6 +9,28 @@
   </div>
 </div>
 
+{% if active == 'stock' %}
+<section class="panel-card stock-profile-header">
+  <span class="stock-profile-icon" aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>
+  <div class="stock-profile-info">
+    <p class="eyebrow">Inventory item details</p>
+    <h2>{{ object.name }}</h2>
+    <p>{{ object.sku }} · {{ object.company.name }}{% if object.branch %} · {{ object.branch.name }}{% endif %}</p>
+    <div class="stock-profile-tags">
+      {% if object.available_quantity <= 0 %}<span class="stock-level-pill is-out">Out of Stock</span>
+      {% elif object.low_stock %}<span class="stock-level-pill is-low">Low Stock</span>
+      {% else %}<span class="stock-level-pill is-healthy">In Stock</span>{% endif %}
+      <span class="stock-state-tag">{{ object.status }}</span>
+    </div>
+  </div>
+  <div class="stock-profile-quantity">
+    <span>Available units</span>
+    <strong>{{ object.available_quantity|floatformat:2 }}</strong>
+    <span>{{ object.unit }} · {{ object.reserved|floatformat:2 }} reserved</span>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'invoices' %}
 <section class="panel-card invoice-profile-header">
   <div class="invoice-profile-symbol" aria-hidden="true">{% if object.kind == 'estimate' %}E{% else %}I{% endif %}</div>
