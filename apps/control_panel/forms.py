@@ -263,8 +263,22 @@ class JobForm(AdminModelForm):
             "estimate_total", "labour_total", "parts_total",
         ]
         widgets = {
-            "promised_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-            "delivered_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "promised_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+            "delivered_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+        }
+        help_texts = {
+            "job_number": "Job number must be unique for the selected company.",
+            "promised_at": "Target delivery time; no scheduling messages are sent by this form.",
+            "delivered_at": "Recorded delivery time, when applicable.",
+            "complaints": "Structured JSON list from the workshop complaint workflow.",
+            "inspection": "Structured JSON object from vehicle inspection.",
+            "work": "Structured JSON list of workshop work details.",
+            "qc": "Structured JSON object for quality checks.",
+            "parts_workflow": "Structured JSON object for part approvals and workflow.",
         }
 
     def clean(self):
