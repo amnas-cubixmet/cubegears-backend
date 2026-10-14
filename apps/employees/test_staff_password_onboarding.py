@@ -95,7 +95,7 @@ class StaffPasswordOnboardingTests(APITestCase):
         non_admin = User.objects.create_user(
             email="editor@example.com", name="Editor", company=self.company,
             role=Role.objects.create(company=self.company, name="Staff Editor", code="EDITOR",
-                                     permissions=["staff.create", "staff.view"]),
+                                     permissions=["staff.create", "staff.view", "jobs.view", "attendance.self"]),
             password="SafeEditorPass-923!",
         )
         self.client.force_authenticate(non_admin)
