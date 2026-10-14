@@ -38,3 +38,28 @@ class CustomPlanRequestAdmin(admin.ModelAdmin):
     list_display = ("company", "email", "branches", "users", "status", "created_at")
     list_filter = ("status",)
     readonly_fields = ("company", "requested_by", "email", "branches", "users", "message", "created_at")
+
+from .payment_models import PaymentPolicy, SubscriptionPayment
+
+@admin.register(PaymentPolicy)
+class PaymentPolicyAdmin(admin.ModelAdmin):
+    list_display = ("id", "enforce_paywall", "monthly_access_days", "yearly_access_days", "updated_at")
+    def has_add_permission(self, request):
+        return request.user.is_superuser and not PaymentPolicy.objects.exists()
+    def has_delete_permission(self, request, obj=None):
+        return False
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+@admin.register(SubscriptionPayment)
+class SubscriptionPaymentAdmin(admin.ModelAdmin):
+    list_display = ("company","plan","amount_paise","status","gateway_method","paid_at","access_until")
+    list_filter = ("status","billing_cycle")
+    search_fields = ("order_id","payment_id","company__name")
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+    def has_add_permission(self,request):
+        return False
+    def has_change_permission(self,request,obj=None):
+        return False
+    def has_delete_permission(self,request,obj=None):
+        return False
