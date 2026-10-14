@@ -431,18 +431,40 @@ def customers(request):
 
 @panel_admin_required
 def jobs(request):
-    qs = Job.objects.select_related("company", "customer", "vehicle").order_by("-created_at")
+    # Overview is based on all saved Job records, not the filtered page.
+    all_jobs = Job.objects.all()
+    total_jobs = all_jobs.count()
+    in_progress_jobs = all_jobs.filter(status=Job.STATUS_IN_PROGRESS).count()
+    waiting_parts_jobs = all_jobs.filter(status=Job.STATUS_WAITING_PARTS).count()
+    delivered_jobs = all_jobs.filter(status=Job.STATUS_DELIVERED).count()
+    priorities = sorted(
+        (value for value in all_jobs.order_by().values_list("priority", flat=True).distinct() if value),
+        key=str.casefold,
+    )
+
+    qs = all_jobs.select_related(
+        "company", "branch", "customer", "vehicle", "advisor", "technician"
+    ).order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     status_value = request.GET.get("status", "").strip()
+    priority = request.GET.get("priority", "").strip()
     q = request.GET.get("q", "").strip()
-    if status_value:
+    valid_statuses = {value for value, _ in Job.STATUS_CHOICES}
+    if status_value in valid_statuses:
         qs = qs.filter(status=status_value)
+    else:
+        status_value = ""
+    if priority and any(option.casefold() == priority.casefold() for option in priorities):
+        qs = qs.filter(priority__iexact=priority)
+    else:
+        priority = ""
     if q:
         qs = qs.filter(
             Q(job_number__icontains=q)
             | Q(customer__name__icontains=q)
             | Q(vehicle__registration__icontains=q)
             | Q(company__name__icontains=q)
+            | Q(technician__name__icontains=q)
         )
     return render(request, "control_panel/jobs.html", {
         "page_title": "All Job Cards",
@@ -450,9 +472,15 @@ def jobs(request):
         "rows": _paginate(request, qs),
         "status_choices": Job.STATUS_CHOICES,
         "status_value": status_value,
+        "priority": priority,
+        "priorities": priorities,
         "q": q,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_jobs": total_jobs,
+        "in_progress_jobs": in_progress_jobs,
+        "waiting_parts_jobs": waiting_parts_jobs,
+        "delivered_jobs": delivered_jobs,
     })
 
 
