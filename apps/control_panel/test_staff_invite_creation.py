@@ -110,3 +110,43 @@ class StaffAndAdminInvitationsTests(TestCase):
         self.assertTrue(user.is_staff)
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/login/password-setup/", mail.outbox[0].body)
+
+    def test_legacy_staff_gets_database_login_and_invite_email(self):
+        employee = Employee.objects.create(
+            company=self.company, employee_code="LEGACY-15",
+            name="Existing Mechanic", email="legacy@example.com",
+            role_name="Mechanic", status="Active",
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("panel:staff-invite", args=[employee.pk]))
+        self.assertEqual(response.status_code, 302)
+        employee.refresh_from_db()
+        self.assertIsNotNone(employee.user_id)
+        self.assertFalse(employee.user.has_usable_password())
+        self.assertEqual(mail.outbox[0].to, ["legacy@example.com"])
+        self.assertIn("/setup-password?", mail.outbox[0].body)
+
+    def test_password_email_for_existing_user_sends_reset_not_plain_password(self):
+        user = User.objects.create_user(
+            email="already-active@example.com", name="Active",
+            password="SecurePassword889!", company=self.company,
+            role=self.staff_role,
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("panel:user-invite", args=[user.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/reset-password?", mail.outbox[0].body)
+        self.assertNotIn("SecurePassword889!", mail.outbox[0].body)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("SecurePassword889!"))
+
+    def test_inactive_user_does_not_receive_password_email(self):
+        user = User.objects.create_user(
+            email="inactive@example.com", name="Inactive",
+            company=self.company, role=self.staff_role, is_active=False,
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(reverse("panel:user-invite", args=[user.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 0)
