@@ -5,6 +5,7 @@
   <input type="search" name="q" value="{{ q }}" placeholder="Search company, plan or status">
   <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
   <button class="btn" type="submit">Filter</button>
+  <a class="btn" href="{% url 'panel:subscription-payments' %}">Razorpay Payment History</a>
 </form>{% panel_can 'panel:subscription-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:subscription-create' %}">Add Subscription</a>{% endif %}</div>
 <section class="panel-card"><div class="responsive-table"><table>
 <thead><tr><th>Company</th><th>Plan</th><th>Cycle</th><th>Amount</th><th>Seats</th><th>Status</th><th>Starts</th><th>Renews</th><th>Actions</th></tr></thead>
