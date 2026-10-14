@@ -29,7 +29,6 @@ class CheckoutVerifyThrottle(UserRateThrottle):
 
 class OrderInput(serializers.Serializer):
     plan_id = serializers.IntegerField(min_value=1)
-    billing_cycle = serializers.ChoiceField(choices=["monthly", "yearly"])
 
 
 class VerifyInput(serializers.Serializer):
@@ -65,8 +64,9 @@ class CheckoutCreateView(APIView):
         ).first()
         if not plan:
             return Response({"message": "Plan is unavailable."}, status=404)
-        cycle = data.validated_data["billing_cycle"]
-        amount = plan.price_for(cycle)
+        # This is one one-time package, not recurring monthly/yearly billing.
+        cycle = "term"
+        amount = plan.checkout_price
         amount_paise = int((amount * Decimal(100)).to_integral_exact())
         if amount_paise < 100 or amount_paise > 10000000000:
             return Response({"message": "This plan cannot be purchased online."}, status=400)
