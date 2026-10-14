@@ -25,4 +25,6 @@ class MediaFileSerializer(serializers.ModelSerializer):
     def get_url(self,obj):
         request=self.context.get("request")
         if not obj.file: return ""
-        return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+        from django.urls import reverse
+        url = reverse("storage-file-download", kwargs={"file_id": obj.id})
+        return request.build_absolute_uri(url) if request else url
