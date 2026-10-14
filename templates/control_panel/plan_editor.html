@@ -54,7 +54,7 @@
     <section class="panel-card plan-editor-section">
       <header class="plan-editor-section-header"><span class="plan-section-number">04</span><div><h3>Feature Permissions</h3><p>Select the features customers receive on this plan.</p></div></header>
       <div class="plan-feature-editor">
-        <div class="plan-feature-heading"><strong>Enabled Features</strong><span>Only checked features will be enabled</span></div>
+        <div class="plan-feature-heading"><strong>Enabled Features</strong><span data-feature-counter>Only checked features will be enabled</span></div>
         <div class="plan-feature-choices">{{ form.enabled_features }}</div>
         {% if not form.enabled_features.field.queryset.exists %}<p class="plan-feature-empty">No active feature labels exist yet. <a href="{% url 'panel:features' %}">Manage Feature Labels</a> to create some first.</p>{% endif %}
         {% for error in form.enabled_features.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
