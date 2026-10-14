@@ -504,7 +504,19 @@ class PlanBuilderForm(AdminModelForm):
                   "promo_percent", "promo_ends_at", "max_branches", "max_users",
                   "included_storage_gb", "extra_storage_rate", "trial_days", "access_duration_days", "checkout_price",
                   "sort_order", "is_public", "is_active"]
-        widgets = {"promo_ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"})}
+        widgets = {
+            "promo_ends_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+        }
+        help_texts = {
+            "promo_percent": "Optional catalog discount between 0 and 100 percent.",
+            "promo_ends_at": "Leave blank for an ongoing promotion.",
+            "checkout_price": "One-time INR amount charged through verified Razorpay checkout.",
+            "access_duration_days": "Days of access after verified payment (1 to 730).",
+            "extra_storage_rate": "Configured price for each additional GB.",
+            "sort_order": "Lower numbers appear earlier in the catalog.",
+        }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
