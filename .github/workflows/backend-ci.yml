@@ -19,6 +19,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
       - run: python manage.py check
+      # Verify direct email delivery works without installing Celery.
+      - run: python manage.py test apps.accounts.test_rbac_email.DirectEmailTests --noinput
       # Exercise the full migration graph on a fresh SQLite database.
       # Runtime model changes must not ship without their database tables.
       - run: python manage.py makemigrations --check --dry-run
