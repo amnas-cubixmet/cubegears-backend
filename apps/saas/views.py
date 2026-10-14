@@ -1,4 +1,6 @@
+from django.db import transaction
 from django.db.models import Sum
+from .storage_ledger import ensure_baseline, record_event
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
@@ -122,13 +124,21 @@ class StorageFilesView(APIView):
             if upload.size <= 0 or upload.size > max_bytes or upload.content_type not in allowed:
                 return response.Response({"message": "Invalid file type or size."}, status=400)
         created=[]
-        for upload in uploads:
-            obj=MediaFile.objects.create(
-                company=request.user.company,branch=request.user.branch,file=upload,name=upload.name,
-                category=category,mime_type=getattr(upload,"content_type","") or "",size_bytes=upload.size,
-                uploaded_by=request.user,
-            )
-            created.append(obj)
+        try:
+            with transaction.atomic():
+                ensure_baseline(request.user.company)
+                for upload in uploads:
+                    obj=MediaFile.objects.create(
+                        company=request.user.company,branch=request.user.branch,file=upload,name=upload.name,
+                        category=category,mime_type=getattr(upload,"content_type","") or "",size_bytes=upload.size,
+                        uploaded_by=request.user,
+                    )
+                    created.append(obj)
+                    record_event(obj,"UPLOAD",request.user)
+        except Exception:
+            for obj in created:
+                if obj.file: obj.file.delete(save=False)
+            raise
         return response.Response(MediaFileSerializer(created,many=True,context={"request":request}).data,status=status.HTTP_201_CREATED)
 
 class StorageFilesDeleteView(APIView):
@@ -138,10 +148,16 @@ class StorageFilesDeleteView(APIView):
         ids=request.data.get("ids") or []
         qs=MediaFile.objects.filter(company=request.user.company,id__in=ids)
         deleted=0
-        for obj in qs:
-            if obj.file:
-                obj.file.delete(save=False)
-            obj.delete(); deleted+=1
+        with transaction.atomic():
+            ensure_baseline(request.user.company)
+            for obj in qs:
+                name=obj.file.name if obj.file else None
+                storage=obj.file.storage if name else None
+                obj.delete()
+                record_event(obj,"DELETE",request.user)
+                if name:
+                    transaction.on_commit(lambda storage=storage,name=name: storage.delete(name))
+                deleted+=1
         return response.Response({"deleted":deleted})
 
 class StorageSettingsView(APIView):
