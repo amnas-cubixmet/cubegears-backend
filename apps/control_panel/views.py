@@ -412,31 +412,45 @@ def _can_manage_account(actor, obj):
 
 
 def _send_new_user_invite(request, user):
-    """Invite using the correct company or platform password setup experience."""
-    if not user.is_active:
+    """Email the correct password setup/reset link for this existing account.
+
+    Passwords are never sent, and resending to an active account never
+    replaces its current password. A setup URL works only for unset accounts.
+    """
+    if not user or not user.is_active:
         return False
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
+    is_reset = user.has_usable_password()
+
     if landing_route(user):
+        page = "password-reset" if is_reset else "password-setup"
         url = request.build_absolute_uri(reverse(
-            "panel:password-setup", kwargs={"uid": uid, "token": token},
+            f"panel:{page}", kwargs={"uid": uid, "token": token},
         ))
         purpose = "SaaS Control Panel"
-    elif user.company_id and user.role_id:
+    elif (user.company_id and user.role_id and user.company.is_active
+          and user.role.is_active and user.role.company_id == user.company_id
+          and not user.is_staff and not user.is_superuser):
+        page = "reset-password" if is_reset else "setup-password"
         url = (
-            f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
-            f"?uid={uid}&token={token}&email={quote(user.email)}"
+            f"{settings.FRONTEND_URL.rstrip('/')}/{page}"
+            f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}"
+            f"&email={quote(user.email, safe='')}"
         )
         purpose = "Workshop Company Panel"
     else:
         return False
+
+    instruction = "Reset your password" if is_reset else "Set up your password"
     queue_email(
-        "Set up your CubixGear account",
-        f"You have been invited to CubixGear {purpose}. Confirm your account and choose a strong password using the secure button below.",
-        [user.email], action_url=url, action_label="Set up my account",
+        f"{instruction} for CubixGear {purpose}",
+        f"Your CubixGear {purpose} account is ready. Use the secure "
+        f"button below to {instruction.lower()}. If you did not request "
+        "this email, you can ignore it.",
+        [user.email], action_url=url, action_label=instruction,
     )
     return True
-
 
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
