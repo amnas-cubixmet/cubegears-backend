@@ -1,0 +1,77 @@
+{% extends "control_panel/base.html" %}
+{% load static %}
+{% block content %}
+<section class="plan-editor-page">
+  <header class="plan-editor-header">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:plans' %}">Plan Builder</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Plan{% else %}Create Plan{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit Subscription Plan{% else %}Create Subscription Plan{% endif %}</h2>
+      <p>Set prices, quotas, visibility and enabled feature permissions for your plan catalog.</p>
+    </div>
+    <a class="btn" href="{% url 'panel:plans' %}">← Back to Plans</a>
+  </header>
+
+  <form method="post" class="plan-editor-form" data-plan-editor novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card plan-editor-section">
+      <header class="plan-editor-section-header"><span class="plan-section-number">01</span><div><h3>Plan Identity</h3><p>Name and describe this plan for the catalog.</p></div></header>
+      <div class="plan-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        <div class="company-editor-field">
+          <label for="plan-key-preview">Plan Key <span class="auto-badge">Automatic</span></label>
+          <input id="plan-key-preview" class="form-control" type="text" readonly placeholder="Generated from plan name" {% if is_edit %}value="{{ form.instance.key }}" data-fixed-key{% endif %} aria-describedby="plan-key-note">
+          <small id="plan-key-note" class="field-hint">{% if is_edit %}This permanent identifier remains unchanged when you rename the plan.{% else %}Generated automatically on save; matching plan names get a unique suffix.{% endif %}</small>
+        </div>
+        {% include "control_panel/company_field.html" with field=form.description wide=True %}
+      </div>
+    </section>
+
+    <section class="panel-card plan-editor-section">
+      <header class="plan-editor-section-header"><span class="plan-section-number">02</span><div><h3>Pricing &amp; Promotion</h3><p>Configured monthly and annual pricing, plus any promotional discount.</p></div></header>
+      <div class="plan-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.monthly_price %}
+        {% include "control_panel/company_field.html" with field=form.yearly_price %}
+        {% include "control_panel/company_field.html" with field=form.promo_percent %}
+        {% include "control_panel/company_field.html" with field=form.promo_ends_at %}
+      </div>
+      <aside class="plan-editor-help"><strong>Pricing information</strong><p>Prices are in INR for the platform catalog. A promotion applies while valid. Existing subscription records are not automatically repriced when you save changes.</p></aside>
+    </section>
+
+    <section class="panel-card plan-editor-section">
+      <header class="plan-editor-section-header"><span class="plan-section-number">03</span><div><h3>Workspace Limits</h3><p>Set access capacity, included storage and trial duration.</p></div></header>
+      <div class="plan-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.max_branches %}
+        {% include "control_panel/company_field.html" with field=form.max_users %}
+        {% include "control_panel/company_field.html" with field=form.included_storage_gb %}
+        {% include "control_panel/company_field.html" with field=form.extra_storage_rate %}
+        {% include "control_panel/company_field.html" with field=form.trial_days %}
+        {% include "control_panel/company_field.html" with field=form.sort_order %}
+      </div>
+    </section>
+
+    <section class="panel-card plan-editor-section">
+      <header class="plan-editor-section-header"><span class="plan-section-number">04</span><div><h3>Feature Permissions</h3><p>Select the features customers receive on this plan.</p></div></header>
+      <div class="plan-feature-editor">
+        <div class="plan-feature-heading"><strong>Enabled Features</strong><span>Only checked features will be enabled</span></div>
+        <div class="plan-feature-choices">{{ form.enabled_features }}</div>
+        {% if not form.enabled_features.field.queryset.exists %}<p class="plan-feature-empty">No active feature labels exist yet. <a href="{% url 'panel:features' %}">Manage Feature Labels</a> to create some first.</p>{% endif %}
+        {% for error in form.enabled_features.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}
+      </div>
+      <p class="plan-permission-note">Plan features do not override user role permissions. A user needs both their role access and an enabled plan feature where entitlement checks apply.</p>
+    </section>
+
+    <section class="panel-card plan-editor-section">
+      <header class="plan-editor-section-header"><span class="plan-section-number">05</span><div><h3>Publishing Settings</h3><p>Control whether a plan is active and displayed publicly.</p></div></header>
+      <div class="plan-publishing-grid">
+        <div class="plan-publishing-setting"><label class="user-checkbox-label">{{ form.is_active }} <span>Active Plan</span></label><small>Archived plans cannot be selected for new configured subscriptions.</small>{% for error in form.is_active.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>
+        <div class="plan-publishing-setting"><label class="user-checkbox-label">{{ form.is_public }} <span>Public Plan</span></label><small>Allow eligible customers to see this plan in the public catalog.</small>{% for error in form.is_public.errors %}<div class="field-error" role="alert">{{ error }}</div>{% endfor %}</div>
+      </div>
+    </section>
+
+    <footer class="plan-editor-actions"><a href="{% url 'panel:plans' %}" class="btn">Cancel</a><button type="submit" class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Create Plan{% endif %}</button></footer>
+  </form>
+</section>
+<script defer src="{% static 'control_panel/plan-editor.js' %}"></script>
+{% endblock %}
