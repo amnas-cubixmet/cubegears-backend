@@ -18,14 +18,16 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 5. [x] `/users/`, add/edit/detail — real user KPIs, scoped search and filters, role badges, accessible user editor and security notes
 6. [x] `/subscriptions/`, add/edit/detail — overview KPIs, company/status/cycle filters, billing and renewal forms
 7. [x] `/plans/`, create/edit — pricing catalog, feature access and one-time checkout plan terms
-8. [ ] `/features/`, add/edit, `/requests/` — SaaS catalog and enquiries
-9. [ ] `/storage/`, `/security/` — usage and audit pages
-10. [ ] `/branches/`, `/roles/` — branches and permissions
-11. [ ] `/customers/`, `/vehicles/` — remaining platform-wide workshop records
+8. [x] `/features/`, feature/group add/edit — module catalog, counts, structured feature editors
+16. [ ] `/requests/` — SaaS enquiries page
+9. [x] `/storage/`, `/security/` — storage snapshots and read-only audit pages
+10. [x] `/branches/`, `/roles/`, add/edit/detail — directories, status filters, permission-aware editors
+11. [x] `/customers/`, `/vehicles/`, add/edit/detail — customer/vehicle KPI directories and forms
 15. [x] `/jobs/`, add/edit/detail — workflow counts, status/priority filters and grouped job card editor
 12. [x] `/stock/`, add/edit/detail — live availability KPIs, stock-level filters, inventory details and grouped forms
 14. [x] `/invoices/`, add/edit/detail — billing document counts, filters, invoices and estimates forms, responsive table and status displays
 13. [x] `/staff/`, add/edit/detail — live counts, company/status/login filtering, responsive directory, secure invite-aware forms
+17. [x] `/credits/` — existing credit package, feature pricing, verified purchase, wallet and ledger UI with live KPIs
 
 ## Quality requirements for each page
 
@@ -36,4 +38,4 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 - Add automated rendering and business-logic regression tests
 - Validate both desktop/mobile and light/dark states before merge
 
-Status: earlier dashboard/companies/users/subscriptions work has been merged. Plan Builder payment-field follow-up is in a separate review PR.
+Status: these visual changes were committed directly to main. Full backend CI includes tests for the redesigned pages; independent payment API failures must be investigated separately.
