@@ -328,6 +328,72 @@ class EmployeeForm(AdminModelForm):
         return data
 
 
+
+class StaffInviteForm(EmployeeForm):
+    """Add a workshop staff account with a private email password invitation.
+
+    Unlike legacy staff profiles, newly-created Control Panel staff receive
+    an actual company-scoped login instead of an unlinked Employee row.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Never attach an existing (possibly more privileged) account by ID.
+        self.fields.pop("user", None)
+        self.fields["email"].required = True
+        self.fields["role_name"].required = True
+
+    def clean(self):
+        data = super().clean()
+        company = data.get("company")
+        email = (data.get("email") or "").strip().lower()
+        role_name = (data.get("role_name") or "").strip()
+        self.login_role = None
+
+        if email and User.objects.filter(email__iexact=email).exists():
+            self.add_error("email", "This email already has a login account.")
+        if email and company and Employee.objects.filter(
+            company=company, email__iexact=email,
+        ).exists():
+            self.add_error("email", "This staff email is already in use.")
+
+        if company and role_name:
+            self.login_role = Role.objects.filter(
+                company=company, name__iexact=role_name,
+                is_active=True, is_system=False,
+            ).first()
+            if not self.login_role:
+                self.add_error("role_name", "Choose an active company staff role.")
+        if data.get("status", "Active") != "Active":
+            self.add_error("status", "Create an active staff account to send a login invitation.")
+        data["email"] = email
+        return data
+
+    def save(self, commit=True):
+        if not commit:
+            raise ValueError("Staff accounts must be created atomically.")
+        from django.db import transaction
+
+        with transaction.atomic():
+            employee = super().save(commit=False)
+            user = User.objects.create_user(
+                email=self.cleaned_data["email"],
+                password=None,
+                name=employee.name,
+                company=employee.company,
+                branch=employee.branch,
+                role=self.login_role,
+                is_staff=False,
+                is_superuser=False,
+                is_active=True,
+                email_verified=False,
+            )
+            employee.user = user
+            employee.save()
+            self.save_m2m()
+        return employee
+
+
 class BranchForm(AdminModelForm):
     class Meta:
         model = Branch
