@@ -32,6 +32,7 @@ from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent
 from apps.vehicles.models import Vehicle
 from .permissions import route_allowed, landing_route
+from .auth_views import _limited
 from apps.accounts.permissions import can_delegate
 from apps.roles.models import Role
 from .forms import (
@@ -77,7 +78,12 @@ def panel_login(request):
         logout(request)
 
     form = PanelLoginForm(request.POST if request.method == "POST" else None, request=request)
-    if request.method == "POST" and form.is_valid():
+    if request.method == "POST" and _limited(
+        request, str(request.POST.get("email") or "").strip().lower(),
+        "login", limit=10, seconds=600,
+    ):
+        form.add_error(None, "Too many sign-in attempts. Try again in a few minutes.")
+    elif request.method == "POST" and form.is_valid():
         user = form.get_user()
         destination = landing_route(user)
         if not destination:
