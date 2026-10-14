@@ -103,3 +103,11 @@ html[data-theme="dark"] .plan-state-pill.is-archived{background:#452810;color:#f
   .plan-editor-actions .btn{flex:1}
 }
 @media(max-width:520px){.plan-filter-form{grid-template-columns:1fr}.plan-filter-form #plan-search{grid-column:auto}.plan-filter-form>.btn{width:100%}}
+
+/* Payment-aware plan editor: keep access period fields visible and distinct. */
+.plan-editor-payment-fields{padding:0 20px 17px}
+.plan-payment-fields-heading{padding:13px 15px;border:1px solid var(--line);border-bottom:0;background:var(--brand-soft);border-radius:10px 10px 0 0}
+.plan-payment-fields-heading strong{display:block;color:var(--brand);font-size:12px}
+.plan-payment-fields-heading p{color:var(--muted);font-size:11px;line-height:1.55;margin:5px 0 0}
+.plan-editor-payment-grid{padding:15px;border:1px solid var(--line);border-radius:0 0 10px 10px;background:var(--surface-soft)}
+@media(max-width:650px){.plan-editor-payment-fields{padding:0 15px 15px}.plan-editor-payment-grid{padding:12px}}
