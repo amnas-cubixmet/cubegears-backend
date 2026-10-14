@@ -213,18 +213,50 @@ def company_toggle(request, pk):
 
 @panel_admin_required
 def users(request):
+    # Summary reflects platform-wide accounts; directory filters affect only rows.
+    all_users = User.objects.all()
+    total_users = all_users.count()
+    active_users = all_users.filter(is_active=True).count()
+    admin_users = all_users.filter(Q(is_staff=True) | Q(is_superuser=True)).count()
+    verified_users = all_users.filter(email_verified=True).count()
+
     qs = User.objects.select_related("company", "branch", "role").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    access = request.GET.get("access", "").strip().lower()
+
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q) | Q(phone__icontains=q))
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "disabled":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
+    if access == "superuser":
+        qs = qs.filter(is_superuser=True)
+    elif access == "admin":
+        qs = qs.filter(is_staff=True, is_superuser=False)
+    elif access == "workshop":
+        qs = qs.filter(is_staff=False, is_superuser=False)
+    else:
+        access = ""
+
     return render(request, "control_panel/users.html", {
         "page_title": "Users & Access",
         "active": "users",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "access": access,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_users": total_users,
+        "active_users": active_users,
+        "admin_users": admin_users,
+        "verified_users": verified_users,
     })
 
 
