@@ -125,7 +125,7 @@ class CompanyEditorTests(TestCase):
 
     def test_other_forms_and_authorization_remain_unchanged(self):
         self.assertTemplateUsed(
-            self.client.get(reverse("panel:customer-create")), "control_panel/form.html",
+            self.client.get(reverse("panel:customer-create")), "control_panel/customer_form.html",
         )
         self.client.logout()
         self.assertEqual(self.client.get(reverse("panel:company-create")).status_code, 302)
