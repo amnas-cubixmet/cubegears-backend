@@ -241,6 +241,37 @@ def subscriptions(request):
 
 
 @panel_admin_required
+def subscription_payments(request):
+    """Read-only gateway ledger, distinct from net bank settlements/tax invoices."""
+    from decimal import Decimal
+    rows = RazorpayPlanPayment.objects.select_related("company", "plan").order_by("-created_at")
+    rows, company_id = _company_filter(request, rows)
+    q = request.GET.get("q", "").strip()
+    if q:
+        rows = rows.filter(
+            Q(company__name__icontains=q) | Q(plan__name__icontains=q)
+            | Q(receipt__icontains=q) | Q(razorpay_order_id__icontains=q)
+            | Q(razorpay_payment_id__icontains=q)
+        )
+    selected_status = request.GET.get("status", "")
+    if selected_status in {"pending", "captured", "failed", "refunded"}:
+        rows = rows.filter(status=selected_status)
+    captured = rows.filter(status="captured")
+    gross_paise = captured.aggregate(total=Sum("amount_paise"))["total"] or 0
+    return render(request, "control_panel/subscription_payments.html", {
+        "page_title": "Razorpay Payment History",
+        "active": "subscriptions",
+        "rows": _paginate(request, rows),
+        "company_id": company_id,
+        "companies": _company_choices(),
+        "q": q,
+        "selected_status": selected_status,
+        "captured_count": captured.count(),
+        "captured_gross_inr": Decimal(gross_paise) / Decimal(100),
+    })
+
+
+@panel_admin_required
 def storage(request):
     qs = StorageUsage.objects.select_related("company").order_by("-date")
     qs, company_id = _company_filter(request, qs)
