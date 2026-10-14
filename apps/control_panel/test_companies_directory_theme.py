@@ -1,4 +1,7 @@
 """Company directory visual refactor and server-side filter regression tests."""
+from pathlib import Path
+
+from django.contrib.staticfiles import finders
 from django.test import TestCase
 from django.urls import reverse
 from apps.accounts.models import User
@@ -36,6 +39,23 @@ class CompaniesDirectoryThemeTests(TestCase):
         self.assertEqual(response.context["inactive_companies"], 1)
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
         self.assertContains(response, 'name="status"')
+
+    def test_stat_numbers_and_captions_have_separate_layout(self):
+        response = self.client.get(reverse("panel:companies"))
+        self.assertContains(response, 'class="company-stat-value"', count=4)
+        self.assertContains(response, 'class="company-stat-meta"', count=4)
+
+        stylesheet_path = finders.find("control_panel/company-theme.css")
+        self.assertIsNotNone(stylesheet_path)
+        css = Path(stylesheet_path).read_text(encoding="utf-8")
+        self.assertRegex(
+            css,
+            r"(?s)\\.companies-stats \\.company-stat-value\\s*\\{[^}]*display:block",
+        )
+        self.assertRegex(
+            css,
+            r"(?s)\\.companies-stats \\.company-stat-meta\\s*\\{[^}]*display:block",
+        )
 
     def test_status_filter_keeps_counts_global(self):
         result = self.client.get(reverse("panel:companies"), {"status": "inactive"})
