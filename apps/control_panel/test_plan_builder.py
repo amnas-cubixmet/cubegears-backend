@@ -89,6 +89,8 @@ class PlatformPlanBuilderTests(TestCase):
             "extra_storage_rate": "15.00",
             "promo_percent": "0",
             "trial_days": "14",
+            "checkout_price": "1999.00",
+            "access_duration_days": "180",
             "sort_order": "0",
             "is_active": "on",
             "is_public": "on",
