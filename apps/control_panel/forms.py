@@ -195,8 +195,18 @@ class SubscriptionForm(AdminModelForm):
             "amount", "currency", "starts_at", "renews_at", "seats",
         ]
         widgets = {
-            "starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-            "renews_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "starts_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+            "renews_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+        }
+        help_texts = {
+            "plan_definition": "Selecting an active defined plan applies its pricing and seat limit when saved.",
+            "plan": "Automatically set when a Plan Builder definition is selected.",
+            "amount": "The configured subscription amount, not a collected payment.",
+            "seats": "Automatically set from Plan Builder when a defined plan is selected.",
         }
 
     def clean(self):
