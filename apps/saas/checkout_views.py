@@ -153,6 +153,8 @@ class CheckoutOrderStatusView(APIView):
         ).select_related("plan").first()
         if not record:
             return Response({"message": "Order not found."}, status=404)
+        if record.requested_by_id != request.user.id and not user_has_permission(request.user, "billing.view"):
+            return Response({"message": "Billing permission is required."}, status=403)
         return Response({"payment": public_payment(record), "access": access_state(request.user.company)})
 
 
