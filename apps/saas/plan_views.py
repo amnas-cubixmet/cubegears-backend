@@ -61,6 +61,7 @@ def plan_payload(plan):
         "includedStorageGb": plan.included_storage_gb,
         "extraStorageRate": str(plan.extra_storage_rate),
         "trialDays": plan.trial_days,
+        "accessDurationDays": plan.access_duration_days,
         "features": features,
     }
 
