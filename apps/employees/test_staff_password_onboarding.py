@@ -134,3 +134,18 @@ class StaffPasswordOnboardingTests(APITestCase):
             self.assertFalse(role.is_system)
             self.assertNotIn("*", role.permissions)
             self.assertFalse(any(code.startswith("panel.") for code in role.permissions))
+
+    def test_staff_role_backfill_is_idempotent_and_preserves_custom_roles(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        legacy = Company.objects.create(name="Legacy Workshop", slug="legacy-workshop")
+        custom = Role.objects.create(
+            company=legacy, name="Custom Mechanic", code="MECHANIC",
+            permissions=["attendance.self"],
+        )
+        call_command("seed_staff_roles", "--company-id", str(legacy.id), stdout=StringIO())
+        self.assertEqual(Role.objects.get(pk=custom.pk).permissions, ["attendance.self"])
+        self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
+        call_command("seed_staff_roles", "--company-id", str(legacy.id), stdout=StringIO())
+        self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
