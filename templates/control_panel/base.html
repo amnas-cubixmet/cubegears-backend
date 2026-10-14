@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
   <link rel="stylesheet" href="{% static 'control_panel/company-theme.css' %}">
   <link rel="stylesheet" href="{% static 'control_panel/management-ui.css' %}">
+  {% if active == 'subscriptions' %}<link rel="stylesheet" href="{% static 'control_panel/subscriptions-ui.css' %}">{% endif %}
 </head>
 <body class="panel-body">
   <div class="app-shell">
