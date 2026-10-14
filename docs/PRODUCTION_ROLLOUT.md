@@ -51,7 +51,7 @@ python manage.py collectstatic --noinput
 gunicorn config.wsgi:application --bind 0.0.0.0:8000
 ```
 
-Configure reverse-proxy HTTPS + static file serving. Keep **private job media** in separate persistent storage with authorization checks. SQLite does not store uploaded media files by itself.
+Configure reverse-proxy HTTPS + static file serving. Public company logo images are uploaded to `DJANGO_MEDIA_ROOT/company_logos/` and need a persistent disk plus web-server mapping for `/media/company_logos/` in production. Include uploaded logo files in backups. Keep **private job media** in separate persistent storage with authorization checks; do not make private job photos available through `/media/`. SQLite does not store uploaded media files by itself.
 
 ## Safe SQLite backup and restore
 
