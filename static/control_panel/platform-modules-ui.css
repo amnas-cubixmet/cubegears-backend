@@ -124,3 +124,12 @@ html[data-theme=dark] .remaining-state.is-good{color:#6ee7b7;background:#064e3b}
 .credit-panel-form button{width:100%}
 .remaining-feature-group-heading{flex-wrap:wrap}
 }
+
+/* Customer, vehicle, branch and role detail summaries. */
+.remaining-profile-header{display:flex;align-items:center;gap:18px;padding:20px;margin-bottom:16px}
+.remaining-profile-symbol{display:grid;place-items:center;flex:0 0 82px;width:82px;height:82px;border-radius:17px;background:var(--brand-soft);color:var(--brand);font-size:29px;font-weight:800}
+.remaining-profile-info{flex:1;min-width:0}
+.remaining-profile-info h2{font-size:20px;margin:5px 0 7px}
+.remaining-profile-info>p:not(.eyebrow){font-size:12px;color:var(--muted);margin:0 0 11px;line-height:1.5;overflow-wrap:anywhere}
+.remaining-profile-tags{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+@media(max-width:650px){.remaining-profile-header{padding:14px;gap:13px}.remaining-profile-symbol{width:62px;height:62px;flex-basis:62px;font-size:23px}.remaining-profile-info h2{font-size:17px}}
