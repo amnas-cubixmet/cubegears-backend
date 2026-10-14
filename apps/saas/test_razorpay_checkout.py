@@ -37,6 +37,7 @@ class RazorpayBillingTests(TestCase):
         self.plan = SubscriptionPlan.objects.create(
             key="billing-monthly-plan", name="Workshop Pro",
             monthly_price=Decimal("499.00"), yearly_price=Decimal("3999.00"),
+            checkout_price=Decimal("499.00"),
             access_duration_days=180, is_active=True, is_public=True,
         )
         self.client = APIClient()
@@ -47,7 +48,7 @@ class RazorpayBillingTests(TestCase):
             "id": "order_abc123", "amount": 49900, "currency": "INR",
         }) as mocked:
             reply = self.client.post("/api/v1/saas/checkout/orders", {
-                "plan_id": self.plan.pk, "billing_cycle": "monthly"
+                "plan_id": self.plan.pk, "amount_paise": 2, "validity_days": 1
             }, format="json")
         return reply, mocked
 
