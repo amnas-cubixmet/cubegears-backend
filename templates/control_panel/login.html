@@ -4,38 +4,130 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Login · CubixGear</title>
-  <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
+  <meta name="theme-color" content="#f3f6fc">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Sign in · CubixGear Control Panel</title>
+  <link rel="stylesheet" href="{% static 'control_panel/login.css' %}">
+  <script src="{% static 'control_panel/login.js' %}" defer></script>
 </head>
 <body class="auth-page">
-  <main class="auth-shell">
-    <section class="auth-card">
-      <div class="brand-row auth-brand">
-        <div class="brand-mark">C</div>
-        <div>
-          <strong>CubixGear</strong>
-          <span>SaaS Control Panel</span>
+  <div class="auth-shell">
+    <div class="auth-layout">
+      <aside class="auth-showcase" aria-label="About CubixGear Control Panel">
+        <div class="showcase-top">
+          <div class="auth-brand auth-brand-light">
+            <span class="auth-brand-mark" aria-hidden="true">C</span>
+            <span class="auth-brand-type">
+              <strong>CubixGear</strong>
+              <small>SaaS Control Panel</small>
+            </span>
+          </div>
+          <span class="showcase-label"><span class="label-spark" aria-hidden="true"></span> PLATFORM CONSOLE</span>
         </div>
-      </div>
-      <div class="auth-copy">
-        <p class="eyebrow">Secure access</p>
-        <h1>Welcome back</h1>
-        <p>Sign in to manage the CubixGear platform, companies, users and software operations.</p>
-      </div>
-      <form method="post" class="auth-form">
-        {% csrf_token %}
-        {% if form.non_field_errors %}
-          <div class="form-error">{{ form.non_field_errors|striptags }}</div>
-        {% endif %}
-        <label for="{{ form.email.id_for_label }}">Email</label>
-        {{ form.email.errors }}
-        {{ form.email }}
-        <label for="{{ form.password.id_for_label }}">Password</label>
-        {{ form.password.errors }}
-        {{ form.password }}
-        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
-      </form>
-    </section>
-  </main>
+
+        <div class="showcase-content">
+          <span class="showcase-eyebrow">BUILT FOR OPERATIONS</span>
+          <h2>Everything in control.<br><span>All in one place.</span></h2>
+          <p>Manage your workshop network, teams, and subscriptions from one connected workspace.</p>
+
+          <div class="showcase-art" aria-hidden="true">
+            <div class="art-header">
+              <span class="art-dots"><i></i><i></i><i></i></span>
+              <span class="art-address">control / overview</span>
+              <span class="art-badge">CG</span>
+            </div>
+            <div class="art-content">
+              <div class="art-intro"><div class="art-figure art-figure-wide"></div><div class="art-figure art-figure-short"></div></div>
+              <div class="art-stats">
+                <div class="art-stat"><span class="art-stat-icon"></span><span class="art-lines"><i></i><i></i></span></div>
+                <div class="art-stat"><span class="art-stat-icon art-stat-icon-alt"></span><span class="art-lines"><i></i><i></i></span></div>
+                <div class="art-stat"><span class="art-stat-icon art-stat-icon-third"></span><span class="art-lines"><i></i><i></i></span></div>
+              </div>
+              <div class="art-chart">
+                <div class="art-chart-lines"><i></i><i></i><i></i><i></i></div>
+                <svg class="art-chart-curve" viewBox="0 0 370 100" preserveAspectRatio="none" focusable="false" aria-hidden="true">
+                  <defs><linearGradient id="loginChartFill" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#1878ff" stop-opacity=".22"/><stop offset="1" stop-color="#1878ff" stop-opacity="0"/></linearGradient></defs>
+                  <path d="M0 88 C42 91, 56 58, 99 64 S165 81, 203 40 S272 62, 315 24 S348 25,370 9 V100 H0Z" fill="url(#loginChartFill)"/>
+                  <path d="M0 88 C42 91, 56 58, 99 64 S165 81, 203 40 S272 62, 315 24 S348 25,370 9" fill="none" stroke="#3c91ff" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="showcase-bottom">
+          <span>Companies &amp; branches</span>
+          <span class="showcase-separator" aria-hidden="true"></span>
+          <span>Roles &amp; access</span>
+          <span class="showcase-separator" aria-hidden="true"></span>
+          <span>Subscriptions</span>
+        </div>
+      </aside>
+
+      <main class="auth-main">
+        <div class="auth-mobile-brand auth-brand">
+          <span class="auth-brand-mark" aria-hidden="true">C</span>
+          <span class="auth-brand-type"><strong>CubixGear</strong><small>SaaS Control Panel</small></span>
+        </div>
+
+        <div class="auth-panel">
+          <div class="auth-intro">
+            <div class="auth-kicker"><span class="kicker-dot" aria-hidden="true"></span> SECURE ADMIN ACCESS</div>
+            <h1>Welcome back<span aria-hidden="true">.</span></h1>
+            <p>Sign in to your CubixGear administrator account to continue.</p>
+          </div>
+
+          <form method="post" class="auth-form">
+            {% csrf_token %}
+            {% if form.non_field_errors %}
+              <div class="auth-error" role="alert">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path stroke-linecap="round" d="M12 7.5v5M12 16.5h.01"/></svg>
+                <span>{{ form.non_field_errors|striptags }}</span>
+              </div>
+            {% endif %}
+
+            <div class="auth-field{% if form.email.errors %} has-error{% endif %}">
+              <label for="{{ form.email.id_for_label }}">Email address</label>
+              <div class="auth-input-wrap">
+                <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m4 7 8 6 8-6"/></svg>
+                {{ form.email }}
+              </div>
+              {% if form.email.errors %}<div class="auth-field-error" role="alert">{{ form.email.errors|striptags }}</div>{% endif %}
+            </div>
+
+            <div class="auth-field{% if form.password.errors %} has-error{% endif %}">
+              <label for="{{ form.password.id_for_label }}">Password</label>
+              <div class="auth-input-wrap">
+                <svg class="auth-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path stroke-linecap="round" d="M8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5"/></svg>
+                {{ form.password }}
+                <button type="button" class="password-toggle" data-password-toggle
+                        aria-label="Show password" aria-pressed="false"
+                        aria-controls="{{ form.password.id_for_label }}">
+                  <svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+                  <svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" d="m4 4 16 16"/><path stroke-linecap="round" stroke-linejoin="round" d="M10 6.3A12 12 0 0 1 12 6c6.5 0 10 6 10 6a18 18 0 0 1-3.2 3.8M6.6 7.5C3.7 9.1 2 12 2 12s3.5 6 10 6c1.6 0 3.1-.4 4.3-1"/></svg>
+                </button>
+              </div>
+              {% if form.password.errors %}<div class="auth-field-error" role="alert">{{ form.password.errors|striptags }}</div>{% endif %}
+            </div>
+
+            <button class="auth-submit" type="submit">
+              <span>Sign in to dashboard</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 12h16m-6-6 6 6-6 6"/></svg>
+            </button>
+          </form>
+
+          <div class="auth-hint">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path stroke-linecap="round" d="M8 10.5v-3a4 4 0 0 1 8 0v3"/></svg>
+            <span>Restricted to authorized platform administrators</span>
+          </div>
+        </div>
+
+        <footer class="auth-footer">
+          <span>© {% now "Y" %} CubixGear</span>
+          <span>Platform administration</span>
+        </footer>
+      </main>
+    </div>
+  </div>
 </body>
 </html>
