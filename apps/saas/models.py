@@ -154,3 +154,6 @@ class CustomPlanRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+# Keep payment models in a separate module while registering them with Django.
+from .payment_models import PaymentPolicy, SubscriptionPayment  # noqa: E402,F401
