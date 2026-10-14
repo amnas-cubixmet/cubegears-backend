@@ -21,7 +21,8 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 8. [ ] `/features/`, add/edit, `/requests/` — SaaS catalog and enquiries
 9. [ ] `/storage/`, `/security/` — usage and audit pages
 10. [ ] `/branches/`, `/roles/` — branches and permissions
-11. [ ] `/customers/`, `/vehicles/`, `/jobs/` — platform-wide workshop records
+11. [ ] `/customers/`, `/vehicles/` — remaining platform-wide workshop records
+15. [x] `/jobs/`, add/edit/detail — workflow counts, status/priority filters and grouped job card editor
 12. [x] `/stock/`, add/edit/detail — live availability KPIs, stock-level filters, inventory details and grouped forms
 14. [x] `/invoices/`, add/edit/detail — billing document counts, filters, invoices and estimates forms, responsive table and status displays
 13. [x] `/staff/`, add/edit/detail — live counts, company/status/login filtering, responsive directory, secure invite-aware forms
