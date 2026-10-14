@@ -45,13 +45,14 @@
   </form>
   <div class="responsive-table plan-directory-table">
     <table>
-      <thead><tr><th>Plan</th><th>Monthly Price</th><th>Yearly Price</th><th>Branches / Users</th><th>Storage</th><th>Features</th><th>Visibility</th><th>Status</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Plan</th><th>Monthly Price</th><th>Yearly Price</th><th>Checkout / Access</th><th>Branches / Users</th><th>Storage</th><th>Features</th><th>Visibility</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
       {% for plan in plans %}
         <tr>
           <td data-label="Plan"><div class="plan-name-cell"><span class="plan-name-icon" aria-hidden="true">{{ plan.name|slice:":1"|upper }}</span><div><strong>{{ plan.name }}</strong><span class="table-sub">{{ plan.key }}</span>{% if plan.description %}<span class="table-sub plan-description">{{ plan.description|truncatechars:75 }}</span>{% endif %}</div></div></td>
           <td data-label="Monthly Price"><strong class="plan-money">₹{{ plan.monthly_price|floatformat:2 }}</strong></td>
           <td data-label="Yearly Price"><strong class="plan-money">₹{{ plan.yearly_price|floatformat:2 }}</strong></td>
+          <td data-label="Checkout / Access"><strong class="plan-money">₹{{ plan.checkout_price|floatformat:2 }}</strong><span class="table-sub plan-quota-note">{{ plan.access_duration_days }} days access</span></td>
           <td data-label="Branches / Users"><span class="plan-quota">{{ plan.max_branches }} branches</span><span class="table-sub plan-quota-note">{{ plan.max_users }} users</span></td>
           <td data-label="Storage"><span class="plan-quota">{{ plan.included_storage_gb }} GB</span><span class="table-sub plan-quota-note">+ ₹{{ plan.extra_storage_rate }}/extra GB</span></td>
           <td data-label="Features"><span class="plan-feature-count">{{ plan.enabled_feature_count }} enabled</span>{% if plan.enabled_feature_count %}<div class="plan-feature-list">{% for item in plan.feature_access.all %}{% if item.enabled %}<span class="plan-feature-tag">{{ item.feature.label }}</span>{% endif %}{% endfor %}</div>{% endif %}</td>
@@ -59,7 +60,7 @@
           <td data-label="Status">{% if plan.is_active %}<span class="plan-state-pill is-active">Active</span>{% else %}<span class="plan-state-pill is-archived">Archived</span>{% endif %}</td>
           <td data-label="Actions">{% panel_can 'plan-edit' as allowed %}{% if allowed %}<a class="plan-edit-link" href="{% url 'panel:plan-edit' plan.pk %}">Edit Plan</a>{% endif %}</td>
         </tr>
-      {% empty %}<tr><td class="empty-cell" colspan="9">No plans match the selected filters. Create a plan or clear the search.</td></tr>
+      {% empty %}<tr><td class="empty-cell" colspan="10">No plans match the selected filters. Create a plan or clear the search.</td></tr>
       {% endfor %}
       </tbody>
     </table>
