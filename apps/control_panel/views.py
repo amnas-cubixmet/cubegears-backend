@@ -1,3 +1,4 @@
+from datetime import timedelta
 from functools import wraps
 from urllib.parse import quote
 
@@ -276,18 +277,56 @@ def user_toggle(request, pk):
 
 @panel_admin_required
 def subscriptions(request):
-    qs = Subscription.objects.select_related("company", "branch").order_by("-created_at")
+    # Platform totals do not change when a user filters the directory.
+    all_subscriptions = Subscription.objects.all()
+    now = timezone.now()
+    month_ahead = now + timedelta(days=30)
+    total_subscriptions = all_subscriptions.count()
+    active_subscriptions = all_subscriptions.filter(status__iexact="active").count()
+    upcoming_renewals = all_subscriptions.filter(
+        status__iexact="active", renews_at__gte=now, renews_at__lte=month_ahead
+    ).count()
+    subscriber_companies = all_subscriptions.values("company_id").distinct().count()
+    status_options = sorted(
+        (s for s in all_subscriptions.order_by().values_list("status", flat=True).distinct() if s),
+        key=str.casefold,
+    )
+
+    qs = all_subscriptions.select_related("company", "branch", "plan_definition").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    cycle = request.GET.get("cycle", "").strip().lower()
+
     if q:
-        qs = qs.filter(Q(company__name__icontains=q) | Q(plan__icontains=q) | Q(status__icontains=q))
+        qs = qs.filter(
+            Q(company__name__icontains=q) | Q(plan__icontains=q)
+            | Q(status__icontains=q)
+        )
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
+    if cycle in ("monthly", "yearly", "annual"):
+        qs = qs.filter(billing_cycle__iexact=cycle)
+    else:
+        cycle = ""
+
     return render(request, "control_panel/subscriptions.html", {
         "page_title": "Plans & Billing",
         "active": "subscriptions",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "cycle": cycle,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_subscriptions": total_subscriptions,
+        "active_subscriptions": active_subscriptions,
+        "upcoming_renewals": upcoming_renewals,
+        "subscriber_companies": subscriber_companies,
     })
 
 
