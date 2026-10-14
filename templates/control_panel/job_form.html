@@ -1,0 +1,75 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="jobs-editor-page">
+  <header class="jobs-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:jobs' %}">Job Cards</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Job Card{% else %}Add Job Card{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit Job Card{% else %}Create Job Card{% endif %}</h2>
+      <p>Assign a workshop job to its customer, vehicle and team with saved workflow details.</p>
+    </div>
+    <a href="{% url cancel_url %}" class="btn">← Back to Jobs</a>
+  </header>
+
+  <form method="post" class="jobs-editor-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card jobs-editor-section">
+      <header class="jobs-section-heading"><span class="jobs-section-number">01</span><div><h3>Job Identification</h3><p>Job number, company, branch and priority.</p></div></header>
+      <div class="jobs-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.job_number %}
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.priority %}
+        {% include "control_panel/company_field.html" with field=form.status %}
+      </div>
+    </section>
+
+    <section class="panel-card jobs-editor-section">
+      <header class="jobs-section-heading"><span class="jobs-section-number">02</span><div><h3>Customer &amp; Vehicle</h3><p>Link this job to a customer and their vehicle.</p></div></header>
+      <div class="jobs-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.customer %}
+        {% include "control_panel/company_field.html" with field=form.vehicle %}
+        {% include "control_panel/company_field.html" with field=form.odometer %}
+        {% include "control_panel/company_field.html" with field=form.fuel_level %}
+      </div>
+      <p class="jobs-editor-hint">Customer, vehicle and branch must belong to the selected company, and the vehicle must belong to the selected customer.</p>
+    </section>
+
+    <section class="panel-card jobs-editor-section">
+      <header class="jobs-section-heading"><span class="jobs-section-number">03</span><div><h3>Assignment &amp; Timeline</h3><p>Set advisor, technician and target delivery dates.</p></div></header>
+      <div class="jobs-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.advisor %}
+        {% include "control_panel/company_field.html" with field=form.technician %}
+        {% include "control_panel/company_field.html" with field=form.promised_at %}
+        {% include "control_panel/company_field.html" with field=form.delivered_at %}
+      </div>
+    </section>
+
+    <section class="panel-card jobs-editor-section">
+      <header class="jobs-section-heading"><span class="jobs-section-number">04</span><div><h3>Inspection &amp; Workflow</h3><p>Review the stored complaints, inspection, work and QC data.</p></div></header>
+      <div class="jobs-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.complaints wide=True %}
+        {% include "control_panel/company_field.html" with field=form.inspection wide=True %}
+        {% include "control_panel/company_field.html" with field=form.work wide=True %}
+        {% include "control_panel/company_field.html" with field=form.qc wide=True %}
+        {% include "control_panel/company_field.html" with field=form.parts_workflow wide=True %}
+      </div>
+      <div class="jobs-editor-notice"><strong>Structured workflow data</strong><p>These fields contain JSON created by the workshop job workflow. Editing raw JSON may affect inspections, QC and parts state; keep the existing format and use the workshop workflow for operational step changes.</p></div>
+    </section>
+
+    <section class="panel-card jobs-editor-section">
+      <header class="jobs-section-heading"><span class="jobs-section-number">05</span><div><h3>Estimate &amp; Notes</h3><p>Saved estimate totals and internal job details.</p></div></header>
+      <div class="jobs-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.estimate_total %}
+        {% include "control_panel/company_field.html" with field=form.labour_total %}
+        {% include "control_panel/company_field.html" with field=form.parts_total %}
+        {% include "control_panel/company_field.html" with field=form.notes wide=True %}
+      </div>
+      <p class="jobs-editor-hint">Amounts shown here are stored estimates, not payment receipts. Saving this page does not issue a customer invoice or automatically calculate tax.</p>
+    </section>
+
+    <footer class="jobs-editor-actions"><a class="btn" href="{% url cancel_url %}">Cancel</a><button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create Job Card{% endif %}</button></footer>
+  </form>
+</section>
+{% endblock %}
