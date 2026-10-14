@@ -30,19 +30,19 @@ class EmailRequestForm(forms.Form):
         return self.cleaned_data["email"].strip().lower()
 
 
-def _limited(request, email, action):
+def _limited(request, email, action, *, limit=5, seconds=3600):
     # The deployment should configure a SHARED Django cache when running more
     # than one worker, otherwise the default local-memory limiter is per worker.
     ip = request.META.get("REMOTE_ADDR", "")
     digest = hashlib.sha256(f"{action}:{ip}:{email}".encode()).hexdigest()
     key = "panel-auth:" + digest
-    if cache.add(key, 1, timeout=3600):
+    if cache.add(key, 1, timeout=seconds):
         return False
     try:
         count = cache.incr(key)
     except ValueError:
         return False
-    return count > 5
+    return count > limit
 
 
 def _panel_user(email):
