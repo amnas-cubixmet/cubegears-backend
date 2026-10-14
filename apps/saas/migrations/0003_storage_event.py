@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
     operations = [migrations.CreateModel(
         name="StorageEvent",
         fields=[
-            ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)),
+            ("id", models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, serialize=False)),
             ("created_at", models.DateTimeField(auto_now_add=True)),
             ("updated_at", models.DateTimeField(auto_now=True)),
             ("event_type", models.CharField(max_length=12, choices=[("UPLOAD","Uploaded"),("DELETE","Deleted"),("BASELINE","Existing file baseline")], db_index=True)),
