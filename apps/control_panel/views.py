@@ -161,11 +161,18 @@ def dashboard(request):
 
 @panel_admin_required
 def companies(request):
+    # Platform-wide KPIs are intentionally independent of the active directory filters.
+    month_start = timezone.localdate().replace(day=1)
+    total_companies = Company.objects.count()
+    active_companies = Company.objects.filter(is_active=True).count()
+    new_companies_month = Company.objects.filter(created_at__date__gte=month_start).count()
+
     qs = Company.objects.annotate(
         user_count=Count("users", distinct=True),
         branch_count=Count("branches", distinct=True),
     ).order_by("-created_at")
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
     if q:
         qs = qs.filter(
             Q(name__icontains=q)
@@ -174,11 +181,23 @@ def companies(request):
             | Q(gstin__icontains=q)
             | Q(city__icontains=q)
         )
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "inactive":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
     return render(request, "control_panel/companies.html", {
         "page_title": "Companies",
         "active": "companies",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "total_companies": total_companies,
+        "active_companies": active_companies,
+        "inactive_companies": total_companies - active_companies,
+        "new_companies_month": new_companies_month,
     })
 
 
