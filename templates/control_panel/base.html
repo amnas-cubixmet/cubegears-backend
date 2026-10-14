@@ -6,46 +6,53 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{{ page_title|default:"Control Panel" }} · CubixGear</title>
   <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
+  <link rel="stylesheet" href="{% static 'control_panel/company-theme.css' %}">
 </head>
 <body class="panel-body">
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Control panel navigation">
       <div class="brand-row">
-        <div class="brand-mark">C</div>
+        <div class="brand-mark">CG</div>
         <div>
-          <strong>CubixGear</strong>
-          <span>SaaS Control Panel</span>
+          <strong>CubeGears</strong>
+          <span>Platform Administration</span>
         </div>
+        <button class="sidebar-toggle" type="button" data-sidebar-toggle aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#chevron-left"></use></svg></button>
         <button class="icon-btn sidebar-close" type="button" data-sidebar-close aria-label="Close menu">×</button>
       </div>
 
       <nav class="nav-list">
         <p class="nav-label">Overview</p>
-        {% panel_can 'dashboard' as allowed %}{% if allowed %}<a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}">Dashboard</a>{% endif %}
+        {% panel_can 'dashboard' as allowed %}{% if allowed %}<a href="{% url 'panel:dashboard' %}" class="nav-item {% if active == 'dashboard' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layout-dashboard"></use></svg></span><span class="nav-text">Dashboard</span></a>{% endif %}
 
         <p class="nav-label">Platform</p>
-        {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}">Companies</a>{% endif %}
-        {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}">Users & Access</a>{% endif %}
-        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Subscriptions</a>{% endif %}
-        {% panel_can 'plans' as allowed %}{% if allowed %}<a href="{% url 'panel:plans' %}" class="nav-item {% if active == 'plans' %}active{% endif %}">Plan Builder</a>{% endif %}
-        {% panel_can 'plan-create' as allowed %}{% if allowed %}<a href="{% url 'panel:plan-create' %}" class="nav-item">+ Create Plan</a>{% endif %}
-        {% panel_can 'features' as allowed %}{% if allowed %}<a href="{% url 'panel:features' %}" class="nav-item {% if active == 'features' %}active{% endif %}">Feature Labels</a>{% endif %}
-        {% panel_can 'requests' as allowed %}{% if allowed %}<a href="{% url 'panel:requests' %}" class="nav-item {% if active == 'requests' %}active{% endif %}">Plan Enquiries</a>{% endif %}
-        {% panel_can 'storage' as allowed %}{% if allowed %}<a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}">Storage</a>{% endif %}
-        {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}">Security & Activity</a>{% endif %}
+        {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span><span class="nav-text">Companies</span></a>{% endif %}
+        {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span><span class="nav-text">Users & Access</span></a>{% endif %}
+        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#credit-card"></use></svg></span><span class="nav-text">Subscriptions</span></a>{% endif %}
+        {% panel_can 'plans' as allowed %}{% if allowed %}<a href="{% url 'panel:plans' %}" class="nav-item {% if active == 'plans' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span><span class="nav-text">Plan Builder</span></a>{% endif %}
+        {% panel_can 'plan-create' as allowed %}{% if allowed %}<a href="{% url 'panel:plan-create' %}" class="nav-item"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#plus-circle"></use></svg></span><span class="nav-text">+ Create Plan</span></a>{% endif %}
+        {% panel_can 'features' as allowed %}{% if allowed %}<a href="{% url 'panel:features' %}" class="nav-item {% if active == 'features' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span><span class="nav-text">Feature Labels</span></a>{% endif %}
+        {% panel_can 'requests' as allowed %}{% if allowed %}<a href="{% url 'panel:requests' %}" class="nav-item {% if active == 'requests' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#message-square"></use></svg></span><span class="nav-text">Plan Enquiries</span></a>{% endif %}
+        {% panel_can 'storage' as allowed %}{% if allowed %}<a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span><span class="nav-text">Storage</span></a>{% endif %}
+        {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><span class="nav-text">Security & Activity</span></a>{% endif %}
 
-        {% panel_can 'branches' as allowed %}{% if allowed %}<a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}">Branches</a>{% endif %}
-        {% panel_can 'roles' as allowed %}{% if allowed %}<a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}">Roles & Permissions</a>{% endif %}
+        {% panel_can 'branches' as allowed %}{% if allowed %}<a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#git-branch"></use></svg></span><span class="nav-text">Branches</span></a>{% endif %}
+        {% panel_can 'roles' as allowed %}{% if allowed %}<a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span><span class="nav-text">Roles & Permissions</span></a>{% endif %}
         <p class="nav-label">All Workshop Data</p>
-        {% panel_can 'vehicles' as allowed %}{% if allowed %}<a href="{% url 'panel:vehicles' %}" class="nav-item {% if active == 'vehicles' %}active{% endif %}">Vehicles</a>{% endif %}
-        {% panel_can 'customers' as allowed %}{% if allowed %}<a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}">Customers</a>{% endif %}
-        {% panel_can 'jobs' as allowed %}{% if allowed %}<a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}">Job Cards</a>{% endif %}
-        {% panel_can 'stock' as allowed %}{% if allowed %}<a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}">Stock</a>{% endif %}
-        {% panel_can 'invoices' as allowed %}{% if allowed %}<a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}">Invoices</a>{% endif %}
-        {% panel_can 'staff' as allowed %}{% if allowed %}<a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}">Staff</a>{% endif %}
+        {% panel_can 'vehicles' as allowed %}{% if allowed %}<a href="{% url 'panel:vehicles' %}" class="nav-item {% if active == 'vehicles' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#car"></use></svg></span><span class="nav-text">Vehicles</span></a>{% endif %}
+        {% panel_can 'customers' as allowed %}{% if allowed %}<a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#user-round"></use></svg></span><span class="nav-text">Customers</span></a>{% endif %}
+        {% panel_can 'jobs' as allowed %}{% if allowed %}<a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#wrench"></use></svg></span><span class="nav-text">Job Cards</span></a>{% endif %}
+        {% panel_can 'stock' as allowed %}{% if allowed %}<a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#package"></use></svg></span><span class="nav-text">Stock</span></a>{% endif %}
+        {% panel_can 'invoices' as allowed %}{% if allowed %}<a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg></span><span class="nav-text">Invoices</span></a>{% endif %}
+        {% panel_can 'staff' as allowed %}{% if allowed %}<a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#briefcase"></use></svg></span><span class="nav-text">Staff</span></a>{% endif %}
       </nav>
 
       <div class="sidebar-footer">
+        <div class="sidebar-theme-switch" role="group" aria-label="Appearance">
+          <button type="button" data-theme-set="light" title="Light mode" aria-label="Light mode"><svg aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#sun"></use></svg></button>
+          <button type="button" data-theme-set="dark" title="Dark mode" aria-label="Dark mode"><svg aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#moon"></use></svg></button>
+          <button type="button" data-theme-set="system" title="System theme" aria-label="System theme"><svg aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#monitor"></use></svg></button>
+        </div>
         <div class="account-mini">
           <div class="avatar">{{ request.user.name|default:request.user.email|slice:":1"|upper }}</div>
           <div class="account-copy">
@@ -69,9 +76,10 @@
           </div>
         </div>
         <div class="topbar-actions">
+          <div class="topbar-date"><svg aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#calendar-days"></use></svg><span>{% now "M j, Y" %}</span></div>
           <div class="user-chip">
-            <span class="status-dot"></span>
-            {{ request.user.name|default:request.user.email }}
+            <span class="header-avatar">{{ request.user.name|default:request.user.email|slice:":1"|upper }}</span>
+            <span class="header-user-copy"><strong>{{ request.user.name|default:request.user.email }}</strong><small>{% if request.user.is_superuser %}Super Admin{% else %}Admin Staff{% endif %}</small></span>
           </div>
         </div>
       </header>
