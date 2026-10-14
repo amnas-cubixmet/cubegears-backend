@@ -168,5 +168,5 @@ class StaffManagementUITests(TestCase):
 
     def test_other_forms_remain_unmodified(self):
         self.assertTemplateUsed(
-            self.client.get(reverse("panel:customer-create")), "control_panel/form.html",
+            self.client.get(reverse("panel:customer-create")), "control_panel/customer_form.html",
         )
