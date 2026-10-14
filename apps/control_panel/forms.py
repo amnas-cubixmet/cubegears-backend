@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django import forms
 from django.utils.text import slugify
 from django.contrib.auth import authenticate
@@ -97,12 +99,15 @@ class CompanyForm(AdminModelForm):
 
     def clean_logo_image(self):
         upload = self.cleaned_data.get("logo_image")
-        if not upload:
+        if not upload or not hasattr(upload, "image"):
+            # Existing image on an edit: retain it without re-uploading.
             return upload
         if upload.size > 2 * 1024 * 1024:
             raise forms.ValidationError("Logo must be 2 MB or smaller.")
-        if upload.image.format not in ("JPEG", "PNG", "WEBP"):
-            raise forms.ValidationError("Upload a JPG, PNG or WebP image.")
+        extension = Path(upload.name).suffix.lower()
+        extensions = {"JPEG": {".jpg", ".jpeg"}, "PNG": {".png"}, "WEBP": {".webp"}}
+        if extension not in extensions.get(upload.image.format, set()):
+            raise forms.ValidationError("File extension must match a JPG, PNG or WebP image.")
         if upload.image.width > 4096 or upload.image.height > 4096:
             raise forms.ValidationError("Logo image dimensions must not exceed 4096 × 4096.")
         return upload
