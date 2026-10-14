@@ -84,4 +84,8 @@ def credits_control(request):
         "purchases": purchases,
         "filter_company": company_id,
         "adjustment_request_id": str(uuid.uuid4()),
+        "package_total": CreditPackage.objects.count(),
+        "published_packages": CreditPackage.objects.filter(is_active=True).count(),
+        "configured_features": FeatureCreditPrice.objects.count(),
+        "wallet_total": CreditWallet.objects.count(),
     })
