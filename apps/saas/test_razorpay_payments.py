@@ -26,8 +26,9 @@ class RazorpaySubscriptionTests(TestCase):
         self.client.force_authenticate(self.owner)
 
     def test_unpaid_account_is_blocked_when_enforced(self):
-        PaymentPolicy.current().enforce_paywall=True
-        PaymentPolicy.current().save()
+        policy=PaymentPolicy.current()
+        policy.enforce_paywall=True
+        policy.save()
         self.assertEqual(self.client.get("/api/v1/saas/payments/access").status_code,200)
         self.assertFalse(has_paid_access(self.company))
         # DRF test force_authenticate does not inject an HTTP Authorization
