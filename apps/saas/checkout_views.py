@@ -1,6 +1,5 @@
 """Authenticated plan checkout, server verification and signed Razorpay webhooks."""
 import json
-import secrets
 import uuid
 from decimal import Decimal
 from django.conf import settings
@@ -10,6 +9,7 @@ from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import UserRateThrottle
 from apps.accounts.permissions import user_has_permission
 from .models import SubscriptionPlan, RazorpayPlanPayment, RazorpayWebhookDelivery
 from .billing_service import access_state, capture_order, refund_order, public_payment
@@ -17,6 +17,14 @@ from .razorpay_client import (
     GatewayError, configured, create_order, fetch_payment,
     verify_checkout, verify_webhook,
 )
+
+
+class CheckoutOrderThrottle(UserRateThrottle):
+    rate = "10/hour"
+
+
+class CheckoutVerifyThrottle(UserRateThrottle):
+    rate = "30/hour"
 
 
 class OrderInput(serializers.Serializer):
@@ -45,6 +53,7 @@ class CheckoutStatusView(APIView):
 
 class CheckoutCreateView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [CheckoutOrderThrottle]
 
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
@@ -98,6 +107,7 @@ class CheckoutCreateView(APIView):
 
 class CheckoutVerifyView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [CheckoutVerifyThrottle]
 
     def post(self, request):
         payload = VerifyInput(data=request.data)
