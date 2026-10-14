@@ -239,8 +239,12 @@ class CustomerForm(AdminModelForm):
             "last_service_date", "next_reminder_at",
         ]
         widgets = {
-            "last_service_date": forms.DateInput(attrs={"type": "date"}),
-            "next_reminder_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "last_service_date": forms.DateInput(
+                format="%Y-%m-%d", attrs={"type": "date"}
+            ),
+            "next_reminder_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
         }
 
     def clean(self):
@@ -483,7 +487,10 @@ class VehicleForm(AdminModelForm):
     class Meta:
         model = Vehicle
         fields = ['company', 'branch', 'customer', 'registration', 'make', 'model', 'variant', 'year', 'fuel_type', 'transmission', 'color', 'odometer', 'vin', 'engine_no', 'last_service_date', 'next_service_due', 'insurance_expiry', 'notes', 'status']
-        widgets = {name: forms.DateInput(attrs={'type': 'date'}) for name in ['last_service_date', 'next_service_due', 'insurance_expiry']}
+        widgets = {
+            name: forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"})
+            for name in ["last_service_date", "next_service_due", "insurance_expiry"]
+        }
 
 
 class RoleForm(AdminModelForm):
