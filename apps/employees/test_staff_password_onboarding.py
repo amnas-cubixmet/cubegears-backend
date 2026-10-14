@@ -112,3 +112,25 @@ class StaffPasswordOnboardingTests(APITestCase):
         self.assertEqual(invited.data["loginStatus"], "Password Setup Pending")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/setup-password?", mail.outbox[0].body)
+
+    def test_new_workshop_signup_seeds_company_staff_roles(self):
+        self.client.force_authenticate(user=None)
+        with self.captureOnCommitCallbacks(execute=True):
+            result = self.client.post("/api/v1/auth/signup", {
+                "workshop_name": "New Auto Workshop",
+                "owner_name": "Workshop Owner",
+                "mobile": "9876543210",
+                "email": "new-owner@example.com",
+                "country": "India",
+                "state": "Kerala",
+                "city": "Malappuram",
+            }, format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        company = Company.objects.get(pk=result.data["workshop"]["id"])
+        roles = Role.objects.filter(company=company)
+        self.assertTrue(roles.filter(code="SUPER_ADMIN", is_system=True).exists())
+        for code in ["MECHANIC", "QC_INSPECTOR", "SERVICE_ADVISOR", "PARTS_MANAGER", "ACCOUNTANT"]:
+            role = roles.get(code=code)
+            self.assertFalse(role.is_system)
+            self.assertNotIn("*", role.permissions)
+            self.assertFalse(any(code.startswith("panel.") for code in role.permissions))

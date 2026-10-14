@@ -31,6 +31,7 @@ from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.employees.services import resolve_employee_for_user
 from apps.roles.models import Role
+from apps.roles.defaults import create_default_staff_roles
 
 User = get_user_model()
 
@@ -234,6 +235,9 @@ class PublicWorkshopSignupView(APIView):
             is_system=True,
             is_active=True,
         )
+
+        # Staff roles are available immediately after company signup.
+        create_default_staff_roles(company)
 
         user = User.objects.create_user(
             email=data["email"],
