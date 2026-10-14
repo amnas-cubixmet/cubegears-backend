@@ -164,4 +164,4 @@ class SubscriptionManagementUITests(TestCase):
         company = self.client.get(reverse("panel:company-create"))
         self.assertTemplateUsed(company, "control_panel/company_form.html")
         customer = self.client.get(reverse("panel:customer-create"))
-        self.assertTemplateUsed(customer, "control_panel/form.html")
+        self.assertTemplateUsed(customer, "control_panel/customer_form.html")
