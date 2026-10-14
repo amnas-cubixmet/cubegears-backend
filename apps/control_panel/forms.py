@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django import forms
 from django.utils.text import slugify
 from django.contrib.auth import authenticate
@@ -74,13 +76,57 @@ class AdminModelForm(forms.ModelForm):
 
 
 class CompanyForm(AdminModelForm):
+    """Create a stable unique tenant slug and safely accept an optional logo image."""
+
     class Meta:
         model = Company
         fields = [
-            "name", "legal_name", "slug", "email", "phone", "gstin",
+            "name", "legal_name", "email", "phone", "gstin",
             "address", "city", "state", "country", "pincode", "currency",
-            "logo", "plan", "is_active",
+            "logo_image", "plan", "is_active",
         ]
+        widgets = {
+            "logo_image": forms.FileInput(attrs={
+                "accept": "image/jpeg,image/png,image/webp",
+                "data-company-logo": "true",
+            }),
+        }
+        labels = {"logo_image": "Company Logo"}
+        help_texts = {
+            "name": "The company slug will be generated automatically.",
+            "logo_image": "JPG, PNG or WebP only. Maximum file size: 2 MB.",
+        }
+
+    def clean_logo_image(self):
+        upload = self.cleaned_data.get("logo_image")
+        if not upload or not hasattr(upload, "image"):
+            # Existing image on an edit: retain it without re-uploading.
+            return upload
+        if upload.size > 2 * 1024 * 1024:
+            raise forms.ValidationError("Logo must be 2 MB or smaller.")
+        extension = Path(upload.name).suffix.lower()
+        extensions = {"JPEG": {".jpg", ".jpeg"}, "PNG": {".png"}, "WEBP": {".webp"}}
+        if extension not in extensions.get(upload.image.format, set()):
+            raise forms.ValidationError("File extension must match a JPG, PNG or WebP image.")
+        if upload.image.width > 4096 or upload.image.height > 4096:
+            raise forms.ValidationError("Logo image dimensions must not exceed 4096 × 4096.")
+        return upload
+
+    def save(self, commit=True):
+        company = super().save(commit=False)
+        if self.instance._state.adding:
+            # Never trust a client-submitted slug. Existing slugs stay stable on edit.
+            base = slugify(company.name, allow_unicode=False)[:160].strip("-") or "company"
+            proposed = base
+            suffix = 2
+            while Company.objects.filter(slug=proposed).exclude(pk=company.pk).exists():
+                proposed = f"{base[:180 - len(str(suffix)) - 1]}-{suffix}"
+                suffix += 1
+            company.slug = proposed
+        if commit:
+            company.save()
+            self.save_m2m()
+        return company
 
 
 class UserForm(AdminModelForm):
@@ -149,8 +195,18 @@ class SubscriptionForm(AdminModelForm):
             "amount", "currency", "starts_at", "renews_at", "seats",
         ]
         widgets = {
-            "starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-            "renews_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "starts_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+            "renews_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+        }
+        help_texts = {
+            "plan_definition": "Selecting an active defined plan applies its pricing and seat limit when saved.",
+            "plan": "Automatically set when a Plan Builder definition is selected.",
+            "amount": "The configured subscription amount, not a collected payment.",
+            "seats": "Automatically set from Plan Builder when a defined plan is selected.",
         }
 
     def clean(self):
@@ -328,6 +384,72 @@ class EmployeeForm(AdminModelForm):
         return data
 
 
+
+class StaffInviteForm(EmployeeForm):
+    """Add a workshop staff account with a private email password invitation.
+
+    Unlike legacy staff profiles, newly-created Control Panel staff receive
+    an actual company-scoped login instead of an unlinked Employee row.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Never attach an existing (possibly more privileged) account by ID.
+        self.fields.pop("user", None)
+        self.fields["email"].required = True
+        self.fields["role_name"].required = True
+
+    def clean(self):
+        data = super().clean()
+        company = data.get("company")
+        email = (data.get("email") or "").strip().lower()
+        role_name = (data.get("role_name") or "").strip()
+        self.login_role = None
+
+        if email and User.objects.filter(email__iexact=email).exists():
+            self.add_error("email", "This email already has a login account.")
+        if email and company and Employee.objects.filter(
+            company=company, email__iexact=email,
+        ).exists():
+            self.add_error("email", "This staff email is already in use.")
+
+        if company and role_name:
+            self.login_role = Role.objects.filter(
+                company=company, name__iexact=role_name,
+                is_active=True, is_system=False,
+            ).first()
+            if not self.login_role:
+                self.add_error("role_name", "Choose an active company staff role.")
+        if data.get("status", "Active") != "Active":
+            self.add_error("status", "Create an active staff account to send a login invitation.")
+        data["email"] = email
+        return data
+
+    def save(self, commit=True):
+        if not commit:
+            raise ValueError("Staff accounts must be created atomically.")
+        from django.db import transaction
+
+        with transaction.atomic():
+            employee = super().save(commit=False)
+            user = User.objects.create_user(
+                email=self.cleaned_data["email"],
+                password=None,
+                name=employee.name,
+                company=employee.company,
+                branch=employee.branch,
+                role=self.login_role,
+                is_staff=False,
+                is_superuser=False,
+                is_active=True,
+                email_verified=False,
+            )
+            employee.user = user
+            employee.save()
+            self.save_m2m()
+        return employee
+
+
 class BranchForm(AdminModelForm):
     class Meta:
         model = Branch
@@ -380,7 +502,7 @@ class PlanBuilderForm(AdminModelForm):
         model = SubscriptionPlan
         fields = ["name", "description", "monthly_price", "yearly_price",
                   "promo_percent", "promo_ends_at", "max_branches", "max_users",
-                  "included_storage_gb", "extra_storage_rate", "trial_days",
+                  "included_storage_gb", "extra_storage_rate", "trial_days", "access_duration_days", "checkout_price",
                   "sort_order", "is_public", "is_active"]
         widgets = {"promo_ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"})}
 
@@ -395,6 +517,18 @@ class PlanBuilderForm(AdminModelForm):
             self.fields["enabled_features"].initial = list(
                 self.instance.feature_access.filter(enabled=True).values_list("feature_id", flat=True)
             )
+
+    def clean_checkout_price(self):
+        price = self.cleaned_data["checkout_price"]
+        if price < 0 or price > 10000000:
+            raise forms.ValidationError("Enter a valid one-time plan price.")
+        return price
+
+    def clean_access_duration_days(self):
+        days = self.cleaned_data["access_duration_days"]
+        if days < 1 or days > 730:
+            raise forms.ValidationError("Plan validity must be between 1 and 730 days.")
+        return days
 
     def clean_promo_percent(self):
         discount = self.cleaned_data["promo_percent"]

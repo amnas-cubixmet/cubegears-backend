@@ -1,0 +1,55 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="toolbar">
+  <form class="search-form search-form-wide" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Find company, plan, order or payment ID" aria-label="Search transactions">
+    <select name="company" aria-label="Company filter">
+      <option value="">All companies</option>
+      {% for company in companies %}<option value="{{ company.id }}" {% if company_id == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Payment status">
+      <option value="">All statuses</option>
+      <option value="pending" {% if selected_status == "pending" %}selected{% endif %}>Pending</option>
+      <option value="captured" {% if selected_status == "captured" %}selected{% endif %}>Captured</option>
+      <option value="failed" {% if selected_status == "failed" %}selected{% endif %}>Failed</option>
+      <option value="refunded" {% if selected_status == "refunded" %}selected{% endif %}>Refunded</option>
+    </select>
+    <button class="btn" type="submit">Filter</button>
+  </form>
+  <a class="btn" href="{% url 'panel:subscriptions' %}">Back to Subscriptions</a>
+</div>
+<section class="panel-card">
+  <h2>Payment history</h2>
+  <p>Captured transactions: <strong>{{ captured_count }}</strong> · Captured gross: <strong>₹{{ captured_gross_inr|floatformat:2 }}</strong></p>
+  <p>These are verified payment records, not net bank settlements or tax invoices. Refunds are excluded from the captured total.</p>
+  <div class="responsive-table"><table>
+    <thead><tr>
+      <th>Company</th><th>Plan</th><th>Amount</th><th>Method</th>
+      <th>Status</th><th>Order / Payment</th><th>Paid</th><th>Valid until</th>
+    </tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td data-label="Company"><strong>{{ row.company.name }}</strong></td>
+        <td data-label="Plan">{{ row.plan.name }}</td>
+        <td data-label="Amount">₹{{ row.amount_inr|floatformat:2 }} <small>INR</small></td>
+        <td data-label="Method">{{ row.payment_method|default:"—" }}</td>
+        <td data-label="Status"><span class="badge">{{ row.status|title }}</span></td>
+        <td data-label="Order / Payment"><div><small>{{ row.razorpay_order_id|default:"—" }}</small></div><div><small>{{ row.razorpay_payment_id|default:"—" }}</small></div></td>
+        <td data-label="Paid">{{ row.paid_at|date:"d M Y H:i"|default:"—" }}</td>
+        <td data-label="Valid until">{{ row.period_end|date:"d M Y"|default:"—" }}</td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="8" class="empty-cell">No Razorpay payments match this filter.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% if rows.has_other_pages %}
+    <div class="pagination">
+      {% if rows.has_previous %}<a class="btn" href="?page={{ rows.previous_page_number }}&amp;company={{ company_id|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;q={{ q|urlencode }}">Previous</a>{% endif %}
+      <span>Page {{ rows.number }} of {{ rows.paginator.num_pages }}</span>
+      {% if rows.has_next %}<a class="btn" href="?page={{ rows.next_page_number }}&amp;company={{ company_id|urlencode }}&amp;status={{ selected_status|urlencode }}&amp;q={{ q|urlencode }}">Next</a>{% endif %}
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

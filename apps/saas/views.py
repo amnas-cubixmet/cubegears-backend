@@ -1,11 +1,22 @@
+import logging
+from django.db import transaction
+from apps.companies.models import Company
+logger = logging.getLogger(__name__)
 from django.db.models import Sum
+from .storage_ledger import ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
-from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile
+from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile,StorageEvent
 from .serializers import *
+
+def safe_delete_storage(storage,name):
+    try:
+        storage.delete(name)
+    except Exception:
+        logger.exception('Failed to delete storage file')
 
 DEFAULTS={
 "company":{"timezone":"Asia/Kolkata","dateFormat":"DD/MM/YYYY"},
@@ -122,26 +133,55 @@ class StorageFilesView(APIView):
             if upload.size <= 0 or upload.size > max_bytes or upload.content_type not in allowed:
                 return response.Response({"message": "Invalid file type or size."}, status=400)
         created=[]
-        for upload in uploads:
-            obj=MediaFile.objects.create(
-                company=request.user.company,branch=request.user.branch,file=upload,name=upload.name,
-                category=category,mime_type=getattr(upload,"content_type","") or "",size_bytes=upload.size,
-                uploaded_by=request.user,
-            )
-            created.append(obj)
+        try:
+            with transaction.atomic():
+                Company.objects.select_for_update().get(pk=request.user.company_id)
+                sub=(Subscription.objects.filter(company=request.user.company,status__iexact='Active').select_related('plan_definition').order_by('-created_at').first())
+                used=MediaFile.objects.filter(company=request.user.company).aggregate(v=Sum('size_bytes'))['v'] or 0
+                if sub and sub.plan_definition_id and used + sum(f.size for f in uploads) > sub.plan_definition.included_storage_gb * (1024**3):
+                    return response.Response({'message':'Storage quota exceeded.'},status=413)
+                ensure_baseline(request.user.company)
+                for upload in uploads:
+                    obj=MediaFile.objects.create(
+                        company=request.user.company,branch=request.user.branch,file=upload,name=upload.name,
+                        category=category,mime_type=getattr(upload,"content_type","") or "",size_bytes=upload.size,
+                        uploaded_by=request.user,
+                    )
+                    created.append(obj)
+                    record_event(obj,"UPLOAD",request.user)
+        except Exception:
+            for obj in created:
+                if obj.file: obj.file.delete(save=False)
+            raise
         return response.Response(MediaFileSerializer(created,many=True,context={"request":request}).data,status=status.HTTP_201_CREATED)
 
 class StorageFilesDeleteView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.manage"
     def post(self,request):
-        ids=request.data.get("ids") or []
+        from uuid import UUID
+        ids=request.data.get('ids')
+        if not isinstance(ids,list) or len(ids)>100:
+            return response.Response({'message':'Provide a list of up to 100 IDs.'},status=400)
+        try:
+            ids=[UUID(str(i)) for i in ids]
+        except (ValueError,TypeError,AttributeError):
+            return response.Response({'message':'Invalid file ID.'},status=400)
         qs=MediaFile.objects.filter(company=request.user.company,id__in=ids)
         deleted=0
-        for obj in qs:
-            if obj.file:
-                obj.file.delete(save=False)
-            obj.delete(); deleted+=1
+        with transaction.atomic():
+            Company.objects.select_for_update().get(pk=request.user.company_id)
+            ensure_baseline(request.user.company)
+            for obj in qs:
+                name=obj.file.name if obj.file else None
+                storage=obj.file.storage if name else None
+                snapshot_id = obj.pk
+                obj.delete()
+                obj.pk = snapshot_id
+                record_event(obj,"DELETE",request.user)
+                if name:
+                    transaction.on_commit(lambda storage=storage,name=name: safe_delete_storage(storage,name))
+                deleted+=1
         return response.Response({"deleted":deleted})
 
 class StorageSettingsView(APIView):
@@ -172,6 +212,9 @@ class StorageHistoryListView(APIView):
         if from_date and to_date and from_date > to_date:
             return response.Response({"message": "From date must be before To date."}, status=400)
 
+        if StorageEvent.objects.filter(company=company).exists():
+            return response.Response(history_days(company,from_date,to_date))
+
         entries = StorageUsage.objects.filter(company=company)
         if from_date:
             entries = entries.filter(date__gte=from_date)
@@ -200,6 +243,13 @@ class StorageHistoryDateView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.view"
     def get(self,request,date):
+        from django.utils.dateparse import parse_date
+        parsed=parse_date(date)
+        if not parsed:
+            return response.Response({'message':'Use YYYY-MM-DD.'},status=400)
+        detail=history_day(request.user.company,parsed)
+        if detail:
+            return response.Response(detail)
         usage=StorageUsage.objects.filter(company=request.user.company,date=date)
         files=MediaFile.objects.filter(company=request.user.company,created_at__date=date)
         return response.Response({

@@ -58,6 +58,38 @@ class MediaFile(CompanyOwnedModel):
     class Meta: ordering=["-created_at"]
 
 
+
+class StorageEvent(CompanyOwnedModel):
+    """Storage upload/delete log; file snapshot survives deletion."""
+    UPLOAD = "UPLOAD"
+    DELETE = "DELETE"
+    BASELINE = "BASELINE"
+    EVENT_TYPES = [(UPLOAD, "Uploaded"), (DELETE, "Deleted"), (BASELINE, "Existing file baseline")]
+
+    event_type = models.CharField(max_length=12, choices=EVENT_TYPES, db_index=True)
+    file_id_snapshot = models.UUIDField(db_index=True)
+    name_snapshot = models.CharField(max_length=255)
+    category_snapshot = models.CharField(max_length=80, default="General")
+    mime_type_snapshot = models.CharField(max_length=120, blank=True)
+    file_size_bytes = models.BigIntegerField(default=0)
+    delta_bytes = models.BigIntegerField(default=0)
+    storage_before_bytes = models.BigIntegerField(default=0)
+    storage_after_bytes = models.BigIntegerField(default=0)
+    file_count_after = models.PositiveIntegerField(default=0)
+    actor = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="storage_events",
+    )
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-occurred_at", "-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["company", "occurred_at"], name="saas_se_company_at"),
+            models.Index(fields=["company", "event_type"], name="saas_se_company_kind"),
+        ]
+
+
 class FeatureGroup(models.Model):
     """Editable groups and nested labels in the platform plan builder."""
     key = models.SlugField(max_length=100, unique=True)
@@ -101,6 +133,8 @@ class SubscriptionPlan(models.Model):
     included_storage_gb = models.PositiveIntegerField(default=5)
     extra_storage_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("15"))
     trial_days = models.PositiveIntegerField(default=14)
+    access_duration_days = models.PositiveIntegerField(default=180, help_text='Days of access after each verified payment (e.g. 180 or 210).')
+    checkout_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"), help_text="One-time Razorpay payment for the configured access duration.")
     is_public = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)

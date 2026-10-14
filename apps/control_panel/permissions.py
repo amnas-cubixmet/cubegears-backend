@@ -15,7 +15,7 @@ def route_allowed(user, route):
     if '-' in route:
         resource, action = route.rsplit('-', 1)
         resource = SINGULAR.get(resource, resource)
-        action = {'detail': 'view', 'toggle': 'edit'}.get(action, action)
+        action = {'detail': 'view', 'toggle': 'edit', 'invite': 'edit'}.get(action, action)
     else:
         resource, action = route, 'view'
     return resource in RESOURCES and panel_permission(user, resource, action)

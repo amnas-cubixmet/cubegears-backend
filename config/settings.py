@@ -143,8 +143,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+# Public company logos must live on persistent storage in production.
+MEDIA_ROOT = Path(env("DJANGO_MEDIA_ROOT", str(BASE_DIR / "media"))).expanduser()
+if not MEDIA_ROOT.is_absolute():
+    MEDIA_ROOT = BASE_DIR / MEDIA_ROOT
 # Outside MEDIA_ROOT: public /media/ routes must never expose private job photos.
 PRIVATE_JOB_MEDIA_ROOT = Path(env("PRIVATE_JOB_MEDIA_ROOT", str(BASE_DIR / "private_job_media")))
 
@@ -250,3 +253,9 @@ LOGOUT_REDIRECT_URL = "panel:login"
 #         "schedule": 300.0,
 #     },
 # }
+
+# Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
+SAAS_PAYMENT_ENFORCEMENT_ENABLED = env_bool("SAAS_PAYMENT_ENFORCEMENT_ENABLED", False)
