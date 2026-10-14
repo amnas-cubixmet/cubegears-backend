@@ -122,5 +122,5 @@ class UserManagementUITests(TestCase):
 
     def test_other_resource_forms_keep_generic_template(self):
         result = self.client.get(reverse("panel:customer-create"))
-        self.assertTemplateUsed(result, "control_panel/form.html")
+        self.assertTemplateUsed(result, "control_panel/customer_form.html")
         self.assertContains(result, "management-ui.css")
