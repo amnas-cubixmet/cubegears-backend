@@ -136,7 +136,10 @@ class ResetPasswordView(APIView):
             return Response({"message": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(serializer.validated_data["password"])
-        user.save(update_fields=["password"])
+        user.email_verified = True
+        user.save(update_fields=["password", "email_verified"])
+        from django.utils import timezone
+        MagicLink.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
         return Response({"message": "Password reset successfully."})
 
 class MagicLinkRequestView(APIView):
@@ -183,7 +186,9 @@ class ChangePasswordView(APIView):
             return Response({"message": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
-        return Response({"message": "Password changed successfully."})
+        from django.utils import timezone
+        MagicLink.objects.filter(user=request.user, used_at__isnull=True).update(used_at=timezone.now())
+        return Response({"message": "Password changed successfully. Please sign in again."})
 
 
 class PublicWorkshopSignupView(APIView):
