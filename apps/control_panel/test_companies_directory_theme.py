@@ -50,11 +50,11 @@ class CompaniesDirectoryThemeTests(TestCase):
         css = Path(stylesheet_path).read_text(encoding="utf-8")
         self.assertRegex(
             css,
-            r"(?s)\\.companies-stats \\.company-stat-value\\s*\\{[^}]*display:block",
+            r"(?s)\.companies-stats \.company-stat-value\s*\{[^}]*display:block",
         )
         self.assertRegex(
             css,
-            r"(?s)\\.companies-stats \\.company-stat-meta\\s*\\{[^}]*display:block",
+            r"(?s)\.companies-stats \.company-stat-meta\s*\{[^}]*display:block",
         )
 
     def test_status_filter_keeps_counts_global(self):
