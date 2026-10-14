@@ -8,6 +8,7 @@ TENANT_PERMISSIONS = sorted({f'{module}.{action}' for module in CRUD_MODULES
     'storage.manage', 'settings.view', 'settings.manage', 'payroll.view', 'payroll.edit',
 })
 PANEL_MODULES = ['companies', 'users', 'branches', 'roles', 'subscriptions',
+                 'plans', 'features', 'requests',
                  'customers', 'vehicles', 'jobs', 'stock', 'invoices', 'staff']
 PANEL_PERMISSIONS = sorted({f'panel.{module}.{action}' for module in PANEL_MODULES
                            for action in ['view', 'create', 'edit', 'delete']} |

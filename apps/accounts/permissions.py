@@ -83,7 +83,13 @@ def user_has_permission(user, permission_code):
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False
-    return "*" in permissions or permission_code in permissions
+    role_allows = "*" in permissions or permission_code in permissions
+    if not role_allows:
+        return False
+    if not permission_code.startswith("panel."):
+        from apps.saas.access import feature_allowed
+        return feature_allowed(user, permission_code)
+    return True
 
 
 def user_has_permissions(user, permission_codes):

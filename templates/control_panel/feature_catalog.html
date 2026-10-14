@@ -1,0 +1,18 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="toolbar">
+  <p>Create unlimited category labels, nested sub-labels, and independent feature switches. Use keys matching permission modules such as customers, vehicles, jobs, stock, reports, staff or payroll for automatic backend enforcement.</p>
+  <a class="btn btn-primary" href="{% url 'panel:featuregroup-create' %}">+ Add Label</a>
+  <a class="btn" href="{% url 'panel:feature-create' %}">+ Add Feature</a>
+  <a class="btn" href="{% url 'panel:plans' %}">Plan Builder</a>
+</div>
+{% for group in groups %}
+  <section class="panel-card" style="margin-bottom:12px">
+    <h2>{% if group.parent %}{{ group.parent.label }} / {% endif %}{{ group.label }} <small>({{ group.key }})</small> <a class="btn" href="{% url 'panel:featuregroup-edit' group.pk %}">Edit Label</a></h2>
+    {% for item in group.features.all %}
+      <p>• {{ item.label }} <small>— {{ item.key }}{% if not item.is_active %} (Disabled){% endif %}</small> <a href="{% url 'panel:feature-edit' item.pk %}">Edit</a></p>
+    {% empty %}<p>No features assigned to this label.</p>{% endfor %}
+  </section>
+{% empty %}<section class="panel-card"><p>No feature labels created yet.</p></section>{% endfor %}
+{% endblock %}
