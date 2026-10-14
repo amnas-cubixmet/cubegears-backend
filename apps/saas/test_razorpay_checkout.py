@@ -212,3 +212,42 @@ class RazorpayBillingTests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertEqual(RazorpayPlanPayment.objects.count(), 0)
+
+    def test_expired_captured_plan_is_blocked_and_status_is_expired(self):
+        self.create_checkout()
+        with patch("apps.saas.checkout_views.fetch_payment", return_value=self.captured()):
+            answer = self.client.post("/api/v1/saas/checkout/verify", {
+                "razorpay_order_id": "order_abc123",
+                "razorpay_payment_id": "pay_abc123",
+                "razorpay_signature": self.signature(),
+            }, format="json")
+        self.assertEqual(answer.status_code, 200)
+        yesterday = timezone.now() - timedelta(days=1)
+        sub = Subscription.objects.get(company=self.company)
+        sub.renews_at = yesterday
+        sub.save(update_fields=["renews_at"])
+        order = RazorpayPlanPayment.objects.get(company=self.company)
+        order.period_end = yesterday
+        order.save(update_fields=["period_end"])
+        self.assertFalse(access_state(self.company)["allowed"])
+        self.assertEqual(access_state(self.company)["status"], "expired")
+        jwt = APIClient()
+        jwt.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(self.user).access_token}")
+        self.assertEqual(jwt.get("/api/v1/dashboard").status_code, 402)
+
+    def test_non_billing_staff_cannot_read_same_tenant_order_details(self):
+        self.create_checkout()
+        role = Role.objects.create(
+            company=self.company, name="Mechanic", code="MECHANIC",
+            permissions=["jobs.view"],
+        )
+        staff = User.objects.create_user(
+            email="staff-checkout@example.test", name="Mechanic",
+            password="CheckoutSecure371!", company=self.company, role=role,
+        )
+        self.client.force_authenticate(staff)
+        self.assertEqual(
+            self.client.get("/api/v1/saas/checkout/orders/order_abc123").status_code,
+            403,
+        )
+        self.assertEqual(self.client.get("/api/v1/saas/checkout/history").status_code, 403)
