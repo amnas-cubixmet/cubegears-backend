@@ -9,6 +9,22 @@
   </div>
 </div>
 
+{% if active == 'users' %}
+<section class="panel-card user-profile-header">
+  <div class="user-profile-avatar" aria-hidden="true">{{ object.name|default:object.email|slice:":1"|upper }}</div>
+  <div class="user-profile-copy">
+    <p class="eyebrow">User profile</p>
+    <h2>{{ object.name|default:object.email }}</h2>
+    <p>{{ object.email }}{% if object.company %} · {{ object.company.name }}{% endif %}</p>
+    <div class="user-profile-tags">
+      {% if object.is_superuser %}<span class="access-pill is-superuser">Super Admin</span>{% elif object.is_staff %}<span class="access-pill is-admin">Admin Staff</span>{% else %}<span class="access-pill">Workshop User</span>{% endif %}
+      {% if object.is_active %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="company-status-tag is-disabled">Disabled</span>{% endif %}
+      <span class="user-verify-state {% if object.email_verified %}is-verified{% endif %}">{% if object.email_verified %}Email verified{% else %}Email unverified{% endif %}</span>
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'companies' %}
 <section class="panel-card company-profile-header">
   <div class="company-profile-logo">
