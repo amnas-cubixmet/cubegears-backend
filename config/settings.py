@@ -201,8 +201,13 @@ FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
 MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
 PASSWORD_RESET_TIMEOUT = int(env("PASSWORD_RESET_TIMEOUT_SECONDS", 3600))
 
-# Prevent URL-borne one-time credentials from leaking in Referer headers.
-SECURE_REFERRER_POLICY = "no-referrer"
+# Django's CsrfViewMiddleware validates Referer on HTTPS POST requests when
+# Origin is absent.  A global "no-referrer" policy suppresses this fallback
+# and breaks legitimate same-origin form submissions in some browsers.
+# "origin" sends only scheme + host + port, never sensitive reset/magic-link
+# paths or tokens, while preserving Django's secure CSRF verification.
+# Explicit Origin: null is still rejected by Django (do not whitelist it).
+SECURE_REFERRER_POLICY = "origin"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
