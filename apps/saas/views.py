@@ -1,9 +1,11 @@
 import logging
 from django.db import transaction
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
 from apps.companies.models import Company
 logger = logging.getLogger(__name__)
 from django.db.models import Sum
-from .storage_ledger import ensure_baseline, record_event, history_days, history_day
+from .storage_ledger import as_dict, ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
@@ -184,6 +186,32 @@ class StorageFilesDeleteView(APIView):
                 deleted+=1
         return response.Response({"deleted":deleted})
 
+class StorageFileDownloadView(APIView):
+    """Stream only the signed-in tenant's stored file; never expose other tenants' bytes."""
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request, file_id):
+        if not request.user.company_id:
+            raise Http404("File not found.")
+        file_record = get_object_or_404(
+            MediaFile, pk=file_id, company_id=request.user.company_id,
+        )
+        if not file_record.file:
+            raise Http404("File not found.")
+        try:
+            stream = file_record.file.open("rb")
+        except (OSError, FileNotFoundError, ValueError):
+            raise Http404("File not found.")
+        result = FileResponse(
+            stream, as_attachment=True, filename=file_record.name,
+            content_type="application/octet-stream",
+        )
+        result["X-Content-Type-Options"] = "nosniff"
+        result["Cache-Control"] = "private, no-store"
+        return result
+
+
 class StorageSettingsView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.manage"
@@ -191,6 +219,30 @@ class StorageSettingsView(APIView):
         obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
         obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
+
+class StorageEventsView(APIView):
+    """Read-only, tenant-scoped storage audit events with bounded pagination."""
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", "50"))
+            offset = int(request.query_params.get("offset", "0"))
+        except (ValueError, TypeError):
+            return response.Response({"message": "Invalid pagination."}, status=400)
+        if limit < 1 or limit > 100 or offset < 0:
+            return response.Response({"message": "Use limit 1-100 and offset >= 0."}, status=400)
+
+        events = StorageEvent.objects.filter(
+            company_id=request.user.company_id,
+        ).select_related("actor").order_by("-occurred_at", "-created_at", "-id")
+        count = events.count()
+        return response.Response({
+            "count": count,
+            "results": [as_dict(event) for event in events[offset:offset + limit]],
+        })
+
 
 class StorageHistoryListView(APIView):
     permission_classes = [RolePermission]

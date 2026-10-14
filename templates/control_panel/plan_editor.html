@@ -36,7 +36,14 @@
         {% include "control_panel/company_field.html" with field=form.promo_percent %}
         {% include "control_panel/company_field.html" with field=form.promo_ends_at %}
       </div>
-      <aside class="plan-editor-help"><strong>Pricing information</strong><p>Prices are in INR for the platform catalog. A promotion applies while valid. Existing subscription records are not automatically repriced when you save changes.</p></aside>
+      <div class="plan-editor-payment-fields">
+        <div class="plan-payment-fields-heading"><strong>Razorpay One-Time Checkout</strong><p>Amount collected for each verified access period, separate from catalog monthly/yearly reference prices.</p></div>
+        <div class="plan-editor-grid plan-editor-payment-grid">
+          {% include "control_panel/company_field.html" with field=form.checkout_price %}
+          {% include "control_panel/company_field.html" with field=form.access_duration_days %}
+        </div>
+      </div>
+      <aside class="plan-editor-help"><strong>Pricing information</strong><p>Configured prices are in INR. Razorpay checkout uses the one-time amount and duration after successful server-side verification. A promotion applies to catalog monthly/yearly pricing while valid. Existing subscription records are not automatically repriced when you save changes.</p></aside>
     </section>
 
     <section class="panel-card plan-editor-section">

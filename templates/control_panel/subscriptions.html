@@ -1,16 +1,120 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar"><form class="search-form search-form-wide" method="get">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search company, plan or status">
-  <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-  <button class="btn" type="submit">Filter</button>
-  <a class="btn" href="{% url 'panel:subscription-payments' %}">Razorpay Payment History</a>
-</form>{% panel_can 'panel:subscription-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:subscription-create' %}">Add Subscription</a>{% endif %}</div>
-<section class="panel-card"><div class="responsive-table"><table>
-<thead><tr><th>Company</th><th>Plan</th><th>Cycle</th><th>Amount</th><th>Seats</th><th>Status</th><th>Starts</th><th>Renews</th><th>Actions</th></tr></thead>
-<tbody>{% for row in rows %}
-<tr><td data-label="Company"><strong>{{ row.company.name }}</strong></td><td data-label="Plan">{{ row.plan }}</td><td data-label="Cycle">{{ row.billing_cycle|title }}</td><td data-label="Amount">₹{{ row.amount|floatformat:2 }}</td><td data-label="Seats">{{ row.seats }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Starts">{{ row.starts_at|date:"d M Y"|default:"—" }}</td><td data-label="Renews">{{ row.renews_at|date:"d M Y"|default:"—" }}</td><td data-label="Actions"><div class="row-actions">{% panel_can 'panel:subscription-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:subscription-detail' row.id %}">View</a>{% endif %}{% panel_can 'panel:subscription-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:subscription-edit' row.id %}">Edit</a>{% endif %}{% panel_can 'panel:subscription-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:subscription-delete' row.id %}">Delete</a>{% endif %}</div></td></tr>
-{% empty %}<tr><td colspan="8" class="empty-cell">No subscriptions found.</td></tr>{% endfor %}</tbody>
-</table></div></section>
+<section class="directory-heading subscription-heading">
+  <div>
+    <p class="eyebrow">Platform / Subscriptions</p>
+    <h2>Subscriptions &amp; Billing</h2>
+    <p>View tenant subscription plans, billing cycles, renewal dates and account statuses.</p>
+  </div>
+  <div class="subscription-heading-actions">
+    {% panel_can 'panel:subscription-payments' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:subscription-payments' %}">Razorpay Payment History</a>{% endif %}
+    {% panel_can 'panel:subscription-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:subscription-create' %}">+ Add Subscription</a>{% endif %}
+  </div>
+</section>
+
+<section class="directory-stats subscription-stats" aria-label="Subscription overview">
+  <article class="user-stat-card">
+    <div class="user-stat-top"><span>Total Subscriptions</span><span class="user-stat-icon" aria-hidden="true">S</span></div>
+    <strong class="user-stat-value">{{ total_subscriptions }}</strong>
+    <small class="user-stat-meta">All subscription records</small>
+  </article>
+  <article class="user-stat-card">
+    <div class="user-stat-top"><span>Active Subscriptions</span><span class="user-stat-icon" aria-hidden="true">✓</span></div>
+    <strong class="user-stat-value">{{ active_subscriptions }}</strong>
+    <small class="user-stat-meta">Currently marked Active</small>
+  </article>
+  <article class="user-stat-card">
+    <div class="user-stat-top"><span>Renewing Within 30 Days</span><span class="user-stat-icon" aria-hidden="true">↻</span></div>
+    <strong class="user-stat-value">{{ upcoming_renewals }}</strong>
+    <small class="user-stat-meta">Active plans with scheduled renewals</small>
+  </article>
+  <article class="user-stat-card">
+    <div class="user-stat-top"><span>Companies With Plans</span><span class="user-stat-icon" aria-hidden="true">C</span></div>
+    <strong class="user-stat-value">{{ subscriber_companies }}</strong>
+    <small class="user-stat-meta">Distinct company accounts</small>
+  </article>
+</section>
+
+<section class="panel-card subscription-directory" aria-labelledby="subscription-directory-heading">
+  <header class="section-head directory-section-heading">
+    <div>
+      <p class="eyebrow">Billing overview</p>
+      <h2 id="subscription-directory-heading">Subscription Directory</h2>
+      <p>Search and manage plan assignments across all companies</p>
+    </div>
+    <span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+  </header>
+
+  <form class="subscription-filter-form" method="get" aria-label="Filter subscriptions">
+    <label class="sr-only" for="subscription-search">Search subscriptions</label>
+    <input id="subscription-search" name="q" type="search" value="{{ q }}" placeholder="Search company, plan or status">
+    <label class="sr-only" for="subscription-company">Company</label>
+    <select id="subscription-company" name="company">
+      <option value="">All companies</option>
+      {% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="subscription-status">Status</label>
+    <select id="subscription-status" name="status">
+      <option value="">All statuses</option>
+      {% for option in status_options %}<option value="{{ option }}" {% if status == option %}selected{% endif %}>{{ option|title }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="subscription-cycle">Billing cycle</label>
+    <select id="subscription-cycle" name="cycle">
+      <option value="">All billing cycles</option>
+      <option value="monthly" {% if cycle == "monthly" %}selected{% endif %}>Monthly</option>
+      <option value="yearly" {% if cycle == "yearly" %}selected{% endif %}>Yearly</option>
+      <option value="annual" {% if cycle == "annual" %}selected{% endif %}>Annual</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if q or company_id or cycle or status %}<a href="{% url 'panel:subscriptions' %}" class="btn">Clear</a>{% endif %}
+  </form>
+
+  <div class="responsive-table subscription-table">
+    <table>
+      <thead>
+        <tr><th>Company</th><th>Plan</th><th>Billing Cycle</th><th>Plan Amount</th><th>Seats</th><th>Status</th><th>Starts</th><th>Renews</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td data-label="Company">
+              <div class="subscription-company-identity">
+                <span class="subscription-company-mark" aria-hidden="true">{{ row.company.name|slice:":1"|upper }}</span>
+                <div><strong>{{ row.company.name }}</strong><span class="table-sub">{{ row.branch.name|default:"Company-wide" }}</span></div>
+              </div>
+            </td>
+            <td data-label="Plan">
+              <strong class="subscription-plan-name">{{ row.plan|default:"—" }}</strong>
+              {% if row.plan_definition %}<span class="subscription-plan-note">Configured plan</span>{% endif %}
+            </td>
+            <td data-label="Billing Cycle"><span class="subscription-cycle-pill">{{ row.billing_cycle|title }}</span></td>
+            <td data-label="Plan Amount"><span class="subscription-amount">{{ row.currency }} {{ row.amount|floatformat:2 }}</span></td>
+            <td data-label="Seats">{{ row.seats }}</td>
+            <td data-label="Status">
+              {% if row.status|lower == "active" %}
+                <span class="subscription-status-pill is-active">Active</span>
+              {% elif row.status|lower == "cancelled" or row.status|lower == "canceled" or row.status|lower == "expired" %}
+                <span class="subscription-status-pill is-inactive">{{ row.status|title }}</span>
+              {% else %}
+                <span class="subscription-status-pill is-pending">{{ row.status|default:"Not set"|title }}</span>
+              {% endif %}
+            </td>
+            <td data-label="Starts">{{ row.starts_at|date:"d M Y"|default:"—" }}</td>
+            <td data-label="Renews">{{ row.renews_at|date:"d M Y"|default:"Not scheduled" }}</td>
+            <td data-label="Actions">
+              <div class="row-actions subscription-row-actions">
+                {% panel_can 'panel:subscription-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:subscription-detail' row.id %}">View</a>{% endif %}
+                {% panel_can 'panel:subscription-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:subscription-edit' row.id %}">Edit</a>{% endif %}
+                {% panel_can 'panel:subscription-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:subscription-delete' row.id %}">Delete</a>{% endif %}
+              </div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td class="empty-cell" colspan="9">No subscriptions match the selected filters.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}
