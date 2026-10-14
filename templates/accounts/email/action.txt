@@ -1,4 +1,4 @@
-{{ subject }}
+{% autoescape off %}{{ subject }}
 
 {{ body }}
 
@@ -9,3 +9,4 @@ If you did not request this email, you can safely ignore it.
 Never share your sign-in or password link.
 
 CubixGear · Secure account notifications
+{% endautoescape %}
