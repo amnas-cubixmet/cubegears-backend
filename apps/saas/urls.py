@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .checkout_views import CheckoutStatusView, CheckoutCreateView, CheckoutVerifyView, CheckoutPaymentHistoryView, CheckoutOrderStatusView, RazorpayWebhookView
 from .plan_views import PlanCatalogView, PlanAccessView, PlanChangeRequestView, CustomPlanRequestView
 
 router=DefaultRouter(trailing_slash=False)
@@ -10,6 +11,12 @@ router.register("templates",DocumentTemplateViewSet,basename="document-templates
 router.register("security/events",SecurityEventViewSet,basename="security-events")
 
 urlpatterns=[
+    path('checkout/status', CheckoutStatusView.as_view(), name='saas-checkout-status'),
+    path('checkout/orders', CheckoutCreateView.as_view(), name='saas-checkout-orders'),
+    path('checkout/verify', CheckoutVerifyView.as_view(), name='saas-checkout-verify'),
+    path('checkout/history', CheckoutPaymentHistoryView.as_view(), name='saas-checkout-history'),
+    path('checkout/orders/<str:order_id>', CheckoutOrderStatusView.as_view(), name='saas-checkout-order-status'),
+    path('checkout/webhook', RazorpayWebhookView.as_view(), name='saas-checkout-webhook'),
     path("plans", PlanCatalogView.as_view(), name="saas-plan-catalog"),
     path("plan-access", PlanAccessView.as_view(), name="saas-plan-access"),
     path("billing/change-requests", PlanChangeRequestView.as_view(), name="saas-plan-changes"),
