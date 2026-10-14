@@ -101,6 +101,7 @@ class SubscriptionPlan(models.Model):
     included_storage_gb = models.PositiveIntegerField(default=5)
     extra_storage_rate = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("15"))
     trial_days = models.PositiveIntegerField(default=14)
+    access_duration_days = models.PositiveIntegerField(default=180, help_text='Days of access after each verified payment (e.g. 180 or 210).')
     is_public = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
@@ -154,3 +155,32 @@ class CustomPlanRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+class RazorpayPlanPayment(CompanyOwnedModel):
+    """Order amount/duration immutable from client; only captured payments activate access."""
+    STATUS = [("pending", "Pending"), ("captured", "Captured"), ("failed", "Failed"), ("refunded", "Refunded")]
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name="razorpay_payments")
+    requested_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    subscription = models.ForeignKey(Subscription, on_delete=models.SET_NULL, null=True, blank=True, related_name="razorpay_payments")
+    cycle = models.CharField(max_length=10, choices=[("monthly", "Monthly"), ("yearly", "Yearly")])
+    validity_days = models.PositiveIntegerField()
+    amount_paise = models.PositiveBigIntegerField()
+    currency = models.CharField(max_length=3, default="INR")
+    receipt = models.CharField(max_length=40, unique=True)
+    razorpay_order_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    razorpay_payment_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    status = models.CharField(max_length=15, choices=STATUS, default="pending", db_index=True)
+    payment_method = models.CharField(max_length=30, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    period_start = models.DateTimeField(null=True, blank=True)
+    period_end = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["company", "status"], name="saas_rp_company_status")]
+
+
+class RazorpayWebhookDelivery(models.Model):
+    event_id = models.CharField(max_length=150, unique=True)
+    event_type = models.CharField(max_length=100)
+    received_at = models.DateTimeField(auto_now_add=True)
