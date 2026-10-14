@@ -14,6 +14,7 @@
   {% if active == 'invoices' %}<link rel="stylesheet" href="{% static 'control_panel/invoices-ui.css' %}">{% endif %}
   {% if active == 'stock' %}<link rel="stylesheet" href="{% static 'control_panel/stock-ui.css' %}">{% endif %}
   {% if active == 'jobs' %}<link rel="stylesheet" href="{% static 'control_panel/jobs-ui.css' %}">{% endif %}
+  {% if active == 'customers' or active == 'vehicles' or active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
 </head>
 <body class="panel-body">
   <div class="app-shell">
