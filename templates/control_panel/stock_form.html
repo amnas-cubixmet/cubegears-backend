@@ -1,0 +1,72 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="stock-editor-page">
+  <header class="stock-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:stock' %}">Stock &amp; Inventory</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Stock Item{% else %}Add Stock Item{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit Stock Item{% else %}Add Stock Item{% endif %}</h2>
+      <p>Maintain item identification, workshop assignment, pricing and recorded quantities.</p>
+    </div>
+    <a class="btn" href="{% url cancel_url %}">← Back to Stock</a>
+  </header>
+
+  <form method="post" class="stock-editor-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card stock-editor-section">
+      <header class="stock-section-heading"><span class="stock-section-number">01</span><div><h3>Item Information</h3><p>Identify the product and its stock keeping unit.</p></div></header>
+      <div class="stock-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        {% include "control_panel/company_field.html" with field=form.sku %}
+        {% include "control_panel/company_field.html" with field=form.barcode %}
+        {% include "control_panel/company_field.html" with field=form.brand %}
+        {% include "control_panel/company_field.html" with field=form.category %}
+        {% include "control_panel/company_field.html" with field=form.unit %}
+        {% include "control_panel/company_field.html" with field=form.compatible_vehicle wide=True %}
+      </div>
+    </section>
+
+    <section class="panel-card stock-editor-section">
+      <header class="stock-section-heading"><span class="stock-section-number">02</span><div><h3>Workshop &amp; Supplier</h3><p>Assign the inventory record to its workshop and supplier.</p></div></header>
+      <div class="stock-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.supplier %}
+        {% include "control_panel/company_field.html" with field=form.rack %}
+      </div>
+      <p class="stock-editor-hint">Branch, category and supplier must belong to the selected company; SKU must be unique within that company.</p>
+    </section>
+
+    <section class="panel-card stock-editor-section">
+      <header class="stock-section-heading"><span class="stock-section-number">03</span><div><h3>Prices &amp; Tax</h3><p>Record the item's unit prices and tax information.</p></div></header>
+      <div class="stock-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.cost_price %}
+        {% include "control_panel/company_field.html" with field=form.selling_price %}
+        {% include "control_panel/company_field.html" with field=form.tax %}
+        {% include "control_panel/company_field.html" with field=form.hsn_code %}
+      </div>
+    </section>
+
+    <section class="panel-card stock-editor-section">
+      <header class="stock-section-heading"><span class="stock-section-number">04</span><div><h3>Quantities &amp; Reorder Levels</h3><p>Update saved quantity fields and their reorder threshold.</p></div></header>
+      <div class="stock-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.on_hand %}
+        {% include "control_panel/company_field.html" with field=form.reserved %}
+        {% include "control_panel/company_field.html" with field=form.minimum_stock %}
+        {% include "control_panel/company_field.html" with field=form.reorder_level %}
+      </div>
+      <div class="stock-editor-notice"><strong>Stock movement note</strong><p>Available stock equals on-hand minus reserved. Directly editing these fields changes saved quantities without creating a stock movement audit entry. For operational receiving, issuing or transfers, use the workshop's inventory movement workflow.</p></div>
+    </section>
+
+    <section class="panel-card stock-editor-section">
+      <header class="stock-section-heading"><span class="stock-section-number">05</span><div><h3>Item Status</h3><p>Set the current administrative status of this inventory record.</p></div></header>
+      <div class="stock-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.status %}
+      </div>
+    </section>
+
+    <footer class="stock-editor-actions"><a class="btn" href="{% url cancel_url %}">Cancel</a><button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create Stock Item{% endif %}</button></footer>
+  </form>
+</section>
+{% endblock %}
