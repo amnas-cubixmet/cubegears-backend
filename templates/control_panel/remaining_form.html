@@ -1,0 +1,30 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="remaining-editor-page">
+  <header class="remaining-editor-header">
+    <div><nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url cancel_url %}">{{ page_title }}</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit{% else %}Create{% endif %}</span></nav>
+    <h2>{{ page_title }}</h2>
+    <p>{% if active == 'vehicles' %}Maintain registration, customer assignment and vehicle details.{% elif active == 'roles' %}Edit role permissions carefully; changes affect access authorization.{% elif active == 'branches' %}Configure workshop location and office settings.{% else %}Configure feature labels and groups for the platform catalog.{% endif %}</p></div>
+    <a class="btn" href="{% url cancel_url %}">← Back</a>
+  </header>
+  <form class="remaining-editor-form" method="post" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="panel-card remaining-editor-section">
+      <header class="remaining-editor-section-header"><span class="remaining-section-number">01</span><div><h3>{% if active == 'roles' %}Role &amp; Permissions{% elif active == 'vehicles' %}Vehicle Information{% elif active == 'branches' %}Branch Details{% else %}Feature Configuration{% endif %}</h3><p>Required fields are validated on the server; all existing model fields are preserved.</p></div></header>
+      <div class="remaining-editor-grid">
+        {% for field in form %}
+        <div class="company-editor-field {% if field.name == 'permissions' or field.field.widget.input_type == 'textarea' %}remaining-field-wide{% endif %}">
+          <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span aria-hidden="true"> *</span>{% endif %}</label>
+          {{ field }}
+          {% if field.help_text %}<small class="field-hint">{{ field.help_text }}</small>{% endif %}
+          {% for error in field.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if active == 'roles' %}<p class="remaining-editor-warning">Use full-access (*) permission only when appropriate. Backend role delegation checks still apply. Keep company boundaries unchanged.</p>{% endif %}
+      {% if active == 'features' %}<p class="remaining-editor-warning">Feature labels alone do not grant wallet credits or bypass tenant permissions.</p>{% endif %}
+    </section>
+    <footer class="remaining-editor-actions"><a class="btn" href="{% url cancel_url %}">Cancel</a><button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create{% endif %}</button></footer>
+  </form>
+</section>
+{% endblock %}
