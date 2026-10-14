@@ -23,7 +23,11 @@
         <td data-label="Actions">
           <div class="row-actions">
             {% panel_can 'panel:user-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:user-detail' row.id %}">View</a>{% endif %}
-            {% panel_can 'panel:user-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:user-edit' row.id %}">Edit</a>{% endif %}
+            {% panel_can 'panel:user-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:user-edit' row.id %}">Edit</a>{% endif %}{% panel_can 'panel:user-invite' as invite_allowed %}{% if invite_allowed and row.is_active %}
+          <form method="post" action="{% url 'panel:user-invite' row.id %}">{% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button type="submit">Send Password Email</button>
+          </form>{% endif %}
             {% if row.id != request.user.id %}
             {% panel_can 'panel:user-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:user-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
             {% panel_can 'panel:user-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:user-delete' row.id %}">Delete</a>{% endif %}
