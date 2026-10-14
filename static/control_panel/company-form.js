@@ -9,7 +9,7 @@
   const slugify = (value) => {
     const ascii = String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
     return ascii.toLowerCase().replace(/[^a-z0-9_\s-]/g, "")
-      .trim().replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160) || "company";
+      .trim().replace(/[-\s]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 160) || "company";
   };
   if (!isEdit && name && slugPreview) {
     const update = () => {
