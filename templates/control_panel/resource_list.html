@@ -1,20 +1,72 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar">
-  <form class="search-form" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search {{ page_title|lower }}" aria-label="Search">
-    <select name="company" aria-label="Company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-    <button class="btn" type="submit">Search</button>
+<section class="directory-heading remaining-heading">
+  <div>
+    <p class="eyebrow">Platform / Workshop records</p>
+    <h2>{% if active == 'vehicles' %}Vehicle Management{% elif active == 'branches' %}Branch Management{% else %}Roles &amp; Permissions{% endif %}</h2>
+    <p>{% if active == 'vehicles' %}Manage vehicle records and customer assignments across workshops.{% elif active == 'branches' %}Review workshop locations, contact details and head-office settings.{% else %}Control company-scoped roles, activation and permission assignments.{% endif %}</p>
+  </div>
+  {% panel_can create_url as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url create_url %}">+ Add {% if active == 'vehicles' %}Vehicle{% elif active == 'branches' %}Branch{% else %}Role{% endif %}</a>{% endif %}
+</section>
+<section class="directory-stats remaining-stats" aria-label="Module overview">
+  <article class="user-stat-card"><div class="user-stat-top"><span>Total {% if active == 'vehicles' %}Vehicles{% elif active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">T</span></div><strong class="user-stat-value">{{ total_records }}</strong><small class="user-stat-meta">All saved records</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Active {% if active == 'vehicles' %}Vehicles{% elif active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_records }}</strong><small class="user-stat-meta">Active records</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>{% if active == 'branches' %}Head Offices{% elif active == 'roles' %}System Roles{% else %}Inactive Vehicles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">#</span></div><strong class="user-stat-value">{{ special_records }}</strong><small class="user-stat-meta">According to saved data</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Companies</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ companies_count }}</strong><small class="user-stat-meta">With module records</small></article>
+</section>
+<section class="panel-card remaining-directory" aria-labelledby="resource-directory-title">
+  <header class="section-head directory-section-heading"><div><p class="eyebrow">Directory</p><h2 id="resource-directory-title">{{ page_title }}</h2><p>Search and filter saved platform records</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
+  <form class="remaining-filter-form" method="get" aria-label="Search and filter records">
+    <label class="sr-only" for="resource-search">Search records</label><input id="resource-search" type="search" name="q" value="{{ q }}" placeholder="Search name, code or workshop">
+    <label class="sr-only" for="resource-company">Company</label>
+    <select id="resource-company" name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    <label class="sr-only" for="resource-status">Status</label>
+    <select id="resource-status" name="status"><option value="">All statuses</option><option value="active" {% if status == 'active' %}selected{% endif %}>Active</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option></select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    {% if q or company_id or status %}<a class="btn" href="{% url 'panel:dashboard' %}" hidden>Dashboard</a><a class="btn" href="{% if active == 'vehicles' %}{% url 'panel:vehicles' %}{% elif active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% endif %}">Clear</a>{% endif %}
   </form>
-  {% panel_can create_url as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url create_url %}">Add {{ page_title }}</a>{% endif %}
-</div>
-<section class="panel-card"><div class="responsive-table"><table>
-  <thead><tr><th>Record</th><th>Company</th><th>Actions</th></tr></thead>
-  <tbody>{% for row in rows %}<tr>
-    <td data-label="Record"><strong>{{ row }}</strong></td>
-    <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
-    <td data-label="Actions"><div class="row-actions">{% panel_can detail_url as allowed %}{% if allowed %}<a href="{% url detail_url row.pk %}">View</a>{% endif %}{% panel_can edit_url as allowed %}{% if allowed %}<a href="{% url edit_url row.pk %}">Edit</a>{% endif %}{% panel_can delete_url as allowed %}{% if allowed %}<a class="danger-link" href="{% url delete_url row.pk %}">Delete</a>{% endif %}</div></td>
-  </tr>{% empty %}<tr><td colspan="3" class="empty-cell">No records found.</td></tr>{% endfor %}</tbody>
-</table></div></section>
+  <div class="responsive-table remaining-table">
+    <table>
+      <thead><tr>
+        {% if active == 'vehicles' %}
+          <th>Vehicle</th><th>Workshop</th><th>Customer</th><th>Make &amp; Model</th><th>Year</th><th>Status</th>
+        {% elif active == 'branches' %}
+          <th>Branch</th><th>Company</th><th>City</th><th>Email</th><th>Head Office</th><th>Status</th>
+        {% else %}
+          <th>Role</th><th>Company</th><th>Code</th><th>Permissions</th><th>Type</th><th>Status</th>
+        {% endif %}<th>Actions</th>
+      </tr></thead>
+      <tbody>{% for row in rows %}<tr>
+        {% if active == 'vehicles' %}
+          <td data-label="Vehicle"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">V</span><div><strong>{{ row.registration }}</strong><span class="table-sub">{{ row.fuel_type|default:"Vehicle" }}</span></div></div></td>
+          <td data-label="Workshop">{{ row.company.name }}</td>
+          <td data-label="Customer">{{ row.customer.name|default:"—" }}</td>
+          <td data-label="Make & Model">{{ row.make|default:"—" }} {{ row.model }}</td>
+          <td data-label="Year">{{ row.year|default:"—" }}</td>
+          <td data-label="Status"><span class="remaining-state {% if row.status|lower == 'active' %}is-good{% else %}is-neutral{% endif %}">{{ row.status }}</span></td>
+        {% elif active == 'branches' %}
+          <td data-label="Branch"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">B</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.code }}</span></div></div></td>
+          <td data-label="Company">{{ row.company.name }}</td>
+          <td data-label="City">{{ row.city|default:"—" }}</td>
+          <td data-label="Email">{{ row.email|default:"—" }}</td>
+          <td data-label="Head Office">{% if row.is_head_office %}<span class="remaining-chip">Head office</span>{% else %}—{% endif %}</td>
+          <td data-label="Status"><span class="remaining-state {% if row.is_active %}is-good{% else %}is-neutral{% endif %}">{% if row.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+        {% else %}
+          <td data-label="Role"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">R</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.code }}</span></div></div></td>
+          <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
+          <td data-label="Code"><span class="remaining-chip">{{ row.code }}</span></td>
+          <td data-label="Permissions">{{ row.permissions|length }} permissions</td>
+          <td data-label="Type">{% if row.is_system %}<span class="remaining-chip">System</span>{% else %}Custom{% endif %}</td>
+          <td data-label="Status"><span class="remaining-state {% if row.is_active %}is-good{% else %}is-neutral{% endif %}">{% if row.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+        {% endif %}
+        <td data-label="Actions"><div class="row-actions remaining-actions">
+          {% panel_can detail_url as allowed %}{% if allowed %}<a href="{% url detail_url row.pk %}">View</a>{% endif %}
+          {% panel_can edit_url as allowed %}{% if allowed %}<a href="{% url edit_url row.pk %}">Edit</a>{% endif %}
+          {% panel_can delete_url as allowed %}{% if allowed %}<a class="danger-link" href="{% url delete_url row.pk %}">Delete</a>{% endif %}
+        </div></td>
+      </tr>{% empty %}<tr><td colspan="7" class="empty-cell">No records match the selected filters.</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}
