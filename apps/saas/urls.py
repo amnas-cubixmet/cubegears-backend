@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .storage_event_views import StorageEventsView, StorageFileDownloadView
 from .plan_views import PlanCatalogView, PlanAccessView, PlanChangeRequestView, CustomPlanRequestView
 
 router=DefaultRouter(trailing_slash=False)
@@ -19,8 +20,10 @@ urlpatterns=[
     path("storage",StorageSummaryView.as_view(),name="storage-summary"),
     path("storage/files",StorageFilesView.as_view(),name="storage-files"),
     path("storage/files/delete",StorageFilesDeleteView.as_view(),name="storage-files-delete"),
+    path("storage/files/<uuid:file_id>/download",StorageFileDownloadView.as_view(),name="storage-file-download"),
     path("storage/settings",StorageSettingsView.as_view(),name="storage-settings"),
     path("storage/history",StorageHistoryListView.as_view(),name="storage-history-list"),
+    path("storage/events",StorageEventsView.as_view(),name="storage-events"),
     path("storage/history/<str:date>",StorageHistoryDateView.as_view(),name="storage-history-date"),
     path("settings",SettingsView.as_view(),name="settings-all"),
     path("settings/<str:category>",SettingsView.as_view(),name="settings-category"),
