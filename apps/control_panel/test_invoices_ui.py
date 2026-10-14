@@ -144,7 +144,7 @@ class InvoiceManagementUITests(TestCase):
         data = self.payload(self.alpha.pk, self.other_customer.pk, number="INV-INVALID")
         response = self.client.post(reverse("panel:invoice-create"), data)
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Selected customer does not belong to this company")
+        self.assertContains(response, "Select a record belonging to this company.")
         self.assertFalse(Invoice.objects.filter(number="INV-INVALID").exists())
 
     def test_details_show_original_document_without_fabricated_payment(self):
