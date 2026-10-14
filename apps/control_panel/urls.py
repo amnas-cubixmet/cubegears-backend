@@ -1,10 +1,18 @@
 from django.urls import path
 from . import views
+from . import auth_views
 
 app_name = "panel"
 
 urlpatterns = [
     path("login/", views.panel_login, name="login"),
+    path("login/forgot/", auth_views.panel_forgot_password, name="forgot"),
+    path("login/magic/", auth_views.panel_magic_request, name="magic-request"),
+    path("login/magic/verify/<str:token>/", auth_views.panel_magic_verify, name="magic-verify"),
+    path("login/password-reset/<str:uid>/<str:token>/", auth_views.panel_password_action, name="password-reset"),
+    path("login/password-setup/<str:uid>/<str:token>/",
+         lambda request, uid, token: auth_views.panel_password_action(request, uid, token, setup=True),
+         name="password-setup"),
     path("logout/", views.panel_logout, name="logout"),
     path("", views.dashboard, name="dashboard"),
 

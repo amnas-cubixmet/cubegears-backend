@@ -190,7 +190,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             magic_token = MagicLink.issue(user)
             url = f"{settings.FRONTEND_URL.rstrip('/')}/magic-link/verify?token={quote(magic_token, safe='')}"
             subject = "Sign in to your CubixGear workshop"
-            instruction = "Open this one-time secure sign-in link:"
+            instruction = "Use the button below to sign in securely."
         else:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
@@ -199,19 +199,20 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}&email={quote(user.email, safe='')}"
             )
             subject = "Create your CubixGear staff password"
-            instruction = "Create your password with this secure setup link:"
+            instruction = "Use the button below to create your account password."
 
         queue_email(
             subject=subject,
             message=(
                 f"Hi {employee.name},\n\n"
                 f"You have been invited to {employee.company.name} on CubixGear.\n"
-                f"{instruction}\n{url}\n\n"
+                f"{instruction}\n\n"
                 f"Employee number: {_employee_display_no(employee)}\n"
                 "Your login grants access only to your assigned workshop role.\n"
                 "If you weren't expecting this email, ignore it."
             ),
             recipient_list=[user.email],
+            action_url=url, action_label="Open CubixGear staff access",
         )
         _record_activity(
             employee, "Staff Access Invite Queued",

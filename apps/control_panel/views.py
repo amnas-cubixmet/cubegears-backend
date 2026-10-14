@@ -1,4 +1,11 @@
 from functools import wraps
+from urllib.parse import quote
+
+from django.conf import settings
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+from apps.accounts.email import queue_email
 from uuid import UUID
 
 from django.contrib import messages
@@ -25,6 +32,7 @@ from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent
 from apps.vehicles.models import Vehicle
 from .permissions import route_allowed, landing_route
+from .auth_views import _limited
 from apps.accounts.permissions import can_delegate
 from apps.roles.models import Role
 from .forms import (
@@ -70,7 +78,12 @@ def panel_login(request):
         logout(request)
 
     form = PanelLoginForm(request.POST if request.method == "POST" else None, request=request)
-    if request.method == "POST" and form.is_valid():
+    if request.method == "POST" and _limited(
+        request, str(request.POST.get("email") or "").strip().lower(),
+        "login", limit=10, seconds=600,
+    ):
+        form.add_error(None, "Too many sign-in attempts. Try again in a few minutes.")
+    elif request.method == "POST" and form.is_valid():
         user = form.get_user()
         destination = landing_route(user)
         if not destination:
@@ -397,6 +410,33 @@ def _can_manage_account(actor, obj):
     return True
 
 
+def _send_new_user_invite(request, user):
+    """Invite using the correct company or platform password setup experience."""
+    if not user.is_active:
+        return False
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    if landing_route(user):
+        url = request.build_absolute_uri(reverse(
+            "panel:password-setup", kwargs={"uid": uid, "token": token},
+        ))
+        purpose = "SaaS Control Panel"
+    elif user.company_id and user.role_id:
+        url = (
+            f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
+            f"?uid={uid}&token={token}&email={quote(user.email)}"
+        )
+        purpose = "Workshop Company Panel"
+    else:
+        return False
+    queue_email(
+        "Set up your CubixGear account",
+        f"You have been invited to CubixGear {purpose}. Confirm your account and choose a strong password using the secure button below.",
+        [user.email], action_url=url, action_label="Set up my account",
+    )
+    return True
+
+
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
@@ -409,8 +449,15 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         for field in ("is_active", "is_staff", "is_superuser"):
             form.fields[field].disabled = True
     if request.method == "POST" and form.is_valid():
+        is_new_user = isinstance(form, UserForm) and instance is None
         obj = form.save()
-        messages.success(request, f"{title} saved successfully.")
+        if is_new_user and not obj.has_usable_password():
+            if _send_new_user_invite(request, obj):
+                messages.success(request, "User created. Password setup invitation emailed.")
+            else:
+                messages.warning(request, "User created, but no login invitation was sent. Assign an appropriate role and verify the account.")
+        else:
+            messages.success(request, f"{title} saved successfully.")
         return redirect(cancel_url)
     return render(request, "control_panel/form.html", {
         "page_title": title,

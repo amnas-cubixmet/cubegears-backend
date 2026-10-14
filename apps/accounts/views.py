@@ -110,8 +110,9 @@ class ForgotPasswordView(APIView):
             reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}&email={quote(user.email)}"
             queue_email(
                 subject="Reset your CubixGear password",
-                message=f"Open this link to reset your password: {reset_url}",
+                message="A request was received to reset the password for your CubixGear account. This link expires according to the account security policy.",
                 recipient_list=[user.email],
+                action_url=reset_url, action_label="Reset password",
             )
 
         return Response({"message": "If the account exists, a reset link has been sent."})
@@ -135,7 +136,10 @@ class ResetPasswordView(APIView):
             return Response({"message": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(serializer.validated_data["password"])
-        user.save(update_fields=["password"])
+        user.email_verified = True
+        user.save(update_fields=["password", "email_verified"])
+        from django.utils import timezone
+        MagicLink.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
         return Response({"message": "Password reset successfully."})
 
 class MagicLinkRequestView(APIView):
@@ -152,8 +156,9 @@ class MagicLinkRequestView(APIView):
             url = f"{settings.FRONTEND_URL}/magic-link/verify?token={raw_token}"
             queue_email(
                 subject="Your CubixGear magic login link",
-                message=f"Open this secure link to sign in: {url}",
+                message="Use the button below to securely sign in without entering a password. This single-use link expires in 15 minutes.",
                 recipient_list=[user.email],
+                action_url=url, action_label="Sign in to CubixGear",
             )
 
         return Response({"message": "If the account exists, a magic link has been sent."})
@@ -181,7 +186,9 @@ class ChangePasswordView(APIView):
             return Response({"message": "Current password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
         request.user.set_password(serializer.validated_data["new_password"])
         request.user.save(update_fields=["password"])
-        return Response({"message": "Password changed successfully."})
+        from django.utils import timezone
+        MagicLink.objects.filter(user=request.user, used_at__isnull=True).update(used_at=timezone.now())
+        return Response({"message": "Password changed successfully. Please sign in again."})
 
 
 class PublicWorkshopSignupView(APIView):
@@ -263,12 +270,9 @@ class PublicWorkshopSignupView(APIView):
         setup_url = f"{settings.FRONTEND_URL}/setup-password?uid={uid}&token={token}&email={quote(user.email)}"
         queue_email(
             subject="Set up your CubixGear password",
-            message=(
-                f"Welcome to CubixGear. Your workshop account is ready.\n\n"
-                f"Set your password using this secure link:\n{setup_url}\n\n"
-                f"If you did not create this account, you can ignore this email."
-            ),
+            message="Welcome to CubixGear. Your workshop account has been created. Set your password before signing in.",
             recipient_list=[user.email],
+            action_url=setup_url, action_label="Set up password",
         )
 
         return Response(

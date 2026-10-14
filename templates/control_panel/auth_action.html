@@ -1,0 +1,34 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>{{ title }} · CubixGear Control Panel</title>
+<link rel="stylesheet" href="{% static 'control_panel/login.css' %}">
+</head>
+<body class="auth-page">
+<main class="auth-shell">
+<section class="auth-panel" style="width:min(440px,100%);padding:clamp(24px,5vw,40px);border-radius:18px;background:#fff;box-shadow:0 20px 60px #13284b16">
+<div class="auth-brand" style="margin-bottom:28px"><span class="auth-brand-mark">C</span><span class="auth-brand-type"><strong>CubixGear</strong><small>SaaS Control Panel</small></span></div>
+<h1 style="font-size:26px;line-height:1.25;margin:0 0 9px">{{ title }}</h1>
+<p style="line-height:1.65;color:#63738a;margin:0 0 24px">{{ description }}</p>
+{% if form %}
+<form method="post" class="auth-form" autocomplete="on">
+{% csrf_token %}
+{% if form.non_field_errors %}<div class="auth-error" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}
+{% for field in form %}
+<div class="auth-field" style="margin-bottom:18px">
+<label for="{{ field.id_for_label }}" style="display:block;margin-bottom:6px">{{ field.label }}</label>
+<div class="auth-input-wrap">{{ field }}</div>
+{% if field.errors %}<div class="auth-field-error" role="alert">{{ field.errors|striptags }}</div>{% endif %}
+{% if field.help_text %}<small style="display:block;margin-top:5px;color:#63738a">{{ field.help_text|striptags }}</small>{% endif %}
+</div>
+{% endfor %}
+<button type="submit" class="auth-submit">{{ mode|yesno:"Continue,Continue" }}</button>
+</form>
+{% endif %}
+<p style="margin:24px 0 0;font-size:13px"><a href="{% url 'panel:login' %}" style="color:#1677ff;text-decoration:none">Back to sign in</a></p>
+{% if mode == "invalid" %}<p style="margin:12px 0 0;font-size:13px"><a href="{% url 'panel:forgot' %}" style="color:#1677ff">Request another password link</a></p>{% endif %}
+</section>
+</main></body></html>

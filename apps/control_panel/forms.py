@@ -85,9 +85,15 @@ class CompanyForm(AdminModelForm):
 class UserForm(AdminModelForm):
     password = forms.CharField(
         required=False,
-        help_text="Leave blank to keep the existing password.",
+        help_text="New users receive a secure password setup email. On edit, leave blank to keep the password.",
         widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance._state.adding:
+            self.fields["password"].widget = forms.HiddenInput()
+            self.fields["email_verified"].disabled = True
 
     class Meta:
         model = User
@@ -99,8 +105,8 @@ class UserForm(AdminModelForm):
     def clean(self):
         data = super().clean()
         password = data.get("password")
-        if self.instance._state.adding and not password:
-            self.add_error("password", "Set a password for the new account.")
+        if self.instance._state.adding and password:
+            self.add_error("password", "New users must set their own password using their invitation email.")
         elif password:
             candidate = User(email=data.get("email", ""), name=data.get("name", ""))
             try:
@@ -123,10 +129,11 @@ class UserForm(AdminModelForm):
     def save(self, commit=True):
         user = super().save(commit=False)
         password = self.cleaned_data.get("password")
-        if password:
-            user.set_password(password)
-        elif user._state.adding:
+        if user._state.adding:
             user.set_unusable_password()
+            user.email_verified = False
+        elif password:
+            user.set_password(password)
         if commit:
             user.save()
             self.save_m2m()

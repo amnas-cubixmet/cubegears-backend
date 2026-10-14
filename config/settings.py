@@ -171,6 +171,8 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "SIGNING_KEY": JWT_SIGNING_KEY,
+    # Existing JWTs are invalidated when the user's password hash changes.
+    "CHECK_REVOKE_TOKEN": True,
 }
 
 CORS_ALLOWED_ORIGINS = env_list(
@@ -197,6 +199,14 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.co
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
 MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
+PASSWORD_RESET_TIMEOUT = int(env("PASSWORD_RESET_TIMEOUT_SECONDS", 3600))
+
+# Prevent URL-borne one-time credentials from leaking in Referer headers.
+SECURE_REFERRER_POLICY = "no-referrer"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
 
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
