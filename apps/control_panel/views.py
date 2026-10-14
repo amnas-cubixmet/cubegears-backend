@@ -38,7 +38,7 @@ from apps.roles.models import Role
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
-    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
+    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
 )
 
@@ -451,8 +451,14 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
             form.fields[field].disabled = True
     if request.method == "POST" and form.is_valid():
         is_new_user = isinstance(form, UserForm) and instance is None
+        is_new_staff = isinstance(form, StaffInviteForm) and instance is None
         obj = form.save()
-        if is_new_user and not obj.has_usable_password():
+        if is_new_staff:
+            if _send_new_user_invite(request, obj.user):
+                messages.success(request, "Staff account created. Password setup invitation scheduled by email.")
+            else:
+                messages.warning(request, "Staff created, but a login invitation could not be scheduled.")
+        elif is_new_user and not obj.has_usable_password():
             if _send_new_user_invite(request, obj):
                 messages.success(request, "User created. Password setup invitation emailed.")
             else:
@@ -735,7 +741,7 @@ def invoice_delete(request, pk):
 
 @panel_admin_required
 def staff_create(request):
-    return _save_form(request, EmployeeForm, title="Add Staff", active="staff", cancel_url="panel:staff")
+    return _save_form(request, StaffInviteForm, title="Add Staff", active="staff", cancel_url="panel:staff")
 
 
 @panel_admin_required
