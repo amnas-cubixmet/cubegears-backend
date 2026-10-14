@@ -12,7 +12,7 @@ from apps.inventory.models import StockCategory, StockItem, Supplier
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.roles.models import Role
-from apps.saas.models import Subscription
+from apps.saas.models import Subscription, SubscriptionPlan, FeatureGroup, PlanFeature, PlanFeatureAccess
 from apps.vehicles.models import Vehicle
 
 
@@ -144,7 +144,7 @@ class SubscriptionForm(AdminModelForm):
     class Meta:
         model = Subscription
         fields = [
-            "company", "branch", "plan", "status", "billing_cycle",
+            "company", "branch", "plan_definition", "plan", "status", "billing_cycle",
             "amount", "currency", "starts_at", "renews_at", "seats",
         ]
         widgets = {
@@ -158,6 +158,17 @@ class SubscriptionForm(AdminModelForm):
         branch = data.get("branch")
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
+        plan = data.get("plan_definition")
+        if plan:
+            if not plan.is_active:
+                self.add_error("plan_definition", "Select an active plan.")
+            cycle = data.get("billing_cycle")
+            if cycle not in ("monthly", "yearly"):
+                self.add_error("billing_cycle", "Choose monthly or yearly billing.")
+            else:
+                data["plan"] = plan.name
+                data["seats"] = plan.max_users
+                data["amount"] = plan.price_for(cycle)
         return data
 
 
@@ -355,3 +366,59 @@ class RoleForm(AdminModelForm):
         if actor and not can_delegate(actor, permissions):
             raise forms.ValidationError('You cannot grant permissions beyond your own role.')
         return permissions
+
+
+class PlanBuilderForm(AdminModelForm):
+    enabled_features = forms.ModelMultipleChoiceField(
+        queryset=PlanFeature.objects.filter(is_active=True).select_related("group"),
+        widget=forms.CheckboxSelectMultiple, required=False,
+        label="Enabled features (all other listed features stay OFF)",
+    )
+
+    class Meta:
+        model = SubscriptionPlan
+        fields = ["key", "name", "description", "monthly_price", "yearly_price",
+                  "promo_percent", "promo_ends_at", "max_branches", "max_users",
+                  "included_storage_gb", "extra_storage_rate", "trial_days",
+                  "sort_order", "is_public", "is_active"]
+        widgets = {"promo_ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        groups = {}
+        for feature in self.fields["enabled_features"].queryset:
+            group_label = (feature.group.parent.label + " / " if feature.group.parent_id else "") + feature.group.label
+            groups.setdefault(group_label, []).append((feature.pk, feature.label))
+        self.fields["enabled_features"].choices = list(groups.items())
+        if self.instance.pk:
+            self.fields["enabled_features"].initial = list(
+                self.instance.feature_access.filter(enabled=True).values_list("feature_id", flat=True)
+            )
+
+    def clean_promo_percent(self):
+        discount = self.cleaned_data["promo_percent"]
+        if discount > 100:
+            raise forms.ValidationError("Promotion cannot exceed 100 percent.")
+        return discount
+
+    def save(self, commit=True):
+        obj = super().save(commit=commit)
+        if commit:
+            selected = set(self.cleaned_data["enabled_features"].values_list("pk", flat=True))
+            PlanFeatureAccess.objects.filter(plan=obj).delete()
+            PlanFeatureAccess.objects.bulk_create([
+                PlanFeatureAccess(plan=obj, feature_id=pk, enabled=True) for pk in selected
+            ])
+        return obj
+
+
+class FeatureGroupForm(AdminModelForm):
+    class Meta:
+        model = FeatureGroup
+        fields = ["key", "label", "parent", "sort_order", "is_active"]
+
+
+class PlanFeatureForm(AdminModelForm):
+    class Meta:
+        model = PlanFeature
+        fields = ["key", "label", "group", "description", "sort_order", "is_active"]

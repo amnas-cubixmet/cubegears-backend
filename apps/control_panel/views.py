@@ -29,7 +29,7 @@ from apps.employees.models import Employee
 from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
-from apps.saas.models import Subscription, StorageUsage, SecurityEvent
+from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest
 from apps.vehicles.models import Vehicle
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
@@ -39,6 +39,7 @@ from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
     PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
+    PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
 )
 
 
@@ -808,3 +809,68 @@ def resource_action(request, resource, action, pk=None):
         return _delete_object(request, obj, title=title, active=resource, cancel_url=cancel_url)
     return _save_form(request, form_class, instance=obj, title=('Edit ' if obj else 'Add ') + title,
                       active=resource, cancel_url=cancel_url)
+
+
+# Dedicated SaaS platform tools; never accessible to tenant company admins.
+@panel_admin_required
+def plan_catalog(request):
+    return render(request, "control_panel/plan_catalog.html", {
+        "page_title": "Plan Builder", "active": "plans",
+        "plans": SubscriptionPlan.objects.prefetch_related("feature_access").all(),
+    })
+
+
+@panel_admin_required
+def plan_create(request):
+    return _save_form(request, PlanBuilderForm, title="Create Plan",
+                      active="plans", cancel_url="panel:plans")
+
+
+@panel_admin_required
+def plan_edit(request, pk):
+    obj = get_object_or_404(SubscriptionPlan, pk=pk)
+    return _save_form(request, PlanBuilderForm, instance=obj, title="Edit Plan",
+                      active="plans", cancel_url="panel:plans")
+
+
+@panel_admin_required
+def feature_catalog(request):
+    return render(request, "control_panel/feature_catalog.html", {
+        "page_title": "Feature Groups", "active": "features",
+        "groups": FeatureGroup.objects.select_related("parent").prefetch_related("features").all(),
+    })
+
+
+@panel_admin_required
+def feature_create(request):
+    return _save_form(request, PlanFeatureForm, title="Add Feature",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+def feature_group_create(request):
+    return _save_form(request, FeatureGroupForm, title="Add Feature Label / Group",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+def plan_requests(request):
+    return render(request, "control_panel/plan_requests.html", {
+        "page_title": "Subscription Enquiries", "active": "requests",
+        "changes": PlanChangeRequest.objects.select_related("company", "requested_plan", "requested_by")[:100],
+        "custom": CustomPlanRequest.objects.select_related("company", "requested_by")[:100],
+    })
+
+
+@panel_admin_required
+def feature_edit(request, pk):
+    obj = get_object_or_404(PlanFeature, pk=pk)
+    return _save_form(request, PlanFeatureForm, instance=obj, title="Edit Feature",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+def feature_group_edit(request, pk):
+    obj = get_object_or_404(FeatureGroup, pk=pk)
+    return _save_form(request, FeatureGroupForm, instance=obj, title="Edit Feature Label",
+                      active="features", cancel_url="panel:features")

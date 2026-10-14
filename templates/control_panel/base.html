@@ -26,7 +26,11 @@
         <p class="nav-label">Platform</p>
         {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}">Companies</a>{% endif %}
         {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}">Users & Access</a>{% endif %}
-        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Plans & Billing</a>{% endif %}
+        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}">Subscriptions</a>{% endif %}
+        {% panel_can 'plans' as allowed %}{% if allowed %}<a href="{% url 'panel:plans' %}" class="nav-item {% if active == 'plans' %}active{% endif %}">Plan Builder</a>{% endif %}
+        {% panel_can 'plan-create' as allowed %}{% if allowed %}<a href="{% url 'panel:plan-create' %}" class="nav-item">+ Create Plan</a>{% endif %}
+        {% panel_can 'features' as allowed %}{% if allowed %}<a href="{% url 'panel:features' %}" class="nav-item {% if active == 'features' %}active{% endif %}">Feature Labels</a>{% endif %}
+        {% panel_can 'requests' as allowed %}{% if allowed %}<a href="{% url 'panel:requests' %}" class="nav-item {% if active == 'requests' %}active{% endif %}">Plan Enquiries</a>{% endif %}
         {% panel_can 'storage' as allowed %}{% if allowed %}<a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}">Storage</a>{% endif %}
         {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}">Security & Activity</a>{% endif %}
 

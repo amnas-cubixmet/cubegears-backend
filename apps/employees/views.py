@@ -16,6 +16,7 @@ from rest_framework.exceptions import PermissionDenied
 from apps.accounts.permissions import user_has_permission
 
 from common.viewsets import CompanyScopedModelViewSet
+from apps.saas.access import enforce_user_limit
 from .models import (
     Team,
     Shift,
@@ -239,6 +240,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         if User.objects.filter(email__iexact=employee.email.strip()).exists():
             raise ValidationError({"email": "This email is already linked to a login account."})
 
+        if employee.status == "Active":
+            enforce_user_limit(employee.company)
         user = User.objects.create_user(
             email=employee.email.strip().lower(),
             password=None,
@@ -277,6 +280,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             # An existing account must never be silently attached or reassigned.
             if User.objects.filter(email__iexact=email).exists():
                 raise ValidationError({"email": "This email is already linked to a login account."})
+            if status_value == "Active":
+                enforce_user_limit(company)
             user = User.objects.create_user(
                 email=email,
                 password=None,
@@ -397,6 +402,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         obj=self.get_object()
         if obj.user_id == request.user.id or (obj.user and obj.user.role and obj.user.role.is_system):
             raise PermissionDenied("Company owner and current user accounts cannot be disabled here.")
+        if obj.status != "Active" and obj.user and not obj.user.is_active:
+            enforce_user_limit(request.user.company)
         obj.status="Inactive" if obj.status=="Active" else "Active"
         obj.save(update_fields=["status","updated_at"])
         if obj.user:

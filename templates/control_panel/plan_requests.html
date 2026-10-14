@@ -1,0 +1,12 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<p>Company enquiries are stored for platform staff. No subscription is changed until payment is verified and an administrator provisions it.</p>
+<section class="panel-card"><h2>Upgrade / Downgrade Requests</h2><div class="responsive-table"><table>
+<thead><tr><th>Company</th><th>Plan</th><th>Cycle</th><th>Message</th><th>Status</th><th>Created</th></tr></thead>
+<tbody>{% for item in changes %}<tr><td>{{ item.company.name }}</td><td>{{ item.requested_plan.name }}</td><td>{{ item.billing_cycle }}</td><td>{{ item.message }}</td><td>{{ item.status }}</td><td>{{ item.created_at }}</td></tr>
+{% empty %}<tr><td colspan="6">No change requests.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel-card"><h2>Custom Plan Requests</h2><div class="responsive-table"><table>
+<thead><tr><th>Company</th><th>Email</th><th>Branches</th><th>Users</th><th>Message</th><th>Status</th></tr></thead>
+<tbody>{% for item in custom %}<tr><td>{{ item.company.name }}</td><td><a href="mailto:{{ item.email }}">{{ item.email }}</a></td><td>{{ item.branches }}</td><td>{{ item.users }}</td><td>{{ item.message }}</td><td>{{ item.status }}</td></tr>
+{% empty %}<tr><td colspan="6">No custom enquiries.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

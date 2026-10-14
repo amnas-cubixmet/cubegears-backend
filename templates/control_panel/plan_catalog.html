@@ -1,0 +1,23 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="toolbar">
+  <p>Manage monthly/yearly plans, promotions, branches, staff seats, storage rates and feature switches. Existing subscriptions are not repriced automatically.</p>
+  {% panel_can 'plan-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:plan-create' %}">+ Create Plan</a>{% endif %}
+  <a class="btn" href="{% url 'panel:features' %}">Manage Feature Labels</a>
+</div>
+<section class="panel-card"><div class="responsive-table"><table>
+  <thead><tr><th>Plan</th><th>Monthly</th><th>Yearly</th><th>Branches</th><th>Users</th><th>Storage</th><th>Features ON</th><th>Status</th><th></th></tr></thead>
+  <tbody>{% for plan in plans %}
+    <tr>
+      <td><strong>{{ plan.name }}</strong><small>{{ plan.description }}</small></td>
+      <td>₹{{ plan.monthly_price }}</td><td>₹{{ plan.yearly_price }}</td>
+      <td>{{ plan.max_branches }}</td><td>{{ plan.max_users }}</td>
+      <td>{{ plan.included_storage_gb }} GB (+₹{{ plan.extra_storage_rate }}/GB/month)</td>
+      <td>{% for item in plan.feature_access.all %}{% if item.enabled %}✓ {{ item.feature.label }}{% if not forloop.last %}, {% endif %}{% endif %}{% empty %}None selected{% endfor %}</td>
+      <td>{% if plan.is_active %}Active{% else %}Archived{% endif %}</td>
+      <td><a href="{% url 'panel:plan-edit' plan.pk %}">Edit</a></td>
+    </tr>
+  {% empty %}<tr><td colspan="9">No plans configured. Create the first plan.</td></tr>{% endfor %}</tbody>
+</table></div></section>
+{% endblock %}

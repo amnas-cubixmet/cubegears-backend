@@ -22,11 +22,13 @@ DEFAULTS={
 
 class SubscriptionViewSet(CompanyScopedModelViewSet):
     queryset=Subscription.objects.all(); serializer_class=SubscriptionSerializer
-    permission_map={"GET":"billing.view","POST":"billing.edit","PUT":"billing.edit","PATCH":"billing.edit","DELETE":"billing.edit"}
+    permission_code="billing.view"
+    http_method_names=["get", "head", "options"]
 
 class StorageUsageViewSet(CompanyScopedModelViewSet):
     queryset=StorageUsage.objects.all(); serializer_class=StorageUsageSerializer
-    permission_map={"GET":"storage.view","POST":"storage.manage","PUT":"storage.manage","PATCH":"storage.manage","DELETE":"storage.manage"}
+    permission_code="storage.view"
+    http_method_names=["get", "head", "options"]
 
 class DocumentTemplateViewSet(CompanyScopedModelViewSet):
     queryset=DocumentTemplate.objects.all(); serializer_class=DocumentTemplateSerializer
@@ -49,6 +51,7 @@ class SubscriptionSummaryView(APIView):
         sub = Subscription.objects.filter(
             company=company, status__iexact="Active"
         ).order_by("-created_at").first()
+        plan = sub.plan_definition if sub and sub.plan_definition_id and sub.plan_definition.is_active else None
         storage_bytes = MediaFile.objects.filter(company=company).aggregate(
             value=Sum("size_bytes")
         )["value"] or 0
@@ -60,9 +63,12 @@ class SubscriptionSummaryView(APIView):
                 "status": sub.status.lower() if sub else "not_configured",
                 "billingCycle": sub.billing_cycle if sub else None,
                 "basePrice": float(sub.amount) if sub else None,
-                "includedStorageGb": None,
-                "extraStorageRate": None,
-                "includedSeats": sub.seats if sub else None,
+                "includedStorageGb": plan.included_storage_gb if plan else None,
+                "maxBranches": plan.max_branches if plan else None,
+                "trialDays": plan.trial_days if plan else None,
+                "features": {a.feature.key: a.enabled for a in plan.feature_access.select_related("feature")} if plan else {},
+                "extraStorageRate": float(plan.extra_storage_rate) if plan else None,
+                "includedSeats": plan.max_users if plan else (sub.seats if sub else None),
                 "extraSeatRate": None,
                 "nextBillingDate": sub.renews_at.date().isoformat()
                 if sub and sub.renews_at else None,
@@ -90,8 +96,10 @@ class StorageSummaryView(APIView):
         used=files.aggregate(v=Sum("size_bytes"))["v"] or 0
         setting=CompanySetting.objects.filter(company=company,category="storage").first()
         storage_settings={**DEFAULTS["storage"],**(setting.data if setting else {})}
+        active_sub = (Subscription.objects.filter(company=company, status__iexact="Active")
+                      .select_related("plan_definition").order_by("-created_at").first())
         return response.Response({
-            "quotaGb":25,
+            "quotaGb": active_sub.plan_definition.included_storage_gb if active_sub and active_sub.plan_definition_id else None,
             "usedGb":round(used/(1024**3),3),
             "settings":storage_settings,
             "files":MediaFileSerializer(files[:500],many=True,context={"request":request}).data,
@@ -103,8 +111,18 @@ class StorageFilesView(APIView):
     parser_classes=[parsers.MultiPartParser,parsers.FormParser]
     def post(self,request):
         category=request.data.get("category","General")
+        uploads = request.FILES.getlist("files")
+        if not uploads:
+            return response.Response({"message": "No files supplied."}, status=400)
+        cfg = CompanySetting.objects.filter(company=request.user.company, category="storage").first()
+        policy = {**DEFAULTS["storage"], **(cfg.data if cfg else {})}
+        allowed = set(policy["allowedTypes"]) & set(DEFAULTS["storage"]["allowedTypes"])
+        max_bytes = min(int(policy.get("maxFileMb") or 20), 20) * 1024 * 1024
+        for upload in uploads:
+            if upload.size <= 0 or upload.size > max_bytes or upload.content_type not in allowed:
+                return response.Response({"message": "Invalid file type or size."}, status=400)
         created=[]
-        for upload in request.FILES.getlist("files"):
+        for upload in uploads:
             obj=MediaFile.objects.create(
                 company=request.user.company,branch=request.user.branch,file=upload,name=upload.name,
                 category=category,mime_type=getattr(upload,"content_type","") or "",size_bytes=upload.size,

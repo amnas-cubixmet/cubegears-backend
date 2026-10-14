@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .plan_views import PlanCatalogView, PlanAccessView, PlanChangeRequestView, CustomPlanRequestView
 
 router=DefaultRouter(trailing_slash=False)
 router.register("billing/subscriptions",SubscriptionViewSet,basename="saas-subscriptions")
@@ -9,6 +10,10 @@ router.register("templates",DocumentTemplateViewSet,basename="document-templates
 router.register("security/events",SecurityEventViewSet,basename="security-events")
 
 urlpatterns=[
+    path("plans", PlanCatalogView.as_view(), name="saas-plan-catalog"),
+    path("plan-access", PlanAccessView.as_view(), name="saas-plan-access"),
+    path("billing/change-requests", PlanChangeRequestView.as_view(), name="saas-plan-changes"),
+    path("billing/custom-requests", CustomPlanRequestView.as_view(), name="saas-custom-plan-requests"),
     path("billing",SubscriptionSummaryView.as_view(),name="saas-billing"),
     path("billing/usage",SubscriptionSummaryView.as_view(),name="saas-billing-usage"),
     path("storage",StorageSummaryView.as_view(),name="storage-summary"),
