@@ -117,7 +117,7 @@ class UserManagementUITests(TestCase):
         detail = self.client.get(reverse("panel:user-detail", args=[self.staff.pk]))
         self.assertContains(detail, 'class="panel-card user-profile-header"')
         self.assertContains(detail, "Team Admin")
-        self.assertContains(detail, "Verified email")
+        self.assertContains(detail, "Email verified")
         self.assertContains(detail, "Admin Staff")
 
     def test_other_resource_forms_keep_generic_template(self):
