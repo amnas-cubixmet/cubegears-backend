@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404
 from apps.companies.models import Company
 logger = logging.getLogger(__name__)
 from django.db.models import Sum
-from .storage_ledger import ensure_baseline, record_event, history_days, history_day
+from .storage_ledger import as_dict, ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
@@ -219,6 +219,30 @@ class StorageSettingsView(APIView):
         obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
         obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
+
+class StorageEventsView(APIView):
+    """Read-only, tenant-scoped storage audit events with bounded pagination."""
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request):
+        try:
+            limit = int(request.query_params.get("limit", "50"))
+            offset = int(request.query_params.get("offset", "0"))
+        except (ValueError, TypeError):
+            return response.Response({"message": "Invalid pagination."}, status=400)
+        if limit < 1 or limit > 100 or offset < 0:
+            return response.Response({"message": "Use limit 1-100 and offset >= 0."}, status=400)
+
+        events = StorageEvent.objects.filter(
+            company_id=request.user.company_id,
+        ).select_related("actor").order_by("-occurred_at", "-created_at", "-id")
+        count = events.count()
+        return response.Response({
+            "count": count,
+            "results": [as_dict(event) for event in events[offset:offset + limit]],
+        })
+
 
 class StorageHistoryListView(APIView):
     permission_classes = [RolePermission]
