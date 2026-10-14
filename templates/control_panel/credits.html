@@ -1,12 +1,19 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
 <div class="credit-panel-wrap">
-  <div class="credit-summary-title">
-    <div><h2>Credit Wallet Control</h2><p>Set credit packages, charge paid features per active staff member, and maintain an auditable balance for every workshop.</p></div>
+  <div class="credit-summary-title directory-heading">
+    <div><p class="eyebrow">Platform / Usage credits</p><h2>Credit Wallet Control</h2><p>Set credit packages, charge paid features per active staff member, and maintain an auditable balance for every workshop.</p></div>
     <a class="btn" href="{% url 'panel:features' %}">Edit feature catalog</a>
   </div>
 
-  <div class="credit-panel-grid">
+  <section class="directory-stats remaining-stats" aria-label="Credit wallet overview">
+    <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true">P</span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Published Packages</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ published_packages }}</strong><small class="user-stat-meta">Packages available to purchase</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Feature Prices</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ configured_features }}</strong><small class="user-stat-meta">Configured feature rates</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true">W</span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
+  </section>
+
+  <div class="credit-panel-grid remaining-credit-grid">
     <section class="panel-card">
       <h3>Credit packages</h3><p>Credits and INR price are separate administrator-controlled values. New companies start with zero credits.</p>
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="package">
@@ -79,18 +86,5 @@
     {% empty %}<tr><td colspan="6">No credit transactions found.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
-</div>
-<style>
-.credit-panel-wrap{display:grid;gap:18px}.credit-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.credit-summary-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
-.credit-summary-title h2,.credit-summary-title h3{margin:0 0 8px}.credit-summary-title p,.credit-panel-wrap .panel-card>p{font-size:13px;color:var(--text-muted,#64748b);line-height:1.7}
-.credit-panel-form{display:grid;gap:12px;margin:18px 0}.credit-panel-form label{display:grid;gap:7px;font-size:13px;font-weight:650}
-.credit-panel-form input,.credit-panel-form textarea,.credit-panel-form select,.credit-panel-filter select{width:100%;max-width:100%;min-height:40px;padding:9px 11px;border:1px solid #bac8dc;border-radius:9px;background:var(--panel-surface,#fff);color:inherit}
-.credit-panel-form .credit-panel-check{display:flex;align-items:center;gap:9px}.credit-panel-check input{width:auto;min-height:unset}
-.credit-panel-form button{justify-self:start}.credit-panel-filter{display:flex;align-items:center;gap:10px;max-width:360px}
-.credit-panel-wrap .responsive-table{overflow-x:auto}.credit-panel-wrap table{width:100%;min-width:600px;border-collapse:collapse}
-.credit-panel-wrap td,.credit-panel-wrap th{padding:12px;text-align:left;border-bottom:1px solid #dde5f1;font-size:12px;vertical-align:top}
-@media(max-width:900px){.credit-panel-grid{grid-template-columns:minmax(0,1fr)}}
-@media(max-width:600px){.credit-panel-wrap{gap:12px}.credit-panel-filter{width:100%;max-width:100%}.credit-panel-form button{width:100%}.credit-panel-wrap .panel-card{padding:14px}}
-</style>
+</div>>
 {% endblock %}
