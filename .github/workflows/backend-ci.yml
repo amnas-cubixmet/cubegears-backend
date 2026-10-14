@@ -19,8 +19,8 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
       - run: python manage.py check
-      # Validate the public-facing login HTML and untouched authentication behavior.
-      - run: python manage.py test apps.control_panel.test_login_ui apps.control_panel.test_csrf_origin apps.control_panel.test_auth_production apps.accounts.tests --noinput
+      # Validate login security, responsive dashboard templates, and company directory UI.
+      - run: python manage.py test apps.control_panel.test_login_ui apps.control_panel.test_csrf_origin apps.control_panel.test_auth_production apps.control_panel.test_company_dashboard_theme apps.control_panel.test_companies_directory_theme apps.accounts.tests --noinput
       # Guard production secrets setup: idempotent, private, no accidental rotation.
       - run: python -m unittest discover -s tests -p 'test_pythonanywhere_setup.py' -v
       # Verify direct email delivery works without installing Celery.
