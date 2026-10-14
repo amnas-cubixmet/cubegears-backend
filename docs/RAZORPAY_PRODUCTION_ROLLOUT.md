@@ -13,7 +13,7 @@ Status: implementation in Draft PR. No live merchant account is connected by thi
 7. All company users have access until subscription `renews_at`; after expiry, protected API routes return HTTP 402. Platform Admin/Django Control Panel authentication remains independent.
 8. `GET /api/v1/saas/checkout/history` returns company-scoped payment records.
 
-**This is manual renewal, not automatic recurring card/UPI mandates.** Access duration is configurable **per plan**, default 180 days (change to 210 for 7 months). The price selector retains existing monthly/yearly price columns, but each purchase is a one-time charge granting that plan's configured number of days. Make sure customer-facing plan pricing describes this explicitly to avoid misleading customers.
+**This is manual renewal, not automatic recurring card/UPI mandates.** Access duration is configurable **per plan**, default 180 days (change to 210 for 7 months). The plan's **checkout_price** is a separate one-time amount for the configured term (e.g. ₹4,999 for 180 days). Legacy monthly/yearly prices remain for older plan displays but are **not used for Razorpay checkout**. Set checkout_price explicitly in the Control Panel before publishing.
 
 ## Configuration
 
@@ -42,7 +42,9 @@ Select events `payment.captured` and `refund.processed` (you can additionally su
 - Run `python manage.py test apps.saas.test_razorpay_checkout --noinput` plus existing CI suite.
 - In Razorpay Test Mode, validate UPI/card/netbanking methods actually enabled, failed/abandoned payments, delayed webhooks, forged signature, wrong amount, duplicate delivery and refunds.
 - Confirm all existing companies that must retain access are migrated or accommodated **before enabling** strict paywall. Existing manually created subscriptions do **not** count as Razorpay paid proof. Enabling gate immediately blocks any company without a captured order.
-- Verify admin can configure `access_duration_days` on `/plans/`.
+- Verify admin can configure both `access_duration_days` and `checkout_price` on `/plans/`. Newly created or existing plans default to checkout_price=₹0 and **cannot** create a checkout order until configured.
+- Review the read-only platform payment ledger at `/subscriptions/payments/` (gross captured transactions, not settlement reconciliation).
+- Configure daily reminder scheduling after SMTP is verified, for example `0 9 * * * cd /srv/cubixgear/cubegears-backend && .venv/bin/python manage.py send_subscription_expiry_reminders` (adapt path and timezone to your host).
 - Verify new signup → password setup → login → `/subscribe` → captured payment → dashboard.
 - Verify unpaid JWT API calls return HTTP 402 even if the React UI is bypassed.
 - After successful test mode rollout and company migration, configure Razorpay Live Mode credentials and separate live webhook secret, then set `SAAS_PAYMENT_ENFORCEMENT_ENABLED=True` and restart backend.
@@ -53,7 +55,7 @@ Select events `payment.captured` and `refund.processed` (you can additionally su
 
 - `GET /api/v1/saas/plans`: available plan catalog and `accessDurationDays`
 - `GET /api/v1/saas/checkout/status`: server-calculated entitlement, expiry, permissions and gateway readiness
-- `POST /api/v1/saas/checkout/orders`: `{"plan_id": 1, "billing_cycle": "monthly"}`
+- `POST /api/v1/saas/checkout/orders`: `{"plan_id": 1}`
 - `POST /api/v1/saas/checkout/verify`: Razorpay callback signature and two IDs, subsequently verified from Razorpay server-side
 - `GET /api/v1/saas/checkout/history`: last 100 company transactions
 - `GET /api/v1/saas/checkout/orders/<order_id>`: tenant-scoped payment status and access
@@ -67,5 +69,5 @@ All gateway calls are performed server-side via HTTPS. Merchant API keys belong 
 - No GST-compliant subscription tax invoice/PDF generator; transaction history is not a statutory invoice.
 - Automatic recurring mandates, proration and subscription refunds initiated inside CubeGear are **not** implemented.
 - Some existing subscriptions require migration planning before payment enforcement is enabled.
-- No scheduled expiry warning emails; access revocation itself is automatic at request time.
+- Expiry warning emails are implemented via `python manage.py send_subscription_expiry_reminders` (30, 7, 1, 0 days before expiry); configure a daily cron/systemd timer and SMTP. Emails are not automatic until scheduled.
 - Financial ledger reconciliation, operational monitoring, chargeback dispute handling, and legal review should be completed before launch.
