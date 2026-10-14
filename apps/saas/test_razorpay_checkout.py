@@ -140,8 +140,9 @@ class RazorpayBillingTests(TestCase):
             )
             self.assertEqual(result.status_code, 200)
         self.assertEqual(Subscription.objects.filter(company=self.company).count(), 1)
-        refund = {"event": "payment.refunded", "payload": {
+        refund = {"event": "refund.processed", "payload": {
             "payment": {"entity": {**self.captured(), "amount_refunded": 49900}},
+            "refund": {"entity": {"payment_id": "pay_abc123", "status": "processed", "amount": 49900}},
         }}
         raw_refund = json.dumps(refund).encode()
         refund_signature = hmac.new(b"unit-test-webhook-secret", raw_refund, hashlib.sha256).hexdigest()
