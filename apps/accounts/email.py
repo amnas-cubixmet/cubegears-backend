@@ -1,22 +1,38 @@
-"""Synchronous delivery now; retain the worker implementation for later use."""
+"""Transaction-safe CubixGear account emails: readable plain text + branded HTML."""
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 from django.db import transaction
+from django.template.loader import render_to_string
 
 
-def queue_email(subject, message, recipient_list):
+def queue_email(subject, message, recipient_list, *, action_url=None, action_label=None):
+    """Send after commit so no login/setup links are sent for rolled-back accounts.
+
+    When action_url is specified, send a branded HTML email with a plain-text
+    fallback. Keep the legacy plain mail option for operational notifications.
+    Do not log security links or their tokens.
+    """
     recipients = list(recipient_list)
 
     def deliver():
-        return send_mail(subject, message, settings.DEFAULT_FROM_EMAIL,
-                         recipients, fail_silently=False)
+        if not action_url:
+            return send_mail(subject, message, settings.DEFAULT_FROM_EMAIL,
+                             recipients, fail_silently=False)
 
-        # Future Celery delivery: replace the return above with these lines.
-        # from .tasks import send_email_task
-        # return send_email_task.delay(subject=subject, message=message,
-        #     recipient_list=recipients, from_email=settings.DEFAULT_FROM_EMAIL)
+        context = {
+            "subject": subject,
+            "body": message,
+            "action_url": action_url,
+            "action_label": action_label or "Open CubixGear",
+            "brand": "CubixGear",
+        }
+        plain = render_to_string("accounts/email/action.txt", context)
+        html = render_to_string("accounts/email/action.html", context)
+        email = EmailMultiAlternatives(
+            subject=subject, body=plain,
+            from_email=settings.DEFAULT_FROM_EMAIL, to=recipients,
+        )
+        email.attach_alternative(html, "text/html")
+        return email.send(fail_silently=False)
 
-    # Do not email credentials for a transaction that later rolls back.
-    # Errors are logged by Django's on_commit handler; do not leak account
-    # existence through the public reset/magic-link endpoints.
     transaction.on_commit(deliver, robust=True)
