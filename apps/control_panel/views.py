@@ -728,6 +728,7 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         else "control_panel/staff_form.html" if isinstance(form, (StaffInviteForm, EmployeeForm))
         and active == "staff"
         else "control_panel/invoice_form.html" if isinstance(form, InvoiceForm) and active == "invoices"
+        else "control_panel/stock_form.html" if isinstance(form, StockItemForm) and active == "stock"
         else "control_panel/form.html"
     )
     return render(request, template, {
