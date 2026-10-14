@@ -22,7 +22,7 @@ class PlanFeatureInline(admin.TabularInline):
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(admin.ModelAdmin):
-    list_display = ("name", "key", "monthly_price", "yearly_price", "access_duration_days", "max_branches", "max_users", "is_active")
+    list_display = ("name", "key", "monthly_price", "yearly_price", "checkout_price", "access_duration_days", "max_branches", "max_users", "is_active")
     search_fields = ("name", "key")
     list_filter = ("is_active", "is_public")
     inlines = [PlanFeatureInline]
