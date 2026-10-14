@@ -1,5 +1,6 @@
 """SaaS Control Panel session login, recovery, and one-time magic links."""
 import hashlib
+from binascii import Error as Base64Error
 
 from django import forms
 from django.contrib.auth import login
@@ -55,7 +56,7 @@ def _uid_user(uid):
     try:
         pk = urlsafe_base64_decode(uid).decode()
         user = User.objects.select_related("role", "company").get(pk=pk, is_active=True)
-    except (ValueError, TypeError, UnicodeDecodeError, User.DoesNotExist):
+    except (ValueError, TypeError, UnicodeDecodeError, Base64Error, User.DoesNotExist):
         return None
     return user if landing_route(user) else None
 
