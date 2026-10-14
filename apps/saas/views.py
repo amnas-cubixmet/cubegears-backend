@@ -1,4 +1,7 @@
+import logging
 from django.db import transaction
+from apps.companies.models import Company
+logger = logging.getLogger(__name__)
 from django.db.models import Sum
 from .storage_ledger import ensure_baseline, record_event
 from django.utils import timezone
@@ -8,6 +11,12 @@ from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile
 from .serializers import *
+
+def safe_delete_storage(storage,name):
+    try:
+        storage.delete(name)
+    except Exception:
+        logger.exception('Failed to delete storage file')
 
 DEFAULTS={
 "company":{"timezone":"Asia/Kolkata","dateFormat":"DD/MM/YYYY"},
@@ -126,6 +135,11 @@ class StorageFilesView(APIView):
         created=[]
         try:
             with transaction.atomic():
+                Company.objects.select_for_update().get(pk=request.user.company_id)
+                sub=(Subscription.objects.filter(company=request.user.company,status__iexact='Active').select_related('plan_definition').order_by('-created_at').first())
+                used=MediaFile.objects.filter(company=request.user.company).aggregate(v=Sum('size_bytes'))['v'] or 0
+                if sub and sub.plan_definition_id and used + sum(f.size for f in uploads) > sub.plan_definition.included_storage_gb * (1024**3):
+                    return response.Response({'message':'Storage quota exceeded.'},status=413)
                 ensure_baseline(request.user.company)
                 for upload in uploads:
                     obj=MediaFile.objects.create(
@@ -145,10 +159,18 @@ class StorageFilesDeleteView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.manage"
     def post(self,request):
-        ids=request.data.get("ids") or []
+        from uuid import UUID
+        ids=request.data.get('ids')
+        if not isinstance(ids,list) or len(ids)>100:
+            return response.Response({'message':'Provide a list of up to 100 IDs.'},status=400)
+        try:
+            ids=[UUID(str(i)) for i in ids]
+        except (ValueError,TypeError,AttributeError):
+            return response.Response({'message':'Invalid file ID.'},status=400)
         qs=MediaFile.objects.filter(company=request.user.company,id__in=ids)
         deleted=0
         with transaction.atomic():
+            Company.objects.select_for_update().get(pk=request.user.company_id)
             ensure_baseline(request.user.company)
             for obj in qs:
                 name=obj.file.name if obj.file else None
@@ -156,7 +178,7 @@ class StorageFilesDeleteView(APIView):
                 obj.delete()
                 record_event(obj,"DELETE",request.user)
                 if name:
-                    transaction.on_commit(lambda storage=storage,name=name: storage.delete(name))
+                    transaction.on_commit(lambda storage=storage,name=name: safe_delete_storage(storage,name))
                 deleted+=1
         return response.Response({"deleted":deleted})
 
