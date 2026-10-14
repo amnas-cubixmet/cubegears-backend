@@ -101,6 +101,9 @@ class CompanyEditorTests(TestCase):
         self.assertEqual(company.slug, "workshop-with-image")
         directory = self.client.get(reverse("panel:companies"))
         self.assertContains(directory, company.logo_image.url)
+        detail = self.client.get(reverse("panel:company-detail", args=[company.pk]))
+        self.assertContains(detail, company.logo_image.url)
+        self.assertContains(detail, 'class="company-profile-header"')
 
     def test_wrong_extension_and_non_images_are_rejected(self):
         url = reverse("panel:company-create")
