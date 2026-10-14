@@ -2,6 +2,10 @@ import hashlib
 import hmac
 import json
 from decimal import Decimal
+from datetime import timedelta, datetime, time
+from io import StringIO
+from django.core import mail
+from django.core.management import call_command
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -12,7 +16,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.roles.models import Role
-from .models import SubscriptionPlan, RazorpayPlanPayment, Subscription
+from .models import SubscriptionPlan, RazorpayPlanPayment, Subscription, SubscriptionExpiryReminder
 from .billing_service import access_state
 
 
@@ -169,3 +173,42 @@ class RazorpayBillingTests(TestCase):
         self.assertEqual(
             self.client.get("/api/v1/saas/checkout/orders/order_abc123").status_code, 404
         )
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_renewal_reminders_are_sent_once_to_company_email(self):
+        self.company.email = "billing-company@example.test"
+        self.company.save(update_fields=["email"])
+        self.create_checkout()
+        with patch("apps.saas.checkout_views.fetch_payment", return_value=self.captured()):
+            response = self.client.post("/api/v1/saas/checkout/verify", {
+                "razorpay_order_id": "order_abc123",
+                "razorpay_payment_id": "pay_abc123",
+                "razorpay_signature": self.signature(),
+            }, format="json")
+        self.assertEqual(response.status_code, 200)
+        sub = Subscription.objects.get(company=self.company)
+        expires = timezone.make_aware(
+            datetime.combine(timezone.localdate() + timedelta(days=7), time(23, 59)),
+            timezone.get_current_timezone(),
+        )
+        sub.renews_at = expires
+        sub.save(update_fields=["renews_at"])
+        call_command("send_subscription_expiry_reminders", dry_run=True, stdout=StringIO())
+        self.assertEqual(SubscriptionExpiryReminder.objects.count(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+        call_command("send_subscription_expiry_reminders", stdout=StringIO())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["billing-company@example.test"])
+        self.assertIn("7 day(s)", mail.outbox[0].body)
+        call_command("send_subscription_expiry_reminders", stdout=StringIO())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(SubscriptionExpiryReminder.objects.count(), 1)
+
+    def test_unpriced_plan_cannot_create_paid_order(self):
+        self.plan.checkout_price = Decimal("0")
+        self.plan.save(update_fields=["checkout_price"])
+        response = self.client.post("/api/v1/saas/checkout/orders", {
+            "plan_id": self.plan.pk,
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(RazorpayPlanPayment.objects.count(), 0)
