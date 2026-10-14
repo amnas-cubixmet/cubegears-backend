@@ -152,5 +152,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return "Active" if (not obj.user or obj.user.is_active) and obj.status=="Active" else "Inactive"
 
     def get_loginStatus(self,obj):
-        if not obj.user: return "Not Invited"
-        return "Active" if obj.user.last_login else "Invite Ready"
+        if not obj.user:
+            return "Not Invited"
+        if not obj.user.is_active:
+            return "Inactive"
+        return "Active" if obj.user.has_usable_password() else "Password Setup Pending"

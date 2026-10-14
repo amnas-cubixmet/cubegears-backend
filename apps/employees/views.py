@@ -1,6 +1,11 @@
 import re
 from urllib.parse import quote
 
+from django.contrib.auth.tokens import default_token_generator
+from django.db import transaction
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
+
 from django.conf import settings
 from apps.accounts.email import queue_email
 from apps.accounts.permissions import can_delegate
@@ -158,91 +163,152 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             is_active=True,
             is_system=False,
         ).first()
-        if role and not can_delegate(self.request.user, role.permissions):
+        if not role:
+            raise ValidationError({"role": "Select an active, non-admin staff role from this company."})
+        if not can_delegate(self.request.user, role.permissions):
             raise ValidationError({"role": "You cannot assign a role with permissions beyond your own."})
         return role
 
-    def _ensure_login_user(self,employee):
+    def _send_staff_access_email(self, employee, user):
+        """Staff onboarding is password setup first, then normal company login."""
+        from apps.accounts.models import MagicLink
+
+        if (
+            not user.is_active
+            or not user.company_id
+            or user.company_id != employee.company_id
+            or not user.role_id
+            or not user.role.is_active
+            or user.role.is_system
+            or user.role.company_id != employee.company_id
+        ):
+            raise ValidationError({"role": "An active, company-specific staff login role is required."})
+
+        if user.has_usable_password():
+            # Previously activated staff can receive one-use login links;
+            # never reset an existing password while resending an invite.
+            magic_token = MagicLink.issue(user)
+            url = f"{settings.FRONTEND_URL.rstrip('/')}/magic-link/verify?token={quote(magic_token, safe='')}"
+            subject = "Sign in to your CubixGear workshop"
+            instruction = "Open this one-time secure sign-in link:"
+        else:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            url = (
+                f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
+                f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}&email={quote(user.email, safe='')}"
+            )
+            subject = "Create your CubixGear staff password"
+            instruction = "Create your password with this secure setup link:"
+
+        queue_email(
+            subject=subject,
+            message=(
+                f"Hi {employee.name},\n\n"
+                f"You have been invited to {employee.company.name} on CubixGear.\n"
+                f"{instruction}\n{url}\n\n"
+                f"Employee number: {_employee_display_no(employee)}\n"
+                "Your login grants access only to your assigned workshop role.\n"
+                "If you weren't expecting this email, ignore it."
+            ),
+            recipient_list=[user.email],
+        )
+        _record_activity(
+            employee, "Staff Access Invite Queued",
+            f"Staff access email queued for {user.email}.",
+            self.request.user,
+        )
+
+    def _ensure_login_user(self, employee):
         from apps.accounts.models import User
 
         if employee.user:
             return employee.user
         if not employee.email:
-            return None
+            raise ValidationError({"email": "Add an email address to invite this staff member."})
+        if not user_has_permission(self.request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can create staff login accounts.")
 
-        user=User.objects.filter(email__iexact=employee.email).first()
-        if user and (user.company_id != employee.company_id or user.is_superuser or user.is_staff):
-            raise ValidationError({"email":"This login email belongs to another company."})
+        role = self._resolve_role(employee.role_name)
+        if not role:
+            raise ValidationError({"role": "Choose a role before inviting this staff member."})
+        if User.objects.filter(email__iexact=employee.email.strip()).exists():
+            raise ValidationError({"email": "This email is already linked to a login account."})
 
-        if not user:
-            user=User.objects.create_user(
-                email=employee.email,
-                password=None,
-                name=employee.name,
-                company=employee.company,
-                branch=employee.branch,
-                role=self._resolve_role(employee.role_name),
-                is_active=True,
-            )
-        if user.role and not can_delegate(self.request.user, user.role.permissions):
-            raise ValidationError("You cannot invite an account with greater permissions.")
-        employee.user=user
-        employee.save(update_fields=["user","updated_at"])
+        user = User.objects.create_user(
+            email=employee.email.strip().lower(),
+            password=None,
+            name=employee.name,
+            company=employee.company,
+            branch=employee.branch,
+            role=role,
+            is_active=employee.status == "Active",
+            is_staff=False,
+            is_superuser=False,
+        )
+        employee.user = user
+        employee.save(update_fields=["user", "updated_at"])
         return user
 
-    def perform_create(self,serializer):
-        company=self.request.user.company
-        code=serializer.validated_data.get("employee_code") or _next_employee_code(company)
-        email=serializer.validated_data.get("email") or ""
-        name=serializer.validated_data.get("name") or code
-        role_name=serializer.validated_data.get("role_name") or ""
-        requested_role=self._resolve_role(role_name)
-        if requested_role and not user_has_permission(self.request.user, "company.manage"):
-            raise PermissionDenied("Only a company admin can grant login roles.")
-        branch=serializer.validated_data.get("branch",self.request.user.branch)
-        team=serializer.validated_data.get("team")
-        shift=serializer.validated_data.get("shift")
+    @transaction.atomic
+    def perform_create(self, serializer):
+        company = self.request.user.company
+        code = serializer.validated_data.get("employee_code") or _next_employee_code(company)
+        email = (serializer.validated_data.get("email") or "").strip().lower()
+        name = serializer.validated_data.get("name") or code
+        role_name = serializer.validated_data.get("role_name") or ""
+        requested_role = self._resolve_role(role_name) if role_name else None
+        branch = serializer.validated_data.get("branch", self.request.user.branch)
+        team = serializer.validated_data.get("team")
+        shift = serializer.validated_data.get("shift")
+        status_value = serializer.validated_data.get("status", "Active")
 
         from apps.accounts.models import User
-        user=None
+        user = None
         if email:
-            user=User.objects.filter(email__iexact=email).first()
-            if user and (user.company_id != company.id or user.is_superuser or user.is_staff):
-                raise ValidationError({"email":"This login email belongs to another company."})
-            if not user:
-                user=User.objects.create_user(
-                    email=email,
-                    password=None,
-                    name=name,
-                    company=company,
-                    branch=branch,
-                    role=self._resolve_role(role_name),
-                    is_active=True,
-                )
+            if not user_has_permission(self.request.user, "company.manage"):
+                raise PermissionDenied("Only a company admin can create staff login accounts.")
+            if requested_role is None:
+                raise ValidationError({"role": "Choose a staff role before enabling email login."})
+            # An existing account must never be silently attached or reassigned.
+            if User.objects.filter(email__iexact=email).exists():
+                raise ValidationError({"email": "This email is already linked to a login account."})
+            user = User.objects.create_user(
+                email=email,
+                password=None,
+                name=name,
+                company=company,
+                branch=branch,
+                role=requested_role,
+                is_active=status_value == "Active",
+                is_staff=False,
+                is_superuser=False,
+                email_verified=False,
+            )
 
-        if user and user.role and not can_delegate(self.request.user, user.role.permissions):
-            raise ValidationError("You cannot link an account with greater permissions.")
-        obj=serializer.save(
+        obj = serializer.save(
             company=company,
             branch=branch,
             employee_code=code,
+            email=email,
             payment_type="daily",
             user=user,
             department_name=serializer.validated_data.get("department_name") or (team.name if team else ""),
             shift_label=serializer.validated_data.get("shift_label") or _shift_label(shift),
         )
-        _record_activity(
-            obj,
-            "Staff Created",
-            f"{_employee_display_no(obj)} profile created.",
-            self.request.user,
-        )
+        _record_activity(obj, "Staff Created", f"{_employee_display_no(obj)} profile created.", self.request.user)
+        if user and user.is_active:
+            self._send_staff_access_email(obj, user)
+
 
     def perform_update(self,serializer):
         instance=self.get_object()
         if instance.user and instance.user.role and instance.user.role.is_system:
             raise PermissionDenied("Protected company owner accounts cannot be edited here.")
         requested_name=serializer.validated_data.get("role_name")
+        requested_email=serializer.validated_data.get("email")
+        if instance.user and requested_email is not None and requested_email.strip().lower() != instance.user.email.lower():
+            raise ValidationError({"email": "To change a linked login email, contact your company administrator."})
         if requested_name is not None and requested_name != instance.role_name:
             if not user_has_permission(self.request.user, "company.manage"):
                 raise PermissionDenied("Only a company admin can change a login role.")
@@ -338,48 +404,25 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         )
         return response.Response(self.get_serializer(obj).data)
 
-    @decorators.action(detail=True,methods=["post"],url_path="invite")
-    def invite(self,request,pk=None):
-        from apps.accounts.models import MagicLink
-
-        obj=self.get_object()
-        user=self._ensure_login_user(obj)
-        if not user or not user.email:
-            return response.Response(
-                {"message":"Staff login account/email is not linked."},
-                status=400,
-            )
-
-        role=self._resolve_role(obj.role_name)
-        if role and user.role_id!=role.id:
-            user.role=role
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="invite")
+    def invite(self, request, pk=None):
+        if not user_has_permission(request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can invite staff login accounts.")
+        obj = self.get_object()
+        if obj.status != "Active":
+            raise ValidationError({"status": "Activate this employee before sending a login invitation."})
+        user = self._ensure_login_user(obj)
+        role = self._resolve_role(obj.role_name)
+        if not role:
+            raise ValidationError({"role": "A valid staff role is required."})
+        if user.role_id != role.id:
+            user.role = role
             user.save(update_fields=["role"])
-
-        token=MagicLink.issue(user)
-        next_path=f"/staff-management/staff/{obj.id}"
-        url=(
-            f"{settings.FRONTEND_URL}/magic-link/verify"
-            f"?token={token}&next={quote(next_path,safe='')}"
-        )
-        queue_email(
-            "Your CubixGear staff access",
-            (
-                f"Hi {obj.name},\n\n"
-                f"Your CubixGear staff access is ready.\n"
-                f"Open this secure link to sign in and view your staff workspace:\n{url}\n\n"
-                f"Employee number: {_employee_display_no(obj)}"
-            ),
-            [user.email],
-        )
-        _record_activity(
-            obj,
-            "Login Invite Sent",
-            f"Invite sent to {user.email}.",
-            request.user,
-        )
+        self._send_staff_access_email(obj, user)
         return response.Response({
-            "message":"Login invite sent.",
-            "loginStatus":"Invite Sent",
+            "message": "Staff access invitation queued for email delivery.",
+            "loginStatus": "Password Setup Pending" if not user.has_usable_password() else "Active",
         })
 
 

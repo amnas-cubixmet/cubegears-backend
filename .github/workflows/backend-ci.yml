@@ -22,7 +22,7 @@ jobs:
       # Guard production secrets setup: idempotent, private, no accidental rotation.
       - run: python -m unittest discover -s tests -p 'test_pythonanywhere_setup.py' -v
       # Verify direct email delivery works without installing Celery.
-      - run: python manage.py test apps.accounts.test_rbac_email.DirectEmailTests --noinput
+      - run: python manage.py test apps.accounts.test_rbac_email.DirectEmailTests apps.employees.test_staff_password_onboarding --noinput
       # Exercise the full migration graph on a fresh SQLite database.
       # Runtime model changes must not ship without their database tables.
       - run: python manage.py makemigrations --check --dry-run
