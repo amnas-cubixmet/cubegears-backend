@@ -16,21 +16,28 @@ git pull origin main
 pip install -r requirements.txt
 ```
 
-If this fix is not yet merged, deploy its branch or merge the PR first.
+## Fix DJANGO_SECRET_KEY safely (recommended)
 
-**Use a strong, private, unique key.** Generate it locally in the console:
+Run the production setup helper from the project directory. It creates
+`.env` with restricted permissions, generates high-entropy secret keys when
+needed, preserves any existing valid keys (to avoid breaking sessions), and
+sets `DJANGO_DEBUG=False`, the backend hostname and CSRF origins. It does
+**not** print secret values or require Celery:
 
 ```bash
-python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+python scripts/setup_pythonanywhere.py --host cardflow.pythonanywhere.com --frontend-url https://cubegears-company-panel.vercel.app
 ```
 
-Never paste real secrets into GitHub, issues, screenshots, or chat. Do not
-replace an existing production secret key casually: doing so invalidates
-signed sessions and tokens.
+Replace the frontend URL with your **actual** deployed frontend HTTPS origin.
+Running this script more than once is safe: existing valid keys stay the same.
+If an old shell/WSGI environment variable overrides the secret in `.env`,
+the script warns you. Fix or unset the old exported value before running
+management commands, and ensure the PythonAnywhere WSGI process uses the same
+keys. Do **not** disable the production security validation to bypass errors.
 
-Create or update `/home/cardflow/cubegears-backend/.env` with private
-values. The `.env` file is gitignored. If it exists, **edit the existing
-file rather than overwriting it**.
+The following is an example of the values stored in the private
+`/home/cardflow/cubegears-backend/.env`; **do not overwrite** generated keys.
+The `.env` file is gitignored and must never be committed or pasted in chat.
 
 ```dotenv
 DJANGO_DEBUG=False
@@ -54,8 +61,9 @@ DEFAULT_FROM_EMAIL=CubixGear <verified-sender@your-domain.example>
 
 Choose an SMTP provider that is accessible from your PythonAnywhere plan and
 supports the configured sender. Do not set the sample host or credentials
-literally. If using port 465 with implicit TLS, instead set `EMAIL_USE_TLS=False`
-and `EMAIL_USE_SSL=True` only after adding SSL support in Django settings.
+literally. If your provider requires port 465 (implicit SSL), use `EMAIL_PORT=465`,
+`EMAIL_USE_TLS=False`, and `EMAIL_USE_SSL=True`. Never enable both TLS and
+SSL together.
 
 The WSGI file, `/var/www/cardflow_pythonanywhere_com_wsgi.py`, should
 activate the same virtualenv configured in the PythonAnywhere **Web** tab,
@@ -76,7 +84,8 @@ application = get_wsgi_application()
 The project already loads `BASE_DIR/.env` in `config/settings.py`. Do not
 hardcode the secret key in your WSGI file or your repository.
 
-Finally:
+Once configured, verify the real production environment (if you previously
+exported an old `DJANGO_SECRET_KEY`, remove that override first):
 
 ```bash
 python manage.py check
