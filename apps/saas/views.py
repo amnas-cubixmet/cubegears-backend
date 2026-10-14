@@ -1,5 +1,7 @@
 import logging
 from django.db import transaction
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
 from apps.companies.models import Company
 logger = logging.getLogger(__name__)
 from django.db.models import Sum
@@ -183,6 +185,32 @@ class StorageFilesDeleteView(APIView):
                     transaction.on_commit(lambda storage=storage,name=name: safe_delete_storage(storage,name))
                 deleted+=1
         return response.Response({"deleted":deleted})
+
+class StorageFileDownloadView(APIView):
+    """Stream only the signed-in tenant's stored file; never expose other tenants' bytes."""
+    permission_classes = [RolePermission]
+    permission_code = "storage.view"
+
+    def get(self, request, file_id):
+        if not request.user.company_id:
+            raise Http404("File not found.")
+        file_record = get_object_or_404(
+            MediaFile, pk=file_id, company_id=request.user.company_id,
+        )
+        if not file_record.file:
+            raise Http404("File not found.")
+        try:
+            stream = file_record.file.open("rb")
+        except (OSError, FileNotFoundError, ValueError):
+            raise Http404("File not found.")
+        result = FileResponse(
+            stream, as_attachment=True, filename=file_record.name,
+            content_type="application/octet-stream",
+        )
+        result["X-Content-Type-Options"] = "nosniff"
+        result["Cache-Control"] = "private, no-store"
+        return result
+
 
 class StorageSettingsView(APIView):
     permission_classes=[RolePermission]
