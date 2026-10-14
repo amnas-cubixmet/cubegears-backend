@@ -174,3 +174,54 @@ class StaffPasswordOnboardingTests(APITestCase):
         self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
         call_command("seed_staff_roles", "--company-id", str(legacy.id), stdout=StringIO())
         self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
+
+    def test_staff_login_rejects_inactive_or_cross_company_role(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            created = self.create_employee()
+        self.assertEqual(created.status_code, 201, created.data)
+        employee = Employee.objects.get(pk=created.data["id"])
+        employee.user.set_password("SecureMechanicPass483!")
+        employee.user.save(update_fields=["password"])
+        self.client.force_authenticate(user=None)
+
+        def login():
+            return self.client.post("/api/v1/auth/login", {
+                "email": employee.user.email,
+                "password": "SecureMechanicPass483!",
+            }, format="json")
+
+        self.assertEqual(login().status_code, 200)
+        self.staff_role.is_active = False
+        self.staff_role.save(update_fields=["is_active"])
+        self.assertEqual(login().status_code, 400)
+        self.staff_role.is_active = True
+        self.staff_role.company = self.other
+        self.staff_role.save(update_fields=["is_active", "company"])
+        self.assertEqual(login().status_code, 400)
+
+    def test_new_password_setup_link_is_single_use(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            created = self.create_employee(email="new-mechanic@example.com")
+        self.assertEqual(created.status_code, 201, created.data)
+        url = next(part for part in mail.outbox[-1].body.split()
+                   if part.startswith("https://workshop.example/setup-password?"))
+        params = parse_qs(urlparse(url).query)
+        payload = {
+            "uid": params["uid"][0], "token": params["token"][0],
+            "password": "VeryStrongStaffPassword927!",
+        }
+        first = self.client.post("/api/v1/auth/setup-password", payload, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        again = self.client.post("/api/v1/auth/setup-password", payload, format="json")
+        self.assertEqual(again.status_code, 400, again.data)
+
+    def test_invalid_password_login_returns_user_friendly_validation_error(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            created = self.create_employee()
+        self.assertEqual(created.status_code, 201, created.data)
+        self.client.force_authenticate(user=None)
+        response = self.client.post("/api/v1/auth/login", {
+            "email": "staff@example.com", "password": "wrong-password",
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Invalid email or password", str(response.data))
