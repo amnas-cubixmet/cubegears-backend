@@ -8,10 +8,10 @@
 </section>
 
 <div class="companies-stats" aria-label="Company summary">
-  <article class="dashboard-stat-card"><div class="metric-top"><span>Total Companies</span><span class="metric-icon">C</span></div><strong>{{ total_companies }}</strong><small>Registered company accounts</small></article>
-  <article class="dashboard-stat-card"><div class="metric-top"><span>Active Companies</span><span class="metric-icon">✓</span></div><strong>{{ active_companies }}</strong><small>Enabled platform access</small></article>
-  <article class="dashboard-stat-card"><div class="metric-top"><span>Disabled Companies</span><span class="metric-icon">–</span></div><strong>{{ inactive_companies }}</strong><small>Accounts currently disabled</small></article>
-  <article class="dashboard-stat-card"><div class="metric-top"><span>New This Month</span><span class="metric-icon">+</span></div><strong>{{ new_companies_month }}</strong><small>Companies added this month</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Total Companies</span><span class="metric-icon" aria-hidden="true">C</span></div><strong class="company-stat-value">{{ total_companies }}</strong><small class="company-stat-meta">Registered company accounts</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Active Companies</span><span class="metric-icon" aria-hidden="true">✓</span></div><strong class="company-stat-value">{{ active_companies }}</strong><small class="company-stat-meta">Enabled platform access</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Disabled Companies</span><span class="metric-icon" aria-hidden="true">–</span></div><strong class="company-stat-value">{{ inactive_companies }}</strong><small class="company-stat-meta">Accounts currently disabled</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>New This Month</span><span class="metric-icon" aria-hidden="true">+</span></div><strong class="company-stat-value">{{ new_companies_month }}</strong><small class="company-stat-meta">Companies added this month</small></article>
 </div>
 
 <section class="panel-card companies-directory" aria-labelledby="companies-directory-title">
