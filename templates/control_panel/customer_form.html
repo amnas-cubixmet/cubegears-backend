@@ -1,0 +1,46 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="remaining-editor-page">
+  <header class="remaining-editor-header"><div><nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:customers' %}">Customers</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Customer{% else %}Add Customer{% endif %}</span></nav>
+    <h2>{% if is_edit %}Edit Customer{% else %}Create Customer{% endif %}</h2><p>Keep customer contact, workshop association, business details and status up to date.</p></div>
+    <a class="btn" href="{% url cancel_url %}">← Back to Customers</a></header>
+  <form class="remaining-editor-form" method="post" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="panel-card remaining-editor-section">
+      <header class="remaining-editor-section-header"><span class="remaining-section-number">01</span><div><h3>Contact Details</h3><p>Customer identity and preferred contact information.</p></div></header>
+      <div class="remaining-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        {% include "control_panel/company_field.html" with field=form.phone %}
+        {% include "control_panel/company_field.html" with field=form.whatsapp %}
+        {% include "control_panel/company_field.html" with field=form.email %}
+        {% include "control_panel/company_field.html" with field=form.customer_type %}
+      </div>
+    </section>
+    <section class="panel-card remaining-editor-section"><header class="remaining-editor-section-header"><span class="remaining-section-number">02</span><div><h3>Workshop &amp; Business</h3><p>Customer ownership and optional company billing details.</p></div></header>
+      <div class="remaining-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.company_name %}
+        {% include "control_panel/company_field.html" with field=form.gstin %}
+        {% include "control_panel/company_field.html" with field=form.credit_limit %}
+      </div>
+    </section>
+    <section class="panel-card remaining-editor-section"><header class="remaining-editor-section-header"><span class="remaining-section-number">03</span><div><h3>Address &amp; Status</h3><p>Location and customer account state.</p></div></header>
+      <div class="remaining-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.address wide=True %}
+        {% include "control_panel/company_field.html" with field=form.city %}
+        {% include "control_panel/company_field.html" with field=form.state %}
+        {% include "control_panel/company_field.html" with field=form.pincode %}
+        {% include "control_panel/company_field.html" with field=form.status %}
+      </div>
+    </section>
+    <section class="panel-card remaining-editor-section"><header class="remaining-editor-section-header"><span class="remaining-section-number">04</span><div><h3>Follow-up &amp; Notes</h3><p>Saved service dates, reminders and internal notes.</p></div></header>
+      <div class="remaining-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.last_service_date %}
+        {% include "control_panel/company_field.html" with field=form.next_reminder_at %}
+        {% include "control_panel/company_field.html" with field=form.notes wide=True %}
+      </div>
+    </section>
+    <footer class="remaining-editor-actions"><a class="btn" href="{% url cancel_url %}">Cancel</a><button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create Customer{% endif %}</button></footer>
+  </form>
+</section>
+{% endblock %}
