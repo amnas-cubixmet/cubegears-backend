@@ -914,9 +914,49 @@ def resource_action(request, resource, action, pk=None):
 # Dedicated SaaS platform tools; never accessible to tenant company admins.
 @panel_admin_required
 def plan_catalog(request):
+    # Plan prices are catalog configuration, not revenue or payment receipts.
+    plans = SubscriptionPlan.objects.all()
+    plan_total = plans.count()
+    plan_active = plans.filter(is_active=True).count()
+    plan_public = plans.filter(is_public=True, is_active=True).count()
+    subscriptions_assigned = Subscription.objects.filter(
+        plan_definition__isnull=False
+    ).count()
+
+    query = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    visibility = request.GET.get("visibility", "").strip().lower()
+    if query:
+        plans = plans.filter(
+            Q(name__icontains=query) | Q(key__icontains=query)
+            | Q(description__icontains=query)
+        )
+    if status == "active":
+        plans = plans.filter(is_active=True)
+    elif status == "archived":
+        plans = plans.filter(is_active=False)
+    else:
+        status = ""
+    if visibility == "public":
+        plans = plans.filter(is_public=True)
+    elif visibility == "private":
+        plans = plans.filter(is_public=False)
+    else:
+        visibility = ""
+
+    plans = plans.annotate(
+        enabled_feature_count=Count(
+            "feature_access", filter=Q(feature_access__enabled=True), distinct=True
+        )
+    ).prefetch_related("feature_access__feature")
+
     return render(request, "control_panel/plan_catalog.html", {
         "page_title": "Plan Builder", "active": "plans",
-        "plans": SubscriptionPlan.objects.prefetch_related("feature_access").all(),
+        "plans": plans,
+        "q": query, "status": status, "visibility": visibility,
+        "plan_total": plan_total, "plan_active": plan_active,
+        "plan_public": plan_public,
+        "subscriptions_assigned": subscriptions_assigned,
     })
 
 
