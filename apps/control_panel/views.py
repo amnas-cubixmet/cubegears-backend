@@ -1,3 +1,4 @@
+from datetime import timedelta
 from functools import wraps
 from urllib.parse import quote
 
@@ -16,6 +17,7 @@ from django.http import HttpResponseBadRequest
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
+from django.db import transaction, IntegrityError
 from django.db.models import F, Q, Sum, Count
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponseForbidden
@@ -38,7 +40,7 @@ from apps.roles.models import Role
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
-    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
+    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
 )
 
@@ -161,11 +163,18 @@ def dashboard(request):
 
 @panel_admin_required
 def companies(request):
+    # Platform-wide KPIs are intentionally independent of the active directory filters.
+    month_start = timezone.localdate().replace(day=1)
+    total_companies = Company.objects.count()
+    active_companies = Company.objects.filter(is_active=True).count()
+    new_companies_month = Company.objects.filter(created_at__date__gte=month_start).count()
+
     qs = Company.objects.annotate(
         user_count=Count("users", distinct=True),
         branch_count=Count("branches", distinct=True),
     ).order_by("-created_at")
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
     if q:
         qs = qs.filter(
             Q(name__icontains=q)
@@ -174,11 +183,23 @@ def companies(request):
             | Q(gstin__icontains=q)
             | Q(city__icontains=q)
         )
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "inactive":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
     return render(request, "control_panel/companies.html", {
         "page_title": "Companies",
         "active": "companies",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "total_companies": total_companies,
+        "active_companies": active_companies,
+        "inactive_companies": total_companies - active_companies,
+        "new_companies_month": new_companies_month,
     })
 
 
@@ -194,18 +215,50 @@ def company_toggle(request, pk):
 
 @panel_admin_required
 def users(request):
+    # Summary reflects platform-wide accounts; directory filters affect only rows.
+    all_users = User.objects.all()
+    total_users = all_users.count()
+    active_users = all_users.filter(is_active=True).count()
+    admin_users = all_users.filter(Q(is_staff=True) | Q(is_superuser=True)).count()
+    verified_users = all_users.filter(email_verified=True).count()
+
     qs = User.objects.select_related("company", "branch", "role").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    access = request.GET.get("access", "").strip().lower()
+
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q) | Q(phone__icontains=q))
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "disabled":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
+    if access == "superuser":
+        qs = qs.filter(is_superuser=True)
+    elif access == "admin":
+        qs = qs.filter(is_staff=True, is_superuser=False)
+    elif access == "workshop":
+        qs = qs.filter(is_staff=False, is_superuser=False)
+    else:
+        access = ""
+
     return render(request, "control_panel/users.html", {
         "page_title": "Users & Access",
         "active": "users",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "access": access,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_users": total_users,
+        "active_users": active_users,
+        "admin_users": admin_users,
+        "verified_users": verified_users,
     })
 
 
@@ -224,19 +277,73 @@ def user_toggle(request, pk):
 
 
 @panel_admin_required
+@require_POST
+def user_invite(request, pk):
+    """Resend a secure setup/reset link to an existing authorized user."""
+    user = get_object_or_404(
+        User.objects.select_related("company", "role"), pk=pk,
+    )
+    if not _can_manage_account(request.user, user):
+        return HttpResponseForbidden("You cannot invite this account.")
+    if _send_new_user_invite(request, user):
+        messages.success(request, "Account access email scheduled for the registered address.")
+    else:
+        messages.warning(request, "No email sent. Verify the account, role and active status.")
+    return _safe_redirect(request, request.POST.get("next"), "panel:users")
+
+
+@panel_admin_required
 def subscriptions(request):
-    qs = Subscription.objects.select_related("company", "branch").order_by("-created_at")
+    # Platform totals do not change when a user filters the directory.
+    all_subscriptions = Subscription.objects.all()
+    now = timezone.now()
+    month_ahead = now + timedelta(days=30)
+    total_subscriptions = all_subscriptions.count()
+    active_subscriptions = all_subscriptions.filter(status__iexact="active").count()
+    upcoming_renewals = all_subscriptions.filter(
+        status__iexact="active", renews_at__gte=now, renews_at__lte=month_ahead
+    ).count()
+    subscriber_companies = all_subscriptions.values("company_id").distinct().count()
+    status_options = sorted(
+        (s for s in all_subscriptions.order_by().values_list("status", flat=True).distinct() if s),
+        key=str.casefold,
+    )
+
+    qs = all_subscriptions.select_related("company", "branch", "plan_definition").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    cycle = request.GET.get("cycle", "").strip().lower()
+
     if q:
-        qs = qs.filter(Q(company__name__icontains=q) | Q(plan__icontains=q) | Q(status__icontains=q))
+        qs = qs.filter(
+            Q(company__name__icontains=q) | Q(plan__icontains=q)
+            | Q(status__icontains=q)
+        )
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
+    if cycle in ("monthly", "yearly", "annual"):
+        qs = qs.filter(billing_cycle__iexact=cycle)
+    else:
+        cycle = ""
+
     return render(request, "control_panel/subscriptions.html", {
         "page_title": "Plans & Billing",
         "active": "subscriptions",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "cycle": cycle,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_subscriptions": total_subscriptions,
+        "active_subscriptions": active_subscriptions,
+        "upcoming_renewals": upcoming_renewals,
+        "subscriber_companies": subscriber_companies,
     })
 
 
@@ -443,36 +550,54 @@ def _can_manage_account(actor, obj):
 
 
 def _send_new_user_invite(request, user):
-    """Invite using the correct company or platform password setup experience."""
-    if not user.is_active:
+    """Email the correct password setup/reset link for this existing account.
+
+    Passwords are never sent, and resending to an active account never
+    replaces its current password. A setup URL works only for unset accounts.
+    """
+    if not user or not user.is_active:
         return False
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
+    is_reset = user.has_usable_password()
+
     if landing_route(user):
+        page = "password-reset" if is_reset else "password-setup"
         url = request.build_absolute_uri(reverse(
-            "panel:password-setup", kwargs={"uid": uid, "token": token},
+            f"panel:{page}", kwargs={"uid": uid, "token": token},
         ))
         purpose = "SaaS Control Panel"
-    elif user.company_id and user.role_id:
+    elif (user.company_id and user.role_id and user.company.is_active
+          and user.role.is_active and user.role.company_id == user.company_id
+          and not user.is_staff and not user.is_superuser):
+        page = "reset-password" if is_reset else "setup-password"
         url = (
-            f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
-            f"?uid={uid}&token={token}&email={quote(user.email)}"
+            f"{settings.FRONTEND_URL.rstrip('/')}/{page}"
+            f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}"
+            f"&email={quote(user.email, safe='')}"
         )
         purpose = "Workshop Company Panel"
     else:
         return False
+
+    instruction = "Reset your password" if is_reset else "Set up your password"
     queue_email(
-        "Set up your CubixGear account",
-        f"You have been invited to CubixGear {purpose}. Confirm your account and choose a strong password using the secure button below.",
-        [user.email], action_url=url, action_label="Set up my account",
+        f"{instruction} for CubixGear {purpose}",
+        f"Your CubixGear {purpose} account is ready. Use the secure "
+        f"button below to {instruction.lower()}. If you did not request "
+        "this email, you can ignore it.",
+        [user.email], action_url=url, action_label=instruction,
     )
     return True
-
 
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
-    form = form_class(request.POST if request.method == "POST" else None, instance=instance)
+    form = form_class(
+        request.POST if request.method == "POST" else None,
+        request.FILES if request.method == "POST" else None,
+        instance=instance,
+    )
     form.actor = request.user
     if isinstance(form, UserForm) and not request.user.is_superuser:
         for field in ("is_staff", "is_superuser"):
@@ -482,8 +607,14 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
             form.fields[field].disabled = True
     if request.method == "POST" and form.is_valid():
         is_new_user = isinstance(form, UserForm) and instance is None
+        is_new_staff = isinstance(form, StaffInviteForm) and instance is None
         obj = form.save()
-        if is_new_user and not obj.has_usable_password():
+        if is_new_staff:
+            if _send_new_user_invite(request, obj.user):
+                messages.success(request, "Staff account created. Password setup invitation scheduled by email.")
+            else:
+                messages.warning(request, "Staff created, but a login invitation could not be scheduled.")
+        elif is_new_user and not obj.has_usable_password():
             if _send_new_user_invite(request, obj):
                 messages.success(request, "User created. Password setup invitation emailed.")
             else:
@@ -491,7 +622,14 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         else:
             messages.success(request, f"{title} saved successfully.")
         return redirect(cancel_url)
-    return render(request, "control_panel/form.html", {
+    template = (
+        "control_panel/company_form.html" if isinstance(form, CompanyForm)
+        else "control_panel/user_form.html" if isinstance(form, UserForm)
+        else "control_panel/subscription_form.html" if isinstance(form, SubscriptionForm)
+        else "control_panel/plan_editor.html" if isinstance(form, PlanBuilderForm)
+        else "control_panel/form.html"
+    )
+    return render(request, template, {
         "page_title": title,
         "active": active,
         "form": form,
@@ -766,7 +904,7 @@ def invoice_delete(request, pk):
 
 @panel_admin_required
 def staff_create(request):
-    return _save_form(request, EmployeeForm, title="Add Staff", active="staff", cancel_url="panel:staff")
+    return _save_form(request, StaffInviteForm, title="Add Staff", active="staff", cancel_url="panel:staff")
 
 
 @panel_admin_required
@@ -790,6 +928,58 @@ def staff_detail(request, pk):
 def staff_edit(request, pk):
     obj = get_object_or_404(Employee, pk=pk)
     return _save_form(request, EmployeeForm, instance=obj, title="Edit Staff", active="staff", cancel_url="panel:staff")
+
+
+@panel_admin_required
+@require_POST
+def staff_invite(request, pk):
+    """Invite existing staff, creating a scoped login for legacy staff profiles."""
+    employee = get_object_or_404(
+        Employee.objects.select_related("company", "branch", "user", "user__role"),
+        pk=pk,
+    )
+    if employee.status != "Active" or not employee.company.is_active:
+        messages.warning(request, "Activate the staff member and company before inviting.")
+        return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+
+    user = employee.user
+    if user:
+        if (user.company_id != employee.company_id
+                or user.email.lower() != (employee.email or "").strip().lower()
+                or user.is_staff or user.is_superuser
+                or not _can_manage_account(request.user, user)):
+            return HttpResponseForbidden("The linked account cannot be invited as workshop staff.")
+    else:
+        email = (employee.email or "").strip().lower()
+        role = Role.objects.filter(
+            company=employee.company, name__iexact=employee.role_name,
+            is_active=True, is_system=False,
+        ).first()
+        if not email or not role:
+            messages.warning(request, "Add a valid email and active company staff role first.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+        if User.objects.filter(email__iexact=email).exists():
+            messages.warning(request, "This email already belongs to an account. Resolve it first.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email, password=None, name=employee.name,
+                    company=employee.company, branch=employee.branch,
+                    role=role, is_active=True, is_staff=False,
+                    is_superuser=False, email_verified=False,
+                )
+                employee.user = user
+                employee.save(update_fields=["user", "updated_at"])
+        except IntegrityError:
+            messages.warning(request, "Unable to create login: email is already in use.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+
+    if _send_new_user_invite(request, user):
+        messages.success(request, "Staff account email scheduled for the registered address.")
+    else:
+        messages.warning(request, "No email sent. Verify this account's login permissions.")
+    return _safe_redirect(request, request.POST.get("next"), "panel:staff")
 
 
 @panel_admin_required
@@ -845,9 +1035,49 @@ def resource_action(request, resource, action, pk=None):
 # Dedicated SaaS platform tools; never accessible to tenant company admins.
 @panel_admin_required
 def plan_catalog(request):
+    # Plan prices are catalog configuration, not revenue or payment receipts.
+    plans = SubscriptionPlan.objects.all()
+    plan_total = plans.count()
+    plan_active = plans.filter(is_active=True).count()
+    plan_public = plans.filter(is_public=True, is_active=True).count()
+    subscriptions_assigned = Subscription.objects.filter(
+        plan_definition__isnull=False
+    ).count()
+
+    query = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    visibility = request.GET.get("visibility", "").strip().lower()
+    if query:
+        plans = plans.filter(
+            Q(name__icontains=query) | Q(key__icontains=query)
+            | Q(description__icontains=query)
+        )
+    if status == "active":
+        plans = plans.filter(is_active=True)
+    elif status == "archived":
+        plans = plans.filter(is_active=False)
+    else:
+        status = ""
+    if visibility == "public":
+        plans = plans.filter(is_public=True)
+    elif visibility == "private":
+        plans = plans.filter(is_public=False)
+    else:
+        visibility = ""
+
+    plans = plans.annotate(
+        enabled_feature_count=Count(
+            "feature_access", filter=Q(feature_access__enabled=True), distinct=True
+        )
+    ).prefetch_related("feature_access__feature")
+
     return render(request, "control_panel/plan_catalog.html", {
         "page_title": "Plan Builder", "active": "plans",
-        "plans": SubscriptionPlan.objects.prefetch_related("feature_access").all(),
+        "plans": plans,
+        "q": query, "status": status, "visibility": visibility,
+        "plan_total": plan_total, "plan_active": plan_active,
+        "plan_public": plan_public,
+        "subscriptions_assigned": subscriptions_assigned,
     })
 
 

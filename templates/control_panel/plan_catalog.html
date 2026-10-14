@@ -1,23 +1,69 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar">
-  <p>Manage monthly/yearly plans, promotions, branches, staff seats, storage rates and feature switches. Existing subscriptions are not repriced automatically.</p>
-  {% panel_can 'plan-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:plan-create' %}">+ Create Plan</a>{% endif %}
-  <a class="btn" href="{% url 'panel:features' %}">Manage Feature Labels</a>
-</div>
-<section class="panel-card"><div class="responsive-table"><table>
-  <thead><tr><th>Plan</th><th>Monthly</th><th>Yearly</th><th>Branches</th><th>Users</th><th>Storage</th><th>Features ON</th><th>Status</th><th></th></tr></thead>
-  <tbody>{% for plan in plans %}
-    <tr>
-      <td><strong>{{ plan.name }}</strong><small>{{ plan.description }}</small></td>
-      <td>₹{{ plan.monthly_price }}</td><td>₹{{ plan.yearly_price }}</td>
-      <td>{{ plan.max_branches }}</td><td>{{ plan.max_users }}</td>
-      <td>{{ plan.included_storage_gb }} GB (+₹{{ plan.extra_storage_rate }}/GB/month)</td>
-      <td>{% for item in plan.feature_access.all %}{% if item.enabled %}✓ {{ item.feature.label }}{% if not forloop.last %}, {% endif %}{% endif %}{% empty %}None selected{% endfor %}</td>
-      <td>{% if plan.is_active %}Active{% else %}Archived{% endif %}</td>
-      <td><a href="{% url 'panel:plan-edit' plan.pk %}">Edit</a></td>
-    </tr>
-  {% empty %}<tr><td colspan="9">No plans configured. Create the first plan.</td></tr>{% endfor %}</tbody>
-</table></div></section>
+<section class="directory-heading plan-heading">
+  <div>
+    <p class="eyebrow">Platform / Plan Builder</p>
+    <h2>Subscription Plan Builder</h2>
+    <p>Configure prices, limits, trials and feature access for CubeGears subscriptions.</p>
+  </div>
+  <div class="plan-heading-actions">
+    <a class="btn" href="{% url 'panel:features' %}">Manage Feature Labels</a>
+    {% panel_can 'plan-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:plan-create' %}">+ Create Plan</a>{% endif %}
+  </div>
+</section>
+
+<section class="directory-stats plan-stats" aria-label="Plan catalog summary">
+  <article class="user-stat-card"><div class="user-stat-top"><span>Total Plans</span><span class="user-stat-icon" aria-hidden="true">P</span></div><strong class="user-stat-value">{{ plan_total }}</strong><small class="user-stat-meta">Defined subscription plans</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Active Plans</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ plan_active }}</strong><small class="user-stat-meta">Enabled in plan configuration</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Public &amp; Active</span><span class="user-stat-icon" aria-hidden="true">↗</span></div><strong class="user-stat-value">{{ plan_public }}</strong><small class="user-stat-meta">Plans eligible for public catalog</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Assigned Subscriptions</span><span class="user-stat-icon" aria-hidden="true">S</span></div><strong class="user-stat-value">{{ subscriptions_assigned }}</strong><small class="user-stat-meta">Records linked to defined plans</small></article>
+</section>
+
+<section class="panel-card plan-directory" aria-labelledby="plan-directory-title">
+  <header class="section-head directory-section-heading">
+    <div><p class="eyebrow">Plans</p><h2 id="plan-directory-title">Plan Catalog</h2><p>Manage pricing and feature availability in one place</p></div>
+    <span class="directory-result-count">{{ plans|length }} result{{ plans|length|pluralize }}</span>
+  </header>
+  <form class="plan-filter-form" method="get" aria-label="Search and filter plans">
+    <label class="sr-only" for="plan-search">Search plans</label>
+    <input id="plan-search" type="search" name="q" value="{{ q }}" placeholder="Search plan name, key or description">
+    <label class="sr-only" for="plan-status">Plan status</label>
+    <select id="plan-status" name="status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+      <option value="archived" {% if status == "archived" %}selected{% endif %}>Archived</option>
+    </select>
+    <label class="sr-only" for="plan-visibility">Plan visibility</label>
+    <select id="plan-visibility" name="visibility">
+      <option value="">All visibility</option>
+      <option value="public" {% if visibility == "public" %}selected{% endif %}>Public</option>
+      <option value="private" {% if visibility == "private" %}selected{% endif %}>Private</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    {% if q or status or visibility %}<a class="btn" href="{% url 'panel:plans' %}">Clear</a>{% endif %}
+  </form>
+  <div class="responsive-table plan-directory-table">
+    <table>
+      <thead><tr><th>Plan</th><th>Monthly Price</th><th>Yearly Price</th><th>Branches / Users</th><th>Storage</th><th>Features</th><th>Visibility</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for plan in plans %}
+        <tr>
+          <td data-label="Plan"><div class="plan-name-cell"><span class="plan-name-icon" aria-hidden="true">{{ plan.name|slice:":1"|upper }}</span><div><strong>{{ plan.name }}</strong><span class="table-sub">{{ plan.key }}</span>{% if plan.description %}<span class="table-sub plan-description">{{ plan.description|truncatechars:75 }}</span>{% endif %}</div></div></td>
+          <td data-label="Monthly Price"><strong class="plan-money">₹{{ plan.monthly_price|floatformat:2 }}</strong></td>
+          <td data-label="Yearly Price"><strong class="plan-money">₹{{ plan.yearly_price|floatformat:2 }}</strong></td>
+          <td data-label="Branches / Users"><span class="plan-quota">{{ plan.max_branches }} branches</span><span class="table-sub plan-quota-note">{{ plan.max_users }} users</span></td>
+          <td data-label="Storage"><span class="plan-quota">{{ plan.included_storage_gb }} GB</span><span class="table-sub plan-quota-note">+ ₹{{ plan.extra_storage_rate }}/extra GB</span></td>
+          <td data-label="Features"><span class="plan-feature-count">{{ plan.enabled_feature_count }} enabled</span>{% if plan.enabled_feature_count %}<div class="plan-feature-list">{% for item in plan.feature_access.all %}{% if item.enabled %}<span class="plan-feature-tag">{{ item.feature.label }}</span>{% endif %}{% endfor %}</div>{% endif %}</td>
+          <td data-label="Visibility">{% if plan.is_public %}<span class="plan-state-pill is-public">Public</span>{% else %}<span class="plan-state-pill is-private">Private</span>{% endif %}</td>
+          <td data-label="Status">{% if plan.is_active %}<span class="plan-state-pill is-active">Active</span>{% else %}<span class="plan-state-pill is-archived">Archived</span>{% endif %}</td>
+          <td data-label="Actions">{% panel_can 'plan-edit' as allowed %}{% if allowed %}<a class="plan-edit-link" href="{% url 'panel:plan-edit' plan.pk %}">Edit Plan</a>{% endif %}</td>
+        </tr>
+      {% empty %}<tr><td class="empty-cell" colspan="9">No plans match the selected filters. Create a plan or clear the search.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="plan-catalog-note">Plan Builder changes do not automatically reprice existing subscriptions. Plan prices are configuration values, not confirmed payments.</p>
+</section>
 {% endblock %}

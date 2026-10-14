@@ -9,6 +9,59 @@
   </div>
 </div>
 
+{% if active == 'subscriptions' %}
+<section class="panel-card subscription-profile-header">
+  <div class="subscription-profile-symbol" aria-hidden="true">{{ object.company.name|slice:":1"|upper }}</div>
+  <div class="subscription-profile-info">
+    <p class="eyebrow">Subscription details</p>
+    <h2>{{ object.company.name }} · {{ object.plan|default:"Subscription" }}</h2>
+    <p>{{ object.currency }} {{ object.amount|floatformat:2 }} / {{ object.billing_cycle|title }} · {{ object.seats }} seats</p>
+    <div class="subscription-profile-tags">
+      {% if object.status|lower == "active" %}
+        <span class="subscription-status-pill is-active">Active</span>
+      {% elif object.status|lower == "cancelled" or object.status|lower == "canceled" or object.status|lower == "expired" %}
+        <span class="subscription-status-pill is-inactive">{{ object.status|title }}</span>
+      {% else %}
+        <span class="subscription-status-pill is-pending">{{ object.status|default:"Not set"|title }}</span>
+      {% endif %}
+      <span class="subscription-cycle-pill">{{ object.billing_cycle|title }}</span>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if active == 'users' %}
+<section class="panel-card user-profile-header">
+  <div class="user-profile-avatar" aria-hidden="true">{{ object.name|default:object.email|slice:":1"|upper }}</div>
+  <div class="user-profile-copy">
+    <p class="eyebrow">User profile</p>
+    <h2>{{ object.name|default:object.email }}</h2>
+    <p>{{ object.email }}{% if object.company %} · {{ object.company.name }}{% endif %}</p>
+    <div class="user-profile-tags">
+      {% if object.is_superuser %}<span class="access-pill is-superuser">Super Admin</span>{% elif object.is_staff %}<span class="access-pill is-admin">Admin Staff</span>{% else %}<span class="access-pill">Workshop User</span>{% endif %}
+      {% if object.is_active %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="company-status-tag is-disabled">Disabled</span>{% endif %}
+      <span class="user-verify-state {% if object.email_verified %}is-verified{% endif %}">{% if object.email_verified %}Email verified{% else %}Email unverified{% endif %}</span>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if active == 'companies' %}
+<section class="panel-card company-profile-header">
+  <div class="company-profile-logo">
+    {% if object.logo_image %}<img src="{{ object.logo_image.url }}" alt="{{ object.name }} logo">
+    {% elif object.logo %}<img src="{{ object.logo }}" alt="{{ object.name }} logo">
+    {% else %}<span aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>{% endif %}
+  </div>
+  <div class="company-profile-info">
+    <div class="eyebrow">Company profile</div>
+    <h2>{{ object.name }}</h2>
+    <p>{{ object.email|default:"No email provided" }}{% if object.city %} · {{ object.city }}{% endif %}</p>
+    <span class="company-status-tag {% if object.is_active %}is-active{% else %}is-disabled{% endif %}">{% if object.is_active %}Active{% else %}Disabled{% endif %}</span>
+  </div>
+</section>
+{% endif %}
+
 <section class="panel-card detail-card">
   <div class="detail-grid">
     {% for label, value in rows %}

@@ -29,6 +29,7 @@ urlpatterns = [
     path("users/<uuid:pk>/edit/", views.user_edit, name="user-edit"),
     path("users/<uuid:pk>/delete/", views.user_delete, name="user-delete"),
     path("users/<uuid:pk>/toggle/", views.user_toggle, name="user-toggle"),
+    path("users/<uuid:pk>/invite/", views.user_invite, name="user-invite"),
 
     path("plans/", views.plan_catalog, name="plans"),
     path("plans/add/", views.plan_create, name="plan-create"),
@@ -77,6 +78,7 @@ urlpatterns = [
     path("staff/add/", views.staff_create, name="staff-create"),
     path("staff/<uuid:pk>/", views.staff_detail, name="staff-detail"),
     path("staff/<uuid:pk>/edit/", views.staff_edit, name="staff-edit"),
+    path("staff/<uuid:pk>/invite/", views.staff_invite, name="staff-invite"),
     path("staff/<uuid:pk>/delete/", views.staff_delete, name="staff-delete"),
 ]
 
