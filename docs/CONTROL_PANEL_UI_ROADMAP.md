@@ -22,7 +22,8 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 9. [ ] `/storage/`, `/security/` — usage and audit pages
 10. [ ] `/branches/`, `/roles/` — branches and permissions
 11. [ ] `/customers/`, `/vehicles/`, `/jobs/` — platform-wide workshop records
-12. [ ] `/stock/`, `/invoices/` — remaining operational directories and detail/edit screens
+12. [ ] `/stock/` — remaining stock directory and detail/edit screens
+14. [x] `/invoices/`, add/edit/detail — billing document counts, filters, invoices and estimates forms, responsive table and status displays
 13. [x] `/staff/`, add/edit/detail — live counts, company/status/login filtering, responsive directory, secure invite-aware forms
 
 ## Quality requirements for each page
