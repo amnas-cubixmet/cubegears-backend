@@ -9,6 +9,21 @@
   </div>
 </div>
 
+{% if active == 'staff' %}
+<section class="panel-card staff-profile-header">
+  <div class="staff-profile-avatar" aria-hidden="true">{{ object.name|slice:":1"|upper }}</div>
+  <div class="staff-profile-info">
+    <p class="eyebrow">Workshop staff profile</p>
+    <h2>{{ object.name }}</h2>
+    <p>{{ object.employee_code }}{% if object.company %} · {{ object.company.name }}{% endif %}{% if object.designation %} · {{ object.designation }}{% endif %}</p>
+    <div class="staff-profile-tags">
+      {% if object.status|lower == "active" %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="staff-status-pill is-inactive">{{ object.status|default:"Not set" }}</span>{% endif %}
+      {% if object.user_id %}<span class="staff-login-pill is-linked">Login linked</span>{% else %}<span class="staff-login-pill is-unlinked">No login linked</span>{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'subscriptions' %}
 <section class="panel-card subscription-profile-header">
   <div class="subscription-profile-symbol" aria-hidden="true">{{ object.company.name|slice:":1"|upper }}</div>
