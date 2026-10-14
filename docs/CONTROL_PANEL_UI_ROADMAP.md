@@ -17,7 +17,7 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 4. [x] `/companies/<id>/` — company profile and uploaded logo display
 5. [x] `/users/`, add/edit/detail — real user KPIs, scoped search and filters, role badges, accessible user editor and security notes
 6. [x] `/subscriptions/`, add/edit/detail — overview KPIs, company/status/cycle filters, billing and renewal forms
-7. [ ] `/plans/`, create/edit — dynamic plan builder UI
+7. [x] `/plans/`, create/edit — pricing catalog, feature access and one-time checkout plan terms
 8. [ ] `/features/`, add/edit, `/requests/` — SaaS catalog and enquiries
 9. [ ] `/storage/`, `/security/` — usage and audit pages
 10. [ ] `/branches/`, `/roles/` — branches and permissions
@@ -33,4 +33,4 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 - Add automated rendering and business-logic regression tests
 - Validate both desktop/mobile and light/dark states before merge
 
-Status: steps marked complete are implemented in draft PR #43, not yet merged to `main`.
+Status: earlier dashboard/companies/users/subscriptions work has been merged. Plan Builder payment-field follow-up is in a separate review PR.
