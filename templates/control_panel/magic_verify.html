@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
+<title>Secure sign in · CubixGear</title>
+</head><body style="font-family:system-ui,sans-serif;margin:0;background:#f4f7fb;color:#152238">
+<main style="min-height:100dvh;display:grid;place-items:center;padding:20px">
+<section style="width:min(420px,100%);background:white;padding:32px;border:1px solid #e0e8f0;border-radius:16px;text-align:center">
+<h1 style="font-size:23px">Signing you in to CubixGear…</h1>
+<p>Verifying your one-time administrator login link.</p>
+<form id="magic-signin" method="post" autocomplete="off">
+{% csrf_token %}
+<button type="submit" style="padding:13px 20px;border:0;border-radius:9px;background:#1677ff;color:white;font-weight:700;cursor:pointer">Continue securely</button>
+</form>
+</section></main>
+<script>
+(function(){
+  // Keep link scanners from consuming the token via a simple GET.
+  // Strip the token from the address bar before the CSRF-protected POST.
+  var f = document.getElementById('magic-signin');
+  if (!f) return;
+  f.action = window.location.pathname;
+  window.history.replaceState(null, '', '/login/');
+  f.submit();
+})();
+</script>
+</body></html>
