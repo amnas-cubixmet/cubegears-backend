@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic.base import RedirectView
 from . import views
 from . import auth_views
 from apps.credits import panel_views as credits_panel
@@ -43,7 +44,8 @@ urlpatterns = [
     path("requests/", views.plan_requests, name="requests"),
     path("credits/", credits_panel.credits_control, name="credits"),
     path("subscriptions/", views.subscriptions, name="subscriptions"),
-    path("payment-settings/", views.payment_settings, name="payment-settings"),
+    path("subscriptions/payments/", views.subscription_payments, name="subscription-payments"),
+    path("payment-settings/", RedirectView.as_view(pattern_name="panel:credits", permanent=False), name="payment-settings"),
     path("subscriptions/add/", views.subscription_create, name="subscription-create"),
     path("subscriptions/<uuid:pk>/", views.subscription_detail, name="subscription-detail"),
     path("subscriptions/<uuid:pk>/edit/", views.subscription_edit, name="subscription-edit"),
