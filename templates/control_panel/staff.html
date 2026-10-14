@@ -1,17 +1,95 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar"><form class="search-form search-form-wide" method="get">
-  <input type="search" name="q" value="{{ q }}" placeholder="Search staff, code, phone or company">
-  <select name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-  <button class="btn" type="submit">Filter</button>
-</form>{% panel_can 'panel:staff-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:staff-create' %}">Add Staff</a>{% endif %}</div>
-<section class="panel-card"><div class="responsive-table"><table>
-<thead><tr><th>Employee</th><th>Company</th><th>Code</th><th>Designation</th><th>Team</th><th>Shift</th><th>Status</th><th>Actions</th></tr></thead>
-<tbody>{% for row in rows %}<tr><td data-label="Employee"><strong>{{ row.name }}</strong></td><td data-label="Company">{{ row.company.name }}</td><td data-label="Code">{{ row.employee_code }}</td><td data-label="Designation">{{ row.designation|default:"—" }}</td><td data-label="Team">{{ row.team.name|default:"—" }}</td><td data-label="Shift">{{ row.shift.name|default:"—" }}</td><td data-label="Status"><span class="badge">{{ row.status }}</span></td><td data-label="Actions"><div class="row-actions">{% panel_can 'panel:staff-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:staff-detail' row.id %}">View</a>{% endif %}{% panel_can 'panel:staff-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:staff-edit' row.id %}">Edit</a>{% endif %}{% panel_can 'panel:staff-invite' as invite_allowed %}{% if invite_allowed %}
-          <form method="post" action="{% url 'panel:staff-invite' row.id %}">{% csrf_token %}
-            <input type="hidden" name="next" value="{{ request.get_full_path }}">
-            <button type="submit">Send Login Email</button>
-          </form>{% endif %}{% panel_can 'panel:staff-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:staff-delete' row.id %}">Delete</a>{% endif %}</div></td></tr>{% empty %}<tr><td colspan="7" class="empty-cell">No staff found.</td></tr>{% endfor %}</tbody>
-</table></div></section>
+<section class="directory-heading staff-heading">
+  <div>
+    <p class="eyebrow">All workshop data / Staff</p>
+    <h2>Staff Management</h2>
+    <p>Manage team members, workshop assignments, account invitations and employment details.</p>
+  </div>
+  {% panel_can 'panel:staff-create' as allowed %}
+  {% if allowed %}<a class="btn btn-primary" href="{% url 'panel:staff-create' %}">+ Add Staff</a>{% endif %}
+</section>
+
+<section class="directory-stats staff-stats" aria-label="Staff overview">
+  <article class="user-stat-card"><div class="user-stat-top"><span>Total Staff</span><span class="user-stat-icon" aria-hidden="true">S</span></div><strong class="user-stat-value">{{ total_staff }}</strong><small class="user-stat-meta">Registered staff profiles</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Active Staff</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_staff }}</strong><small class="user-stat-meta">Active employment status</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Linked Accounts</span><span class="user-stat-icon" aria-hidden="true">@</span></div><strong class="user-stat-value">{{ linked_staff }}</strong><small class="user-stat-meta">Connected login accounts</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Workshop Companies</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ staff_companies }}</strong><small class="user-stat-meta">Companies with staff records</small></article>
+</section>
+
+<section class="panel-card staff-directory" aria-labelledby="staff-directory-title">
+  <header class="section-head directory-section-heading">
+    <div><p class="eyebrow">Directory</p><h2 id="staff-directory-title">All Staff Members</h2><p>People and assignments across the CubeGears platform</p></div>
+    <span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+  </header>
+
+  <form class="staff-filter-form" method="get" aria-label="Search and filter staff">
+    <label class="sr-only" for="staff-search">Search staff</label>
+    <input id="staff-search" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone, code, designation">
+    <label class="sr-only" for="staff-company-filter">Company</label>
+    <select id="staff-company-filter" name="company">
+      <option value="">All companies</option>
+      {% for company in companies %}<option value="{{ company.id }}" {% if company_id == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="staff-status-filter">Employment status</label>
+    <select id="staff-status-filter" name="status">
+      <option value="">All statuses</option>
+      {% for option in status_options %}<option value="{{ option }}" {% if status == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+    </select>
+    <label class="sr-only" for="staff-login-filter">Login account</label>
+    <select id="staff-login-filter" name="login">
+      <option value="">All login statuses</option>
+      <option value="linked" {% if login == "linked" %}selected{% endif %}>Linked login</option>
+      <option value="unlinked" {% if login == "unlinked" %}selected{% endif %}>Not linked</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    {% if q or company_id or status or login %}<a class="btn" href="{% url 'panel:staff' %}">Clear</a>{% endif %}
+  </form>
+
+  <div class="responsive-table staff-directory-table">
+    <table>
+      <thead><tr><th>Staff Member</th><th>Workshop</th><th>Employee Code</th><th>Designation</th><th>Team / Shift</th><th>Login</th><th>Status</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td data-label="Staff Member">
+            <div class="staff-person">
+              <span class="staff-avatar" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>
+              <div class="staff-person-copy"><strong>{{ row.name }}</strong><span class="table-sub">{{ row.email|default:row.phone|default:"No contact provided" }}</span></div>
+            </div>
+          </td>
+          <td data-label="Workshop"><strong class="staff-company-name">{{ row.company.name }}</strong><span class="table-sub staff-secondary">{{ row.branch.name|default:"Company-wide" }}</span></td>
+          <td data-label="Employee Code"><span class="staff-code">{{ row.employee_code }}</span></td>
+          <td data-label="Designation">{{ row.designation|default:row.role_name|default:"—" }}</td>
+          <td data-label="Team / Shift">{{ row.team.name|default:row.department_name|default:"—" }}<span class="table-sub staff-secondary">{{ row.shift.name|default:row.shift_label|default:"No shift assigned" }}</span></td>
+          <td data-label="Login">
+            {% if row.user_id %}
+              <span class="staff-login-pill is-linked">Linked</span>
+              <span class="table-sub staff-secondary">{% if row.user.is_active %}{% if row.user.has_usable_password %}Login configured{% else %}Setup pending{% endif %}{% else %}Account disabled{% endif %}</span>
+            {% else %}
+              <span class="staff-login-pill is-unlinked">Not linked</span>
+            {% endif %}
+          </td>
+          <td data-label="Status">{% if row.status|lower == "active" %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="staff-status-pill is-inactive">{{ row.status|default:"Not set" }}</span>{% endif %}</td>
+          <td data-label="Actions">
+            <div class="row-actions staff-row-actions">
+              {% panel_can 'panel:staff-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:staff-detail' row.pk %}">View</a>{% endif %}
+              {% panel_can 'panel:staff-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:staff-edit' row.pk %}">Edit</a>{% endif %}
+              {% panel_can 'panel:staff-invite' as allowed %}{% if allowed %}
+                <form method="post" action="{% url 'panel:staff-invite' row.pk %}">{% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit" aria-label="Send login email to {{ row.name }}">Send Login Email</button>
+                </form>
+              {% endif %}
+              {% panel_can 'panel:staff-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:staff-delete' row.pk %}">Delete</a>{% endif %}
+            </div>
+          </td>
+        </tr>
+        {% empty %}<tr><td colspan="8" class="empty-cell">No staff members match the selected filters.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="staff-directory-footnote">Linked means an account is associated with the staff profile. It does not guarantee email delivery, verification or successful sign-in.</p>
+</section>
 {% endblock %}
