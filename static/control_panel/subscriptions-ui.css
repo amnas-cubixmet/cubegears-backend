@@ -134,3 +134,8 @@ html[data-theme="dark"] .subscription-status-pill.is-inactive{color:#fcd34d;back
   .subscription-filter-form #subscription-search{grid-column:auto}
   .subscription-filter-form>.btn{width:100%}
 }
+
+/* Keep the payment-ledger action aligned with Create Subscription. */
+.subscription-heading-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.subscription-heading-actions>.btn{min-height:40px;font-size:12px}
+@media(max-width:600px){.subscription-heading-actions{width:100%}.subscription-heading-actions>.btn{flex:1}}
