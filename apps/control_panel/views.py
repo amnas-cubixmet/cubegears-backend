@@ -458,23 +458,62 @@ def jobs(request):
 
 @panel_admin_required
 def stock(request):
-    qs = StockItem.objects.select_related("company", "category", "supplier").order_by("company__name", "name")
+    # The same available quantity formula used by StockItem.available_quantity:
+    # on hand minus reserved. No stock movement or quantity mutation happens here.
+    all_items = StockItem.objects.all()
+    total_items = all_items.count()
+    low_stock_count = all_items.filter(
+        on_hand__lte=F("reserved") + F("minimum_stock")
+    ).count()
+    out_of_stock_count = all_items.filter(on_hand__lte=F("reserved")).count()
+    stock_companies = all_items.values("company_id").distinct().count()
+    status_options = sorted(
+        (value for value in all_items.order_by().values_list("status", flat=True).distinct() if value),
+        key=str.casefold,
+    )
+
+    qs = all_items.select_related(
+        "company", "branch", "category", "supplier"
+    ).order_by("company__name", "name")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    level = request.GET.get("level", "").strip().lower()
     if q:
         qs = qs.filter(
-            Q(name__icontains=q)
-            | Q(sku__icontains=q)
-            | Q(barcode__icontains=q)
+            Q(name__icontains=q) | Q(sku__icontains=q)
+            | Q(barcode__icontains=q) | Q(brand__icontains=q)
             | Q(company__name__icontains=q)
         )
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
+    if level == "out":
+        qs = qs.filter(on_hand__lte=F("reserved"))
+    elif level == "low":
+        qs = qs.filter(
+            on_hand__gt=F("reserved"),
+            on_hand__lte=F("reserved") + F("minimum_stock"),
+        )
+    elif level == "healthy":
+        qs = qs.filter(on_hand__gt=F("reserved") + F("minimum_stock"))
+    else:
+        level = ""
+
     return render(request, "control_panel/stock.html", {
         "page_title": "Global Stock",
         "active": "stock",
         "rows": _paginate(request, qs),
-        "q": q,
+        "q": q, "status": status, "level": level,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_items": total_items,
+        "low_stock_count": low_stock_count,
+        "out_of_stock_count": out_of_stock_count,
+        "stock_companies": stock_companies,
     })
 
 
