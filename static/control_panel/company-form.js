@@ -4,8 +4,7 @@
 
   const name = form.querySelector('[name="name"]');
   const slugPreview = document.getElementById("company-slug-preview");
-  const isEdit = form.querySelector(".company-form-breadcrumb")?.textContent.includes("Edit Company")
-    || (slugPreview?.hasAttribute("data-fixed-slug") ?? false);
+  const isEdit = slugPreview?.hasAttribute("data-fixed-slug") ?? false;
 
   const slugify = (value) => {
     const ascii = String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
