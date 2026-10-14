@@ -63,6 +63,7 @@ def plan_payload(plan):
         "extraStorageRate": str(plan.extra_storage_rate),
         "trialDays": plan.trial_days,
         "accessDurationDays": plan.access_duration_days,
+        "checkoutPrice": str(plan.checkout_price),
         "features": features,
     }
 
