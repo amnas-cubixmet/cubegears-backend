@@ -32,7 +32,7 @@
       <tr>
         <td data-label="Company"><strong>{{ row.company.name }}</strong></td>
         <td data-label="Plan">{{ row.plan.name }}</td>
-        <td data-label="Amount">₹{% widthratio row.amount_paise 100 1 %} <small>INR</small></td>
+        <td data-label="Amount">₹{{ row.amount_inr|floatformat:2 }} <small>INR</small></td>
         <td data-label="Method">{{ row.payment_method|default:"—" }}</td>
         <td data-label="Status"><span class="badge">{{ row.status|title }}</span></td>
         <td data-label="Order / Payment"><div><small>{{ row.razorpay_order_id|default:"—" }}</small></div><div><small>{{ row.razorpay_payment_id|default:"—" }}</small></div></td>
