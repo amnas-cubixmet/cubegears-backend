@@ -189,3 +189,21 @@ class RazorpayWebhookDelivery(models.Model):
     event_id = models.CharField(max_length=150, unique=True)
     event_type = models.CharField(max_length=100)
     received_at = models.DateTimeField(auto_now_add=True)
+
+
+class SubscriptionExpiryReminder(models.Model):
+    """Prevent repeat reminder emails for the same subscription and threshold."""
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="expiry_reminders")
+    days_before = models.PositiveSmallIntegerField()
+    email = models.EmailField()
+    sent_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subscription", "days_before"],
+                name="saas_unique_expiry_reminder",
+            )
+        ]
+
+
