@@ -17,12 +17,20 @@ def paid_subscription(company):
 def access_state(company):
     from django.conf import settings
     active = paid_subscription(company)
+    latest = None
+    if company and not active:
+        latest = RazorpayPlanPayment.objects.filter(
+            company=company, status="captured", period_end__isnull=False,
+        ).select_related("plan").order_by("-period_end").first()
+    expired = bool(latest and latest.period_end <= timezone.now())
     return {
         "enforcementEnabled": bool(settings.SAAS_PAYMENT_ENFORCEMENT_ENABLED),
         "allowed": bool(active) or not settings.SAAS_PAYMENT_ENFORCEMENT_ENABLED,
-        "status": "active" if active else "payment_required",
-        "plan": active.plan_definition.name if active and active.plan_definition else None,
-        "expiresAt": active.renews_at.isoformat() if active else None,
+        "status": "active" if active else ("expired" if expired else "payment_required"),
+        "plan": (active.plan_definition.name if active and active.plan_definition
+                 else latest.plan.name if latest else None),
+        "expiresAt": (active.renews_at.isoformat() if active
+                      else latest.period_end.isoformat() if latest else None),
         "billingCycle": active.billing_cycle if active else None,
     }
 
