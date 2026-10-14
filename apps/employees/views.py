@@ -7,7 +7,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from django.conf import settings
-from apps.accounts.email import queue_email
+from apps.accounts.email import queue_email, email_delivery_mode
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
@@ -201,7 +201,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             subject = "Create your CubixGear staff password"
             instruction = "Use the button below to create your account password."
 
-        queue_email(
+        delivery = queue_email(
             subject=subject,
             message=(
                 f"Hi {employee.name},\n\n"
@@ -214,6 +214,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             recipient_list=[user.email],
             action_url=url, action_label="Open CubixGear staff access",
         )
+        # Serializer and owner-facing invite endpoint see this state after commit.
+        # No setup token or SMTP secrets are returned to the browser.
+        employee._invite_email_delivery = delivery
         _record_activity(
             employee, "Staff Access Invite Queued",
             f"Staff access email queued for {user.email}.",
@@ -300,6 +303,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         _record_activity(obj, "Staff Created", f"{_employee_display_no(obj)} profile created.", self.request.user)
         if user and user.is_active:
             self._send_staff_access_email(obj, user)
+        else:
+            obj._invite_email_delivery = {"status": "not_requested"}
 
 
     def perform_update(self,serializer):
@@ -405,24 +410,36 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         )
         return response.Response(self.get_serializer(obj).data)
 
-    @transaction.atomic
     @decorators.action(detail=True, methods=["post"], url_path="invite")
     def invite(self, request, pk=None):
         if not user_has_permission(request.user, "company.manage"):
             raise PermissionDenied("Only a company admin can invite staff login accounts.")
-        obj = self.get_object()
-        if obj.status != "Active":
-            raise ValidationError({"status": "Activate this employee before sending a login invitation."})
-        user = self._ensure_login_user(obj)
-        role = self._resolve_role(obj.role_name)
-        if not role:
-            raise ValidationError({"role": "A valid staff role is required."})
-        if user.role_id != role.id:
-            user.role = role
-            user.save(update_fields=["role"])
-        self._send_staff_access_email(obj, user)
+
+        # Commit account/link changes before synchronously attempting direct mail.
+        # A mail outage does not roll back an otherwise valid staff profile.
+        with transaction.atomic():
+            obj = self.get_object()
+            if obj.status != "Active":
+                raise ValidationError({"status": "Activate this employee before sending a login invitation."})
+            user = self._ensure_login_user(obj)
+            role = self._resolve_role(obj.role_name)
+            if not role:
+                raise ValidationError({"role": "A valid staff role is required."})
+            if user.role_id != role.id:
+                user.role = role
+                user.save(update_fields=["role"])
+            self._send_staff_access_email(obj, user)
+
+        delivery = getattr(obj, "_invite_email_delivery", {"status": email_delivery_mode()})
+        status_value = delivery["status"]
         return response.Response({
-            "message": "Staff access invitation queued for email delivery.",
+            "message": (
+                "Staff access submitted to email provider." if status_value == "submitted"
+                else "Email did not send. Check Django SMTP settings and server logs." if status_value == "failed"
+                else "Email is printed in the Django terminal; configure SMTP for inbox delivery." if status_value == "console_only"
+                else "Staff access invitation queued for email delivery."
+            ),
+            "emailDeliveryStatus": status_value,
             "loginStatus": "Password Setup Pending" if not user.has_usable_password() else "Active",
         })
 
