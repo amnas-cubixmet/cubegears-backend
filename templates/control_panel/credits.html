@@ -1,0 +1,96 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="credit-panel-wrap">
+  <div class="credit-summary-title">
+    <div><h2>Credit Wallet Control</h2><p>Set credit packages, charge paid features per active staff member, and maintain an auditable balance for every workshop.</p></div>
+    <a class="btn" href="{% url 'panel:features' %}">Edit feature catalog</a>
+  </div>
+
+  <div class="credit-panel-grid">
+    <section class="panel-card">
+      <h3>Credit packages</h3><p>Credits and INR price are separate administrator-controlled values. New companies start with zero credits.</p>
+      <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="package">
+        <label>Package name <input name="name" type="text" maxlength="120" placeholder="Starter Credits" required></label>
+        <label>Credits <input name="credits" type="number" min="0.01" step="0.01" required placeholder="500"></label>
+        <label>Price (INR) <input name="price_inr" type="number" min="1" step="0.01" required placeholder="500"></label>
+        <label>Display order <input name="sort_order" type="number" min="0" value="0"></label>
+        <label class="credit-panel-check"><input type="checkbox" name="is_active" checked> Published for purchase</label>
+        <button class="btn btn-primary" type="submit">Create credit package</button>
+      </form>
+      <div class="responsive-table"><table><thead><tr><th>Package</th><th>Credits</th><th>Price</th><th>Status</th></tr></thead><tbody>
+      {% for item in packages %}<tr><td>{{ item.name }}</td><td>{{ item.credits }}</td><td>₹{{ item.price_inr }}</td><td>{{ item.is_active|yesno:"Published,Hidden" }}</td></tr>
+      {% empty %}<tr><td colspan="4">No packages published yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+
+    <section class="panel-card">
+      <h3>Feature pricing</h3><p>Every 30 days the charge is <strong>base credits + (per-staff credits × active employee count)</strong>. A feature must be approved here before companies can switch it on.</p>
+      <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="price">
+        <label>Feature <select name="feature" required>
+          <option value="">Select module</option>
+          {% for feature in features %}<option value="{{ feature.pk }}">{{ feature.label }} ({{ feature.key }})</option>{% endfor %}
+        </select></label>
+        <label>Base credits / 30 days <input type="number" name="base_credits" min="0" step="0.01" required value="0"></label>
+        <label>Credits per active staff / 30 days <input type="number" name="per_staff_credits" min="0" step="0.01" required value="0"></label>
+        <label class="credit-panel-check"><input type="checkbox" name="is_available" checked> Available for activation</label>
+        <button type="submit" class="btn btn-primary">Save feature price</button>
+      </form>
+      <div class="responsive-table"><table><thead><tr><th>Feature</th><th>Base credits</th><th>Per staff</th><th>Available</th></tr></thead><tbody>
+      {% for rate in prices %}<tr><td>{{ rate.feature.label }}</td><td>{{ rate.base_credits }}</td><td>{{ rate.per_staff_credits }}</td><td>{{ rate.is_available|yesno:"Yes,No" }}</td></tr>
+      {% empty %}<tr><td colspan="4">No feature rates set. Features cannot be purchased.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+
+    <section class="panel-card">
+      <h3>Manual credit adjustment</h3><p>Only authorized CubeGear platform staff may add or remove credits. Every adjustment must have a reason and is recorded in the ledger.</p>
+      <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="adjust"><input type="hidden" name="request_id" value="{{ adjustment_request_id }}">
+        <label>Company <select name="company" required><option value="">Select company</option>
+          {% for company in companies %}<option value="{{ company.id }}">{{ company.name }}</option>{% endfor %}
+        </select></label>
+        <label>Credits (+ grant / − deduction) <input name="delta" type="number" step="0.01" min="-1000000" max="1000000" required placeholder="100"></label>
+        <label>Mandatory reason <textarea name="reason" rows="3" maxlength="255" minlength="8" required placeholder="Reason for credit adjustment"></textarea></label>
+        <button class="btn btn-primary" type="submit">Record audited adjustment</button>
+      </form>
+    </section>
+
+    <section class="panel-card">
+      <h3>Company credit balances</h3>
+      <div class="responsive-table"><table><thead><tr><th>Company</th><th>Balance</th><th>Low-credit alert</th></tr></thead><tbody>
+      {% for wallet in wallets %}<tr><td>{{ wallet.company.name }}</td><td><strong>{{ wallet.balance }}</strong></td><td>{{ wallet.low_threshold }}</td></tr>
+      {% empty %}<tr><td colspan="3">No company wallet created yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </div>
+
+  <section class="panel-card">
+    <h3>Verified purchases</h3><p>Gateway orders are shown for review. Do not mark a payment credited manually; the server verifies Razorpay capture.</p>
+    <div class="responsive-table"><table><thead><tr><th>Company</th><th>Package</th><th>Credits</th><th>INR (paise)</th><th>Status</th><th>Order</th><th>Date</th></tr></thead><tbody>
+    {% for order in purchases %}<tr><td>{{ order.company.name }}</td><td>{{ order.package.name }}</td><td>{{ order.credits }}</td><td>{{ order.amount_paise }}</td><td>{{ order.status }}</td><td>{{ order.order_id|default:"—" }}</td><td>{{ order.created_at|date:"d M Y H:i" }}</td></tr>
+    {% empty %}<tr><td colspan="7">No orders yet.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section class="panel-card">
+    <div class="credit-summary-title"><div><h3>Full credit activity ledger</h3><p>Company-scoped top-ups, debits, platform adjustments and automatic renewals.</p></div>
+      <form method="get" class="credit-panel-filter"><select name="company" aria-label="Filter company"><option value="">All companies</option>{% for company in companies %}<option value="{{ company.id }}" {% if filter_company == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select><button type="submit" class="btn">Filter</button></form>
+    </div>
+    <div class="responsive-table"><table><thead><tr><th>Time</th><th>Company</th><th>Event</th><th>Credits</th><th>Balance after</th><th>Reference</th></tr></thead><tbody>
+    {% for entry in logs %}<tr><td>{{ entry.created_at|date:"d M Y H:i" }}</td><td>{{ entry.company.name }}</td><td><strong>{{ entry.kind|title }}</strong><div>{{ entry.description }}</div></td><td>{{ entry.delta }}</td><td>{{ entry.balance_after }}</td><td>{{ entry.reference }}</td></tr>
+    {% empty %}<tr><td colspan="6">No credit transactions found.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+<style>
+.credit-panel-wrap{display:grid;gap:18px}.credit-panel-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.credit-summary-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.credit-summary-title h2,.credit-summary-title h3{margin:0 0 8px}.credit-summary-title p,.credit-panel-wrap .panel-card>p{font-size:13px;color:var(--text-muted,#64748b);line-height:1.7}
+.credit-panel-form{display:grid;gap:12px;margin:18px 0}.credit-panel-form label{display:grid;gap:7px;font-size:13px;font-weight:650}
+.credit-panel-form input,.credit-panel-form textarea,.credit-panel-form select,.credit-panel-filter select{width:100%;max-width:100%;min-height:40px;padding:9px 11px;border:1px solid #bac8dc;border-radius:9px;background:var(--panel-surface,#fff);color:inherit}
+.credit-panel-form .credit-panel-check{display:flex;align-items:center;gap:9px}.credit-panel-check input{width:auto;min-height:unset}
+.credit-panel-form button{justify-self:start}.credit-panel-filter{display:flex;align-items:center;gap:10px;max-width:360px}
+.credit-panel-wrap .responsive-table{overflow-x:auto}.credit-panel-wrap table{width:100%;min-width:600px;border-collapse:collapse}
+.credit-panel-wrap td,.credit-panel-wrap th{padding:12px;text-align:left;border-bottom:1px solid #dde5f1;font-size:12px;vertical-align:top}
+@media(max-width:900px){.credit-panel-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:600px){.credit-panel-wrap{gap:12px}.credit-panel-filter{width:100%;max-width:100%}.credit-panel-form button{width:100%}.credit-panel-wrap .panel-card{padding:14px}}
+</style>
+{% endblock %}

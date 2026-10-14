@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.reports",
     "apps.saas",
+    "apps.credits",
     "apps.control_panel",
 ]
 
@@ -90,7 +91,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "apps.saas.payment_gate.SaaSPaymentGateMiddleware",
+
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -258,4 +259,5 @@ LOGOUT_REDIRECT_URL = "panel:login"
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
-SAAS_PAYMENT_ENFORCEMENT_ENABLED = env_bool("SAAS_PAYMENT_ENFORCEMENT_ENABLED", False)
+CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
+# Old subscription paywall is retired. Legacy transactions remain for audit history.

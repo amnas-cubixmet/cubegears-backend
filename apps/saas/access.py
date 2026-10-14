@@ -34,32 +34,21 @@ def enforce_user_limit(company):
 
 
 def feature_allowed(user, permission):
-    """An enabled plan can restrict a module, never grant role permissions.
-
-    Feature keys match permission prefix, e.g. jobs / customers / staff.
-    Compliance billing and account management remain available on every plan.
-    """
+    """Paid feature access never grants tenant RBAC; it can only restrict it."""
+    from django.conf import settings
+    if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+        return True
     module = permission.split(".")[0]
-    if module in {"invoices", "billing", "settings", "company", "storage"} or permission == "attendance.self":
+    # Core pages, profile and purchase/credit management remain accessible.
+    if module in {"dashboard", "billing", "settings", "company", "storage",
+                  "notifications", "roles"} or permission == "attendance.self":
         return True
-    cache = getattr(user, "_saas_feature_access", None)
-    if cache is None:
-        plan = active_plan(user.company)
-        if not plan:
-            cache = None
-        else:
-            cache = {item.feature.key: item.enabled for item in plan.feature_access.select_related("feature")}
-        user._saas_feature_access = cache if cache is not None else {}
-        user._saas_plan_configured = plan is not None
-    else:
-        pass
-    if not getattr(user, "_saas_plan_configured", False):
-        return True
-    # An unconfigured code retains legacy behaviour, but a listed key with
-    # no active entitlement defaults off. Explicit disabled entitlement denies.
     from .models import PlanFeature
-    if not hasattr(user, "_saas_feature_keys"):
-        user._saas_feature_keys = set(PlanFeature.objects.filter(is_active=True).values_list("key", flat=True))
-    if module not in user._saas_feature_keys:
+    from apps.credits.models import CompanyCreditFeature
+    from django.utils import timezone
+    if not PlanFeature.objects.filter(key=module, is_active=True).exists():
         return True
-    return user._saas_feature_access.get(module, False)
+    return CompanyCreditFeature.objects.filter(
+        company=user.company, feature__key=module, feature__is_active=True,
+        enabled=True, next_charge_at__gt=timezone.now(),
+    ).exists()

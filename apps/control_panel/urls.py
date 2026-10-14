@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import auth_views
+from apps.credits import panel_views as credits_panel
 
 app_name = "panel"
 
@@ -40,6 +41,7 @@ urlpatterns = [
     path("features/groups/add/", views.feature_group_create, name="featuregroup-create"),
     path("features/groups/<int:pk>/edit/", views.feature_group_edit, name="featuregroup-edit"),
     path("requests/", views.plan_requests, name="requests"),
+    path("credits/", credits_panel.credits_control, name="credits"),
     path("subscriptions/", views.subscriptions, name="subscriptions"),
     path("payment-settings/", views.payment_settings, name="payment-settings"),
     path("subscriptions/add/", views.subscription_create, name="subscription-create"),

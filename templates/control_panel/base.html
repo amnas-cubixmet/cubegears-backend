@@ -32,11 +32,11 @@
         <p class="nav-label">Platform</p>
         {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="nav-item {% if active == 'companies' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span><span class="nav-text">Companies</span></a>{% endif %}
         {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="nav-item {% if active == 'users' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span><span class="nav-text">Users & Access</span></a>{% endif %}
-        {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="nav-item {% if active == 'subscriptions' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#credit-card"></use></svg></span><span class="nav-text">Subscriptions</span></a>{% endif %}
-        {% panel_can 'plans' as allowed %}{% if allowed %}<a href="{% url 'panel:plans' %}" class="nav-item {% if active == 'plans' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span><span class="nav-text">Plan Builder</span></a>{% endif %}
-        {% panel_can 'plan-create' as allowed %}{% if allowed %}<a href="{% url 'panel:plan-create' %}" class="nav-item"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#plus-circle"></use></svg></span><span class="nav-text">+ Create Plan</span></a>{% endif %}
+        {% panel_can 'credits' as allowed %}{% if allowed %}<a href="{% url 'panel:credits' %}" class="nav-item {% if active == 'credits' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#credit-card"></use></svg></span><span class="nav-text">Credit Wallet</span></a>{% endif %}
+        
+        
         {% panel_can 'features' as allowed %}{% if allowed %}<a href="{% url 'panel:features' %}" class="nav-item {% if active == 'features' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span><span class="nav-text">Feature Labels</span></a>{% endif %}
-        {% panel_can 'requests' as allowed %}{% if allowed %}<a href="{% url 'panel:requests' %}" class="nav-item {% if active == 'requests' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#message-square"></use></svg></span><span class="nav-text">Plan Enquiries</span></a>{% endif %}
+        
         {% panel_can 'storage' as allowed %}{% if allowed %}<a href="{% url 'panel:storage' %}" class="nav-item {% if active == 'storage' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span><span class="nav-text">Storage</span></a>{% endif %}
         {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:security' %}" class="nav-item {% if active == 'security' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><span class="nav-text">Security & Activity</span></a>{% endif %}
 
@@ -106,7 +106,7 @@
     {% panel_can 'dashboard' as allowed %}{% if allowed %}<a href="{% url 'panel:dashboard' %}" class="{% if active == 'dashboard' %}active{% endif %}">Home</a>{% endif %}
     {% panel_can 'companies' as allowed %}{% if allowed %}<a href="{% url 'panel:companies' %}" class="{% if active == 'companies' %}active{% endif %}">Companies</a>{% endif %}
     {% panel_can 'users' as allowed %}{% if allowed %}<a href="{% url 'panel:users' %}" class="{% if active == 'users' %}active{% endif %}">Users</a>{% endif %}
-    {% panel_can 'subscriptions' as allowed %}{% if allowed %}<a href="{% url 'panel:subscriptions' %}" class="{% if active == 'subscriptions' %}active{% endif %}">Billing</a>{% endif %}
+    {% panel_can 'credits' as allowed %}{% if allowed %}<a href="{% url 'panel:credits' %}" class="{% if active == 'credits' %}active{% endif %}">Credits</a>{% endif %}
     <button type="button" data-sidebar-open>More</button>
   </nav>
 
