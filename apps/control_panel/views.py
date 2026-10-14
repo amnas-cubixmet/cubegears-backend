@@ -460,7 +460,11 @@ def _send_new_user_invite(request, user):
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
-    form = form_class(request.POST if request.method == "POST" else None, instance=instance)
+    form = form_class(
+        request.POST if request.method == "POST" else None,
+        request.FILES if request.method == "POST" else None,
+        instance=instance,
+    )
     form.actor = request.user
     if isinstance(form, UserForm) and not request.user.is_superuser:
         for field in ("is_staff", "is_superuser"):
@@ -479,7 +483,10 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         else:
             messages.success(request, f"{title} saved successfully.")
         return redirect(cancel_url)
-    return render(request, "control_panel/form.html", {
+    return render(request, (
+        "control_panel/company_form.html"
+        if isinstance(form, CompanyForm) else "control_panel/form.html"
+    ), {
         "page_title": title,
         "active": active,
         "form": form,
