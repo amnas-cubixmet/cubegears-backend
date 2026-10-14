@@ -1,0 +1,94 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="user-editor-page">
+  <header class="user-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb">
+        <a href="{% url 'panel:users' %}">Users &amp; Access</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit User{% else %}Add User{% endif %}</span>
+      </nav>
+      <h2>{% if is_edit %}Edit User{% else %}Create User Account{% endif %}</h2>
+      <p>{% if is_edit %}Update user identity, company role and account permissions.{% else %}Create an account and assign a company and role before inviting the user.{% endif %}</p>
+    </div>
+    <a href="{% url cancel_url %}" class="btn">← Back to Users</a>
+  </header>
+
+  <form method="post" class="user-editor-form" novalidate>
+    {% csrf_token %}
+    {{ form.password.as_hidden }}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card user-editor-section">
+      <header class="user-editor-section-header"><span class="user-section-number">01</span>
+        <div><h3>Personal Information</h3><p>Identify the user and their contact details.</p></div>
+      </header>
+      <div class="user-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        {% include "control_panel/company_field.html" with field=form.email %}
+        {% include "control_panel/company_field.html" with field=form.phone %}
+        {% include "control_panel/company_field.html" with field=form.avatar %}
+      </div>
+    </section>
+
+    <section class="panel-card user-editor-section">
+      <header class="user-editor-section-header"><span class="user-section-number">02</span>
+        <div><h3>Company &amp; Role</h3><p>Assign an account to its organisation, branch and permissions.</p></div>
+      </header>
+      <div class="user-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+        {% include "control_panel/company_field.html" with field=form.role %}
+      </div>
+      <p class="user-editor-hint">Branch and role must belong to the selected company. Platform accounts should only be granted appropriate administrative permissions.</p>
+    </section>
+
+    <section class="panel-card user-editor-section">
+      <header class="user-editor-section-header"><span class="user-section-number">03</span>
+        <div><h3>Access &amp; Security</h3><p>Control activation, staff access and verified email status.</p></div>
+      </header>
+      <div class="user-access-grid">
+        <div class="user-access-setting">
+          <label class="user-checkbox-label">{{ form.is_active }} <span>Account Active</span></label>
+          <small>Disabling an account blocks new sign-ins.</small>
+          {% for error in form.is_active.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        </div>
+        <div class="user-access-setting">
+          <label class="user-checkbox-label">{{ form.is_staff }} <span>Admin Staff</span></label>
+          <small>Platform staff status; access is still controlled by role permissions.</small>
+          {% for error in form.is_staff.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        </div>
+        <div class="user-access-setting">
+          <label class="user-checkbox-label">{{ form.is_superuser }} <span>Super Admin</span></label>
+          <small>High-privilege account: grant only to trusted platform administrators.</small>
+          {% for error in form.is_superuser.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        </div>
+        <div class="user-access-setting">
+          <label class="user-checkbox-label">{{ form.email_verified }} <span>Email Verified</span></label>
+          <small>New users must verify their email using the existing authentication process.</small>
+          {% for error in form.email_verified.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        </div>
+      </div>
+      <div class="user-editor-notice">
+        {% if is_edit %}
+          <strong>Password management</strong>
+          <p>Leave the password empty to keep the current password. Use an approved reset flow when possible.</p>
+          <div class="user-editor-password">
+            <label for="{{ form.password.id_for_label }}">New Password (optional)</label>
+            {# Password field is rendered as a normal input below only for edit. #}
+            {{ form.password }}
+            {% if form.password.help_text %}<small>{{ form.password.help_text }}</small>{% endif %}
+            {% for error in form.password.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+          </div>
+        {% else %}
+          <strong>Secure password invitation</strong>
+          <p>New accounts have no usable password until they complete the existing email setup process. The invitation is sent only when their access is configured appropriately.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <footer class="user-editor-actions">
+      <a href="{% url cancel_url %}" class="btn">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create User{% endif %}</button>
+    </footer>
+  </form>
+</section>
+{% endblock %}
