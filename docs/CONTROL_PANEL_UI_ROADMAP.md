@@ -15,7 +15,7 @@ Goal: Use the same visual system as `cubegears_company-panel` across the Django 
 2. [x] `/companies/` — summary cards, filters, logo avatars and actions
 3. [x] `/companies/add/`, `/companies/<id>/edit/` — organized form, safe unique auto slug, image upload/preview
 4. [x] `/companies/<id>/` — company profile and uploaded logo display
-5. [ ] `/users/`, add/edit — searchable user directory, roles and verification states
+5. [x] `/users/`, add/edit/detail — real user KPIs, scoped search and filters, role badges, accessible user editor and security notes
 6. [ ] `/subscriptions/`, add/edit — billing and status layout
 7. [ ] `/plans/`, create/edit — dynamic plan builder UI
 8. [ ] `/features/`, add/edit, `/requests/` — SaaS catalog and enquiries
