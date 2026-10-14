@@ -21,6 +21,7 @@ DJANGO_SECRET_KEY=<independent-random-secret-32+-bytes>
 JWT_SIGNING_KEY=<independent-random-jwt-key-32+-bytes>
 DJANGO_ALLOWED_HOSTS=api.example.com
 SQLITE_DATABASE_PATH=/var/lib/cubixgear/db.sqlite3
+DJANGO_MEDIA_ROOT=/var/lib/cubixgear/media
 CORS_ALLOWED_ORIGINS=https://app.example.com
 CSRF_TRUSTED_ORIGINS=https://app.example.com
 FRONTEND_URL=https://app.example.com
