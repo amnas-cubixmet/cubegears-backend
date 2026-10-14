@@ -327,7 +327,16 @@ class InvoiceForm(AdminModelForm):
             "cgst", "sgst", "igst", "total", "paid", "balance",
             "payment_mode", "payment_terms",
         ]
-        widgets = {"date": forms.DateInput(attrs={"type": "date"})}
+        widgets = {
+            "date": forms.DateInput(format="%Y-%m-%d", attrs={"type": "date"}),
+        }
+        help_texts = {
+            "number": "Unique per company. Keep the document number stable once issued.",
+            "taxable": "Recorded taxable amount. This admin form does not auto-calculate line items.",
+            "paid": "Stored amount already recorded as paid; saving does not charge a customer.",
+            "balance": "Stored outstanding balance; verify against the source billing ledger.",
+            "tax_mode": "Select the applicable Indian GST tax mode for this document.",
+        }
 
     def clean(self):
         data = super().clean()
