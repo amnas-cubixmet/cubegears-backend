@@ -557,6 +557,7 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
     template = (
         "control_panel/company_form.html" if isinstance(form, CompanyForm)
         else "control_panel/user_form.html" if isinstance(form, UserForm)
+        else "control_panel/subscription_form.html" if isinstance(form, SubscriptionForm)
         else "control_panel/form.html"
     )
     return render(request, template, {
