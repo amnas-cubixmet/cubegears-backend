@@ -103,12 +103,7 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
-        if not user:
-            return Response(
-                {"email": ["No active account is registered with this email address."]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+        # Public recovery responses must not reveal whether an account exists.
         if user:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
@@ -155,12 +150,7 @@ class MagicLinkRequestView(APIView):
         serializer = MagicLinkRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
-        if not user:
-            return Response(
-                {"email": ["No active account is registered with this email address."]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+        # Public recovery responses must not reveal whether an account exists.
         if user:
             raw_token = MagicLink.issue(user)
             url = f"{settings.FRONTEND_URL}/magic-link/verify?token={raw_token}"

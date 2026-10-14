@@ -17,6 +17,7 @@ from django.http import HttpResponseBadRequest
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
+from django.db import transaction, IntegrityError
 from django.db.models import F, Q, Sum, Count
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponseForbidden
@@ -39,7 +40,7 @@ from apps.roles.models import Role
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
-    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm,
+    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
 )
 
@@ -276,6 +277,22 @@ def user_toggle(request, pk):
 
 
 @panel_admin_required
+@require_POST
+def user_invite(request, pk):
+    """Resend a secure setup/reset link to an existing authorized user."""
+    user = get_object_or_404(
+        User.objects.select_related("company", "role"), pk=pk,
+    )
+    if not _can_manage_account(request.user, user):
+        return HttpResponseForbidden("You cannot invite this account.")
+    if _send_new_user_invite(request, user):
+        messages.success(request, "Account access email scheduled for the registered address.")
+    else:
+        messages.warning(request, "No email sent. Verify the account, role and active status.")
+    return _safe_redirect(request, request.POST.get("next"), "panel:users")
+
+
+@panel_admin_required
 def subscriptions(request):
     # Platform totals do not change when a user filters the directory.
     all_subscriptions = Subscription.objects.all()
@@ -502,31 +519,45 @@ def _can_manage_account(actor, obj):
 
 
 def _send_new_user_invite(request, user):
-    """Invite using the correct company or platform password setup experience."""
-    if not user.is_active:
+    """Email the correct password setup/reset link for this existing account.
+
+    Passwords are never sent, and resending to an active account never
+    replaces its current password. A setup URL works only for unset accounts.
+    """
+    if not user or not user.is_active:
         return False
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
+    is_reset = user.has_usable_password()
+
     if landing_route(user):
+        page = "password-reset" if is_reset else "password-setup"
         url = request.build_absolute_uri(reverse(
-            "panel:password-setup", kwargs={"uid": uid, "token": token},
+            f"panel:{page}", kwargs={"uid": uid, "token": token},
         ))
         purpose = "SaaS Control Panel"
-    elif user.company_id and user.role_id:
+    elif (user.company_id and user.role_id and user.company.is_active
+          and user.role.is_active and user.role.company_id == user.company_id
+          and not user.is_staff and not user.is_superuser):
+        page = "reset-password" if is_reset else "setup-password"
         url = (
-            f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
-            f"?uid={uid}&token={token}&email={quote(user.email)}"
+            f"{settings.FRONTEND_URL.rstrip('/')}/{page}"
+            f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}"
+            f"&email={quote(user.email, safe='')}"
         )
         purpose = "Workshop Company Panel"
     else:
         return False
+
+    instruction = "Reset your password" if is_reset else "Set up your password"
     queue_email(
-        "Set up your CubixGear account",
-        f"You have been invited to CubixGear {purpose}. Confirm your account and choose a strong password using the secure button below.",
-        [user.email], action_url=url, action_label="Set up my account",
+        f"{instruction} for CubixGear {purpose}",
+        f"Your CubixGear {purpose} account is ready. Use the secure "
+        f"button below to {instruction.lower()}. If you did not request "
+        "this email, you can ignore it.",
+        [user.email], action_url=url, action_label=instruction,
     )
     return True
-
 
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
@@ -545,8 +576,14 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
             form.fields[field].disabled = True
     if request.method == "POST" and form.is_valid():
         is_new_user = isinstance(form, UserForm) and instance is None
+        is_new_staff = isinstance(form, StaffInviteForm) and instance is None
         obj = form.save()
-        if is_new_user and not obj.has_usable_password():
+        if is_new_staff:
+            if _send_new_user_invite(request, obj.user):
+                messages.success(request, "Staff account created. Password setup invitation scheduled by email.")
+            else:
+                messages.warning(request, "Staff created, but a login invitation could not be scheduled.")
+        elif is_new_user and not obj.has_usable_password():
             if _send_new_user_invite(request, obj):
                 messages.success(request, "User created. Password setup invitation emailed.")
             else:
@@ -836,7 +873,7 @@ def invoice_delete(request, pk):
 
 @panel_admin_required
 def staff_create(request):
-    return _save_form(request, EmployeeForm, title="Add Staff", active="staff", cancel_url="panel:staff")
+    return _save_form(request, StaffInviteForm, title="Add Staff", active="staff", cancel_url="panel:staff")
 
 
 @panel_admin_required
@@ -860,6 +897,58 @@ def staff_detail(request, pk):
 def staff_edit(request, pk):
     obj = get_object_or_404(Employee, pk=pk)
     return _save_form(request, EmployeeForm, instance=obj, title="Edit Staff", active="staff", cancel_url="panel:staff")
+
+
+@panel_admin_required
+@require_POST
+def staff_invite(request, pk):
+    """Invite existing staff, creating a scoped login for legacy staff profiles."""
+    employee = get_object_or_404(
+        Employee.objects.select_related("company", "branch", "user", "user__role"),
+        pk=pk,
+    )
+    if employee.status != "Active" or not employee.company.is_active:
+        messages.warning(request, "Activate the staff member and company before inviting.")
+        return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+
+    user = employee.user
+    if user:
+        if (user.company_id != employee.company_id
+                or user.email.lower() != (employee.email or "").strip().lower()
+                or user.is_staff or user.is_superuser
+                or not _can_manage_account(request.user, user)):
+            return HttpResponseForbidden("The linked account cannot be invited as workshop staff.")
+    else:
+        email = (employee.email or "").strip().lower()
+        role = Role.objects.filter(
+            company=employee.company, name__iexact=employee.role_name,
+            is_active=True, is_system=False,
+        ).first()
+        if not email or not role:
+            messages.warning(request, "Add a valid email and active company staff role first.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+        if User.objects.filter(email__iexact=email).exists():
+            messages.warning(request, "This email already belongs to an account. Resolve it first.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email, password=None, name=employee.name,
+                    company=employee.company, branch=employee.branch,
+                    role=role, is_active=True, is_staff=False,
+                    is_superuser=False, email_verified=False,
+                )
+                employee.user = user
+                employee.save(update_fields=["user", "updated_at"])
+        except IntegrityError:
+            messages.warning(request, "Unable to create login: email is already in use.")
+            return _safe_redirect(request, request.POST.get("next"), "panel:staff")
+
+    if _send_new_user_invite(request, user):
+        messages.success(request, "Staff account email scheduled for the registered address.")
+    else:
+        messages.warning(request, "No email sent. Verify this account's login permissions.")
+    return _safe_redirect(request, request.POST.get("next"), "panel:staff")
 
 
 @panel_admin_required

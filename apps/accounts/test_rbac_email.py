@@ -148,7 +148,7 @@ class DirectEmailTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn('reset-password', mail.outbox[0].body)
 
-    def test_unregistered_email_has_inline_reset_error_and_no_email(self):
+    def test_unknown_reset_email_returns_generic_success_and_sends_nothing(self):
         User.objects.create_user(email='registered@example.com', name='Existing',
                                  password='Secure-pass-482!')
         with self.captureOnCommitCallbacks(execute=True):
@@ -159,17 +159,17 @@ class DirectEmailTests(TestCase):
                 'email': 'does-not-exist@example.com'
             })
         self.assertEqual(existing.status_code, 200)
-        self.assertEqual(unknown.status_code, 400)
-        self.assertIn('email', unknown.data)
+        self.assertEqual(unknown.status_code, 200)
+        self.assertEqual(unknown.data, existing.data)
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_unregistered_magic_email_has_inline_error_and_no_email(self):
+    def test_unknown_magic_email_returns_generic_success_and_sends_nothing(self):
         with self.captureOnCommitCallbacks(execute=True):
             unknown = self.client.post('/api/v1/auth/magic-link', {
                 'email': 'does-not-exist@example.com'
             })
-        self.assertEqual(unknown.status_code, 400)
-        self.assertIn('email', unknown.data)
+        self.assertEqual(unknown.status_code, 200)
+        self.assertEqual(unknown.data['message'], 'If the account exists, a magic link has been sent.')
         self.assertEqual(len(mail.outbox), 0)
 
     def test_delivery_tracking_is_diagnostic_only(self):
