@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import *
-from .checkout_views import CheckoutStatusView, CheckoutCreateView, CheckoutVerifyView, CheckoutPaymentHistoryView, CheckoutOrderStatusView, RazorpayWebhookView
+from .payment_views import (PaymentOrderView, PaymentVerifyView, PaymentHistoryView, PaymentAccessView, RazorpayWebhookView)
 from .plan_views import PlanCatalogView, PlanAccessView, PlanChangeRequestView, CustomPlanRequestView
 
 router=DefaultRouter(trailing_slash=False)
@@ -18,6 +18,11 @@ urlpatterns=[
     path('checkout/orders/<str:order_id>', CheckoutOrderStatusView.as_view(), name='saas-checkout-order-status'),
     path('checkout/webhook', RazorpayWebhookView.as_view(), name='saas-checkout-webhook'),
     path("plans", PlanCatalogView.as_view(), name="saas-plan-catalog"),
+    path("payments/access", PaymentAccessView.as_view(), name="saas-payment-access"),
+    path("payments/orders", PaymentOrderView.as_view(), name="saas-payment-orders"),
+    path("payments/verify", PaymentVerifyView.as_view(), name="saas-payment-verify"),
+    path("payments/history", PaymentHistoryView.as_view(), name="saas-payment-history"),
+    path("payments/webhook", RazorpayWebhookView.as_view(), name="saas-payment-webhook"),
     path("plan-access", PlanAccessView.as_view(), name="saas-plan-access"),
     path("billing/change-requests", PlanChangeRequestView.as_view(), name="saas-plan-changes"),
     path("billing/custom-requests", CustomPlanRequestView.as_view(), name="saas-custom-plan-requests"),

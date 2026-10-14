@@ -39,25 +39,27 @@ class CustomPlanRequestAdmin(admin.ModelAdmin):
     list_filter = ("status",)
     readonly_fields = ("company", "requested_by", "email", "branches", "users", "message", "created_at")
 
-@admin.register(RazorpayPlanPayment)
-class RazorpayPlanPaymentAdmin(admin.ModelAdmin):
-    """Platform administrators may inspect the gateway ledger, never forge capture."""
-    list_display = ("company", "plan", "amount_paise", "currency", "status", "payment_method", "paid_at", "period_end")
-    search_fields = ("receipt", "razorpay_order_id", "razorpay_payment_id", "company__name")
-    list_filter = ("status", "cycle", "currency")
-    ordering = ("-created_at",)
-    readonly_fields = (
-        "id", "company", "branch", "requested_by", "subscription", "plan", "cycle",
-        "validity_days", "amount_paise", "currency", "receipt", "razorpay_order_id",
-        "razorpay_payment_id", "status", "payment_method", "paid_at",
-        "period_start", "period_end", "created_at", "updated_at",
-    )
+from .payment_models import PaymentPolicy, SubscriptionPayment
 
+@admin.register(PaymentPolicy)
+class PaymentPolicyAdmin(admin.ModelAdmin):
+    list_display = ("id", "enforce_paywall", "monthly_access_days", "yearly_access_days", "updated_at")
     def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
-
+        return request.user.is_superuser and not PaymentPolicy.objects.exists()
     def has_delete_permission(self, request, obj=None):
+        return False
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+@admin.register(SubscriptionPayment)
+class SubscriptionPaymentAdmin(admin.ModelAdmin):
+    list_display = ("company","plan","amount_paise","status","gateway_method","paid_at","access_until")
+    list_filter = ("status","billing_cycle")
+    search_fields = ("order_id","payment_id","company__name")
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+    def has_add_permission(self,request):
+        return False
+    def has_change_permission(self,request,obj=None):
+        return False
+    def has_delete_permission(self,request,obj=None):
         return False

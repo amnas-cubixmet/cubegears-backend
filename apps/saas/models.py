@@ -189,53 +189,5 @@ class CustomPlanRequest(models.Model):
     class Meta:
         ordering = ["-created_at"]
 
-class RazorpayPlanPayment(CompanyOwnedModel):
-    """Order amount/duration immutable from client; only captured payments activate access."""
-    STATUS = [("pending", "Pending"), ("captured", "Captured"), ("failed", "Failed"), ("refunded", "Refunded")]
-    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.PROTECT, related_name="razorpay_payments")
-    requested_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
-    subscription = models.ForeignKey(Subscription, on_delete=models.SET_NULL, null=True, blank=True, related_name="razorpay_payments")
-    cycle = models.CharField(max_length=10, choices=[("term", "One-time access period")])
-    validity_days = models.PositiveIntegerField()
-    amount_paise = models.PositiveBigIntegerField()
-    currency = models.CharField(max_length=3, default="INR")
-    receipt = models.CharField(max_length=40, unique=True)
-    razorpay_order_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
-    razorpay_payment_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
-    status = models.CharField(max_length=15, choices=STATUS, default="pending", db_index=True)
-    payment_method = models.CharField(max_length=30, blank=True)
-    paid_at = models.DateTimeField(null=True, blank=True)
-    period_start = models.DateTimeField(null=True, blank=True)
-    period_end = models.DateTimeField(null=True, blank=True)
-
-    @property
-    def amount_inr(self):
-        return Decimal(self.amount_paise) / Decimal(100)
-
-    class Meta:
-        ordering = ["-created_at"]
-        indexes = [models.Index(fields=["company", "status"], name="saas_rp_company_status")]
-
-
-class RazorpayWebhookDelivery(models.Model):
-    event_id = models.CharField(max_length=150, unique=True)
-    event_type = models.CharField(max_length=100)
-    received_at = models.DateTimeField(auto_now_add=True)
-
-
-class SubscriptionExpiryReminder(models.Model):
-    """Prevent repeat reminder emails for the same subscription and threshold."""
-    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="expiry_reminders")
-    days_before = models.PositiveSmallIntegerField()
-    email = models.EmailField()
-    sent_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["subscription", "days_before"],
-                name="saas_unique_expiry_reminder",
-            )
-        ]
-
-
+# Keep payment models in a separate module while registering them with Django.
+from .payment_models import PaymentPolicy, SubscriptionPayment  # noqa: E402,F401
