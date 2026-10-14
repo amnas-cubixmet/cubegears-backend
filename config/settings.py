@@ -90,6 +90,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "apps.saas.billing_gate.SaaSPaymentGateMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -249,3 +250,9 @@ LOGOUT_REDIRECT_URL = "panel:login"
 #         "schedule": 300.0,
 #     },
 # }
+
+# Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
+SAAS_PAYMENT_ENFORCEMENT_ENABLED = env_bool("SAAS_PAYMENT_ENFORCEMENT_ENABLED", False)
