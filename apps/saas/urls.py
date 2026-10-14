@@ -1,6 +1,11 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .checkout_views import (
+    CheckoutStatusView, CheckoutCreateView, CheckoutVerifyView,
+    CheckoutPaymentHistoryView, CheckoutOrderStatusView,
+    RazorpayWebhookView as CheckoutRazorpayWebhookView,
+)
 from .payment_views import (PaymentOrderView, PaymentVerifyView, PaymentHistoryView, PaymentAccessView, RazorpayWebhookView)
 from .plan_views import PlanCatalogView, PlanAccessView, PlanChangeRequestView, CustomPlanRequestView
 
@@ -16,7 +21,7 @@ urlpatterns=[
     path('checkout/verify', CheckoutVerifyView.as_view(), name='saas-checkout-verify'),
     path('checkout/history', CheckoutPaymentHistoryView.as_view(), name='saas-checkout-history'),
     path('checkout/orders/<str:order_id>', CheckoutOrderStatusView.as_view(), name='saas-checkout-order-status'),
-    path('checkout/webhook', RazorpayWebhookView.as_view(), name='saas-checkout-webhook'),
+    path('checkout/webhook', CheckoutRazorpayWebhookView.as_view(), name='saas-checkout-webhook'),
     path("plans", PlanCatalogView.as_view(), name="saas-plan-catalog"),
     path("payments/access", PaymentAccessView.as_view(), name="saas-payment-access"),
     path("payments/orders", PaymentOrderView.as_view(), name="saas-payment-orders"),
