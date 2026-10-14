@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.text import slugify
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 
@@ -377,7 +378,7 @@ class PlanBuilderForm(AdminModelForm):
 
     class Meta:
         model = SubscriptionPlan
-        fields = ["key", "name", "description", "monthly_price", "yearly_price",
+        fields = ["name", "description", "monthly_price", "yearly_price",
                   "promo_percent", "promo_ends_at", "max_branches", "max_users",
                   "included_storage_gb", "extra_storage_rate", "trial_days",
                   "sort_order", "is_public", "is_active"]
@@ -402,6 +403,17 @@ class PlanBuilderForm(AdminModelForm):
         return discount
 
     def save(self, commit=True):
+        # Plan keys are stable identifiers for subscriptions and API clients.
+        # Generate once from the display name; never change them on edit.
+        if self.instance._state.adding:
+            base = slugify(self.cleaned_data["name"])[:80].strip("-_") or "plan"
+            key = base
+            number = 2
+            while SubscriptionPlan.objects.filter(key=key).exists():
+                suffix = f"-{number}"
+                key = f"{base[:80 - len(suffix)]}{suffix}"
+                number += 1
+            self.instance.key = key
         obj = super().save(commit=commit)
         if commit:
             selected = set(self.cleaned_data["enabled_features"].values_list("pk", flat=True))
