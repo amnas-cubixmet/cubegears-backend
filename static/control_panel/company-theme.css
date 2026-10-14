@@ -252,3 +252,63 @@ html[data-theme="dark"] .company-status-tag.is-disabled{color:#fcd34d;background
   .companies-directory-header{padding:12px}
   .companies-directory-header p:last-child{font-size:10px}
 }
+
+
+/* Company editor: shared design tokens, clear hierarchy and accessible image upload. */
+.company-form-page{width:min(100%,1080px);margin:0 auto;padding-bottom:32px}
+.company-form-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:20px}
+.company-form-breadcrumb{display:flex;align-items:center;gap:9px;margin-bottom:10px;color:var(--muted);font-size:11px}
+.company-form-breadcrumb a{color:var(--brand);font-weight:700;text-decoration:none}
+.company-form-heading h2{font-size:22px;font-weight:750;line-height:1.25;margin:0 0 7px;color:var(--text)}
+.company-form-heading p{margin:0;font-size:12px;line-height:1.5;color:var(--muted)}
+.company-editor-form{display:grid;gap:16px}
+.company-editor-section{overflow:visible;padding:0;background:var(--surface)}
+.company-editor-section-head{display:flex;gap:13px;align-items:center;padding:18px 20px;border-bottom:1px solid var(--line)}
+.company-editor-section-icon{width:35px;height:35px;flex:0 0 35px;display:grid;place-items:center;border-radius:10px;background:var(--brand-soft);color:var(--brand);font-size:11px;font-weight:800}
+.company-editor-section-head h3{font-size:14px;margin:0 0 4px;color:var(--text);font-weight:750}
+.company-editor-section-head p{font-size:11px;color:var(--muted);margin:0}
+.company-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 20px;padding:20px}
+.company-editor-field{display:flex;min-width:0;flex-direction:column;gap:7px}
+.company-editor-field.is-wide{grid-column:1/-1}
+.company-editor-field>label,.company-editor-logo-field>label{display:flex;align-items:center;gap:9px;color:var(--text);font-size:11px;font-weight:750;line-height:1.4}
+.company-editor-field>label>span:not(.auto-badge){color:var(--danger)}
+.company-editor-field .form-control{width:100%;min-height:42px;border-radius:9px;background:var(--surface);border:1px solid var(--line-strong);padding:10px 12px;color:var(--text);font-size:12px}
+.company-editor-field textarea.form-control{min-height:92px}
+.company-editor-field :is(input,select,textarea):focus-visible{border-color:var(--brand);outline:2px solid var(--brand-soft);outline-offset:1px}
+.company-editor-field input[readonly]{background:var(--surface-soft);color:var(--muted);cursor:default}
+.company-editor-field .field-hint,.company-logo-controls .field-hint{display:block;color:var(--muted);font-size:10px;line-height:1.45}
+.auto-badge{border-radius:100px;background:var(--brand-soft);color:var(--brand);padding:3px 8px;font-size:9px;font-weight:750}
+.company-editor-brand-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:22px;padding:20px}
+.company-editor-logo-field>label{margin-bottom:10px}
+.company-logo-uploader{display:flex;align-items:center;gap:16px;padding:16px;border:1px dashed var(--line-strong);border-radius:11px;background:var(--surface-soft)}
+.company-logo-preview{width:104px;height:104px;flex:0 0 104px;border-radius:14px;border:1px solid var(--line);display:grid;place-items:center;background:var(--surface);overflow:hidden}
+.company-logo-preview img{display:block;width:100%;height:100%;object-fit:contain}
+.company-logo-preview img[hidden]{display:none}
+.company-logo-preview>span{font-size:24px;color:var(--brand);font-weight:800}
+.company-logo-controls{display:flex;flex:1;min-width:0;flex-direction:column;align-items:flex-start;gap:8px}
+.company-logo-controls>p{margin:0;font-size:12px;font-weight:750;color:var(--text)}
+.company-logo-controls>small{font-size:10px;color:var(--muted);line-height:1.5}
+.company-logo-controls input[type="file"]{width:100%;max-width:320px;min-width:0;font-size:11px;color:var(--muted);cursor:pointer}
+.company-logo-controls input[type="file"]::file-selector-button{padding:8px 11px;margin-right:12px;border:1px solid var(--line-strong);border-radius:8px;background:var(--surface);color:var(--text);font:inherit;font-weight:650;cursor:pointer}
+.company-logo-clear{min-height:30px;font-size:10px}
+.company-logo-clear[hidden]{display:none}
+.company-editor-workspace{display:flex;flex-direction:column;gap:18px}
+.company-check-label{display:flex;align-items:center;gap:9px;color:var(--text);font-size:11px;font-weight:600}
+.company-check-label input[type="checkbox"]{width:17px;height:17px;accent-color:var(--brand);cursor:pointer}
+.company-active-control>label:first-child{margin-bottom:3px}
+.company-editor-actions{position:sticky;bottom:0;z-index:12;display:flex;justify-content:flex-end;gap:10px;padding:14px 18px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 -3px 16px rgba(15,23,42,.035)}
+.company-editor-actions .btn{min-height:40px;padding:0 17px;font-size:12px}
+@media(max-width:850px){.company-editor-brand-grid{grid-template-columns:1fr}}
+@media(max-width:600px){
+  .company-form-heading{flex-direction:column;align-items:stretch}
+  .company-form-heading h2{font-size:19px}
+  .company-editor-grid{grid-template-columns:1fr;gap:14px;padding:15px}
+  .company-editor-field.is-wide{grid-column:auto}
+  .company-editor-section-head{padding:14px 15px}
+  .company-editor-brand-grid{padding:15px}
+  .company-logo-uploader{align-items:flex-start}
+  .company-logo-preview{width:76px;height:76px;flex-basis:76px}
+  .company-editor-actions{bottom:calc(62px + env(safe-area-inset-bottom));padding:10px}
+  .company-editor-actions .btn{flex:1}
+}
+@media(max-width:380px){.company-logo-uploader{flex-direction:column}}
