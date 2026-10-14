@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from django import forms
 from django.utils.text import slugify
 from django.contrib.auth import authenticate
@@ -74,13 +76,57 @@ class AdminModelForm(forms.ModelForm):
 
 
 class CompanyForm(AdminModelForm):
+    """Create a stable unique tenant slug and safely accept an optional logo image."""
+
     class Meta:
         model = Company
         fields = [
-            "name", "legal_name", "slug", "email", "phone", "gstin",
+            "name", "legal_name", "email", "phone", "gstin",
             "address", "city", "state", "country", "pincode", "currency",
-            "logo", "plan", "is_active",
+            "logo_image", "plan", "is_active",
         ]
+        widgets = {
+            "logo_image": forms.FileInput(attrs={
+                "accept": "image/jpeg,image/png,image/webp",
+                "data-company-logo": "true",
+            }),
+        }
+        labels = {"logo_image": "Company Logo"}
+        help_texts = {
+            "name": "The company slug will be generated automatically.",
+            "logo_image": "JPG, PNG or WebP only. Maximum file size: 2 MB.",
+        }
+
+    def clean_logo_image(self):
+        upload = self.cleaned_data.get("logo_image")
+        if not upload or not hasattr(upload, "image"):
+            # Existing image on an edit: retain it without re-uploading.
+            return upload
+        if upload.size > 2 * 1024 * 1024:
+            raise forms.ValidationError("Logo must be 2 MB or smaller.")
+        extension = Path(upload.name).suffix.lower()
+        extensions = {"JPEG": {".jpg", ".jpeg"}, "PNG": {".png"}, "WEBP": {".webp"}}
+        if extension not in extensions.get(upload.image.format, set()):
+            raise forms.ValidationError("File extension must match a JPG, PNG or WebP image.")
+        if upload.image.width > 4096 or upload.image.height > 4096:
+            raise forms.ValidationError("Logo image dimensions must not exceed 4096 × 4096.")
+        return upload
+
+    def save(self, commit=True):
+        company = super().save(commit=False)
+        if self.instance._state.adding:
+            # Never trust a client-submitted slug. Existing slugs stay stable on edit.
+            base = slugify(company.name, allow_unicode=False)[:160].strip("-") or "company"
+            proposed = base
+            suffix = 2
+            while Company.objects.filter(slug=proposed).exclude(pk=company.pk).exists():
+                proposed = f"{base[:180 - len(str(suffix)) - 1]}-{suffix}"
+                suffix += 1
+            company.slug = proposed
+        if commit:
+            company.save()
+            self.save_m2m()
+        return company
 
 
 class UserForm(AdminModelForm):
@@ -149,8 +195,18 @@ class SubscriptionForm(AdminModelForm):
             "amount", "currency", "starts_at", "renews_at", "seats",
         ]
         widgets = {
-            "starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
-            "renews_at": forms.DateTimeInput(attrs={"type": "datetime-local"}),
+            "starts_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+            "renews_at": forms.DateTimeInput(
+                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
+            ),
+        }
+        help_texts = {
+            "plan_definition": "Selecting an active defined plan applies its pricing and seat limit when saved.",
+            "plan": "Automatically set when a Plan Builder definition is selected.",
+            "amount": "The configured subscription amount, not a collected payment.",
+            "seats": "Automatically set from Plan Builder when a defined plan is selected.",
         }
 
     def clean(self):

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from functools import wraps
 from urllib.parse import quote
 
@@ -162,11 +163,18 @@ def dashboard(request):
 
 @panel_admin_required
 def companies(request):
+    # Platform-wide KPIs are intentionally independent of the active directory filters.
+    month_start = timezone.localdate().replace(day=1)
+    total_companies = Company.objects.count()
+    active_companies = Company.objects.filter(is_active=True).count()
+    new_companies_month = Company.objects.filter(created_at__date__gte=month_start).count()
+
     qs = Company.objects.annotate(
         user_count=Count("users", distinct=True),
         branch_count=Count("branches", distinct=True),
     ).order_by("-created_at")
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
     if q:
         qs = qs.filter(
             Q(name__icontains=q)
@@ -175,11 +183,23 @@ def companies(request):
             | Q(gstin__icontains=q)
             | Q(city__icontains=q)
         )
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "inactive":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
     return render(request, "control_panel/companies.html", {
         "page_title": "Companies",
         "active": "companies",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "total_companies": total_companies,
+        "active_companies": active_companies,
+        "inactive_companies": total_companies - active_companies,
+        "new_companies_month": new_companies_month,
     })
 
 
@@ -195,18 +215,50 @@ def company_toggle(request, pk):
 
 @panel_admin_required
 def users(request):
+    # Summary reflects platform-wide accounts; directory filters affect only rows.
+    all_users = User.objects.all()
+    total_users = all_users.count()
+    active_users = all_users.filter(is_active=True).count()
+    admin_users = all_users.filter(Q(is_staff=True) | Q(is_superuser=True)).count()
+    verified_users = all_users.filter(email_verified=True).count()
+
     qs = User.objects.select_related("company", "branch", "role").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    access = request.GET.get("access", "").strip().lower()
+
     if q:
         qs = qs.filter(Q(name__icontains=q) | Q(email__icontains=q) | Q(phone__icontains=q))
+    if status == "active":
+        qs = qs.filter(is_active=True)
+    elif status == "disabled":
+        qs = qs.filter(is_active=False)
+    else:
+        status = ""
+
+    if access == "superuser":
+        qs = qs.filter(is_superuser=True)
+    elif access == "admin":
+        qs = qs.filter(is_staff=True, is_superuser=False)
+    elif access == "workshop":
+        qs = qs.filter(is_staff=False, is_superuser=False)
+    else:
+        access = ""
+
     return render(request, "control_panel/users.html", {
         "page_title": "Users & Access",
         "active": "users",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "access": access,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_users": total_users,
+        "active_users": active_users,
+        "admin_users": admin_users,
+        "verified_users": verified_users,
     })
 
 
@@ -242,18 +294,56 @@ def user_invite(request, pk):
 
 @panel_admin_required
 def subscriptions(request):
-    qs = Subscription.objects.select_related("company", "branch").order_by("-created_at")
+    # Platform totals do not change when a user filters the directory.
+    all_subscriptions = Subscription.objects.all()
+    now = timezone.now()
+    month_ahead = now + timedelta(days=30)
+    total_subscriptions = all_subscriptions.count()
+    active_subscriptions = all_subscriptions.filter(status__iexact="active").count()
+    upcoming_renewals = all_subscriptions.filter(
+        status__iexact="active", renews_at__gte=now, renews_at__lte=month_ahead
+    ).count()
+    subscriber_companies = all_subscriptions.values("company_id").distinct().count()
+    status_options = sorted(
+        (s for s in all_subscriptions.order_by().values_list("status", flat=True).distinct() if s),
+        key=str.casefold,
+    )
+
+    qs = all_subscriptions.select_related("company", "branch", "plan_definition").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    cycle = request.GET.get("cycle", "").strip().lower()
+
     if q:
-        qs = qs.filter(Q(company__name__icontains=q) | Q(plan__icontains=q) | Q(status__icontains=q))
+        qs = qs.filter(
+            Q(company__name__icontains=q) | Q(plan__icontains=q)
+            | Q(status__icontains=q)
+        )
+    if status:
+        if any(value.casefold() == status.casefold() for value in status_options):
+            qs = qs.filter(status__iexact=status)
+        else:
+            status = ""
+    if cycle in ("monthly", "yearly", "annual"):
+        qs = qs.filter(billing_cycle__iexact=cycle)
+    else:
+        cycle = ""
+
     return render(request, "control_panel/subscriptions.html", {
         "page_title": "Plans & Billing",
         "active": "subscriptions",
         "rows": _paginate(request, qs),
         "q": q,
+        "status": status,
+        "cycle": cycle,
+        "status_options": status_options,
         "company_id": company_id,
         "companies": _company_choices(),
+        "total_subscriptions": total_subscriptions,
+        "active_subscriptions": active_subscriptions,
+        "upcoming_renewals": upcoming_renewals,
+        "subscriber_companies": subscriber_companies,
     })
 
 
@@ -472,7 +562,11 @@ def _send_new_user_invite(request, user):
 def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
     if not _can_manage_account(request.user, instance):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
-    form = form_class(request.POST if request.method == "POST" else None, instance=instance)
+    form = form_class(
+        request.POST if request.method == "POST" else None,
+        request.FILES if request.method == "POST" else None,
+        instance=instance,
+    )
     form.actor = request.user
     if isinstance(form, UserForm) and not request.user.is_superuser:
         for field in ("is_staff", "is_superuser"):
@@ -497,7 +591,14 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         else:
             messages.success(request, f"{title} saved successfully.")
         return redirect(cancel_url)
-    return render(request, "control_panel/form.html", {
+    template = (
+        "control_panel/company_form.html" if isinstance(form, CompanyForm)
+        else "control_panel/user_form.html" if isinstance(form, UserForm)
+        else "control_panel/subscription_form.html" if isinstance(form, SubscriptionForm)
+        else "control_panel/plan_editor.html" if isinstance(form, PlanBuilderForm)
+        else "control_panel/form.html"
+    )
+    return render(request, template, {
         "page_title": title,
         "active": active,
         "form": form,
@@ -903,9 +1004,49 @@ def resource_action(request, resource, action, pk=None):
 # Dedicated SaaS platform tools; never accessible to tenant company admins.
 @panel_admin_required
 def plan_catalog(request):
+    # Plan prices are catalog configuration, not revenue or payment receipts.
+    plans = SubscriptionPlan.objects.all()
+    plan_total = plans.count()
+    plan_active = plans.filter(is_active=True).count()
+    plan_public = plans.filter(is_public=True, is_active=True).count()
+    subscriptions_assigned = Subscription.objects.filter(
+        plan_definition__isnull=False
+    ).count()
+
+    query = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    visibility = request.GET.get("visibility", "").strip().lower()
+    if query:
+        plans = plans.filter(
+            Q(name__icontains=query) | Q(key__icontains=query)
+            | Q(description__icontains=query)
+        )
+    if status == "active":
+        plans = plans.filter(is_active=True)
+    elif status == "archived":
+        plans = plans.filter(is_active=False)
+    else:
+        status = ""
+    if visibility == "public":
+        plans = plans.filter(is_public=True)
+    elif visibility == "private":
+        plans = plans.filter(is_public=False)
+    else:
+        visibility = ""
+
+    plans = plans.annotate(
+        enabled_feature_count=Count(
+            "feature_access", filter=Q(feature_access__enabled=True), distinct=True
+        )
+    ).prefetch_related("feature_access__feature")
+
     return render(request, "control_panel/plan_catalog.html", {
         "page_title": "Plan Builder", "active": "plans",
-        "plans": SubscriptionPlan.objects.prefetch_related("feature_access").all(),
+        "plans": plans,
+        "q": query, "status": status, "visibility": visibility,
+        "plan_total": plan_total, "plan_active": plan_active,
+        "plan_public": plan_public,
+        "subscriptions_assigned": subscriptions_assigned,
     })
 
 

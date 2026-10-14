@@ -1,37 +1,65 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar">
-  <form class="search-form" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search company, GST, city or email">
-    <button class="btn" type="submit">Search</button>
-  </form>
-  {% panel_can 'panel:company-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">Add Company</a>{% endif %}
+<section class="companies-heading">
+  <div><p class="eyebrow">Platform / Company directory</p><h2>Companies Management</h2>
+    <p>Manage tenant accounts, access, branches and subscription plans.</p></div>
+  {% panel_can 'panel:company-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">+ Add Company</a>{% endif %}
+</section>
+
+<div class="companies-stats" aria-label="Company summary">
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Total Companies</span><span class="metric-icon" aria-hidden="true">C</span></div><strong class="company-stat-value">{{ total_companies }}</strong><small class="company-stat-meta">Registered company accounts</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Active Companies</span><span class="metric-icon" aria-hidden="true">✓</span></div><strong class="company-stat-value">{{ active_companies }}</strong><small class="company-stat-meta">Enabled platform access</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Disabled Companies</span><span class="metric-icon" aria-hidden="true">–</span></div><strong class="company-stat-value">{{ inactive_companies }}</strong><small class="company-stat-meta">Accounts currently disabled</small></article>
+  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>New This Month</span><span class="metric-icon" aria-hidden="true">+</span></div><strong class="company-stat-value">{{ new_companies_month }}</strong><small class="company-stat-meta">Companies added this month</small></article>
 </div>
-<section class="panel-card">
-  <div class="responsive-table">
+
+<section class="panel-card companies-directory" aria-labelledby="companies-directory-title">
+  <header class="section-head companies-directory-header">
+    <div><p class="eyebrow">Tenants</p><h2 id="companies-directory-title">Company Directory</h2><p>Browse and manage registered companies</p></div>
+    <span class="company-record-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+  </header>
+  <div class="companies-filter-wrap">
+    <form class="companies-filter-form" method="get">
+      <label class="company-search-field">
+        <span class="sr-only">Search companies</span>
+        <input type="search" name="q" value="{{ q }}" placeholder="Search name, GST, city, phone or email" aria-label="Search companies">
+      </label>
+      <label class="company-status-field">
+        <span class="sr-only">Filter by status</span>
+        <select name="status" aria-label="Filter companies by status">
+          <option value="" {% if not status %}selected{% endif %}>All statuses</option>
+          <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if status == "inactive" %}selected{% endif %}>Disabled</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" type="submit">Search</button>
+      {% if q or status %}<a class="btn" href="{% url 'panel:companies' %}">Clear</a>{% endif %}
+    </form>
+  </div>
+  <div class="responsive-table companies-table">
     <table>
       <thead><tr><th>Company</th><th>Plan</th><th>Users</th><th>Branches</th><th>GST</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
       <tbody>
       {% for row in rows %}
         <tr>
-          <td data-label="Company"><strong>{{ row.name }}</strong><br><span class="table-sub">{{ row.email|default:"—" }}</span></td>
-          <td data-label="Plan">{{ row.plan|title }}</td>
+          <td data-label="Company"><div class="company-identity">{% if row.logo_image %}<img class="company-monogram company-logo-image" src="{{ row.logo_image.url }}" alt="">
+            {% elif row.logo %}<img class="company-monogram company-logo-image" src="{{ row.logo }}" alt="">
+            {% else %}<span class="company-monogram" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}<div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.email|default:"No email available" }}</span></div></div></td>
+          <td data-label="Plan"><span class="company-plan-tag">{{ row.plan|title }}</span></td>
           <td data-label="Users">{{ row.user_count }}</td>
           <td data-label="Branches">{{ row.branch_count }}</td>
           <td data-label="GST">{{ row.gstin|default:"—" }}</td>
           <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
-          <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
-          <td data-label="Actions">
-            <div class="row-actions">
-              {% panel_can 'panel:company-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:company-detail' row.id %}">View</a>{% endif %}
-              {% panel_can 'panel:company-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:company-edit' row.id %}">Edit</a>{% endif %}
-              {% panel_can 'panel:company-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
-              {% panel_can 'panel:company-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>{% endif %}
-            </div>
-          </td>
+          <td data-label="Status">{% if row.is_active %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="company-status-tag is-disabled">Disabled</span>{% endif %}</td>
+          <td data-label="Actions"><div class="row-actions company-row-actions">
+            {% panel_can 'panel:company-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:company-detail' row.id %}">View</a>{% endif %}
+            {% panel_can 'panel:company-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:company-edit' row.id %}">Edit</a>{% endif %}
+            {% panel_can 'panel:company-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
+            {% panel_can 'panel:company-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>{% endif %}
+          </div></td>
         </tr>
-      {% empty %}<tr><td colspan="8" class="empty-cell">No companies found.</td></tr>{% endfor %}
+      {% empty %}<tr><td colspan="8" class="empty-cell">No companies match the current filters. Try changing your search or status.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>

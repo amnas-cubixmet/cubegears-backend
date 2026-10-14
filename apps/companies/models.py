@@ -1,5 +1,16 @@
 import uuid
+from pathlib import Path
 from django.db import models
+
+
+def company_logo_upload_to(instance, filename):
+    # Avoid trusting browser-provided paths/names; keep uploads tenant-scoped.
+    extension = Path(filename).suffix.lower()
+    if extension == ".jpeg":
+        extension = ".jpg"
+    if extension not in {".jpg", ".png", ".webp"}:
+        extension = ".png"
+    return f"company_logos/{instance.pk}/{uuid.uuid4().hex}{extension}"
 
 class Company(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -15,7 +26,8 @@ class Company(models.Model):
     country = models.CharField(max_length=100, default="India")
     pincode = models.CharField(max_length=12, blank=True)
     currency = models.CharField(max_length=8, default="INR")
-    logo = models.URLField(blank=True)
+    logo = models.URLField(blank=True)  # Legacy external logo URL, retained for existing records.
+    logo_image = models.ImageField(upload_to=company_logo_upload_to, blank=True)
     plan = models.CharField(max_length=50, default="starter")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

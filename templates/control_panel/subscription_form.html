@@ -1,0 +1,70 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="subscription-editor-page">
+  <header class="subscription-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb">
+        <a href="{% url 'panel:subscriptions' %}">Subscriptions</a>
+        <span aria-hidden="true">/</span>
+        <span>{% if is_edit %}Edit Subscription{% else %}Add Subscription{% endif %}</span>
+      </nav>
+      <h2>{% if is_edit %}Edit Subscription{% else %}Create Subscription{% endif %}</h2>
+      <p>Configure a company's plan assignment, billing cycle, billing amount and renewal schedule.</p>
+    </div>
+    <a href="{% url cancel_url %}" class="btn">← Back to Subscriptions</a>
+  </header>
+
+  <form method="post" class="subscription-editor-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+
+    <section class="panel-card subscription-editor-section">
+      <header class="user-editor-section-header">
+        <span class="user-section-number">01</span>
+        <div><h3>Company Assignment</h3><p>Select the company and optional workshop branch.</p></div>
+      </header>
+      <div class="subscription-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.company %}
+        {% include "control_panel/company_field.html" with field=form.branch %}
+      </div>
+    </section>
+
+    <section class="panel-card subscription-editor-section">
+      <header class="user-editor-section-header">
+        <span class="user-section-number">02</span>
+        <div><h3>Plan &amp; Billing</h3><p>Choose a defined plan or enter the subscription's current details.</p></div>
+      </header>
+      <div class="subscription-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.plan_definition %}
+        {% include "control_panel/company_field.html" with field=form.billing_cycle %}
+        {% include "control_panel/company_field.html" with field=form.plan %}
+        {% include "control_panel/company_field.html" with field=form.status %}
+        {% include "control_panel/company_field.html" with field=form.amount %}
+        {% include "control_panel/company_field.html" with field=form.currency %}
+        {% include "control_panel/company_field.html" with field=form.seats %}
+      </div>
+      <aside class="subscription-editor-note">
+        <strong>Plan Builder pricing</strong>
+        <p>When an active Plan Builder definition is selected, the server uses that plan's name, seat limit and monthly or yearly price on save. Without a Plan Builder selection, the entered values are used. These are configured plan amounts, not confirmed payments or revenue.</p>
+      </aside>
+    </section>
+
+    <section class="panel-card subscription-editor-section">
+      <header class="user-editor-section-header">
+        <span class="user-section-number">03</span>
+        <div><h3>Subscription Schedule</h3><p>Set the effective start and next renewal dates, if applicable.</p></div>
+      </header>
+      <div class="subscription-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.starts_at %}
+        {% include "control_panel/company_field.html" with field=form.renews_at %}
+      </div>
+      <p class="subscription-editor-schedule-note">These dates describe the saved subscription schedule. Saving does not charge a payment method or trigger a renewal.</p>
+    </section>
+
+    <footer class="subscription-editor-actions">
+      <a href="{% url cancel_url %}" class="btn">Cancel</a>
+      <button type="submit" class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Create Subscription{% endif %}</button>
+    </footer>
+  </form>
+</section>
+{% endblock %}
