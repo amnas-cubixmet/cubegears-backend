@@ -106,12 +106,19 @@ class EmployeeSerializer(serializers.ModelSerializer):
     shiftName=serializers.CharField(source="shift.name",read_only=True)
     accountStatus=serializers.SerializerMethodField()
     loginStatus=serializers.SerializerMethodField()
+    emailDeliveryStatus=serializers.SerializerMethodField()
 
     class Meta:
         model=Employee
         exclude=("company","branch","employee_code","role_name","department_name","shift_label","joining_date","status","emergency_contact","payment_type")
         # Never allow an employee payload to bind a different user's login.
         read_only_fields=("user",)
+
+    def get_emailDeliveryStatus(self,obj):
+        # Only present in the response that scheduled the invitation.
+        # Status is not persisted, as provider delivery is not inbox receipt.
+        state = getattr(obj, "_invite_email_delivery", None)
+        return state.get("status") if state else None
 
     def get_displayEmployeeNo(self,obj):
         digits="".join(ch for ch in str(obj.employee_code or "") if ch.isdigit())
