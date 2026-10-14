@@ -25,7 +25,11 @@ ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
 # a server with persistent local storage, never an ephemeral Vercel function.
 if not DEBUG:
     if not env("DJANGO_SECRET_KEY") or len(SECRET_KEY.encode("utf-8")) < 32:
-        raise ImproperlyConfigured("DJANGO_SECRET_KEY must be a strong value (32+ bytes) in production.")
+        raise ImproperlyConfigured(
+            "DJANGO_SECRET_KEY must be a strong value (32+ bytes) in production. "
+            "On PythonAnywhere, run 'python scripts/setup_pythonanywhere.py "
+            "--host YOUR_HOST' and check the private .env and exported environment variables."
+        )
     if not env("DJANGO_ALLOWED_HOSTS"):
         raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must list your production backend hosts.")
     if env_bool("VERCEL", False):
@@ -188,6 +192,7 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", 15))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
+EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.com>")
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
@@ -200,10 +205,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = env_bool("SESSION_COOKIE_SECURE", not DEBUG)
 CSRF_COOKIE_SECURE = env_bool("CSRF_COOKIE_SECURE", not DEBUG)
-
-SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", not DEBUG)
-SECURE_HSTS_SECONDS = int(env("SECURE_HSTS_SECONDS", 0 if DEBUG else 3600))
-CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS")
 
 LOGIN_URL = "panel:login"
 LOGIN_REDIRECT_URL = "panel:dashboard"
