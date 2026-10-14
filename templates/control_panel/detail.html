@@ -9,6 +9,23 @@
   </div>
 </div>
 
+{% if active == 'customers' or active == 'vehicles' or active == 'branches' or active == 'roles' %}
+<section class="panel-card remaining-profile-header">
+  <div class="remaining-profile-symbol" aria-hidden="true">{% if active == 'customers' %}C{% elif active == 'vehicles' %}V{% elif active == 'branches' %}B{% else %}R{% endif %}</div>
+  <div class="remaining-profile-info">
+    <p class="eyebrow">{% if active == 'customers' %}Customer profile{% elif active == 'vehicles' %}Vehicle profile{% elif active == 'branches' %}Branch profile{% else %}Role profile{% endif %}</p>
+    <h2>{% if active == 'customers' or active == 'branches' or active == 'roles' %}{{ object.name }}{% else %}{{ object.registration }}{% endif %}</h2>
+    <p>{{ object.company.name|default:"Platform" }}{% if active == 'customers' %} · {{ object.phone }}{% elif active == 'vehicles' %} · {{ object.customer.name }}{% elif active == 'branches' %} · {{ object.code }}{% elif active == 'roles' %} · {{ object.code }}{% endif %}</p>
+    <div class="remaining-profile-tags">
+      {% if active == 'customers' or active == 'vehicles' %}<span class="remaining-state {% if object.status|lower == 'active' %}is-good{% else %}is-neutral{% endif %}">{{ object.status|title }}</span>
+      {% else %}<span class="remaining-state {% if object.is_active %}is-good{% else %}is-neutral{% endif %}">{% if object.is_active %}Active{% else %}Inactive{% endif %}</span>{% endif %}
+      {% if active == 'branches' and object.is_head_office %}<span class="remaining-chip">Head Office</span>{% endif %}
+      {% if active == 'roles' and object.is_system %}<span class="remaining-chip">System Role</span>{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if active == 'jobs' %}
 <section class="panel-card jobs-profile-header">
   <span class="jobs-profile-icon" aria-hidden="true">J</span>
