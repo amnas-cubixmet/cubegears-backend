@@ -26,11 +26,11 @@ class PlatformPlanBuilderTests(TestCase):
         form = self.client.get(reverse("panel:plan-create"))
         self.assertEqual(form.status_code, 200)
         self.assertContains(form, "Create Plan")
+        self.assertNotContains(form, 'name="key"')
 
     def test_create_plan_saves_pricing_and_enabled_features(self):
         self.client.force_login(self.platform)
         result = self.client.post(reverse("panel:plan-create"), {
-            "key": "enterprise-qa",
             "name": "Enterprise QA",
             "description": "Testing platform plan create",
             "monthly_price": "3499.00",
@@ -50,6 +50,58 @@ class PlatformPlanBuilderTests(TestCase):
         plan = SubscriptionPlan.objects.get(key="enterprise-qa")
         self.assertEqual(str(plan.monthly_price), "3499.00")
         self.assertTrue(PlanFeatureAccess.objects.get(plan=plan, feature=self.feature).enabled)
+
+    def test_duplicate_plan_names_get_distinct_slugs(self):
+        self.client.force_login(self.platform)
+        payload = {
+            "name": "Professional Plus",
+            "monthly_price": "1499.00",
+            "yearly_price": "14990.00",
+            "max_branches": "1",
+            "max_users": "10",
+            "included_storage_gb": "20",
+            "extra_storage_rate": "15.00",
+            "promo_percent": "0",
+            "trial_days": "14",
+            "sort_order": "0",
+            "is_active": "on",
+            "is_public": "on",
+        }
+        self.assertEqual(self.client.post(reverse("panel:plan-create"), payload).status_code, 302)
+        self.assertEqual(self.client.post(reverse("panel:plan-create"), payload).status_code, 302)
+        self.assertTrue(SubscriptionPlan.objects.filter(key="professional-plus").exists())
+        self.assertTrue(SubscriptionPlan.objects.filter(key="professional-plus-2").exists())
+
+    def test_key_is_ignored_on_submission_and_unchanged_after_name_edit(self):
+        self.client.force_login(self.platform)
+        payload = {
+            "key": "manually-supplied-key",
+            "name": "Sample Plan",
+            "monthly_price": "799.00",
+            "yearly_price": "7990.00",
+            "max_branches": "1",
+            "max_users": "3",
+            "included_storage_gb": "5",
+            "extra_storage_rate": "15.00",
+            "promo_percent": "0",
+            "trial_days": "14",
+            "sort_order": "0",
+            "is_active": "on",
+            "is_public": "on",
+        }
+        self.assertEqual(self.client.post(reverse("panel:plan-create"), payload).status_code, 302)
+        plan = SubscriptionPlan.objects.get(key="sample-plan")
+        self.assertFalse(SubscriptionPlan.objects.filter(key="manually-supplied-key").exists())
+        edit = self.client.get(reverse("panel:plan-edit", args=[plan.pk]))
+        self.assertNotContains(edit, 'name="key"')
+        payload["name"] = "Renamed Plan"
+        self.assertEqual(
+            self.client.post(reverse("panel:plan-edit", args=[plan.pk]), payload).status_code,
+            302,
+        )
+        plan.refresh_from_db()
+        self.assertEqual(plan.key, "sample-plan")
+        self.assertEqual(plan.name, "Renamed Plan")
 
     def test_workshop_owner_cannot_create_platform_plan(self):
         company = Company.objects.create(name="Private Garage", slug="private-garage-plan")
