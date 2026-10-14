@@ -141,3 +141,27 @@ class PasswordAuthenticationFlowTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("non_field_errors", response.data)
+
+
+    def test_unknown_email_never_receives_login_tokens(self):
+        response = self.client.post(
+            "/api/v1/auth/login",
+            {"email": "not-in-database@workshop.example", "password": "AnyPassword2026!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data.get("access"))
+        self.assertIn("non_field_errors", response.data)
+
+    def test_inactive_database_user_cannot_sign_in(self):
+        User.objects.create_user(
+            email="inactive@workshop.example",
+            password=self.old_password, name="Disabled", is_active=False,
+        )
+        response = self.client.post(
+            "/api/v1/auth/login",
+            {"email": "inactive@workshop.example", "password": self.old_password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data.get("access"))
