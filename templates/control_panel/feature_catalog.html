@@ -1,18 +1,42 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<div class="toolbar">
-  <p>Create unlimited category labels, nested sub-labels, and independent feature switches. Use keys matching permission modules such as customers, vehicles, jobs, stock, reports, staff or payroll for automatic backend enforcement.</p>
-  <a class="btn btn-primary" href="{% url 'panel:featuregroup-create' %}">+ Add Label</a>
-  <a class="btn" href="{% url 'panel:feature-create' %}">+ Add Feature</a>
-  <a class="btn" href="{% url 'panel:plans' %}">Plan Builder</a>
-</div>
-{% for group in groups %}
-  <section class="panel-card" style="margin-bottom:12px">
-    <h2>{% if group.parent %}{{ group.parent.label }} / {% endif %}{{ group.label }} <small>({{ group.key }})</small> <a class="btn" href="{% url 'panel:featuregroup-edit' group.pk %}">Edit Label</a></h2>
-    {% for item in group.features.all %}
-      <p>• {{ item.label }} <small>— {{ item.key }}{% if not item.is_active %} (Disabled){% endif %}</small> <a href="{% url 'panel:feature-edit' item.pk %}">Edit</a></p>
-    {% empty %}<p>No features assigned to this label.</p>{% endfor %}
-  </section>
-{% empty %}<section class="panel-card"><p>No feature labels created yet.</p></section>{% endfor %}
+<section class="directory-heading remaining-heading">
+  <div><p class="eyebrow">Platform / Access catalog</p><h2>Feature Labels &amp; Modules</h2><p>Configure grouped feature labels for entitlements and the credit-based feature catalog.</p></div>
+  <div class="remaining-head-actions">
+    {% panel_can 'panel:featuregroup-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-create' %}">+ Add Label Group</a>{% endif %}
+    {% panel_can 'panel:feature-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:feature-create' %}">+ Add Feature</a>{% endif %}
+  </div>
+</section>
+<section class="directory-stats remaining-stats" aria-label="Feature catalog overview">
+  <article class="user-stat-card"><div class="user-stat-top"><span>Label Groups</span><span class="user-stat-icon" aria-hidden="true">G</span></div><strong class="user-stat-value">{{ group_total }}</strong><small class="user-stat-meta">All feature groups</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Features</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ feature_total }}</strong><small class="user-stat-meta">Registered catalog modules</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Active Features</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ enabled_features }}</strong><small class="user-stat-meta">Modules marked active</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Disabled Features</span><span class="user-stat-icon" aria-hidden="true">–</span></div><strong class="user-stat-value">{{ disabled_features }}</strong><small class="user-stat-meta">Modules marked disabled</small></article>
+</section>
+<section class="panel-card remaining-directory" aria-label="Feature catalog groups">
+  <header class="section-head directory-section-heading"><div><p class="eyebrow">Feature catalog</p><h2>Module Groups</h2><p>Organize permission modules and feature labels</p></div><a class="btn" href="{% url 'panel:plans' %}">Open Plan Builder</a></header>
+  <div class="remaining-feature-groups">
+  {% for group in groups %}
+    <section class="remaining-feature-group" aria-label="{{ group.label }}">
+      <div class="remaining-feature-group-heading">
+        <span class="remaining-avatar" aria-hidden="true">{{ group.label|slice:":1"|upper }}</span>
+        <div class="remaining-feature-group-copy"><h3>{{ group.label }}</h3><p>{% if group.parent %}{{ group.parent.label }} / {% endif %}{{ group.key }}</p></div>
+        <span class="remaining-state {% if group.is_active %}is-good{% else %}is-neutral{% endif %}">{% if group.is_active %}Active{% else %}Disabled{% endif %}</span>
+        {% panel_can 'panel:featuregroup-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-edit' group.pk %}">Edit Group</a>{% endif %}
+      </div>
+      <div class="remaining-feature-list">
+      {% for item in group.features.all %}
+        <div class="remaining-feature-row">
+          <div><strong>{{ item.label }}</strong><span class="table-sub">{{ item.key }}</span>{% if item.description %}<p>{{ item.description|truncatechars:120 }}</p>{% endif %}</div>
+          <span class="remaining-state {% if item.is_active %}is-good{% else %}is-neutral{% endif %}">{% if item.is_active %}Active{% else %}Disabled{% endif %}</span>
+          {% panel_can 'panel:feature-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:feature-edit' item.pk %}">Edit</a>{% endif %}
+        </div>
+      {% empty %}<p class="remaining-empty">No features in this group.</p>{% endfor %}
+      </div>
+    </section>
+  {% empty %}<p class="remaining-empty">No feature groups exist. Add a label group to start configuring features.</p>{% endfor %}
+  </div>
+  <p class="remaining-note">A feature label's active setting does not by itself grant permissions or credit entitlements. Authorization still depends on the existing backend checks.</p>
+</section>
 {% endblock %}
