@@ -3,13 +3,13 @@ from django.db import transaction
 from apps.companies.models import Company
 logger = logging.getLogger(__name__)
 from django.db.models import Sum
-from .storage_ledger import ensure_baseline, record_event
+from .storage_ledger import ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
 from apps.accounts.permissions import RolePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
-from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile
+from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile,StorageEvent
 from .serializers import *
 
 def safe_delete_storage(storage,name):
@@ -210,6 +210,9 @@ class StorageHistoryListView(APIView):
         if from_date and to_date and from_date > to_date:
             return response.Response({"message": "From date must be before To date."}, status=400)
 
+        if StorageEvent.objects.filter(company=company).exists():
+            return response.Response(history_days(company,from_date,to_date))
+
         entries = StorageUsage.objects.filter(company=company)
         if from_date:
             entries = entries.filter(date__gte=from_date)
@@ -238,6 +241,13 @@ class StorageHistoryDateView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.view"
     def get(self,request,date):
+        from django.utils.dateparse import parse_date
+        parsed=parse_date(date)
+        if not parsed:
+            return response.Response({'message':'Use YYYY-MM-DD.'},status=400)
+        detail=history_day(request.user.company,parsed)
+        if detail:
+            return response.Response(detail)
         usage=StorageUsage.objects.filter(company=request.user.company,date=date)
         files=MediaFile.objects.filter(company=request.user.company,created_at__date=date)
         return response.Response({
