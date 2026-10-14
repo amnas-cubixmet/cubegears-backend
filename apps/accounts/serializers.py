@@ -81,6 +81,14 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid email or password.")
         if not user.is_active:
             raise serializers.ValidationError("This account is disabled.")
+        # An old password must not be enough to sign in after the workshop,
+        # login role or role's company assignment has been deactivated.
+        if user.company_id:
+            role = user.role
+            if (not user.company or not user.company.is_active
+                    or not role or not role.is_active
+                    or role.company_id != user.company_id):
+                raise serializers.ValidationError("This account cannot sign in. Contact your workshop administrator.")
         attrs["user"] = user
         return attrs
 
