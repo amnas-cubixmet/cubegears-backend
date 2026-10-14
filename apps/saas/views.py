@@ -175,7 +175,9 @@ class StorageFilesDeleteView(APIView):
             for obj in qs:
                 name=obj.file.name if obj.file else None
                 storage=obj.file.storage if name else None
+                snapshot_id = obj.pk
                 obj.delete()
+                obj.pk = snapshot_id
                 record_event(obj,"DELETE",request.user)
                 if name:
                     transaction.on_commit(lambda storage=storage,name=name: safe_delete_storage(storage,name))
