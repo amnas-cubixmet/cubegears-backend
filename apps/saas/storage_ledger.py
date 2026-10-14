@@ -40,3 +40,63 @@ def as_dict(event):
         "storageAfterBytes":event.storage_after_bytes,"fileCountAfter":event.file_count_after,
         "actor":event.actor.name if event.actor_id and event.actor else None,
         "occurredAt":event.occurred_at.isoformat()}
+
+
+def history_days(company, start=None, end=None):
+    """Actual event days, no invented usage or charges."""
+    qs = StorageEvent.objects.filter(company=company).order_by("occurred_at", "created_at", "id")
+    if start:
+        qs = qs.filter(occurred_at__date__gte=start)
+    if end:
+        qs = qs.filter(occurred_at__date__lte=end)
+    days = {}
+    for event in qs:
+        day = timezone.localdate(event.occurred_at).isoformat()
+        days[day] = {
+            "date": day,
+            "usedGb": round(event.storage_after_bytes / (1024 ** 3), 3),
+            "fileCount": event.file_count_after,
+            "rate": None,
+            "charge": None,
+            "snapshotType": "event-ledger",
+        }
+    return sorted(days.values(), key=lambda item: item["date"], reverse=True)
+
+
+def history_day(company, day):
+    """Rebuild the files at close of the requested event day."""
+    qs = StorageEvent.objects.filter(
+        company=company, occurred_at__date__lte=day
+    ).select_related("actor").order_by("occurred_at", "created_at", "id")
+    inventory = {}
+    selected = []
+    last = None
+    for event in qs:
+        last = event
+        file_id = str(event.file_id_snapshot)
+        if event.event_type == StorageEvent.DELETE:
+            inventory.pop(file_id, None)
+        else:
+            inventory[file_id] = {
+                "id": file_id,
+                "name": event.name_snapshot,
+                "category": event.category_snapshot,
+                "sizeMb": round(event.file_size_bytes / (1024 ** 2), 2),
+                "uploadedBy": event.actor.name if event.actor_id and event.actor else None,
+                "uploadedAt": event.occurred_at.isoformat(),
+                "type": event.mime_type_snapshot,
+            }
+        if timezone.localdate(event.occurred_at) == day:
+            selected.append(as_dict(event))
+    if not selected:
+        return None
+    return {
+        "date": day.isoformat(),
+        "usedGb": round(last.storage_after_bytes / (1024 ** 3), 3),
+        "fileCount": last.file_count_after,
+        "rate": None,
+        "charge": None,
+        "snapshotType": "event-ledger",
+        "files": list(inventory.values()),
+        "events": list(reversed(selected)),
+    }
