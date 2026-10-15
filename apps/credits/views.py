@@ -187,6 +187,7 @@ class CreditFeaturesView(APIView):
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
                 ),
                 "available": rate.is_available,
+                "activationEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED),
             }
             for rate in rows
         ])
@@ -202,6 +203,12 @@ class EnableCreditFeatureView(APIView):
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
+        # Never charge a user for a paid toggle that would have no effect.
+        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+            return Response({
+                "code": "FEATURE_ENTITLEMENTS_NOT_ENABLED",
+                "message": "Paid feature access must be enabled by the platform administrator before activating paid features.",
+            }, status=409)
         payload = FeatureInput(data=request.data)
         payload.is_valid(raise_exception=True)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)
