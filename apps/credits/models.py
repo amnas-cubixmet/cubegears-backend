@@ -88,6 +88,7 @@ class FeatureBundle(models.Model):
     PERIODS = [
         ("permanent", "Permanent"),
         ("weekly", "Weekly (7 days)"),
+        ("monthly", "Monthly (30 days)"),
         ("daily", "Daily (24 hours)"),
         ("hourly", "Hourly (1 hour)"),
         ("per_use", "Per use (one prepaid operation)"),
@@ -97,6 +98,8 @@ class FeatureBundle(models.Model):
     description = models.CharField(max_length=400, blank=True)
     features = models.ManyToManyField("saas.PlanFeature", related_name="credit_bundles")
     price_credits = models.DecimalField(max_digits=12, decimal_places=2)
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     billing_type = models.CharField(max_length=15, choices=PERIODS, default="weekly")
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
