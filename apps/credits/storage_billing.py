@@ -26,6 +26,8 @@ def storage_quote(company, policy=None, now=None):
     policy = policy or StorageCreditPolicy.objects.filter(is_active=True).first()
     if not policy:
         return None
+    if policy.credits_per_gb < 0 or policy.included_gb < 0:
+        raise ValueError("Storage pricing must not contain negative rates or allowances.")
     now = now or timezone.now()
     day = timezone.localdate(now)
     period = day.isoformat() if policy.billing_period == "daily" else day.strftime("%Y-%m")
@@ -51,6 +53,8 @@ def charge_storage_period(company, policy=None, now=None):
     quote = storage_quote(company, policy=policy, now=now)
     if not quote:
         return "disabled", None
+    if not quote["policy"].is_active:
+        return "disabled", quote
     if CreditLedger.objects.filter(reference=quote["reference"], company=company).exists():
         return "already_billed", quote
     wallet_for(company)
