@@ -55,6 +55,11 @@ def charge_storage_period(company, policy=None, now=None):
         return "disabled", None
     if not quote["policy"].is_active:
         return "disabled", quote
+    # Never bill the same monthly storage via both historical snapshot billing
+    # and the new GB-second postpaid statement.
+    from django.conf import settings
+    if getattr(settings, "CREDIT_POSTPAID_BILLING_ENABLED", False) and quote["policy"].billing_period == "monthly":
+        return "postpaid", quote
     if CreditLedger.objects.filter(reference=quote["reference"], company=company).exists():
         return "already_billed", quote
     wallet_for(company)
