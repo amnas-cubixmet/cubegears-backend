@@ -39,9 +39,9 @@ debits wallet credits. There is no assumed 1 rupee = 1 credit conversion.
   period remains unpaid for a future retry, and postpaid feature access is
   suspended. Existing paid period ledger rows remain immutable.
 - Worker downtime cannot be reliably reconstructed from current files or
-  current staff: at most 2 × the configured polling interval is accrued
-  and a warning records any missing interval. This is a conservative
-  sampled-usage estimate, **not exact second-by-second event billing**.
+  current staff: intervals longer than 2 × the configured polling interval
+  are skipped entirely and logged. This is a conservative sampled-usage
+  estimate, **not exact second-by-second event billing**.
 
 ## Flags: keep OFF until ready
 
