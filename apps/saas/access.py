@@ -41,13 +41,18 @@ def feature_allowed(user, permission):
     module = permission.split(".")[0]
     # Core pages, profile and purchase/credit management remain accessible.
     if module in {"dashboard", "billing", "settings", "company", "storage",
-                  "notifications", "roles"} or permission == "attendance.self":
+                  "notifications", "roles"}:
+        return True
+    if permission == "attendance.self" and not settings.CREDIT_STRICT_MODULE_GATING_ENABLED:
         return True
     from .models import PlanFeature
     from apps.credits.models import CompanyCreditFeature
     from django.utils import timezone
     if not PlanFeature.objects.filter(key=module, is_active=True).exists():
-        return True
+        # Legacy installations allow unregistered modules. Strict tenant
+        # rollouts deny them instead; otherwise an unregistered permission
+        # would bypass a company's feature purchases.
+        return not settings.CREDIT_STRICT_MODULE_GATING_ENABLED
     individually_enabled = CompanyCreditFeature.objects.filter(
         company=user.company, feature__key=module, feature__is_active=True,
         enabled=True, next_charge_at__gt=timezone.now(),
