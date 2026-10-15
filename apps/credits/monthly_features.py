@@ -133,7 +133,7 @@ def meter_postpaid_feature(item, *, at=None):
     if old:
         elapsed = int((at - old).total_seconds())
         max_gap = settings.STORAGE_METER_INTERVAL_SECONDS * 2
-        start = max(old, at - timedelta(seconds=max_gap))
+        start = old if elapsed <= max_gap else at
         if elapsed > max_gap:
             LOG.warning(
                 "Feature metering gap company=%s feature=%s: %s seconds not billed",
