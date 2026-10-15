@@ -6,8 +6,29 @@
   <div class="remaining-head-actions">
     {% panel_can 'panel:featuregroup-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-create' %}">+ Add Label Group</a>{% endif %}
     {% panel_can 'panel:featurebundle-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:featurebundle-create' %}">+ Create Paid Label</a>{% endif %}
-    {% panel_can 'panel:feature-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:feature-create' %}">+ Register Feature</a>{% endif %}
+    
   </div>
+</section>
+<section class="panel-card remaining-directory" aria-label="Detected backend features">
+  <header class="section-head directory-section-heading"><div>
+    <p class="eyebrow">Verified backend permissions</p>
+    <h2>Discovered Module Inventory</h2>
+    <p>Only modules from the actual tenant permission catalog appear here. Core settings, billing and storage are handled separately.</p>
+  </div>
+  {% panel_can 'panel:feature-edit' as allowed %}{% if allowed %}
+  <form method="post" action="{% url 'panel:features-edit' %}">
+    {% csrf_token %}
+    <button class="btn btn-primary" type="submit">Sync Missing Modules</button>
+  </form>{% endif %}
+  </header>
+  <div class="responsive-table"><table><thead><tr><th>Module</th><th>Backend permission key</th><th>Type</th><th>Registered</th></tr></thead><tbody>
+  {% for module in discovered_modules %}<tr>
+    <td><strong>{{ module.label }}</strong><small class="table-sub">{{ module.actions|join:", " }}</small></td>
+    <td><code>{{ module.key }}</code></td>
+    <td>{% if module.billable %}Feature candidate{% else %}Core / system{% endif %}</td>
+    <td>{% if module.key in catalog_keys %}Registered{% elif module.billable %}Missing — sync{% else %}Not billable{% endif %}</td>
+  </tr>{% empty %}<tr><td colspan="4">No tenant permissions registered.</td></tr>{% endfor %}
+  </tbody></table></div>
 </section>
 <section class="panel-card remaining-directory cg-paid-labels" aria-label="Paid feature labels">
   <header class="section-head directory-section-heading">
@@ -22,7 +43,8 @@
     <article class="cg-paid-label-card">
       <div class="cg-paid-label-top"><div><span class="eyebrow">PACKAGE / {{ bundle.key }}</span><h3>{{ bundle.name }}</h3></div><span class="remaining-state {% if bundle.is_active %}is-good{% else %}is-neutral{% endif %}">{% if bundle.is_active %}Published{% else %}Disabled{% endif %}</span></div>
       {% if bundle.description %}<p>{{ bundle.description }}</p>{% endif %}
-      <div class="cg-paid-label-price"><strong>{{ bundle.price_credits }}</strong><span>credits / {{ bundle.get_billing_type_display }}</span></div>
+      <div class="cg-paid-label-price"><strong>{{ bundle.price_credits }}</strong><span>base credits / {{ bundle.get_billing_type_display }}</span></div>
+      <p class="remaining-note">Activation: {{ bundle.activation_credits }} credits; per active login user: {{ bundle.per_user_credits }} credits. Total is calculated using that company's user count.</p>
       <div class="cg-paid-label-features">
         {% for feature in bundle.features.all %}<span>{{ feature.label }}</span>{% empty %}<small>No modules selected</small>{% endfor %}
       </div>

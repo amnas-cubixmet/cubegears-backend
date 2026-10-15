@@ -8,8 +8,8 @@ from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.companies.models import Company
 from apps.saas.models import PlanFeature
-from .forms import CreditPackageForm, FeatureCreditPriceForm, CreditAdjustmentForm
-from .models import CreditPackage, FeatureCreditPrice, CreditWallet, CreditLedger, CreditPurchase
+from .forms import CreditPackageForm, FeatureCreditPriceForm, CreditAdjustmentForm, StorageCreditPolicyForm
+from .models import CreditPackage, FeatureCreditPrice, CreditWallet, CreditLedger, CreditPurchase, StorageCreditPolicy
 from .service import adjust_company_balance
 
 
@@ -39,6 +39,14 @@ def credits_control(request):
                 messages.success(request, "Feature credit price saved.")
                 return redirect("panel:credits")
             messages.error(request, "Invalid feature price. " + str(form.errors))
+        elif action == "storage":
+            policy = StorageCreditPolicy.objects.order_by("pk").first()
+            form = StorageCreditPolicyForm(request.POST, instance=policy)
+            if form.is_valid():
+                form.save()
+                messages.success(request, "Storage policy saved. Charges begin only when the scheduled billing command runs.")
+                return redirect("panel:credits")
+            messages.error(request, "Invalid storage credit policy. " + str(form.errors))
         elif action == "adjust":
             form = CreditAdjustmentForm(request.POST)
             if form.is_valid():
@@ -76,6 +84,7 @@ def credits_control(request):
         "page_title": "Credit Wallet Control",
         "active": "credits",
         "packages": packages,
+        "storage_policy": StorageCreditPolicy.objects.order_by("pk").first(),
         "prices": prices,
         "features": PlanFeature.objects.filter(is_active=True).order_by("label"),
         "wallets": wallets[:100],

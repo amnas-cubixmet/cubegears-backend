@@ -626,7 +626,23 @@ class FeatureBundleForm(AdminModelForm):
     class Meta:
         model = FeatureBundle
         fields = ["name", "description", "features", "price_credits",
-                  "billing_type", "is_active", "sort_order"]
+                  "activation_credits", "per_user_credits", "billing_type", "is_active", "sort_order"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Existing paid labels may have historical catalog keys; preserve edit
+        # compatibility, while new modules are registered from the RBAC registry.
+        for field in ("activation_credits", "per_user_credits"):
+            self.fields[field].required = False
+
+    def clean(self):
+        data = super().clean()
+        for field in ("activation_credits", "per_user_credits"):
+            if data.get(field) is None:
+                data[field] = Decimal("0.00")
+            if not Decimal("0") <= data[field] <= Decimal("1000000"):
+                self.add_error(field, "Enter 0 to 1,000,000 credits.")
+        return data
 
     def clean_features(self):
         features = self.cleaned_data["features"]
