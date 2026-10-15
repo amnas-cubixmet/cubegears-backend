@@ -330,3 +330,35 @@ class FeatureMeterReading(models.Model):
         indexes = [
             models.Index(fields=["company", "sampled_at"], name="feature_read_company_dt"),
         ]
+
+
+class BillingEmailNotice(models.Model):
+    """Durable, deduplicated monthly credit billing email notification.
+
+    One persisted notice per tenant/admin/billing event. This is a delivery
+    outbox, never a source of truth for balances, prices or entitlements.
+    """
+    reference = models.CharField(max_length=180, unique=True)
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE, related_name="billing_email_notices",
+    )
+    recipient = models.EmailField()
+    subject = models.CharField(max_length=180)
+    message = models.TextField()
+    status = models.CharField(
+        max_length=12,
+        choices=[("pending", "Pending"), ("failed", "Retry"), ("sent", "Sent")],
+        default="pending",
+        db_index=True,
+    )
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now, db_index=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=120, blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        indexes = [
+            models.Index(fields=["status", "next_attempt_at"], name="billing_email_due"),
+        ]
