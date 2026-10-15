@@ -171,8 +171,10 @@ class UserForm(AdminModelForm):
         role = data.get("role")
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
-        if role and role.company_id and company and role.company_id != company.id:
-            self.add_error("role", "Selected role does not belong to this company.")
+        if role and role.company_id != (company.pk if company else None):
+            self.add_error("role", "Role scope must match the user's company.")
+        if role and not role.is_active:
+            self.add_error("role", "Select an active login role.")
         return data
 
     def save(self, commit=True):
@@ -404,14 +406,76 @@ class EmployeeForm(AdminModelForm):
 
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
-        if user and company and user.company_id and user.company_id != company.id:
-            self.add_error("user", "Selected user belongs to another company.")
+        if user and company and user.company_id != company.id:
+            self.add_error("user", "Selected user must belong to this workshop company.")
+        if user and (user.is_staff or user.is_superuser):
+            self.add_error("user", "A SaaS platform administrator cannot be linked as workshop staff.")
         if team and company and team.company_id != company.id:
             self.add_error("team", "Selected team belongs to another company.")
         if shift and company and shift.company_id != company.id:
             self.add_error("shift", "Selected shift belongs to another company.")
         return data
 
+
+
+class PlatformStaffInviteForm(AdminModelForm):
+    """Invite companyless, explicitly role-scoped SaaS Control Panel staff."""
+
+    class Meta:
+        model = User
+        fields = ("name", "email", "phone", "role")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = Role.objects.filter(
+            company__isnull=True, is_active=True, is_system=False,
+        ).order_by("name")
+        self.fields["role"].required = True
+        self.fields["role"].empty_label = "Select a SaaS Control Panel role"
+        self.fields["role"].help_text = (
+            "Only companyless platform roles are available. "
+            "Manage their individual permissions under Roles."
+        )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("This email already has a login account.")
+        return email
+
+    def clean_role(self):
+        role = self.cleaned_data["role"]
+        permissions = role.permissions
+        if role.company_id is not None or not role.is_active or role.is_system:
+            raise forms.ValidationError("Select an active SaaS platform staff role.")
+        from apps.roles.permission_catalog import PANEL_PERMISSIONS
+        if (not isinstance(permissions, list)
+                or not all(isinstance(code, str) for code in permissions)
+                or not any(code == "*" or (
+                    code in PANEL_PERMISSIONS and code.endswith(".view")
+                ) for code in permissions)):
+            raise forms.ValidationError(
+                "This role needs at least one valid SaaS Control Panel view permission."
+            )
+        actor = getattr(self, "actor", None)
+        if not actor or (not actor.is_superuser and not can_delegate(actor, permissions)):
+            raise forms.ValidationError("You cannot assign permissions beyond your own role.")
+        return role
+
+    def save(self, commit=True):
+        if not commit:
+            raise ValueError("Platform staff must be saved atomically.")
+        user = super().save(commit=False)
+        user.set_unusable_password()
+        user.company = None
+        user.branch = None
+        user.is_staff = True
+        user.is_superuser = False
+        user.is_active = True
+        user.email_verified = False
+        user.save()
+        self.save_m2m()
+        return user
 
 
 class StaffInviteForm(EmployeeForm):
@@ -521,6 +585,22 @@ class RoleForm(AdminModelForm):
         if actor and not can_delegate(actor, permissions):
             raise forms.ValidationError('You cannot grant permissions beyond your own role.')
         return permissions
+
+    def clean(self):
+        data = super().clean()
+        company = data.get("company")
+        permissions = data.get("permissions") or []
+        if company and any(code.startswith("panel.") for code in permissions):
+            self.add_error(
+                "permissions", "Workshop roles cannot contain SaaS platform permissions."
+            )
+        if not company and any(
+            code != "*" and not code.startswith("panel.") for code in permissions
+        ):
+            self.add_error(
+                "permissions", "SaaS platform roles cannot contain workshop permissions."
+            )
+        return data
 
 
 class PlanBuilderForm(AdminModelForm):

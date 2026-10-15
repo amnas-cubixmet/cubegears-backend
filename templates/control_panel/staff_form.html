@@ -10,8 +10,15 @@
     <a href="{% url cancel_url %}" class="btn">← Back to Staff</a>
   </header>
 
+  {% if not is_edit and can_add_platform_staff %}
+    <nav class="staff-editor-actions" aria-label="Choose staff account type">
+      <span class="btn btn-primary" aria-current="page">Workshop Staff</span>
+      <a class="btn" href="{% url 'panel:staff-create' %}?type=platform">SaaS Admin Staff</a>
+    </nav>
+  {% endif %}
   <form method="post" class="staff-editor-form" novalidate>
     {% csrf_token %}
+    {% if not is_edit %}<input type="hidden" name="account_type" value="workshop">{% endif %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
 
     <section class="panel-card staff-editor-section">

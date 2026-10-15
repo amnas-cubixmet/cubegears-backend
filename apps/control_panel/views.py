@@ -45,6 +45,7 @@ from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
     PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
+    PlatformStaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
 )
 
@@ -752,6 +753,11 @@ def staff(request):
         "active_staff": active_staff,
         "linked_staff": linked_staff,
         "staff_companies": staff_companies,
+        "platform_staff": (
+            User.objects.filter(company__isnull=True, is_staff=True, is_superuser=False)
+            .select_related("role").order_by("name", "email")
+            if panel_permission(request.user, "users", "view") else User.objects.none()
+        ),
     })
 
 
@@ -872,6 +878,9 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         "form": form,
         "cancel_url": cancel_url,
         "is_edit": instance is not None,
+        "can_add_platform_staff": (
+            active == "staff" and panel_permission(request.user, "users", "create")
+        ),
     })
 
 
@@ -1141,7 +1150,51 @@ def invoice_delete(request, pk):
 
 @panel_admin_required
 def staff_create(request):
-    return _save_form(request, StaffInviteForm, title="Add Staff", active="staff", cancel_url="panel:staff")
+    # One entry point for workshop staff and companyless SaaS administration.
+    account_type = (
+        request.POST.get("account_type") if request.method == "POST"
+        else request.GET.get("type")
+    ) or "workshop"
+    if account_type not in {"workshop", "platform"}:
+        return HttpResponseBadRequest("Invalid staff account type.")
+    if account_type == "workshop":
+        return _save_form(
+            request, StaffInviteForm, title="Add Staff",
+            active="staff", cancel_url="panel:staff",
+        )
+
+    # Platform accounts are privileged: staff.create alone is NOT sufficient.
+    if not panel_permission(request.user, "users", "create"):
+        return HttpResponseForbidden("You do not have permission to create SaaS staff.")
+    form = PlatformStaffInviteForm(request.POST if request.method == "POST" else None)
+    form.actor = request.user
+    if request.method == "POST" and form.is_valid():
+        try:
+            with transaction.atomic():
+                user = form.save()
+                invitation_requested = _send_new_user_invite(request, user)
+        except IntegrityError:
+            form.add_error("email", "This email is already registered.")
+        else:
+            if invitation_requested:
+                messages.success(
+                    request,
+                    "SaaS Admin Staff created. A secure password-setup email was requested. "
+                    "Real delivery requires a working SMTP email backend.",
+                )
+            else:
+                messages.warning(
+                    request,
+                    "Staff account created, but its role has no usable Control Panel "
+                    "permission. Fix the role and resend the invitation.",
+                )
+            return redirect("panel:staff")
+    return render(request, "control_panel/platform_staff_form.html", {
+        "page_title": "Add SaaS Admin Staff",
+        "active": "staff",
+        "form": form,
+        "cancel_url": "panel:staff",
+    })
 
 
 @panel_admin_required

@@ -1,0 +1,56 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="staff-editor-page">
+  <header class="staff-editor-heading">
+    <div>
+      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb">
+        <a href="{% url 'panel:staff' %}">Staff Management</a>
+        <span aria-hidden="true">/</span><span>Add SaaS Admin Staff</span>
+      </nav>
+      <h2>Add SaaS Admin Staff</h2>
+      <p>Invite a platform team member with their own email, role, and limited Control Panel permissions.</p>
+    </div>
+    <a href="{% url 'panel:staff' %}" class="btn">← Back to Staff</a>
+  </header>
+
+  <nav class="staff-editor-actions" aria-label="Choose staff account type">
+    <a class="btn" href="{% url 'panel:staff-create' %}">Workshop Staff</a>
+    <span class="btn btn-primary" aria-current="page">SaaS Admin Staff</span>
+  </nav>
+
+  <form method="post" class="staff-editor-form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="account_type" value="platform">
+    {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">01</span><div><h3>Staff Details</h3><p>Use the employee's real email address for their private invitation.</p></div></header>
+      <div class="staff-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.name %}
+        {% include "control_panel/company_field.html" with field=form.email %}
+        {% include "control_panel/company_field.html" with field=form.phone %}
+      </div>
+    </section>
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">02</span><div><h3>Role &amp; Permissions</h3><p>Access is enforced on the Django backend for every Control Panel request.</p></div></header>
+      <div class="staff-editor-grid">
+        {% include "control_panel/company_field.html" with field=form.role wide=True %}
+      </div>
+      <div class="staff-editor-note">
+        <strong>Platform access only</strong>
+        <p>Only active, companyless SaaS roles can be assigned here. Configure the role's exact module permissions on the <a href="{% url 'panel:roles' %}">Roles</a> page. This account cannot access a workshop as a company member.</p>
+      </div>
+    </section>
+    <section class="panel-card staff-editor-section">
+      <header class="staff-section-heading"><span class="staff-section-number">03</span><div><h3>Secure Email Invitation</h3><p>The account starts without a usable password.</p></div></header>
+      <div class="staff-invitation-info">
+        <strong>Password setup email</strong>
+        <p>After creation, a one-time password-setup link is requested for the email above. The staff member sets their own password. Configure production SMTP to send real emails; the console backend only prints email content locally.</p>
+      </div>
+    </section>
+    <footer class="staff-editor-actions">
+      <a href="{% url 'panel:staff' %}" class="btn">Cancel</a>
+      <button class="btn btn-primary" type="submit">Create SaaS Staff &amp; Send Invite</button>
+    </footer>
+  </form>
+</section>
+{% endblock %}
