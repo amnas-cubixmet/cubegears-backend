@@ -57,10 +57,7 @@ def feature_allowed(user, permission):
         return True
     if settings.CREDIT_POSTPAID_BILLING_ENABLED:
         from apps.credits.models import PostpaidFeatureState, MonthlyCreditStatement
-        from django.utils import timezone
-        from zoneinfo import ZoneInfo
-        current_period = timezone.localtime(timezone.now(), ZoneInfo(settings.TIME_ZONE)).strftime("%Y-%m")
-        postpaid_active = PostpaidFeatureState.objects.filter(
+         postpaid_active = PostpaidFeatureState.objects.filter(
             company=user.company, feature__key=module, feature__is_active=True,
             enabled=True,
         ).exists()
@@ -68,8 +65,7 @@ def feature_allowed(user, permission):
             # Outstanding completed-month invoices suspend feature entitlement,
             # while wallet top-up and billing controls remain reachable.
             return not MonthlyCreditStatement.objects.filter(
-                company=user.company, period__lt=current_period,
-                status="pending", total_credits__gt=0,
+                company=user.company, status="pending", total_credits__gt=0,
             ).exists()
 
     # A paid label grants feature entitlement, never role permission.
