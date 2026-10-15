@@ -145,6 +145,14 @@ class StorageCreditPolicy(models.Model):
         max_length=8, choices=[("daily", "Daily"), ("monthly", "Monthly")],
         default="monthly",
     )
+    billing_mode = models.CharField(
+        max_length=16, choices=[
+            ("snapshot", "Period snapshot (prepaid)"),
+            ("metered_monthly", "Metered usage / monthly settlement"),
+        ], default="snapshot",
+    )
+    meter_interval_seconds = models.PositiveIntegerField(default=3600)
+
     included_gb = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("0"))
     credits_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     is_active = models.BooleanField(default=False)
@@ -152,3 +160,63 @@ class StorageCreditPolicy(models.Model):
 
     def __str__(self):
         return "Storage wallet billing policy"
+
+
+class FeatureUsageSession(models.Model):
+    """Immutable price snapshot for a postpaid feature's enabled interval."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_usage_sessions")
+    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT, related_name="postpaid_sessions")
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    monthly_credits = models.DecimalField(max_digits=16, decimal_places=2)
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    user_seats = models.PositiveIntegerField(default=0)
+    staff_seats = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "feature"], condition=models.Q(ended_at__isnull=True),
+                name="credits_one_open_feature_usage",
+            ),
+        ]
+
+
+class StorageUsageInterval(models.Model):
+    """Measured bytes per fixed interval; a gap is never fabricated."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_intervals")
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    billing_month = models.CharField(max_length=7, db_index=True)
+    measured_bytes = models.PositiveBigIntegerField()
+    credits_accrued = models.DecimalField(max_digits=18, decimal_places=6)
+    rate_per_gb_month = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "ends_at"], name="credits_unique_company_storage_tick",
+            ),
+        ]
+        indexes = [models.Index(fields=["company", "billing_month"], name="credit_storage_company_mo")]
+
+
+class MonthlyUsageInvoice(models.Model):
+    """Month-end settlement for exactly one category and company."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="monthly_usage_invoices")
+    category = models.CharField(max_length=12, choices=[("feature", "Feature"), ("storage", "Storage")])
+    billing_month = models.CharField(max_length=7)
+    credits_due = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField(max_length=14, choices=[
+        ("pending", "Pending"), ("paid", "Paid"), ("insufficient", "Insufficient credits"),
+    ], default="pending")
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    settled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "category", "billing_month"],
+                                    name="credits_unique_company_monthly_usage"),
+        ]
