@@ -17,6 +17,8 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        if settings.STORAGE_MONTHLY_METERED_ENABLED:
+            raise CommandError("Monthly metered storage is enabled. Do NOT run legacy snapshot billing; use settle_metered_storage.")
         policy = StorageCreditPolicy.objects.filter(is_active=True).order_by("pk").first()
         if not policy:
             self.stdout.write("Storage billing is disabled. Nothing charged.")
