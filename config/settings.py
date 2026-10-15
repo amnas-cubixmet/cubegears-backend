@@ -292,6 +292,10 @@ if CREDIT_BILLING_CELERY_ENABLED:
             "task": "credits.meter_postpaid_storage",
             "schedule": crontab(minute="*"),
         },
+        "cubegear-sync-postpaid-seat-rates": {
+            "task": "credits.sync_postpaid_feature_rates",
+            "schedule": crontab(minute="*/5"),
+        },
         "cubegear-monthly-usage-settlement": {
             "task": "credits.settle_previous_month",
             "schedule": crontab(day_of_month=1, hour=0, minute=20),
