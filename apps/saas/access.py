@@ -47,13 +47,30 @@ def feature_allowed(user, permission):
     from apps.credits.models import CompanyCreditFeature
     from django.utils import timezone
     if not PlanFeature.objects.filter(key=module, is_active=True).exists():
-        return True
+        # Never grant access to an undiscovered paid module in enforced mode.
+        return False
     individually_enabled = CompanyCreditFeature.objects.filter(
         company=user.company, feature__key=module, feature__is_active=True,
         enabled=True, next_charge_at__gt=timezone.now(),
     ).exists()
     if individually_enabled:
         return True
+    if settings.CREDIT_POSTPAID_BILLING_ENABLED:
+        from apps.credits.models import PostpaidFeatureState, MonthlyCreditStatement
+        from django.utils import timezone
+        from zoneinfo import ZoneInfo
+        current_period = timezone.localtime(timezone.now(), ZoneInfo(settings.TIME_ZONE)).strftime("%Y-%m")
+        postpaid_active = PostpaidFeatureState.objects.filter(
+            company=user.company, feature__key=module, feature__is_active=True,
+            enabled=True,
+        ).exists()
+        if postpaid_active:
+            # Outstanding completed-month invoices suspend feature entitlement,
+            # while wallet top-up and billing controls remain reachable.
+            return not MonthlyCreditStatement.objects.filter(
+                company=user.company, period__lt=current_period,
+                status="pending", total_credits__gt=0,
+            ).exists()
 
     # A paid label grants feature entitlement, never role permission.
     # Time-limited access stops at expiry without needing a cron job.
