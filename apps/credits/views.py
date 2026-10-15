@@ -71,6 +71,22 @@ class CompanyCreditsView(APIView):
              for state in active if state.feature_id in prices),
             Decimal("0.00"),
         )
+        # Legacy time-weighted feature metering remains optional and distinct
+        # from the FeatureUsageSession billing engine.
+        from django.db.models import Sum
+        postpaid = (
+            CompanyPostpaidFeature.objects.filter(
+                company=company, enabled=True, suspended=False,
+            ) if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
+            else CompanyPostpaidFeature.objects.none()
+        )
+        postpaid_count = postpaid.count()
+        pending_postpaid = (
+            FeatureMeterPeriod.objects.filter(
+                company=company, settled_at__isnull=True,
+            ).aggregate(total=Sum("accrued_credits"))["total"] or Decimal("0")
+        ) if postpaid_count else Decimal("0")
+
         return Response({
             "balance": str(wallet.balance),
             "lowThreshold": str(wallet.low_threshold),

@@ -222,13 +222,13 @@ class MonthlyUsageInvoice(models.Model):
         ]
 
 
-# Time-weighted monthly usage models. Database tables originate from existing
-# 0006_storage_monthly_metering and 0007_feature_monthly_metering migrations.
-# These are distinct from the older FeatureUsageSession/MonthlyUsageInvoice
-# implementation; no historical ledger records are replaced or deleted.
+# These models are created by credits migrations 0006_storage_monthly_metering
+# and 0007_feature_monthly_metering. Keep runtime models synchronized with
+# migration state so API imports and monthly metering are safe.
 class StorageMeterCursor(models.Model):
     company = models.OneToOneField(
-        "companies.Company", on_delete=models.CASCADE, related_name="storage_meter_cursor",
+        "companies.Company", on_delete=models.CASCADE,
+        related_name="storage_meter_cursor",
     )
     sampled_at = models.DateTimeField(null=True, blank=True)
     used_bytes = models.BigIntegerField(default=0)
@@ -249,12 +249,13 @@ class StorageMeterPeriod(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["company", "period"], name="storage_meter_unique_month"),
+            models.UniqueConstraint(
+                fields=["company", "period"], name="storage_meter_unique_month",
+            ),
         ]
 
 
 class StorageMeterReading(models.Model):
-    """Append-only usage readings for company storage reconciliation."""
     company = models.ForeignKey(
         "companies.Company", on_delete=models.CASCADE, related_name="storage_meter_readings",
     )
@@ -273,7 +274,6 @@ class StorageMeterReading(models.Model):
 
 
 class CompanyPostpaidFeature(models.Model):
-    """Explicit opt-in company entitlement, separate from prepaid feature access."""
     company = models.ForeignKey(
         "companies.Company", on_delete=models.CASCADE, related_name="postpaid_features",
     )
@@ -288,7 +288,9 @@ class CompanyPostpaidFeature(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["company", "feature"], name="credits_unique_postpaid_feature"),
+            models.UniqueConstraint(
+                fields=["company", "feature"], name="credits_unique_postpaid_feature",
+            ),
         ]
 
 
@@ -313,7 +315,6 @@ class FeatureMeterPeriod(models.Model):
 
 
 class FeatureMeterReading(models.Model):
-    """Append-only per-feature active-user/staff usage readings."""
     company = models.ForeignKey(
         "companies.Company", on_delete=models.CASCADE, related_name="feature_meter_readings",
     )

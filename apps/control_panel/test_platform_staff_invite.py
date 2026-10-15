@@ -161,4 +161,4 @@ class PlatformStaffInvitationTests(TestCase):
         })
         form.actor = self.owner
         self.assertFalse(form.is_valid())
-        self.assertIn("Role scope must match", str(form.errors))
+        self.assertIn("Select a record belonging to this company.", str(form.errors))
