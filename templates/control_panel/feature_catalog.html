@@ -5,7 +5,33 @@
   <div><p class="eyebrow">Platform / Access catalog</p><h2>Feature Labels &amp; Modules</h2><p>Configure grouped feature labels for entitlements and the credit-based feature catalog.</p></div>
   <div class="remaining-head-actions">
     {% panel_can 'panel:featuregroup-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-create' %}">+ Add Label Group</a>{% endif %}
-    {% panel_can 'panel:feature-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:feature-create' %}">+ Add Feature</a>{% endif %}
+    {% panel_can 'panel:featurebundle-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:featurebundle-create' %}">+ Create Paid Label</a>{% endif %}
+    {% panel_can 'panel:feature-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:feature-create' %}">+ Register Feature</a>{% endif %}
+  </div>
+</section>
+<section class="panel-card remaining-directory cg-paid-labels" aria-label="Paid feature labels">
+  <header class="section-head directory-section-heading">
+    <div>
+      <p class="eyebrow">Paid feature labels</p>
+      <h2>Multi-feature packages</h2>
+      <p>Combine existing modules under one name and choose the credit price and access duration.</p>
+    </div>
+  </header>
+  <div class="cg-paid-label-grid">
+  {% for bundle in bundles %}
+    <article class="cg-paid-label-card">
+      <div class="cg-paid-label-top"><div><span class="eyebrow">PACKAGE / {{ bundle.key }}</span><h3>{{ bundle.name }}</h3></div><span class="remaining-state {% if bundle.is_active %}is-good{% else %}is-neutral{% endif %}">{% if bundle.is_active %}Published{% else %}Disabled{% endif %}</span></div>
+      {% if bundle.description %}<p>{{ bundle.description }}</p>{% endif %}
+      <div class="cg-paid-label-price"><strong>{{ bundle.price_credits }}</strong><span>credits / {{ bundle.get_billing_type_display }}</span></div>
+      <div class="cg-paid-label-features">
+        {% for feature in bundle.features.all %}<span>{{ feature.label }}</span>{% empty %}<small>No modules selected</small>{% endfor %}
+      </div>
+      {% if bundle.billing_type == 'per_use' %}<p class="cg-paid-label-notice">Per-use billing needs a trusted feature usage hook before purchases are enabled.</p>{% endif %}
+      {% panel_can 'panel:featurebundle-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featurebundle-edit' bundle.pk %}">Edit Package</a>{% endif %}
+    </article>
+  {% empty %}
+    <div class="cg-paid-label-empty"><strong>No paid feature labels yet.</strong><p>Select Create Paid Label to combine at least two already registered features.</p></div>
+  {% endfor %}
   </div>
 </section>
 <section class="directory-stats remaining-stats" aria-label="Feature catalog overview">
