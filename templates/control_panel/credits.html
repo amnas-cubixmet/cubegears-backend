@@ -1,4 +1,5 @@
 {% extends "control_panel/base.html" %}
+{% load static %}
 {% block content %}
 <div class="credit-panel-wrap">
   <div class="credit-summary-title directory-heading">
@@ -13,9 +14,20 @@
     <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true">W</span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
   </section>
 
-  <div class="credit-panel-grid remaining-credit-grid">
-    <section class="panel-card">
-      <h3>Credit packages</h3><p>Credits and INR price are separate administrator-controlled values. New companies start with zero credits.</p>
+  <nav class="credit-tab-navigation" aria-label="Credit management navigation" data-credit-tab-navigation hidden>
+    <div class="credit-tab-list" role="tablist" aria-label="Credit management sections">
+      <button type="button" role="tab" id="credit-tab-packages" aria-controls="credit-panel-packages" aria-selected="true" data-credit-tab="packages"><span>Credit Packages</span><span class="credit-tab-count">{{ package_total }}</span></button>
+      <button type="button" role="tab" id="credit-tab-pricing" aria-controls="credit-panel-pricing" aria-selected="false" tabindex="-1" data-credit-tab="pricing"><span>Feature Pricing</span><span class="credit-tab-count">{{ configured_features }}</span></button>
+      <button type="button" role="tab" id="credit-tab-adjustment" aria-controls="credit-panel-adjustment" aria-selected="false" tabindex="-1" data-credit-tab="adjustment"><span>Manual Adjustment</span></button>
+      <button type="button" role="tab" id="credit-tab-wallets" aria-controls="credit-panel-wallets" aria-selected="false" tabindex="-1" data-credit-tab="wallets"><span>Wallet Balances</span><span class="credit-tab-count">{{ wallet_total }}</span></button>
+      <button type="button" role="tab" id="credit-tab-purchases" aria-controls="credit-panel-purchases" aria-selected="false" tabindex="-1" data-credit-tab="purchases"><span>Verified Purchases</span></button>
+      <button type="button" role="tab" id="credit-tab-ledger" aria-controls="credit-panel-ledger" aria-selected="false" tabindex="-1" data-credit-tab="ledger"><span>Credit Ledger</span></button>
+    </div>
+  </nav>
+
+  <div class="credit-tabs-content" data-credit-tabs-content>
+  <section class="panel-card credit-tab-panel" id="credit-panel-packages" role="tabpanel" aria-labelledby="credit-tab-packages" data-credit-panel="packages" tabindex="0">
+    <h3>Credit packages</h3><p>Credits and INR price are separate administrator-controlled values. New companies start with zero credits.</p>
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="package">
         <label>Package name <input name="name" type="text" maxlength="120" placeholder="Starter Credits" required></label>
         <label>Credits <input name="credits" type="number" min="0.01" step="0.01" required placeholder="500"></label>
@@ -30,8 +42,8 @@
       </tbody></table></div>
     </section>
 
-    <section class="panel-card">
-      <h3>Feature pricing</h3><p>Every 30 days the charge is <strong>base credits + (per-staff credits × active employee count)</strong>. A feature must be approved here before companies can switch it on.</p>
+  <section class="panel-card credit-tab-panel" id="credit-panel-pricing" role="tabpanel" aria-labelledby="credit-tab-pricing" data-credit-panel="pricing" tabindex="0">
+    <h3>Feature pricing</h3><p>Every 30 days the charge is <strong>base credits + (per-staff credits × active employee count)</strong>. A feature must be approved here before companies can switch it on.</p>
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="price">
         <label>Feature <select name="feature" required>
           <option value="">Select module</option>
@@ -48,8 +60,8 @@
       </tbody></table></div>
     </section>
 
-    <section class="panel-card">
-      <h3>Manual credit adjustment</h3><p>Only authorized CubeGear platform staff may add or remove credits. Every adjustment must have a reason and is recorded in the ledger.</p>
+  <section class="panel-card credit-tab-panel" id="credit-panel-adjustment" role="tabpanel" aria-labelledby="credit-tab-adjustment" data-credit-panel="adjustment" tabindex="0">
+    <h3>Manual credit adjustment</h3><p>Only authorized CubeGear platform staff may add or remove credits. Every adjustment must have a reason and is recorded in the ledger.</p>
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="adjust"><input type="hidden" name="request_id" value="{{ adjustment_request_id }}">
         <label>Company <select name="company" required><option value="">Select company</option>
           {% for company in companies %}<option value="{{ company.id }}">{{ company.name }}</option>{% endfor %}
@@ -60,16 +72,14 @@
       </form>
     </section>
 
-    <section class="panel-card">
-      <h3>Company credit balances</h3>
+  <section class="panel-card credit-tab-panel" id="credit-panel-wallets" role="tabpanel" aria-labelledby="credit-tab-wallets" data-credit-panel="wallets" tabindex="0">
+    <h3>Company credit balances</h3>
       <div class="responsive-table"><table><thead><tr><th>Company</th><th>Balance</th><th>Low-credit alert</th></tr></thead><tbody>
       {% for wallet in wallets %}<tr><td>{{ wallet.company.name }}</td><td><strong>{{ wallet.balance }}</strong></td><td>{{ wallet.low_threshold }}</td></tr>
       {% empty %}<tr><td colspan="3">No company wallet created yet.</td></tr>{% endfor %}
       </tbody></table></div>
     </section>
-  </div>
-
-  <section class="panel-card">
+  <section class="panel-card credit-tab-panel" id="credit-panel-purchases" role="tabpanel" aria-labelledby="credit-tab-purchases" data-credit-panel="purchases" tabindex="0">
     <h3>Verified purchases</h3><p>Gateway orders are shown for review. Do not mark a payment credited manually; the server verifies Razorpay capture.</p>
     <div class="responsive-table"><table><thead><tr><th>Company</th><th>Package</th><th>Credits</th><th>INR (paise)</th><th>Status</th><th>Order</th><th>Date</th></tr></thead><tbody>
     {% for order in purchases %}<tr><td>{{ order.company.name }}</td><td>{{ order.package.name }}</td><td>{{ order.credits }}</td><td>{{ order.amount_paise }}</td><td>{{ order.status }}</td><td>{{ order.order_id|default:"—" }}</td><td>{{ order.created_at|date:"d M Y H:i" }}</td></tr>
@@ -77,7 +87,7 @@
     </tbody></table></div>
   </section>
 
-  <section class="panel-card">
+  <section class="panel-card credit-tab-panel" id="credit-panel-ledger" role="tabpanel" aria-labelledby="credit-tab-ledger" data-credit-panel="ledger" tabindex="0">
     <div class="credit-summary-title"><div><h3>Full credit activity ledger</h3><p>Company-scoped top-ups, debits, platform adjustments and automatic renewals.</p></div>
       <form method="get" class="credit-panel-filter"><select name="company" aria-label="Filter company"><option value="">All companies</option>{% for company in companies %}<option value="{{ company.id }}" {% if filter_company == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select><button type="submit" class="btn">Filter</button></form>
     </div>
@@ -87,4 +97,5 @@
     </tbody></table></div>
   </section>
 </div>
+<script defer src="{% static 'control_panel/credits-tabs.js' %}"></script>
 {% endblock %}
