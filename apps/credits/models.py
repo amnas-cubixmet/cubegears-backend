@@ -76,3 +76,40 @@ class CreditWebhookEvent(models.Model):
     event_id = models.CharField(max_length=150, unique=True)
     event_type = models.CharField(max_length=100)
     received_at = models.DateTimeField(auto_now_add=True)
+
+
+class FeatureBundle(models.Model):
+    """A paid label grouping existing features; prices are wallet credits."""
+    PERIODS = [
+        ("permanent", "Permanent"), ("weekly", "Weekly"),
+        ("daily", "Daily"), ("hourly", "Hourly"), ("per_use", "Per use"),
+    ]
+    key = models.SlugField(max_length=100, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True)
+    features = models.ManyToManyField("saas.PlanFeature", related_name="credit_bundles")
+    price_credits = models.DecimalField(max_digits=12, decimal_places=2)
+    period = models.CharField(max_length=12, choices=PERIODS)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class CompanyFeatureBundle(models.Model):
+    """A purchase is isolated by tenant and bounded by its saved entitlement."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_bundles")
+    bundle = models.ForeignKey(FeatureBundle, on_delete=models.PROTECT, related_name="company_access")
+    enabled = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    remaining_uses = models.PositiveIntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "bundle"], name="credits_unique_company_bundle"),
+        ]
