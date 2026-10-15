@@ -278,11 +278,17 @@ class DashboardView(APIView):
             payload["stats"]["lowStockAlerts"] = 0
         if not can("staff.view"):
             payload["staffAvailability"] = []
-        if not can("payments.view") and not can("invoices.view"):
-            payload["payments"] = {}
-            payload["stats"]["todaysCollection"] = None
+        elif not can("jobs.view"):
+            for member in payload["staffAvailability"]:
+                member["activeJobs"] = None
+        if not can("invoices.view"):
+            for key in ("billedAmount", "unpaidInvoices", "partiallyPaidInvoices", "overdueAmount"):
+                payload["payments"].pop(key, None)
             payload["stats"]["totalRevenue"] = None
             payload["stats"]["outstandingBalance"] = None
+        if not can("payments.view"):
+            payload["payments"].pop("receivedPayments", None)
+            payload["stats"]["todaysCollection"] = None
         if not can("expenses.view"):
             payload["summary"]["expenses"] = None
         if not can("attendance.self"):
