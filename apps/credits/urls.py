@@ -1,6 +1,7 @@
 from django.urls import path
 from .hosted_views import HostedCreditCheckoutView, HostedCreditStatusView
 from .bundle_views import BundleListView, BundlePurchaseView, BundleDisableView
+from .access_views import TenantFeatureAccessView
 from .gateway_diagnostics import GatewayStatusView, GatewayTestView
 from .views import (
     CompanyCreditsView, CreditPackagesView, CreditFeaturesView,
