@@ -120,6 +120,8 @@ class CreditFeaturesView(APIView):
     def get(self, request):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
+        if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
+            return Response([])
         count = staff_count(request.user.company)
         users = billable_user_count(request.user.company)
         current = {v.feature_id: v for v in CompanyCreditFeature.objects.filter(company=request.user.company)}
@@ -203,6 +205,11 @@ class EnableCreditFeatureView(APIView):
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
+        if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
+            return Response({
+                'code': 'LABEL_ONLY_ACCESS_ENABLED',
+                'message': 'Activate a Feature Label instead of an individual module.',
+            }, status=409)
         # Never charge a user for a paid toggle that would have no effect.
         if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
             return Response({
