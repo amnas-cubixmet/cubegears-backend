@@ -90,8 +90,8 @@ def meter_company_storage(company, *, at=None):
         start = cursor.sampled_at if elapsed <= max_gap else at
         if elapsed > max_gap:
             LOG.warning(
-                "Storage metering gap for company %s: %s seconds; %s seconds not billed",
-                company.pk, elapsed, elapsed - max_gap,
+                "Storage metering gap for company %s: %s seconds unobserved; no charge for the gap",
+                company.pk, elapsed,
             )
         while start < at:
             month = _period_for(start)
