@@ -8,6 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.utils import timezone
+from apps.credits.models import CompanyBundleAccess
+from apps.saas.access import active_label_modules
 from apps.accounts.permissions import user_has_permission
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
@@ -34,11 +37,26 @@ class TenantFeatureAccessView(APIView):
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in CORE_MODULES
         })
+        label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
+        label_modules = sorted(active_label_modules(user.company)) if label_only else []
+        next_expiry = None
+        if label_only:
+            next_expiry = CompanyBundleAccess.objects.filter(
+                company=user.company, enabled=True, bundle__is_active=True,
+                valid_until__gt=timezone.now(),
+            ).exclude(billing_type_at_purchase="per_use").order_by(
+                "valid_until"
+            ).values_list("valid_until", flat=True).first()
         return Response({
             "companyId": str(user.company_id),
             "permissions": permissions,
             "enabledModules": modules,
-            "enforcementEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED),
+            "labelOnly": label_only,
+            "activeLabelModules": label_modules,
+            "nextLabelExpiryAt": next_expiry.isoformat() if next_expiry else None,
+            "enforcementEnabled": bool(
+                settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or label_only
+            ),
             "strictModulesEnabled": bool(getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)),
             "canManageFeatures": "billing.edit" in permissions,
         })
