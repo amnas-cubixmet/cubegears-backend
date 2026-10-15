@@ -414,6 +414,61 @@ class EmployeeForm(AdminModelForm):
 
 
 
+class PlatformStaffInviteForm(AdminModelForm):
+    """Invite companyless, explicitly role-scoped SaaS Control Panel staff."""
+
+    class Meta:
+        model = User
+        fields = ("name", "email", "phone", "role")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["role"].queryset = Role.objects.filter(
+            company__isnull=True, is_active=True, is_system=False,
+        ).order_by("name")
+        self.fields["role"].required = True
+        self.fields["role"].empty_label = "Select a SaaS Control Panel role"
+        self.fields["role"].help_text = (
+            "Only companyless platform roles are available. "
+            "Manage their individual permissions under Roles."
+        )
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("This email already has a login account.")
+        return email
+
+    def clean_role(self):
+        role = self.cleaned_data["role"]
+        permissions = role.permissions
+        if role.company_id is not None or not role.is_active or role.is_system:
+            raise forms.ValidationError("Select an active SaaS platform staff role.")
+        if (not isinstance(permissions, list)
+                or not all(isinstance(code, str) for code in permissions)
+                or not any(code.startswith("panel.") or code == "*" for code in permissions)):
+            raise forms.ValidationError("This role has no SaaS Control Panel access.")
+        actor = getattr(self, "actor", None)
+        if not actor or (not actor.is_superuser and not can_delegate(actor, permissions)):
+            raise forms.ValidationError("You cannot assign permissions beyond your own role.")
+        return role
+
+    def save(self, commit=True):
+        if not commit:
+            raise ValueError("Platform staff must be saved atomically.")
+        user = super().save(commit=False)
+        user.set_unusable_password()
+        user.company = None
+        user.branch = None
+        user.is_staff = True
+        user.is_superuser = False
+        user.is_active = True
+        user.email_verified = False
+        user.save()
+        self.save_m2m()
+        return user
+
+
 class StaffInviteForm(EmployeeForm):
     """Add a workshop staff account with a private email password invitation.
 
