@@ -178,6 +178,10 @@ def settle_monthly_usage(company, category, month, *, now=None):
     wallet_for(company)
     from .models import CreditWallet
     CreditWallet.objects.select_for_update().get(company=company)
+    if category == "storage" and CreditLedger.objects.filter(
+        company=company, reference=f"storage:{company.pk}:monthly:{month}",
+    ).exists():
+        return "already_snapshot_billed", None
     invoice, _ = MonthlyUsageInvoice.objects.get_or_create(
         company=company, category=category, billing_month=month,
     )
