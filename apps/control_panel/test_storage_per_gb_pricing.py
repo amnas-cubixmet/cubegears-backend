@@ -131,6 +131,26 @@ class StorageRatePanelTests(TestCase):
         self.assertEqual(self.client.get(self.url).status_code, 403)
         self.assertEqual(self.client.post(self.url).status_code, 403)
 
+    def test_disabled_policy_cannot_charge_even_when_explicitly_passed(self):
+        policy = StorageCreditPolicy.objects.create(
+            credits_per_gb=Decimal("10.00"), included_gb=Decimal("0"),
+            billing_period="daily", is_active=False,
+        )
+        result, quote = charge_storage_period(self.company, policy)
+        self.assertEqual(result, "disabled")
+        self.assertIsNotNone(quote)
+        self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("40.00"))
+        self.assertFalse(CreditLedger.objects.exists())
+
+    def test_negative_database_rate_cannot_create_wallet_credit(self):
+        policy = StorageCreditPolicy.objects.create(
+            credits_per_gb=Decimal("-10.00"), included_gb=Decimal("0"),
+            billing_period="daily", is_active=True,
+        )
+        with self.assertRaisesRegex(ValueError, "negative"):
+            charge_storage_period(self.company, policy)
+        self.assertFalse(CreditLedger.objects.exists())
+
     def test_company_filter_does_not_include_other_company_usage(self):
         response = self.client.get(self.url, {"company": str(self.company.pk)})
         self.assertEqual(response.status_code, 200)
