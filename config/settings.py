@@ -306,6 +306,9 @@ if CREDIT_BILLING_CELERY_ENABLED:
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
+# Optional wildcard frontend hostname; provisioning DNS/TLS is a deployment step.
+TENANT_BASE_DOMAIN = env("TENANT_BASE_DOMAIN", "")
+
 CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
 # Opt-in: non-core workshop APIs require an ACTIVE purchased feature label.
 # Existing tenants need label entitlements and operator approval before rollout.

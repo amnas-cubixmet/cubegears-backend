@@ -19,8 +19,7 @@ from apps.saas.models import FeatureGroup, PlanFeature
 
 
 CORE_MODULES = frozenset({
-    "dashboard", "billing", "settings", "company", "storage",
-    "notifications", "roles",
+    "dashboard", "billing", "company", "roles",
 })
 
 
@@ -46,7 +45,7 @@ def discover_modules():
                 else "staff" if key in {"staff", "payroll", "attendance"}
                 else "workshop"
             ),
-            "priceable": key not in CORE_MODULES and key != "attendance",
+            "priceable": key not in CORE_MODULES,
         }
         for key in sorted(keys)
     }

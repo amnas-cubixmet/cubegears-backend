@@ -11,13 +11,12 @@ from rest_framework.views import APIView
 from django.utils import timezone
 from apps.credits.models import CompanyBundleAccess
 from apps.saas.access import active_label_modules
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import user_has_permission, is_company_owner
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
 CORE_MODULES = frozenset({
-    "dashboard", "billing", "company", "settings", "storage", "roles",
-    "notifications",
+    "dashboard", "billing", "company", "roles",
 })
 
 
@@ -33,9 +32,10 @@ class TenantFeatureAccessView(APIView):
             code for code in TENANT_PERMISSIONS
             if user_has_permission(user, code)
         )
+        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
-            if "." in code and code.partition(".")[0] not in CORE_MODULES
+            if "." in code and code.partition(".")[0] not in core
         })
         label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
         label_modules = sorted(active_label_modules(user.company)) if label_only else []
@@ -49,13 +49,15 @@ class TenantFeatureAccessView(APIView):
             ).values_list("valid_until", flat=True).first()
         return Response({
             "companyId": str(user.company_id),
+            "isCompanyOwner": is_company_owner(user),
+            "paidAccessRequired": user.company.require_paid_features,
             "permissions": permissions,
             "enabledModules": modules,
             "labelOnly": label_only,
             "activeLabelModules": label_modules,
             "nextLabelExpiryAt": next_expiry.isoformat() if next_expiry else None,
             "enforcementEnabled": bool(
-                settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or label_only
+                user.company.require_paid_features or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or label_only
             ),
             "strictModulesEnabled": bool(getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)),
             "canManageFeatures": "billing.edit" in permissions,

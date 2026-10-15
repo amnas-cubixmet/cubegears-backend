@@ -16,9 +16,9 @@ class CatalogAuditTests(TestCase):
         self.assertIn("jobs", discovered)
         self.assertIn("staff", discovered)
         self.assertIn("storage", discovered)
-        self.assertFalse(discovered["storage"]["priceable"])
+        self.assertTrue(discovered["storage"]["priceable"])
         self.assertFalse(discovered["billing"]["priceable"])
-        self.assertFalse(discovered["attendance"]["priceable"])
+        self.assertTrue(discovered["attendance"]["priceable"])
         for key in discovered:
             self.assertTrue(
                 any(p.startswith(key + ".") for p in TENANT_PERMISSIONS)
@@ -39,7 +39,7 @@ class CatalogAuditTests(TestCase):
         first = PlanFeature.objects.count()
         self.assertGreater(first, 0)
         self.assertFalse(PlanFeature.objects.filter(is_active=True).exists())
-        self.assertFalse(PlanFeature.objects.filter(key="storage").exists())
+        self.assertTrue(PlanFeature.objects.filter(key="storage").exists())
         self.assertFalse(PlanFeature.objects.filter(key="billing").exists())
         call_command("audit_feature_catalog", "--sync", stdout=StringIO())
         self.assertEqual(PlanFeature.objects.count(), first)

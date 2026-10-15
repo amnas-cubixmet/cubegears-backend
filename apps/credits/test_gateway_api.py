@@ -28,6 +28,8 @@ class GatewayDiagnosticsApiTests(TestCase):
             email="billing-gateway@example.test", name="Billing Admin",
             password="SafeTestPassword123!", company=self.company, role=role,
         )
+        self.admin.company.owner = self.admin
+        self.admin.company.save(update_fields=["owner"])
         self.client = APIClient()
         self.client.force_authenticate(self.admin)
 

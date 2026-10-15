@@ -28,6 +28,12 @@ class Company(models.Model):
     currency = models.CharField(max_length=8, default="INR")
     logo = models.URLField(blank=True)  # Legacy external logo URL, retained for existing records.
     logo_image = models.ImageField(upload_to=company_logo_upload_to, blank=True)
+    owner = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="owned_companies",
+    )
+    # Legacy companies keep their existing rollout; public signup always locks modules.
+    require_paid_features = models.BooleanField(default=False)
     plan = models.CharField(max_length=50, default="starter")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

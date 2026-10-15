@@ -12,7 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import UserRateThrottle
 
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
@@ -30,7 +30,7 @@ class CreditsVerifyThrottle(UserRateThrottle):
 
 
 class CompanyCreditsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -102,7 +102,7 @@ class CompanyCreditsView(APIView):
 
 
 class CreditPackagesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -115,7 +115,7 @@ class CreditPackagesView(APIView):
 
 
 class CreditFeaturesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -187,7 +187,7 @@ class CreditFeaturesView(APIView):
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
                 ),
                 "available": rate.is_available,
-                "activationEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED),
+                "activationEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features),
             }
             for rate in rows
         ])
@@ -197,14 +197,24 @@ class FeatureInput(serializers.Serializer):
     key = serializers.SlugField(max_length=100)
 
 
-class EnableCreditFeatureView(APIView):
-    permission_classes = [IsAuthenticated]
+def record_feature_change(request, feature, enabled):
+    from apps.saas.models import SecurityEvent
+    SecurityEvent.objects.create(
+        company=request.user.company, user=request.user,
+        event="feature_activated" if enabled else "feature_disabled",
+        metadata={"feature": feature.key, "name": feature.label},
+    )
 
+
+class EnableCreditFeatureView(APIView):
+    permission_classes = [IsCompanyOwner]
+
+    @transaction.atomic
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
         # Never charge a user for a paid toggle that would have no effect.
-        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+        if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features):
             return Response({
                 "code": "FEATURE_ENTITLEMENTS_NOT_ENABLED",
                 "message": "Paid feature access must be enabled by the platform administrator before activating paid features.",
@@ -215,11 +225,13 @@ class EnableCreditFeatureView(APIView):
         try:
             if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
                 state, charge = activate_postpaid_feature(request.user.company, feature)
+                record_feature_change(request, feature, True)
                 return Response({
                     "enabled": state.enabled, "chargedCredits": str(charge),
                     "nextChargeAt": None, "billingMode": "monthly_postpaid",
                 })
             state, charge = enable_paid_feature(request.user.company, feature, request.user)
+            record_feature_change(request, feature, True)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
         return Response({"enabled": state.enabled, "chargedCredits": str(charge), "nextChargeAt": state.next_charge_at,
@@ -227,8 +239,9 @@ class EnableCreditFeatureView(APIView):
 
 
 class DisableCreditFeatureView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
+    @transaction.atomic
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
@@ -241,13 +254,15 @@ class DisableCreditFeatureView(APIView):
             ).exists()
             if existing:
                 deactivate_postpaid_feature(request.user.company, feature)
+                record_feature_change(request, feature, False)
                 return Response({"enabled": False, "billingMode": "monthly_postpaid"})
         disable_paid_feature(request.user.company, feature, request.user)
+        record_feature_change(request, feature, False)
         return Response({"enabled": False})
 
 
 class CreditLogsView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -272,9 +287,10 @@ class PackageInput(serializers.Serializer):
 
 
 class CreateCreditOrderView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [CreditsOrderThrottle]
 
+    @transaction.atomic
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
@@ -332,7 +348,7 @@ class CreditVerifyInput(serializers.Serializer):
 
 
 class VerifyCreditPaymentView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [CreditsVerifyThrottle]
 
     def post(self, request):

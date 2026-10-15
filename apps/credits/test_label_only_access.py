@@ -38,10 +38,14 @@ class LabelOnlyAccessTests(TestCase):
             email="label-a@example.test", name="Owner A",
             password="LabelAccessSecure123!", company=self.a, role=self.role_a,
         )
+        self.owner.company.owner = self.owner
+        self.owner.company.save(update_fields=["owner"])
         self.other = User.objects.create_user(
             email="label-b@example.test", name="Owner B",
             password="LabelAccessSecure123!", company=self.b, role=self.role_b,
         )
+        self.other.company.owner = self.other
+        self.other.company.save(update_fields=["owner"])
         group = FeatureGroup.objects.create(key="label-test-group", label="Workshop")
         self.jobs = PlanFeature.objects.create(key="jobs", label="Jobs", group=group)
         self.customers = PlanFeature.objects.create(key="customers", label="Customers", group=group)

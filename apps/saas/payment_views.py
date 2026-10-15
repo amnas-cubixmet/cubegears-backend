@@ -1,3 +1,4 @@
+from apps.accounts.permissions import IsCompanyOwner
 import json
 import os
 from decimal import Decimal, ROUND_HALF_UP
@@ -17,7 +18,7 @@ class CheckoutThrottle(UserRateThrottle):
     rate="12/hour"
 
 class PaymentAccessView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsCompanyOwner]
     def get(self,request):
         company=request.user.company
         paid=has_paid_access(company)
@@ -29,7 +30,7 @@ class PaymentAccessView(APIView):
             "plan":sub.plan if sub else None})
 
 class PaymentOrderView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsCompanyOwner]
     throttle_classes=[CheckoutThrottle]
     def post(self,request):
         if not request.user.company_id:
@@ -57,7 +58,7 @@ class PaymentOrderView(APIView):
             "amount":amount,"currency":"INR","plan":plan.name},status=201)
 
 class PaymentVerifyView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsCompanyOwner]
     throttle_classes=[CheckoutThrottle]
     def post(self,request):
         order_id=str(request.data.get("razorpay_order_id",""))
@@ -73,7 +74,7 @@ class PaymentVerifyView(APIView):
         return Response({"status":"captured","accessUntil":paid.access_until.isoformat()})
 
 class PaymentHistoryView(APIView):
-    permission_classes=[IsAuthenticated]
+    permission_classes=[IsCompanyOwner]
     def get(self,request):
         rows=SubscriptionPayment.objects.filter(company=request.user.company)[:100]
         return Response([{"orderId":r.order_id,"paymentId":r.payment_id,

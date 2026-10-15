@@ -40,6 +40,8 @@ class BillingModelIntegrationTests(TestCase):
             company=company, role=role, name="Billing Owner",
             email="billing-fix@example.test", password="BillingFixStrong123!",
         )
+        owner.company.owner = owner
+        owner.company.save(update_fields=["owner"])
         group = FeatureGroup.objects.create(key="fix-billing", label="Fix Billing")
         feature = PlanFeature.objects.create(
             key="jobs", group=group, label="Job Cards",

@@ -78,6 +78,20 @@ class AdminModelForm(forms.ModelForm):
 
 
 class CompanyForm(AdminModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance._state.adding:
+            self.fields["owner"].queryset = User.objects.none()
+            self.fields["require_paid_features"].initial = True
+        else:
+            self.fields["owner"].queryset = User.objects.filter(company=self.instance, is_active=True)
+
+    def clean_owner(self):
+        owner = self.cleaned_data.get("owner")
+        if owner and (owner.company_id != self.instance.pk or not owner.is_active):
+            raise forms.ValidationError("Choose an active user of this company.")
+        return owner
+
     """Create a stable unique tenant slug and safely accept an optional logo image."""
 
     class Meta:
@@ -85,7 +99,7 @@ class CompanyForm(AdminModelForm):
         fields = [
             "name", "legal_name", "email", "phone", "gstin",
             "address", "city", "state", "country", "pincode", "currency",
-            "logo_image", "plan", "is_active",
+            "logo_image", "plan", "is_active", "owner", "require_paid_features",
         ]
         widgets = {
             "logo_image": forms.FileInput(attrs={
@@ -770,7 +784,7 @@ class FeatureBundleForm(AdminModelForm):
         label="Included existing features",
         queryset=PlanFeature.objects.filter(is_active=True),
         widget=forms.CheckboxSelectMultiple(),
-        help_text="Choose 2 or more existing features. All active published modules are listed.",
+        help_text="Choose one or more existing features. All active published modules are listed.",
     )
 
     class Meta:
@@ -789,8 +803,8 @@ class FeatureBundleForm(AdminModelForm):
 
     def clean_features(self):
         features = self.cleaned_data["features"]
-        if features.count() < 2:
-            raise forms.ValidationError("Select at least two existing features for this label.")
+        if features.count() < 1:
+            raise forms.ValidationError("Select at least one existing feature for this label.")
         if self.instance.pk and self.instance.company_access.exists():
             previous = set(self.instance.features.values_list("pk", flat=True))
             selected = set(features.values_list("pk", flat=True))

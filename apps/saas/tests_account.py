@@ -26,6 +26,8 @@ class AccountBackendIntegrationTests(TestCase):
             email="owner-account@example.test", password="SecurePassword938!",
             name="Workshop Owner", company=self.company, role=self.role,
         )
+        self.owner.company.owner = self.owner
+        self.owner.company.save(update_fields=["owner"])
         self.colleague = User.objects.create_user(
             email="team-account@example.test", password="SecurePassword938!",
             name="Team User", company=self.company, role=self.role,

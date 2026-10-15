@@ -30,7 +30,17 @@ class UserSerializer(serializers.ModelSerializer):
     company = CompanyMiniSerializer(read_only=True)
     branch = BranchMiniSerializer(read_only=True)
     role = RoleMiniSerializer(read_only=True)
+    isCompanyOwner = serializers.SerializerMethodField()
+    paidAccessRequired = serializers.SerializerMethodField()
     effectivePermissions = serializers.SerializerMethodField()
+
+    def get_isCompanyOwner(self, obj):
+        from .permissions import is_company_owner
+        return is_company_owner(obj)
+
+    def get_paidAccessRequired(self, obj):
+        return bool(obj.company_id and obj.company.require_paid_features)
+
     employeeProfileId = serializers.SerializerMethodField()
     employeeDisplayNo = serializers.SerializerMethodField()
 
@@ -61,7 +71,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "email", "phone", "avatar",
             "company", "branch", "role",
-            "employeeProfileId", "employeeDisplayNo", "effectivePermissions",
+            "employeeProfileId", "employeeDisplayNo", "effectivePermissions", "isCompanyOwner", "paidAccessRequired",
             "is_staff", "is_superuser", "email_verified",
             "created_at",
         ]

@@ -53,6 +53,8 @@ class MonthlyMeteredBillingTests(TestCase):
             email="monthly-meter-owner@example.test", name="Monthly Owner",
             password="StrongMonthlyTests123!",
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.member = User.objects.create_user(
             company=self.company, role=self.role,
             email="monthly-meter-staff@example.test", name="Staff",

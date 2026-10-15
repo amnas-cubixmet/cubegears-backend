@@ -26,6 +26,8 @@ class DynamicSaasPlanTests(TestCase):
             email="owner@plan-tests.example", password="example-pass-2026",
             company=self.company, branch=self.branch, role=self.role, name="Owner",
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.group = FeatureGroup.objects.create(key="operations", label="Operations")

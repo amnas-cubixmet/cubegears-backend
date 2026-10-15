@@ -218,7 +218,8 @@ class PublicWorkshopSignupView(APIView):
             state=data["state"].strip(),
             country=data["country"].strip(),
             currency="INR",
-            plan="starter",
+            plan="credits",
+            require_paid_features=True,
             is_active=True,
         )
 
@@ -262,7 +263,10 @@ class PublicWorkshopSignupView(APIView):
         user.set_unusable_password()
         user.save(update_fields=["password"])
 
-        # Every workshop owner can use My Attendance immediately.
+        company.owner = user
+        company.save(update_fields=["owner", "updated_at"])
+
+        # Create the staff identity without granting a free attendance entitlement.
         resolve_employee_for_user(user)
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))

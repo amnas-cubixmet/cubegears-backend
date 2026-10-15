@@ -33,6 +33,8 @@ class MeteredCreditsTests(TestCase):
             email="metered-owner@example.test", name="Owner", company=self.company,
             role=role, password="SafeTestPassword123!",
         )
+        self.admin.company.owner = self.admin
+        self.admin.company.save(update_fields=["owner"])
         self.second = User.objects.create_user(
             email="metered-user@example.test", name="Employee", company=self.company,
             role=role, password="SafeTestPassword123!",
@@ -50,7 +52,7 @@ class MeteredCreditsTests(TestCase):
         self.assertIn("jobs", discovered)
         self.assertIn("payroll", discovered)
         self.assertIn("storage", discovered)
-        self.assertFalse(discovered["storage"]["billable"])
+        self.assertTrue(discovered["storage"]["billable"])
         self.assertTrue(discovered["jobs"]["billable"])
         self.assertTrue(all(not m["key"].startswith("panel") for m in discovered.values()))
         created = sync_existing_modules()

@@ -1,6 +1,7 @@
 """Tenant-scoped prepaid feature label catalog and activation API."""
 from decimal import Decimal
 from django.conf import settings
+from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
@@ -8,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess
 from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
 
@@ -21,7 +22,7 @@ class BundleInput(serializers.Serializer):
     bundleId = serializers.IntegerField(min_value=1)
 
 
-def _public_bundle(bundle, access=None, user_count=0):
+def _public_bundle(bundle, access=None, user_count=0, company=None):
     active_features = [
         {"key": feature.key, "label": feature.label}
         for feature in bundle.features.all() if feature.is_active
@@ -29,7 +30,7 @@ def _public_bundle(bundle, access=None, user_count=0):
     # Expose the platform's real readiness state, not a browser-only toggle.
     disabled_reason = (
         "FEATURE_ENTITLEMENTS_NOT_ENABLED"
-        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+        if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
         else "METERED_OPERATION_NOT_READY"
         if bundle.billing_type == "per_use"
         else "FEATURE_LABEL_EMPTY"
@@ -47,6 +48,12 @@ def _public_bundle(bundle, access=None, user_count=0):
         "billingType": bundle.billing_type,
         "features": active_features,
         "active": bundle_is_usable(access) if access else False,
+        "canResume": bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
+            access.billing_type_at_purchase == "permanent" or (
+                access.billing_type_at_purchase in {"hourly", "daily", "weekly", "monthly"}
+                and access.valid_until and access.valid_until > timezone.now()
+            )
+        )),
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
         "meteredReady": bundle.billing_type != "per_use",
@@ -56,7 +63,7 @@ def _public_bundle(bundle, access=None, user_count=0):
 
 
 class BundleListView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -68,11 +75,11 @@ class BundleListView(APIView):
             ).select_related("bundle")
         }
         count = billable_user_count(request.user.company)
-        return Response([_public_bundle(b, accesses.get(b.id), count) for b in bundles])
+        return Response([_public_bundle(b, accesses.get(b.id), count, request.user.company) for b in bundles])
 
 
 class BundlePurchaseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [BundlePurchaseThrottle]
 
     def post(self, request):
@@ -83,7 +90,7 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
-        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+        if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features):
             return Response({
                 "message": "Paid feature enforcement must be enabled by the platform administrator before purchasing labels.",
                 "code": "FEATURE_ENTITLEMENTS_NOT_ENABLED",
@@ -100,13 +107,13 @@ class BundlePurchaseView(APIView):
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
         return Response({
-            "bundle": _public_bundle(bundle, access, billable_user_count(request.user.company)),
+            "bundle": _public_bundle(bundle, access, billable_user_count(request.user.company), request.user.company),
             "chargedCredits": str(charged),
         })
 
 
 class BundleDisableView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
@@ -114,7 +121,7 @@ class BundleDisableView(APIView):
         payload = BundleInput(data=request.data)
         payload.is_valid(raise_exception=True)
         bundle = get_object_or_404(FeatureBundle, pk=payload.validated_data["bundleId"])
-        access = disable_feature_bundle(request.user.company, bundle)
+        access = disable_feature_bundle(request.user.company, bundle, actor=request.user)
         if not access:
             return Response({"message": "This company has not purchased this label."}, status=404)
-        return Response({"bundle": _public_bundle(bundle, access, billable_user_count(request.user.company)), "chargedCredits": "0.00"})
+        return Response({"bundle": _public_bundle(bundle, access, billable_user_count(request.user.company), request.user.company), "chargedCredits": "0.00"})
