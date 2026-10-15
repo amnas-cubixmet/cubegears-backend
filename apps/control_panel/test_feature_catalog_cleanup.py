@@ -40,30 +40,17 @@ class PaidFeatureCatalogOnlyTests(TestCase):
     def setUp(self):
         self.client.force_login(self.admin)
 
-    def test_discovery_panels_hidden_paid_bundle_and_price_still_present(self):
+    def test_retired_labels_page_redirects_to_module_pricing(self):
         response = self.client.get(reverse("panel:features"))
-        self.assertEqual(response.status_code, 200)
-        for excluded in (
-            "Discovered Module Inventory",
-            "Sync Missing Modules",
-            "Discovered Workshop Modules",
-            "Module Groups",
-            "Backend permission key",
-            "Feature catalog overview",
-        ):
-            self.assertNotContains(response, excluded)
-        self.assertContains(response, "Feature Labels")
-        self.assertContains(response, "Workshop Pro")
-        self.assertNotContains(response, "base credits")
-        self.assertContains(response, "5.00")
-        self.assertContains(response, "Job Cards")
-        self.assertContains(response, "Stock &amp; Inventory")
-        self.assertContains(response, "Edit Label")
+        self.assertRedirects(response, reverse("panel:feature-pricing"))
+        pricing = self.client.get(reverse("panel:feature-pricing"))
+        self.assertContains(pricing, "Feature Pricing")
+        self.assertNotContains(pricing, "Feature Labels")
+        self.assertNotContains(pricing, "Create Feature Label")
 
     def test_page_view_does_not_automatically_sync_modules(self):
         response = self.client.get(reverse("panel:features"))
-        self.assertEqual(response.status_code, 200)
-        self.assertNotContains(response, "Sync Missing Modules")
+        self.assertEqual(response.status_code, 302)
         self.assertEqual(FeatureGroup.objects.count(), 1)
         self.assertEqual(PlanFeature.objects.count(), 2)
         # Preserve the existing privileged sync API for historical integrations,
