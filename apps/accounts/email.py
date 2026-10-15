@@ -35,6 +35,19 @@ def queue_email(subject, message, recipient_list, *, action_url=None,
     state = {"status": email_delivery_mode()}
 
     def deliver():
+        # Optional background delivery for plain notification messages.
+        # Security emails with action URLs or delivery callbacks still use the
+        # existing synchronous path to preserve immediate success reporting.
+        if settings.EMAIL_CELERY_ENABLED and not action_url and on_delivery is None:
+            try:
+                from .tasks import send_email_task
+                send_email_task.delay(subject, message, recipients, settings.DEFAULT_FROM_EMAIL)
+                state["status"] = "queued"
+                return
+            except Exception:
+                # Never drop a committed notification if Redis/Beat is down.
+                # Attempt the original direct SMTP send instead.
+                pass
         try:
             if not action_url:
                 count = send_mail(subject, message, settings.DEFAULT_FROM_EMAIL,
