@@ -416,6 +416,8 @@ def storage(request):
     company_rows = Company.objects.order_by("name").only("id", "name")
     if company_id:
         company_rows = company_rows.filter(pk=company_id)
+    company_page = Paginator(company_rows, 50).get_page(request.GET.get("live_page"))
+    company_rows = list(company_page.object_list)
     usage = {
         row["company_id"]: row
         for row in MediaFile.objects.filter(company__in=company_rows)
@@ -463,7 +465,8 @@ def storage(request):
         "storage_policy": policy,
         "can_edit_storage_pricing": can_edit_pricing,
         "live_storage_rows": live_rows,
-        "live_storage_count": len(live_rows),
+        "live_storage_count": company_page.paginator.count,
+        "live_storage_page": company_page,
         "storage_period": period,
     })
 
