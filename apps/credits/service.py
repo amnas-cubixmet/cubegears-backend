@@ -6,6 +6,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.employees.models import Employee
+from apps.accounts.models import User
 from .models import (
     CreditWallet, CreditLedger, FeatureCreditPrice, CompanyCreditFeature,
     CreditPurchase,
@@ -13,6 +14,7 @@ from .models import (
 
 ZERO = Decimal("0.00")
 PERIOD_DAYS = 30
+BILLING_DURATIONS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
 
 
 def staff_count(company):
@@ -25,8 +27,22 @@ def wallet_for(company):
     return wallet
 
 
-def price_for(feature_price, staff):
-    return feature_price.base_credits + feature_price.per_staff_credits * staff
+def billable_user_count(company):
+    """Active tenant login accounts; excludes platform staff and inactive logins."""
+    return User.objects.filter(company=company, is_active=True).count()
+
+
+def price_for(feature_price, staff, users=0):
+    """Recurring charge is separate from the one-time activation fee."""
+    return (
+        feature_price.base_credits
+        + feature_price.per_staff_credits * staff
+        + feature_price.per_user_credits * users
+    )
+
+
+def period_duration(feature_price):
+    return BILLING_DURATIONS[feature_price.billing_period]
 
 
 def change_balance(company, delta, *, kind, reference, description, actor=None, allow_negative=False):
@@ -74,18 +90,20 @@ def enable_paid_feature(company, feature, actor):
     state, _ = CompanyCreditFeature.objects.select_for_update().get_or_create(
         company=company, feature=feature,
     )
-    if state.enabled:
+    now = timezone.now()
+    if state.enabled and state.next_charge_at and state.next_charge_at > now:
         return state, ZERO
     staff = staff_count(company)
-    charge = price_for(pricing, staff)
+    users = billable_user_count(company)
+    charge = price_for(pricing, staff, users) + pricing.activation_credits
     change_balance(
         company, -charge, kind="feature_charge",
         reference=f"feature-start:{state.pk}:{timezone.now().isoformat()}",
-        description=f"Enable {feature.label}: {staff} staff / {PERIOD_DAYS} days",
+        description=f"Enable {feature.label}: {users} users, {staff} employees; activation + {pricing.billing_period} rate",
         actor=actor,
     )
     state.enabled = True
-    state.next_charge_at = timezone.now() + timedelta(days=PERIOD_DAYS)
+    state.next_charge_at = now + period_duration(pricing)
     state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
     return state, charge
 
@@ -121,14 +139,15 @@ def renew_feature(state):
         state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
         return "unavailable"
     count = staff_count(state.company)
-    cost = price_for(pricing, count)
+    users = billable_user_count(state.company)
+    cost = price_for(pricing, count, users)
     wallet_for(state.company)
     ref = f"feature-renew:{state.pk}:{state.next_charge_at.isoformat()}"
     try:
         change_balance(
             state.company, -cost, kind="feature_charge",
             reference=ref,
-            description=f"Renew {state.feature.label}: {count} staff / {PERIOD_DAYS} days",
+            description=f"Renew {state.feature.label}: {users} users, {count} employees / {pricing.billing_period}",
         )
     except ValueError:
         state.enabled = False
@@ -140,7 +159,7 @@ def renew_feature(state):
             description=f"{state.feature.label} suspended: insufficient wallet credits",
         )
         return "suspended"
-    state.next_charge_at = timezone.now() + timedelta(days=PERIOD_DAYS)
+    state.next_charge_at = timezone.now() + period_duration(pricing)
     state.save(update_fields=["next_charge_at", "updated_at"])
     return "renewed"
 
