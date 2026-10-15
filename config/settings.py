@@ -292,4 +292,7 @@ RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
 CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
+# Phase-gated: deny any unregistered tenant modules, while keeping core/auth/billing accessible.
+# Turn on only after catalog and all tenant entitlements have been backfilled.
+CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENABLED", False)
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
