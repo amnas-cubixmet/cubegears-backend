@@ -65,7 +65,7 @@ def feature_allowed(user, permission):
         company=user.company, enabled=True, bundle__is_active=True,
         bundle__features__key=module, bundle__features__is_active=True,
     ).filter(
-        Q(bundle__billing_type="permanent", valid_until__isnull=True) |
-        Q(bundle__billing_type__in=["hourly", "daily", "weekly"],
+        Q(billing_type_at_purchase="permanent", valid_until__isnull=True) |
+        Q(billing_type_at_purchase__in=["hourly", "daily", "weekly"],
           valid_until__gt=timezone.now())
     ).exists()
