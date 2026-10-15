@@ -184,3 +184,36 @@ class MeteredStorageTests(TestCase):
         self.policy.save()
         with self.assertRaisesRegex(ValueError, "60"):
             record_storage_interval(self.company, now=self.at, policy=self.policy)
+
+    def test_monthly_usage_api_requires_billing_role_and_company_scope(self):
+        from rest_framework.test import APIClient
+        from apps.roles.models import Role
+        user_role = Role.objects.create(
+            company=self.company, name="Account Billing", code="BILLING",
+            permissions=["billing.view"],
+        )
+        user = User.objects.create_user(
+            email="storage-billing-view@example.test", name="Billing Viewer",
+            password="SecureBillingTest123!", company=self.company, role=user_role,
+        )
+        record_storage_interval(self.company, now=self.at, policy=self.policy)
+        client = APIClient()
+        client.force_authenticate(user)
+        response = client.get("/api/v1/saas/credits/usage-invoices")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("invoices", response.data)
+        self.assertIn("storageAccruedCredits", response.data)
+        other = Company.objects.create(name="Other Workshop", slug="other-postpaid")
+        other_role = Role.objects.create(
+            company=other, name="Billing", code="BILLING",
+            permissions=["billing.view"],
+        )
+        other_user = User.objects.create_user(
+            email="other-storage-billing@example.test", name="Other Billing",
+            password="SecureBillingTest123!", company=other, role=other_role,
+        )
+        client.force_authenticate(other_user)
+        other_response = client.get("/api/v1/saas/credits/usage-invoices")
+        self.assertEqual(other_response.status_code, 200)
+        self.assertEqual(other_response.data["meteredStorageSamples"], 0)
+
