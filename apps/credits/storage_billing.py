@@ -24,7 +24,7 @@ def storage_usage(company):
 
 def storage_quote(company, policy=None, now=None):
     policy = policy or StorageCreditPolicy.objects.filter(is_active=True).first()
-    if not policy:
+    if not policy or policy.billing_mode != "snapshot":
         return None
     if policy.credits_per_gb < 0 or policy.included_gb < 0:
         raise ValueError("Storage pricing must not contain negative rates or allowances.")
@@ -53,7 +53,7 @@ def charge_storage_period(company, policy=None, now=None):
     quote = storage_quote(company, policy=policy, now=now)
     if not quote:
         return "disabled", None
-    if not quote["policy"].is_active:
+    if not quote["policy"].is_active or quote["policy"].billing_mode != "snapshot":
         return "disabled", quote
     if CreditLedger.objects.filter(reference=quote["reference"], company=company).exists():
         return "already_billed", quote
