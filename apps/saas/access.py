@@ -58,6 +58,17 @@ def feature_allowed(user, permission):
     if individually_enabled:
         return True
 
+    # A company-paid postpaid feature is shared by all role-authorized users.
+    # Nonpayment suspension removes access immediately without waiting for a
+    # Celery cycle; the frontend never decides the permission.
+    if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
+        from apps.credits.models import CompanyPostpaidFeature
+        if CompanyPostpaidFeature.objects.filter(
+            company=user.company, feature__key=module,
+            feature__is_active=True, enabled=True, suspended=False,
+        ).exists():
+            return True
+
     # A paid label grants feature entitlement, never role permission.
     # Time-limited access stops at expiry without needing a cron job.
     # Per-use access is blocked until an authenticated server operation
