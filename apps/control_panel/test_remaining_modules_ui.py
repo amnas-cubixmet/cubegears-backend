@@ -163,7 +163,8 @@ class RemainingModulesUITests(TestCase):
         # Keep the server-validated forms, audited adjustment ID, CSRF.
         for action in ("package", "price", "adjust"):
             self.assertContains(response, f'name="action" value="{action}"', count=1)
-        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=3)
+        # Three credit action forms plus the shared sidebar logout form.
+        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=4)
         self.assertContains(response, 'name="request_id"', count=1)
         self.assertContains(response, 'name="reason"')
         self.assertContains(response, 'name="delta"')
