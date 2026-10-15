@@ -54,6 +54,18 @@
               <small>Each company receives this amount before charges begin.</small>
               {% for error in storage_policy_form.included_gb.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
+            <div class="cg-storage-field">
+              <label for="{{ storage_policy_form.billing_mode.id_for_label }}">Billing method</label>
+              {{ storage_policy_form.billing_mode }}
+              <small>Snapshot charges the current GB amount once per period. Metered tracks GB-time and settles after month-end.</small>
+              {% for error in storage_policy_form.billing_mode.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+            </div>
+            <div class="cg-storage-field">
+              <label for="{{ storage_policy_form.meter_interval_seconds.id_for_label }}">Meter interval (seconds)</label>
+              {{ storage_policy_form.meter_interval_seconds }}
+              <small>60–86400 seconds. Applies only when metered monthly mode is selected.</small>
+              {% for error in storage_policy_form.meter_interval_seconds.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+            </div>
             <div class="cg-storage-field cg-storage-field-period">
               <label for="{{ storage_policy_form.billing_period.id_for_label }}">Billing period</label>
               {{ storage_policy_form.billing_period }}
@@ -102,7 +114,7 @@
       <div class="cg-storage-saved-rule">
         <span>Current saved rate</span>
         <strong>{{ storage_policy.credits_per_gb|default:"0" }} <span>credits / GB</span></strong>
-        <small>{{ storage_policy.get_billing_period_display|default:"Monthly" }} · {{ storage_policy.included_gb|default:"0" }} GB included per company</small>
+        <small>{{ storage_policy.get_billing_mode_display|default:"Period snapshot" }} · {{ storage_policy.get_billing_period_display|default:"Monthly" }} · {{ storage_policy.included_gb|default:"0" }} GB free</small>
       </div>
     </aside>
   </div>
