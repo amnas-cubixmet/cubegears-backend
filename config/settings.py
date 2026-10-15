@@ -255,6 +255,28 @@ LOGOUT_REDIRECT_URL = "panel:login"
 #     },
 # }
 
+# Opt-in scheduled company wallet deductions. Redis + one Beat instance must be
+# provisioned before this flag is enabled in a production deployment.
+CREDIT_AUTOMATIC_BILLING_ENABLED = env_bool("CREDIT_AUTOMATIC_BILLING_ENABLED", False)
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_BEAT_SCHEDULE = {
+    # One periodic scheduler per deployment. Credit services provide independent
+    # transaction/ledger idempotency when a task is retried.
+    "credit-renewals-hourly": {
+        "task": "cubegear.credits.renew_features",
+        "schedule": 3600.0,
+    },
+    "storage-credit-billing-daily": {
+        "task": "cubegear.credits.bill_storage",
+        "schedule": 86400.0,
+    },
+}
+
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
