@@ -1,4 +1,5 @@
 from django.urls import path
+from .gateway_diagnostics import GatewayStatusView, GatewayTestView
 from .views import (
     CompanyCreditsView, CreditPackagesView, CreditFeaturesView,
     CreditLogsView, CreateCreditOrderView, VerifyCreditPaymentView,
@@ -7,6 +8,8 @@ from .views import (
 
 urlpatterns = [
     path("overview", CompanyCreditsView.as_view(), name="credit-overview"),
+    path("gateway/status", GatewayStatusView.as_view(), name="credit-gateway-status"),
+    path("gateway/test", GatewayTestView.as_view(), name="credit-gateway-test"),
     path("packages", CreditPackagesView.as_view(), name="credit-packages"),
     path("features", CreditFeaturesView.as_view(), name="credit-features"),
     path("logs", CreditLogsView.as_view(), name="credit-logs"),
