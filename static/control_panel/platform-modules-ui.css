@@ -212,3 +212,15 @@ html[data-theme=dark] .remaining-state.is-good{color:#6ee7b7;background:#064e3b}
 .cg-storage-policy-readonly strong{font-size:25px}
 .cg-storage-live .remaining-table th,.cg-storage-live .remaining-table td{white-space:normal}
 @media(max-width:820px){.cg-storage-fields{grid-template-columns:1fr}.cg-storage-pricing-footer{align-items:stretch}.cg-storage-pricing-footer .btn{width:100%}}
+
+/* Platform per-module pricing controls. */
+.module-pricing-info{padding:18px 20px;font-size:13px;line-height:1.65}
+.module-pricing-card{gap:12px;min-width:0}
+.module-pricing-card h3{margin:0;font-size:16px}
+.module-price-fields{border:0;padding:0;margin:0;min-width:0}
+.module-price-fields>p{display:flex;flex-direction:column;gap:6px;margin:0 0 14px}
+.module-price-fields label{font-size:12px;font-weight:700}
+.module-price-fields input:not([type=checkbox]),.module-price-fields select{box-sizing:border-box;width:100%;font-size:13px}
+.module-price-fields .module-price-publish{display:flex;flex-direction:row;align-items:center;gap:8px}
+.module-price-fields .module-price-publish input{width:16px;height:16px;margin:0;flex:0 0 16px}
+.module-price-fields .btn{width:100%;justify-content:center;font-size:12px;white-space:normal}

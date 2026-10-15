@@ -3,6 +3,7 @@ from django.views.generic.base import RedirectView
 from . import views
 from . import auth_views
 from apps.credits import panel_views as credits_panel
+from apps.credits.pricing_views import module_pricing
 
 app_name = "panel"
 
@@ -37,6 +38,7 @@ urlpatterns = [
     path("plans/add/", views.plan_create, name="plan-create"),
     path("plans/<int:pk>/edit/", views.plan_edit, name="plan-edit"),
     path("features/", views.feature_catalog, name="features"),
+    path("features/pricing/", module_pricing, name="feature-pricing"),
     path("features/sync/", views.feature_sync, name="features-edit"),
     path("features/bundles/add/", views.feature_bundle_create, name="featurebundle-create"),
     path("features/bundles/<int:pk>/edit/", views.feature_bundle_edit, name="featurebundle-edit"),

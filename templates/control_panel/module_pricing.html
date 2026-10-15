@@ -1,0 +1,31 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<section class="directory-heading remaining-heading">
+  <div><p class="eyebrow">SaaS administration / Pricing</p><h2>All Module Prices</h2>
+    <p>Platform administrators and authorized SaaS staff set prices here. Company owners can purchase access; workshop staff cannot edit these prices.</p></div>
+  <a class="btn" href="{% url 'panel:features' %}">Feature Labels</a>
+</section>
+<section class="panel-card module-pricing-info">
+  <p>Price per billing period = credits per active login user × company active login accounts. Saving a price does not activate any company or deduct credits. Unpriced modules are unavailable for individual activation. Existing multi-feature labels keep their own published prices. Unpublishing a module also removes access granted by that module label; business records are retained.</p>
+  {% if submission_errors %}<div role="alert">{{ submission_errors }}</div>{% endif %}
+  {% if not can_edit %}<p>You have view access. Ask a SaaS administrator for Features → Edit permission to change prices.</p>{% endif %}
+</section>
+<div class="cg-paid-label-grid">
+{% for row in rows %}
+<section class="cg-paid-label-card module-pricing-card" id="module-{{ row.module.key }}">
+  <h3>{{ row.module.label }}</h3><p><code>{{ row.module.key }}</code> · {% if row.bundle %}{{ row.bundle.is_active|yesno:"Published,Unpublished" }}{% else %}Price not set{% endif %}</p>
+  <form method="post" class="credit-panel-form">{% csrf_token %}{{ row.form.module }}
+    {% if row.form.errors %}<div role="alert">{{ row.form.errors }}</div>{% endif %}
+    <fieldset class="module-price-fields" {% if not can_edit %}disabled{% endif %}>
+      <p><label for="{{ row.form.per_user_credits.id_for_label }}">Credits per active login user</label>{{ row.form.per_user_credits }}</p>
+      <p><label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>{{ row.form.billing_type }}</p>
+      <p><label class="module-price-publish">{{ row.form.published }} Published for activation</label></p>
+      {% if row.mapping and not row.mapping.feature.is_active %}<p>This module is disabled in the feature catalogue. Its prices do not grant access until the module is published.</p>{% endif %}
+      <button type="submit" class="btn btn-primary">Save {{ row.module.label }} Price</button>
+    </fieldset>
+  </form>
+  {% if row.mapping %}<small>Last updated {{ row.mapping.updated_at }}{% if row.mapping.updated_by %} by {{ row.mapping.updated_by.name }}{% endif %}</small>{% endif %}
+</section>
+{% endfor %}
+</div>
+{% endblock %}

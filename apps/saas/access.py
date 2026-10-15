@@ -64,12 +64,6 @@ def feature_allowed(user, permission):
     from django.conf import settings
     module = permission.split(".")[0]
     strict_company = user.company.require_paid_features
-    if strict_company and module == "dashboard":
-        from .models import PlanFeature
-        return any(feature_allowed(user, key + ".view") for key in
-                   PlanFeature.objects.filter(is_active=True).exclude(
-                       key__in=["dashboard", "billing", "company", "roles"]
-                   ).values_list("key", flat=True))
     # Account purchase/recovery controls do not require a paid module.
     if strict_company and module in {"billing", "company", "roles"}:
         return True

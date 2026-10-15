@@ -7,7 +7,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
 
 SYSTEM_MODULES = frozenset({
-    "dashboard", "company", "billing",
+    "company", "billing",
     "roles",
 })
 

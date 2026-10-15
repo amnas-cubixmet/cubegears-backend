@@ -43,7 +43,7 @@
     </section>
 
   <section class="panel-card credit-tab-panel" id="credit-panel-pricing" role="tabpanel" aria-labelledby="credit-tab-pricing" data-credit-panel="pricing" tabindex="0">
-    <h3>Feature pricing</h3><p><strong>One-time activation + recurring base + per-active-user × login users + per-employee × active staff</strong>. Choose daily, weekly or every 30 days. Prices are always set by platform staff.</p>
+    <h3>Feature pricing</h3><p><a class="btn btn-primary" href="{% url 'panel:feature-pricing' %}">Set per-user prices for all modules</a></p><p><strong>One-time activation + recurring base + per-active-user × login users + per-employee × active staff</strong>. Choose daily, weekly or every 30 days. Prices are always set by platform staff.</p>
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="price">
         <label>Feature <select name="feature" required>
           <option value="">Select module</option>

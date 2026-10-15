@@ -61,7 +61,7 @@ class OwnerOnboardingTests(TestCase):
         result = self.client.post('/api/v1/saas/credits/bundles/purchase', {'bundleId': self.bundle.pk}, format='json')
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data['chargedCredits'], '20.00')
-        self.assertTrue(user_has_permission(self.owner, 'dashboard.view'))
+        self.assertFalse(user_has_permission(self.owner, 'dashboard.view'))
         self.assertTrue(user_has_permission(self.staff, 'customers.view'))
         row = Customer.objects.create(company=self.company, name='Retained Customer', phone='12345')
         self.assertEqual(self.client.post('/api/v1/saas/credits/bundles/disable', {'bundleId': self.bundle.pk}, format='json').status_code, 200)

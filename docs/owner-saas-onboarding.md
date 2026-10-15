@@ -35,3 +35,14 @@ Account statements read persisted settlement invoices or metered periods accordi
 ## Tenant subdomain
 
 The unique company slug is the reserved subdomain identifier shown on SaaS Account. Optionally configure `TENANT_BASE_DOMAIN=your-domain.example` to show `https://<slug>.your-domain.example/account`. This is configuration metadata, not DNS provisioning: the hosting operator still needs wildcard DNS, TLS, frontend wildcard hosting and appropriate backend CORS/trusted-origin settings. Tenant data always comes from the authenticated user's company; the hostname never authorizes access to another company. No DNS records or live hosting settings are changed by this code.
+
+
+## Platform module pricing
+
+Open `/features/pricing/` (also linked from Features and Credits) to see every billable permission module, including Dashboard. Viewing this page creates no catalogue, price, wallet or entitlement records. There are no invented default rates. SaaS super administrators and platform staff with `panel.features.view` + `panel.features.edit` may save prices. Tenant/company staff and owners cannot access these controls, even with a wildcard role.
+
+Each configured module has a managed single-module label with a positive per-active-login-user credit rate, billing period and publication flag. The existing label engine calculates owner quotes and purchases; no second billing engine is introduced. Published prices appear in the owner's existing Feature Controls list. A price change applies to future purchases/extensions, with stored charges retained. A purchased label's billing period cannot change. Generic label editing redirects managed module labels back to the pricing page.
+
+Saving or updating a rate never activates a company, charges a wallet or creates company access. In strictly gated companies Dashboard now requires its own active entitlement, like every other paid module; purchasing a different module does not grant Dashboard. Account purchase/recovery controls remain available to the owner. Existing companies still require **Require paid features** to be ON to enforce their paid module policy. Unpublishing a module label revokes the access granted by that label; records remain stored.
+
+Run `python manage.py migrate` to install `credits.0011_modulepricelabel` before using the page. This migration creates only the price mapping table; it sets no monetary amounts and does not alter existing company entitlements.
