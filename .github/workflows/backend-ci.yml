@@ -37,6 +37,7 @@ jobs:
       - run: python manage.py test apps.credits.test_hosted_checkout --noinput
       - run: python manage.py test apps.credits.test_feature_bundles --noinput
       - run: python manage.py test apps.credits.test_celery_billing_tasks --noinput
+      - run: python manage.py test apps.credits.test_module_entitlements --noinput
       - run: python manage.py test apps.saas.test_feature_catalog_audit --noinput
       - run: python manage.py test apps.control_panel.test_feature_catalog_cleanup --noinput
       - run: python manage.py test apps.credits.test_metered_feature_pricing --noinput
