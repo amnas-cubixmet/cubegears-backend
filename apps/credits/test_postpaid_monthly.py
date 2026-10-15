@@ -100,6 +100,29 @@ class PostpaidFeatureTests(TestCase):
         self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("70.00"))
 
 
+    def test_new_active_login_seat_splits_usage_session_without_debit(self):
+        from apps.credits.postpaid import refresh_postpaid_feature_rates
+        self.price.per_user_credits = Decimal("10.00")
+        self.price.save()
+        state, _ = enable_paid_feature(self.company, self.feature, self.user)
+        self.assertTrue(state.enabled)
+        self.assertEqual(FeatureUsageSession.objects.get(ended_at__isnull=True).monthly_credits, Decimal("40.00"))
+        User.objects.create_user(
+            email="new-billable-seat@example.test", name="Additional Login",
+            password="StrongSeatPassword123!", company=self.company, role=self.role,
+        )
+        now = timezone.now() + timedelta(minutes=6)
+        self.assertEqual(refresh_postpaid_feature_rates(self.company, now=now), 1)
+        sessions = FeatureUsageSession.objects.filter(company=self.company).order_by("started_at")
+        self.assertEqual(sessions.count(), 2)
+        self.assertIsNotNone(sessions.first().ended_at)
+        self.assertEqual(sessions.last().monthly_credits, Decimal("50.00"))
+        self.assertEqual(sessions.last().user_seats, 2)
+        self.assertEqual(sessions.last().activation_credits, Decimal("0.00"))
+        self.assertEqual(refresh_postpaid_feature_rates(self.company, now=now), 0)
+        self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("100.00"))
+
+
 class MeteredStorageTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name="Metered Storage", slug="metered-storage-example")
