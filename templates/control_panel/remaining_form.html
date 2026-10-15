@@ -1,4 +1,5 @@
 {% extends "control_panel/base.html" %}
+{% load static %}
 {% block content %}
 <section class="remaining-editor-page">
   <header class="remaining-editor-header">
@@ -13,18 +14,65 @@
       <header class="remaining-editor-section-header"><span class="remaining-section-number">01</span><div><h3>{% if active == 'roles' %}Role &amp; Permissions{% elif active == 'vehicles' %}Vehicle Information{% elif active == 'branches' %}Branch Details{% else %}Feature Configuration{% endif %}</h3><p>Required fields are validated on the server; all existing model fields are preserved.</p></div></header>
       <div class="remaining-editor-grid">
         {% for field in form %}
+        {% if active != 'roles' or field.name != 'permissions' %}
         <div class="company-editor-field {% if field.name == 'permissions' or field.field.widget.input_type == 'textarea' %}remaining-field-wide{% endif %}">
           <label for="{{ field.id_for_label }}">{{ field.label }}{% if field.field.required %}<span aria-hidden="true"> *</span>{% endif %}</label>
           {{ field }}
           {% if field.help_text %}<small class="field-hint">{{ field.help_text }}</small>{% endif %}
           {% for error in field.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
         </div>
+        {% endif %}
         {% endfor %}
       </div>
+
+      {% if active == 'roles' %}
+      <section class="role-matrix" data-role-editor aria-labelledby="role-matrix-title">
+        <div class="role-matrix-heading">
+          <div><h3 id="role-matrix-title">Module access matrix</h3><p>Choose the actions allowed for this role. Platform and workshop access are strictly separated.</p></div>
+          <span class="role-scope-label" data-role-scope-label>Permission scope</span>
+        </div>
+        {% if can_grant_wildcard %}
+        <label class="role-full-access" for="permission-wildcard">
+          <input type="checkbox" id="permission-wildcard" name="permissions" value="*" {% if wildcard_selected %}checked{% endif %}>
+          <span><strong>Full access (*) — administrator only</strong><small>Grants all permissions within this role's scope. Assign only to trusted administrators.</small></span>
+        </label>
+        {% endif %}
+        {% for section in permission_sections %}
+        <div class="role-permission-section" data-role-scope="{{ section.scope }}">
+          <div class="role-section-label"><h4>{{ section.title }}</h4><span>{{ section.modules|length }} modules</span></div>
+          <div class="role-matrix-table-wrap">
+            <table class="role-matrix-table">
+              <thead><tr><th scope="col">Module</th><th scope="col">View</th><th scope="col">Create</th><th scope="col">Edit</th><th scope="col">Delete</th><th scope="col">Manage</th><th scope="col">Self</th><th scope="col">Bulk actions</th></tr></thead>
+              <tbody>
+                {% for module in section.modules %}
+                <tr data-role-module>
+                  <th scope="row">{{ module.label }}</th>
+                  <td>{% if module.view %}<label class="role-permission-toggle" for="permission-{{ module.view.code|slugify }}" title="{{ module.view.code }}"><input id="permission-{{ module.view.code|slugify }}" type="checkbox" name="permissions" value="{{ module.view.code }}" {% if module.view.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} view</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td>{% if module.create %}<label class="role-permission-toggle" for="permission-{{ module.create.code|slugify }}" title="{{ module.create.code }}"><input id="permission-{{ module.create.code|slugify }}" type="checkbox" name="permissions" value="{{ module.create.code }}" {% if module.create.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} create</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td>{% if module.edit %}<label class="role-permission-toggle" for="permission-{{ module.edit.code|slugify }}" title="{{ module.edit.code }}"><input id="permission-{{ module.edit.code|slugify }}" type="checkbox" name="permissions" value="{{ module.edit.code }}" {% if module.edit.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} edit</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td>{% if module.delete %}<label class="role-permission-toggle" for="permission-{{ module.delete.code|slugify }}" title="{{ module.delete.code }}"><input id="permission-{{ module.delete.code|slugify }}" type="checkbox" name="permissions" value="{{ module.delete.code }}" {% if module.delete.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} delete</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td>{% if module.manage %}<label class="role-permission-toggle" for="permission-{{ module.manage.code|slugify }}" title="{{ module.manage.code }}"><input id="permission-{{ module.manage.code|slugify }}" type="checkbox" name="permissions" value="{{ module.manage.code }}" {% if module.manage.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} manage</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td>{% if module.self %}<label class="role-permission-toggle" for="permission-{{ module.self.code|slugify }}" title="{{ module.self.code }}"><input id="permission-{{ module.self.code|slugify }}" type="checkbox" name="permissions" value="{{ module.self.code }}" {% if module.self.checked %}checked{% endif %}><span class="sr-only">{{ module.label }} self</span></label>{% else %}<span class="role-not-applicable" aria-label="Not available">—</span>{% endif %}</td>
+                  <td class="role-bulk-actions"><button type="button" data-role-select="all" aria-label="Select all {{ module.label }} permissions">All</button><button type="button" data-role-select="none" aria-label="Clear {{ module.label }} permissions">Clear</button></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        {% endfor %}
+        {% for error in form.permissions.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+        <p class="role-selection-summary" aria-live="polite" data-role-selection-summary>Only checked actions will be saved.</p>
+      </section>
+      {% endif %}
       {% if active == 'roles' %}<p class="remaining-editor-warning">Use full-access (*) permission only when appropriate. Backend role delegation checks still apply. Keep company boundaries unchanged.</p>{% endif %}
       {% if active == 'features' %}<p class="remaining-editor-warning">Feature labels alone do not grant wallet credits or bypass tenant permissions.</p>{% endif %}
     </section>
     <footer class="remaining-editor-actions"><a class="btn" href="{% url cancel_url %}">Cancel</a><button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create{% endif %}</button></footer>
   </form>
 </section>
+{% if active == 'roles' %}
+<link rel="stylesheet" href="{% static 'control_panel/roles-ui.css' %}">
+<script src="{% static 'control_panel/roles-ui.js' %}" defer></script>
+{% endif %}
 {% endblock %}
