@@ -33,8 +33,18 @@ class StorageCreditPolicyForm(forms.ModelForm):
             "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
         }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Older forms and admin tests may omit newly introduced fields.
+        self.fields["billing_mode"].required = False
+        self.fields["meter_interval_seconds"].required = False
+
     def clean(self):
         result = super().clean()
+        if not result.get("billing_mode"):
+            result["billing_mode"] = self.instance.billing_mode or "snapshot"
+        if result.get("meter_interval_seconds") is None:
+            result["meter_interval_seconds"] = self.instance.meter_interval_seconds or 3600
         price = result.get("credits_per_gb")
         free = result.get("included_gb")
         if price is not None and not Decimal("0") <= price <= Decimal("1000000"):
