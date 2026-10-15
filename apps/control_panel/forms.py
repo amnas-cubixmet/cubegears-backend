@@ -632,7 +632,23 @@ class FeatureBundleForm(AdminModelForm):
         features = self.cleaned_data["features"]
         if features.count() < 2:
             raise forms.ValidationError("Select at least two existing features for this label.")
+        if self.instance.pk and self.instance.company_access.exists():
+            previous = set(self.instance.features.values_list("pk", flat=True))
+            selected = set(features.values_list("pk", flat=True))
+            if not previous.issubset(selected):
+                raise forms.ValidationError(
+                    "Cannot remove features from a label already purchased by companies. Create a new label instead."
+                )
         return features
+
+    def clean_billing_type(self):
+        period = self.cleaned_data["billing_type"]
+        if (self.instance.pk and self.instance.company_access.exists()
+                and period != self.instance.billing_type):
+            raise forms.ValidationError(
+                "Cannot change the billing period after a company purchases this label. Create a new label."
+            )
+        return period
 
     def clean_price_credits(self):
         price = self.cleaned_data["price_credits"]
