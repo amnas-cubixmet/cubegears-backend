@@ -258,22 +258,37 @@ LOGOUT_REDIRECT_URL = "panel:login"
 # Opt-in scheduled company wallet deductions. Redis + one Beat instance must be
 # provisioned before this flag is enabled in a production deployment.
 CREDIT_AUTOMATIC_BILLING_ENABLED = env_bool("CREDIT_AUTOMATIC_BILLING_ENABLED", False)
+# New monthly postpaid usage records are isolated from the legacy prepaid 30-day
+# feature charges and snapshot storage pricing, and disabled until reviewed.
+CREDIT_POSTPAID_BILLING_ENABLED = env_bool("CREDIT_POSTPAID_BILLING_ENABLED", False)
+# Production at least 60 seconds; development accepts 10 seconds to test cycles.
+CREDIT_METER_SECONDS = max(10 if DEBUG else 60, int(env("CREDIT_METER_SECONDS", "60")))
+
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_RESULT_SERIALIZER = "json"
+from celery.schedules import crontab
+
 CELERY_BEAT_SCHEDULE = {
-    # One periodic scheduler per deployment. Credit services provide independent
-    # transaction/ledger idempotency when a task is retried.
+    # One Beat scheduler per deployment. Never start a second Beat instance.
     "credit-renewals-hourly": {
         "task": "cubegear.credits.renew_features",
-        "schedule": 3600.0,
+        "schedule": crontab(minute=10),
     },
-    "storage-credit-billing-daily": {
+    "storage-credit-billing-end-of-day": {
         "task": "cubegear.credits.bill_storage",
-        "schedule": 86400.0,
+        "schedule": crontab(hour=23, minute=55),
+    },
+    "postpaid-feature-and-storage-metering": {
+        "task": "cubegear.credits.meter_postpaid",
+        "schedule": float(CREDIT_METER_SECONDS),
+    },
+    "postpaid-monthly-settlement": {
+        "task": "cubegear.credits.settle_postpaid_monthly",
+        "schedule": crontab(hour=1, minute=15),
     },
 }
 
