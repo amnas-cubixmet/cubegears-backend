@@ -18,6 +18,9 @@ from apps.saas.razorpay_client import configured, create_order, fetch_payment, v
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent
 from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
 from .hosted_checkout import reconcile_hosted_purchase
+from .models import PostpaidFeatureState, PostpaidUsageRecord, MonthlyCreditStatement
+from django.db.models import Sum
+
 
 
 class CreditsOrderThrottle(UserRateThrottle):
@@ -39,6 +42,7 @@ class CompanyCreditsView(APIView):
         count = staff_count(company)
         users = billable_user_count(company)
         active = CompanyCreditFeature.objects.filter(company=company, enabled=True, next_charge_at__gt=timezone.now()).select_related("feature")
+        postpaid = PostpaidFeatureState.objects.filter(company=company, enabled=True) if settings.CREDIT_POSTPAID_BILLING_ENABLED else PostpaidFeatureState.objects.none()
         prices = {p.feature_id: p for p in FeatureCreditPrice.objects.filter(feature_id__in=[f.feature_id for f in active])}
         monthly = sum(
             (price_for(prices[state.feature_id], count, users) * Decimal("30") /
@@ -46,14 +50,23 @@ class CompanyCreditsView(APIView):
              for state in active if state.feature_id in prices),
             Decimal("0.00"),
         )
+        postpaid_monthly = sum(
+            (state.base_credits + state.per_user_credits * users + state.per_staff_credits * count
+             for state in postpaid), Decimal("0.00"),
+        )
+        accrued = PostpaidUsageRecord.objects.filter(
+            company=company, period=timezone.localdate().strftime("%Y-%m"),
+        ).aggregate(total=Sum("credits"))["total"] or Decimal("0")
         return Response({
             "balance": str(wallet.balance),
             "lowThreshold": str(wallet.low_threshold),
             "lowBalance": wallet.balance <= wallet.low_threshold,
             "staffCount": count,
             "userCount": users,
-            "activeFeatures": active.count(),
-            "monthlyCredits": str(monthly),
+            "activeFeatures": active.count() + postpaid.count(),
+            "monthlyCredits": str(monthly + postpaid_monthly),
+            "postpaidAccruedCredits": str(accrued.quantize(Decimal("0.01"))),
+            "billingMode": "monthly_postpaid" if settings.CREDIT_POSTPAID_BILLING_ENABLED else "prepaid",
             "checkoutAvailable": configured(),
             "canManage": user_has_permission(request.user, "billing.edit"),
         })
@@ -81,6 +94,11 @@ class CreditFeaturesView(APIView):
         count = staff_count(request.user.company)
         users = billable_user_count(request.user.company)
         current = {v.feature_id: v for v in CompanyCreditFeature.objects.filter(company=request.user.company)}
+        postpaid = {
+            state.feature_id: state for state in PostpaidFeatureState.objects.filter(
+                company=request.user.company, enabled=True,
+            )
+        } if settings.CREDIT_POSTPAID_BILLING_ENABLED else {}
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
             {
@@ -97,7 +115,17 @@ class CreditFeaturesView(APIView):
                 "monthlyCredits": str((price_for(rate, count, users) *
                     Decimal("30") / Decimal({"daily": 1, "weekly": 7, "monthly": 30}[rate.billing_period])
                     ).quantize(Decimal("0.01"))),
-                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()),
+                "enabled": bool(
+                    (current.get(rate.feature_id) and current[rate.feature_id].enabled
+                     and current[rate.feature_id].next_charge_at
+                     and current[rate.feature_id].next_charge_at > timezone.now())
+                    or postpaid.get(rate.feature_id)
+                ),
+                "billingMode": (
+                    "monthly_postpaid" if rate.feature_id in postpaid else
+                    "monthly_postpaid" if settings.CREDIT_POSTPAID_BILLING_ENABLED and rate.billing_period == "monthly"
+                    else "prepaid"
+                ),
                 "nextChargeAt": (
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
@@ -125,7 +153,17 @@ class EnableCreditFeatureView(APIView):
             state, charge = enable_paid_feature(request.user.company, feature, request.user)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
-        return Response({"enabled": state.enabled, "chargedCredits": str(charge), "nextChargeAt": state.next_charge_at})
+        return Response({
+            "enabled": state.enabled, "chargedCredits": str(charge),
+            "nextChargeAt": state.next_charge_at,
+            "billingMode": (
+                "monthly_postpaid"
+                if settings.CREDIT_POSTPAID_BILLING_ENABLED
+                and PostpaidFeatureState.objects.filter(
+                    company=request.user.company, feature=feature, enabled=True,
+                ).exists() else "prepaid"
+            ),
+        })
 
 
 class DisableCreditFeatureView(APIView):
