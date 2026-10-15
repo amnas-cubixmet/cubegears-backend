@@ -51,6 +51,23 @@ class StorageRatePanelTests(TestCase):
         self.assertEqual(response.context["snapshot_count"], 0)
         self.assertEqual(CreditLedger.objects.count(), 0)
 
+    def test_settings_card_design_and_stylesheet_are_rendered(self):
+        from django.contrib.staticfiles import finders
+
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pricing configuration")
+        self.assertContains(response, "How storage charges work")
+        self.assertContains(response, "Current saved rate")
+        self.assertContains(response, "cg-storage-settings-actions")
+        self.assertContains(response, "cg-storage-toggle-control")
+        self.assertContains(response, "storage-settings-ui.css")
+        self.assertIsNotNone(finders.find("control_panel/storage-settings-ui.css"))
+        # Styling remains scoped to the storage page, not every admin page.
+        other = self.client.get(reverse("panel:dashboard"))
+        self.assertEqual(other.status_code, 200)
+        self.assertNotContains(other, "storage-settings-ui.css")
+
     def test_save_rate_updates_policy_but_never_deducts_credits(self):
         response = self.client.post(self.url, {
             "credits_per_gb": "12.50",
