@@ -1,6 +1,7 @@
 """Billing alert outbox is opt-in and must never alter wallet balances."""
 from datetime import datetime
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core import mail
 from django.test import TestCase, override_settings
@@ -83,10 +84,10 @@ class BillingEmailOutboxTests(TestCase):
         self.assertFalse(BillingEmailNotice.objects.exists())
         self.assertEqual(dispatch_pending_billing_notices(), {"disabled": 1})
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.dummy.EmailBackend")
     def test_failed_submission_is_retryable_with_no_balance_mutation(self):
         record_billing_notice(self.company, "storage", "2026-09", "paid", "2.00")
-        result = dispatch_pending_billing_notices()
+        with patch("apps.credits.billing_notices.send_mail", side_effect=RuntimeError("SMTP unavailable")):
+            result = dispatch_pending_billing_notices()
         self.assertEqual(result["failed"], 1)
         notice = BillingEmailNotice.objects.get()
         self.assertEqual(notice.status, "failed")
