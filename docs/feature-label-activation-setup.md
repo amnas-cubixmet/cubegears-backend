@@ -69,3 +69,42 @@ Prepaid labels do not require the monthly meter.
 `METERED_OPERATION_NOT_READY` = per-use label is not wired to a trusted
 server operation; `FEATURE_LABEL_EMPTY` = bundle has no active modules;
 `Insufficient credits` = verified company wallet lacks the required cost.
+
+## Label-only company access (optional / staged rollout)
+
+The previous platform modes also accepted individual feature purchases. To show
+and authorize **only modules in activated Feature Labels**, first audit and
+backfill existing workshop access: owners, staff role permissions, active
+companies, and existing prepaid/postpaid charges. Warn impacted companies.
+
+For a local staging database where labels are ready, set in the Django backend
+`.env` (not in Vite):
+
+```env
+CREDIT_FEATURE_ENFORCEMENT_ENABLED=True
+CREDIT_LABEL_ONLY_ACCESS_ENABLED=True
+```
+
+Restart Django. Do not enable on production without an approved migration
+plan. This mode is global and opt-in, not a per-company switch; if paid
+enforcement is off, workshop modules fail closed. Core Account/Wallet/Billing,
+Settings, Notifications, Security, and role administration stay available.
+
+After activation:
+- `GET /api/v1/saas/credits/access` returns `labelOnly: true`,
+  `activeLabelModules`, effective `enabledModules`, user `permissions`
+  and `nextLabelExpiryAt`. Only role-intersected activated modules appear
+  in frontend navigation and their direct DRF endpoints.
+- `/api/v1/saas/credits/features` returns no standalone sale cards.
+  `POST .../features/enable` responds 409 rather than charging a module
+  that no longer grants access.
+- Legacy prepaid standalone feature renewals are skipped; legacy monthly
+  standalone sampling is disabled in this mode. Already accrued historical
+  liabilities and ledger records are not automatically erased or refunded.
+- Purchased labels are checked per company, active status, validity time and
+  included published modules. Disabling/expiry revokes access.
+- Test with Company A and Company B plus a staff login, and verify both
+  frontend direct URLs and backend 403s for disabled resources.
+
+Audit third-party/custom REST endpoints for `RolePermission` separately;
+frontend hiding is not a substitute for backend authorization.
