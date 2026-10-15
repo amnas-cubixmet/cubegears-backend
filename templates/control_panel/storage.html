@@ -112,6 +112,17 @@
       </tbody>
     </table>
   </div>
+  {% if live_storage_page.has_other_pages %}
+    <nav class="cg-storage-pagination" aria-label="Live company storage pages">
+      {% if live_storage_page.has_previous %}
+        <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}live_page={{ live_storage_page.previous_page_number }}">Previous</a>
+      {% endif %}
+      <span>Page {{ live_storage_page.number }} of {{ live_storage_page.paginator.num_pages }}</span>
+      {% if live_storage_page.has_next %}
+        <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}live_page={{ live_storage_page.next_page_number }}">Next</a>
+      {% endif %}
+    </nav>
+  {% endif %}
   <p class="remaining-note">Estimate uses current storage and the saved pricing policy. Billing actually runs only through <code>python manage.py bill_storage_credits</code> (schedule daily; monthly policies charge once each month). Usage changes after a period has been billed are reflected in the next period, not billed retroactively.</p>
 </section>
 <section class="panel-card remaining-directory" aria-labelledby="storage-directory-title">
