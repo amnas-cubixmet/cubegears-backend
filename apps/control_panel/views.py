@@ -1444,11 +1444,8 @@ def plan_edit(request, pk):
 
 @panel_admin_required
 def feature_catalog(request):
-    """List configured paid labels only; do not auto-discover or alter RBAC catalog."""
-    return render(request, "control_panel/feature_catalog.html", {
-        "page_title": "Paid Feature Labels", "active": "features",
-        "bundles": FeatureBundle.objects.prefetch_related("features").all(),
-    })
+    """Keep historical bookmarks working after retiring the labels page."""
+    return redirect("panel:feature-pricing")
 
 
 @panel_admin_required

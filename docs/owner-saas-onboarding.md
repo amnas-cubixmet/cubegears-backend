@@ -53,3 +53,9 @@ Run `python manage.py migrate` to install `credits.0011_modulepricelabel` before
 `companies.0004_lock_existing_company_modules` turns on `require_paid_features` for existing companies that still had the legacy unrestricted policy. It changes no owner assignments, wallet balances, ledger entries or purchased feature access. Existing paid modules remain available; unpurchased modules are denied. Owners retain the SaaS purchase workspace; staff require an active company module plus their role permission. Companies without a recorded owner need the platform administrator to assign the correct tenant owner using the company editor.
 
 Deploy alongside the frontend account-only shell and run `python manage.py migrate`. This rollout applies the requested default lock to existing companies; reversing the migration does not automatically remove that lock. Platform administrators can still explicitly manage a company's policy in the company editor.
+
+## Owner navigation and retired labels page
+
+The sidebar now links directly to Feature Pricing at `/features/pricing/`. Historical `/features/` bookmarks redirect there. The standalone Feature Labels list and its navigation links are removed; stored labels and purchased entitlements are preserved.
+
+Owners retain Profile, Shop Details and SaaS Account in their sidebar before activation. Shop Details uses `/api/v1/company/me` without unlocking Settings or other paid modules. Operational links, including Dashboard, require the server feature/role permission intersection.

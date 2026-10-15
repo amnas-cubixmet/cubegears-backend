@@ -77,6 +77,16 @@ class OwnerOnboardingTests(TestCase):
         self.role.save()
         self.assertFalse(user_has_permission(self.staff, 'customers.view'))
 
+    def test_owner_can_edit_shop_details_without_activating_modules(self):
+        self.assertEqual(self.client.get('/api/v1/company/me').status_code, 200)
+        result = self.client.patch('/api/v1/company/me', {'name': 'Updated Shop', 'city': 'Kochi'}, format='json')
+        self.assertEqual(result.status_code, 200, result.data)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.name, 'Updated Shop')
+        self.assertEqual(self.company.city, 'Kochi')
+        self.assertFalse(user_has_permission(self.owner, 'dashboard.view'))
+        self.assertFalse(user_has_permission(self.owner, 'settings.view'))
+
     def test_company_api_cannot_reassign_owner_or_disable_paid_gating(self):
         payload = CompanySerializer(self.company, data={'owner': str(self.staff.pk), 'require_paid_features': False}, partial=True)
         self.assertTrue(payload.is_valid(), payload.errors)
