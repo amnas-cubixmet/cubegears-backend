@@ -89,7 +89,7 @@ class MeteredCreditsTests(TestCase):
         self.assertTrue(user_has_permission(self.second, "jobs.view"))
         self.assertEqual(rate.billing_period, "daily")
 
-    def test_bundle_has_seat_price_and_activation_fee_without_double_charging(self):
+    def test_bundle_uses_only_active_user_price_for_purchase_and_extension(self):
         other_feature = PlanFeature.objects.create(key="stock", label="Stock", group=self.group)
         bundle = FeatureBundle.objects.create(
             key="workshop-bundle", name="Workshop", price_credits=Decimal("10.00"),
@@ -98,11 +98,18 @@ class MeteredCreditsTests(TestCase):
         )
         bundle.features.set([self.feature, other_feature])
         access, charged = purchase_feature_bundle(self.company, bundle, self.admin)
-        self.assertEqual(charged, Decimal("21.00"))  # 10 + 2×3 + 5
+        # Legacy base/activation fields must not affect per-user label pricing.
+        self.assertEqual(charged, Decimal("6.00"))  # 2 active users × 3 credits
+        self.assertEqual(access.last_price_credits, Decimal("6.00"))
         self.assertGreater(access.valid_until, timezone.now() + timedelta(days=29))
-        _, extension = purchase_feature_bundle(self.company, bundle, self.admin)
-        self.assertEqual(extension, Decimal("16.00"))  # no second activation fee
-        self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("63.00"))
+        original_expiry = access.valid_until
+        extended_access, extension = purchase_feature_bundle(self.company, bundle, self.admin)
+        self.assertEqual(extension, Decimal("6.00"))  # another paid 30-day period
+        self.assertEqual(extended_access.valid_until, original_expiry + timedelta(days=30))
+        self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("88.00"))
+        debits = CreditLedger.objects.filter(company=self.company, kind="bundle_charge")
+        self.assertEqual(debits.count(), 2)
+        self.assertEqual(list(debits.values_list("delta", flat=True)), [Decimal("-6.00"), Decimal("-6.00")])
 
     def test_storage_actual_bytes_and_one_charge_per_calendar_period(self):
         policy = StorageCreditPolicy.objects.create(
