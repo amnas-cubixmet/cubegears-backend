@@ -171,8 +171,10 @@ class UserForm(AdminModelForm):
         role = data.get("role")
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
-        if role and role.company_id and company and role.company_id != company.id:
-            self.add_error("role", "Selected role does not belong to this company.")
+        if role and role.company_id != (company.pk if company else None):
+            self.add_error("role", "Role scope must match the user's company.")
+        if role and not role.is_active:
+            self.add_error("role", "Select an active login role.")
         return data
 
     def save(self, commit=True):
@@ -444,10 +446,15 @@ class PlatformStaffInviteForm(AdminModelForm):
         permissions = role.permissions
         if role.company_id is not None or not role.is_active or role.is_system:
             raise forms.ValidationError("Select an active SaaS platform staff role.")
+        from apps.roles.permission_catalog import PANEL_PERMISSIONS
         if (not isinstance(permissions, list)
                 or not all(isinstance(code, str) for code in permissions)
-                or not any(code.startswith("panel.") or code == "*" for code in permissions)):
-            raise forms.ValidationError("This role has no SaaS Control Panel access.")
+                or not any(code == "*" or (
+                    code in PANEL_PERMISSIONS and code.endswith(".view")
+                ) for code in permissions)):
+            raise forms.ValidationError(
+                "This role needs at least one valid SaaS Control Panel view permission."
+            )
         actor = getattr(self, "actor", None)
         if not actor or (not actor.is_superuser and not can_delegate(actor, permissions)):
             raise forms.ValidationError("You cannot assign permissions beyond your own role.")
@@ -576,6 +583,22 @@ class RoleForm(AdminModelForm):
         if actor and not can_delegate(actor, permissions):
             raise forms.ValidationError('You cannot grant permissions beyond your own role.')
         return permissions
+
+    def clean(self):
+        data = super().clean()
+        company = data.get("company")
+        permissions = data.get("permissions") or []
+        if company and any(code.startswith("panel.") for code in permissions):
+            self.add_error(
+                "permissions", "Workshop roles cannot contain SaaS platform permissions."
+            )
+        if not company and any(
+            code != "*" and not code.startswith("panel.") for code in permissions
+        ):
+            self.add_error(
+                "permissions", "SaaS platform roles cannot contain workshop permissions."
+            )
+        return data
 
 
 class PlanBuilderForm(AdminModelForm):
