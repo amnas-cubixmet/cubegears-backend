@@ -28,7 +28,11 @@ CENTS = Decimal("0.01")
 
 
 def _enabled():
-    return bool(settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED)
+    # Never accrue/sell postpaid credits when tenant feature enforcement is off.
+    return bool(
+        settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
+        and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+    )
 
 
 def _rate(company, feature):
