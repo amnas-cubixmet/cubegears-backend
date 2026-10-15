@@ -54,8 +54,26 @@ def _rate(company, feature):
 def activate_postpaid_feature(company, feature, *, at=None):
     if not _enabled():
         raise ValueError("Monthly postpaid feature billing is disabled.")
-    if CompanyCreditFeature.objects.filter(company=company, feature=feature, enabled=True).exists():
+    previous = CompanyCreditFeature.objects.filter(company=company, feature=feature).first()
+    if previous and previous.enabled:
         raise ValueError("Turn off the existing prepaid feature before changing its billing model.")
+    # A disabled prepaid feature may still be inside the period it already
+    # paid for; don't charge postpaid for the same time.
+    if previous:
+        from .service import BILLING_DURATIONS
+        rate_info = FeatureCreditPrice.objects.filter(feature=feature).first()
+        duration = BILLING_DURATIONS.get(rate_info.billing_period) if rate_info else None
+        if duration:
+            from django.db.models import Q
+            recent = CreditLedger.objects.filter(
+                company=company, kind="feature_charge",
+                created_at__gte=(at or timezone.now()) - duration,
+            ).filter(
+                Q(reference__startswith=f"feature-start:{previous.pk}:") |
+                Q(reference__startswith=f"feature-renew:{previous.pk}:")
+            ).exists()
+            if recent:
+                raise ValueError("The already-paid prepaid period must expire before starting monthly postpaid billing.")
     # Never sell overlapping paid bundle access and individual postpaid access.
     from .models import CompanyBundleAccess
     from .service import bundle_is_usable
