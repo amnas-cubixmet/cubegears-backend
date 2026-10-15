@@ -66,3 +66,21 @@ def settle_previous_month(self):
         return "disabled"
     from .postpaid import run_monthly_settlement
     return run_monthly_settlement()
+
+
+@shared_task(bind=True, ignore_result=True, name="credits.sync_postpaid_feature_rates")
+def sync_postpaid_feature_rates(self):
+    """Reprice future intervals when active seats or staff counts change."""
+    if not settings.CREDIT_BILLING_CELERY_ENABLED or not settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        return "disabled"
+    from apps.companies.models import Company
+    from .postpaid import refresh_postpaid_feature_rates
+    changed = 0
+    failures = 0
+    for company in Company.objects.filter(is_active=True).iterator():
+        try:
+            changed += refresh_postpaid_feature_rates(company)
+        except Exception:
+            failures += 1
+            logger.exception("Postpaid seat rate reconciliation failed for company=%s", company.pk)
+    return {"changed": changed, "errors": failures}
