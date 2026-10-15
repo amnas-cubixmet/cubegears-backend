@@ -84,17 +84,23 @@ class CreditWebhookEvent(models.Model):
 
 
 class FeatureBundle(models.Model):
-    """A paid label grouping existing features; prices are wallet credits."""
+    """One paid label that reuses multiple existing platform features."""
     PERIODS = [
-        ("permanent", "Permanent"), ("weekly", "Weekly"),
-        ("daily", "Daily"), ("hourly", "Hourly"), ("per_use", "Per use"),
+        ("permanent", "Permanent"),
+        ("weekly", "Weekly (7 days)"),
+        ("monthly", "Monthly (30 days)"),
+        ("daily", "Daily (24 hours)"),
+        ("hourly", "Hourly (1 hour)"),
+        ("per_use", "Per use (one prepaid operation)"),
     ]
     key = models.SlugField(max_length=100, unique=True)
     name = models.CharField(max_length=120)
-    description = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=400, blank=True)
     features = models.ManyToManyField("saas.PlanFeature", related_name="credit_bundles")
     price_credits = models.DecimalField(max_digits=12, decimal_places=2)
-    period = models.CharField(max_length=12, choices=PERIODS)
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    billing_type = models.CharField(max_length=15, choices=PERIODS, default="weekly")
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
 
@@ -105,18 +111,31 @@ class FeatureBundle(models.Model):
         return self.name
 
 
-class CompanyFeatureBundle(models.Model):
-    """A purchase is isolated by tenant and bounded by its saved entitlement."""
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_bundles")
-    bundle = models.ForeignKey(FeatureBundle, on_delete=models.PROTECT, related_name="company_access")
+class CompanyBundleAccess(models.Model):
+    """Company-scoped, prepaid entitlement. Prices are snapshotted on purchase."""
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE, related_name="bundle_access"
+    )
+    bundle = models.ForeignKey(
+        FeatureBundle, on_delete=models.PROTECT, related_name="company_access"
+    )
     enabled = models.BooleanField(default=True)
-    expires_at = models.DateTimeField(null=True, blank=True)
-    remaining_uses = models.PositiveIntegerField(null=True, blank=True)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    uses_remaining = models.PositiveIntegerField(default=0)
+    last_price_credits = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    billing_type_at_purchase = models.CharField(
+        max_length=15, choices=FeatureBundle.PERIODS, default="weekly"
+    )
+    purchased_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["company", "bundle"], name="credits_unique_company_bundle"),
+            models.UniqueConstraint(
+                fields=["company", "bundle"], name="credits_unique_company_bundle"
+            )
         ]
 
 
