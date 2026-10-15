@@ -263,4 +263,33 @@ CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLE
 # When enabled, paid module keys not yet in PlanFeature fail closed rather than
 # silently exposing unpriced operations. Roll out only after catalog reconciliation.
 CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool("CREDIT_FEATURE_STRICT_GATE_ENABLED", False)
+
+# NEW, opt-in. This replaces (never supplements) legacy period-snapshot storage
+# charging. A 300-second cycle measures actual MediaFile bytes and accrues
+# time-weighted wallet credits for the CLOSED calendar month.
+STORAGE_MONTHLY_METERED_ENABLED = env_bool("STORAGE_MONTHLY_METERED_ENABLED", False)
+STORAGE_METER_INTERVAL_SECONDS = int(env("STORAGE_METER_INTERVAL_SECONDS", 300))
+if not 60 <= STORAGE_METER_INTERVAL_SECONDS <= 86400:
+    raise ValueError("STORAGE_METER_INTERVAL_SECONDS must be between 60 and 86400.")
+
+# Celery only runs on a dedicated worker with a real broker. Do not enable
+# scheduled charges on web-only WSGI deployments; run exactly ONE Beat process.
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_BEAT_SCHEDULE = {}
+if CELERY_BROKER_URL and STORAGE_MONTHLY_METERED_ENABLED and env_bool("CELERY_RUN_STORAGE_BILLING", False):
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        "cubegear-sample-company-storage": {
+            "task": "cubegear.storage.sample",
+            "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
+        },
+        "cubegear-settle-closed-storage-months": {
+            "task": "cubegear.storage.settle",
+            "schedule": crontab(hour=0, minute=20),
+        },
+    }
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
