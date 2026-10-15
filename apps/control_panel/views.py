@@ -881,6 +881,8 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         "can_add_platform_staff": (
             active == "staff" and panel_permission(request.user, "users", "create")
         ),
+        "permission_sections": form.permission_sections if isinstance(form, RoleForm) else [],
+        "can_grant_wildcard": request.user.is_superuser,
     })
 
 
