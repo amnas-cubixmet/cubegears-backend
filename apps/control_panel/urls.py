@@ -89,6 +89,13 @@ urlpatterns = [
     path("staff/<uuid:pk>/delete/", views.staff_delete, name="staff-delete"),
 ]
 
+# Dedicated SaaS team role editor: scope is server-selected, never POST-selected.
+urlpatterns.append(path(
+    "roles/add/saas/", views.resource_action,
+    {"resource": "roles", "action": "create", "role_scope": "platform"},
+    name="role-saas-create",
+))
+
 for resource, (_, _, singular, _) in views.PANEL_RESOURCES.items():
     urlpatterns.append(path(f'{resource}/', views.resource_list, {'resource': resource}, name=resource))
     urlpatterns.append(path(f'{resource}/add/', views.resource_action,

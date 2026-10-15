@@ -570,8 +570,23 @@ class RoleForm(AdminModelForm):
         help_text="Select required actions. Panel permissions are for platform staff; workshop permissions are company scoped.")
 
     def __init__(self, *args, **kwargs):
+        # A dedicated URL, not a user-editable POST field, fixes the role scope.
+        self.scope = kwargs.pop("scope", None)
         super().__init__(*args, **kwargs)
         from apps.roles.permission_catalog import TENANT_PERMISSIONS, PANEL_PERMISSIONS
+        if self.instance.pk:
+            # Editing a role may never transfer authority between companies
+            # or between workshop and SaaS platform accounts.
+            self.fields["company"].disabled = True
+            if self.instance.company_id is None:
+                self.fields["company"].widget = forms.HiddenInput()
+        elif self.scope == "platform":
+            self.fields["company"].required = False
+            self.fields["company"].disabled = True
+            self.fields["company"].widget = forms.HiddenInput()
+        elif self.scope == "workshop":
+            self.fields["company"].required = True
+            self.fields["company"].help_text = "Select the workshop this role belongs to."
         current = self.instance.permissions or []
         if not isinstance(current, list):
             current = []
@@ -594,6 +609,8 @@ class RoleForm(AdminModelForm):
             ("platform", "SaaS Control Panel", PANEL_PERMISSIONS),
             ("workshop", "Workshop / Company", TENANT_PERMISSIONS),
         ):
+            if self.scope in {"platform", "workshop"} and scope != self.scope:
+                continue
             modules = {}
             for code in catalog:
                 module_code, action = code.rsplit(".", 1)
@@ -631,6 +648,18 @@ class RoleForm(AdminModelForm):
         data = super().clean()
         company = data.get("company")
         permissions = data.get("permissions") or []
+        from apps.roles.permission_catalog import PANEL_PERMISSIONS
+        if self.scope == "platform":
+            if self.data.get("company"):
+                self.add_error("company", "SaaS Admin Staff roles cannot belong to a workshop.")
+            if any(code != "*" and code not in PANEL_PERMISSIONS for code in permissions):
+                self.add_error("permissions", "Choose only valid SaaS Control Panel permissions.")
+            if not any(code == "*" or (code in PANEL_PERMISSIONS and code.endswith(".view")) for code in permissions):
+                self.add_error(
+                    "permissions", "Assign at least one SaaS view permission so staff can sign in.",
+                )
+        elif self.scope == "workshop" and not company:
+            self.add_error("company", "Select a workshop company for this role.")
         if company and any(code.startswith("panel.") for code in permissions):
             self.add_error(
                 "permissions", "Workshop roles cannot contain SaaS platform permissions."

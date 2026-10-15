@@ -826,13 +826,14 @@ def _send_new_user_invite(request, user):
     )
     return True
 
-def _save_form(request, form_class, *, instance=None, title, active, cancel_url):
+def _save_form(request, form_class, *, instance=None, title, active, cancel_url, form_kwargs=None):
     if not _can_manage_account(request.user, instance):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
     form = form_class(
         request.POST if request.method == "POST" else None,
         request.FILES if request.method == "POST" else None,
         instance=instance,
+        **(form_kwargs or {}),
     )
     form.actor = request.user
     if isinstance(form, UserForm) and not request.user.is_superuser:
@@ -881,6 +882,9 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         "can_add_platform_staff": (
             active == "staff" and panel_permission(request.user, "users", "create")
         ),
+        "role_scope": (
+            form.scope or ("platform" if form.instance.pk and form.instance.company_id is None else "workshop")
+        ) if isinstance(form, RoleForm) else None,
         "permission_sections": form.permission_sections if isinstance(form, RoleForm) else [],
         "can_grant_wildcard": request.user.is_superuser,
         "wildcard_selected": (
@@ -1313,6 +1317,15 @@ def resource_list(request, resource):
         queryset = queryset.select_related("customer", "branch")
     queryset = queryset.order_by("-created_at", "pk")
     queryset, company_id = _company_filter(request, queryset)
+    role_scope_filter = ""
+    if resource == "roles":
+        role_scope_filter = request.GET.get("scope", "").strip().lower()
+        if role_scope_filter == "platform":
+            queryset = queryset.filter(company__isnull=True)
+        elif role_scope_filter == "workshop":
+            queryset = queryset.filter(company__isnull=False)
+        else:
+            role_scope_filter = ""
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip().lower()
     if query:
@@ -1334,14 +1347,19 @@ def resource_list(request, resource):
         "status": status, "total_records": total_records,
         "active_records": active_records, "special_records": special_records,
         "companies_count": companies_count,
+        "role_scope_filter": role_scope_filter,
+        "platform_roles_count": all_records.filter(company__isnull=True).count() if resource == "roles" else 0,
+        "workshop_roles_count": all_records.filter(company__isnull=False).count() if resource == "roles" else 0,
         "create_url": f"panel:{singular}-create", "detail_url": f"panel:{singular}-detail",
         "edit_url": f"panel:{singular}-edit", "delete_url": f"panel:{singular}-delete",
     })
 
 
 @panel_admin_required
-def resource_action(request, resource, action, pk=None):
+def resource_action(request, resource, action, pk=None, role_scope=None):
     form_class, title, singular, _ = PANEL_RESOURCES[resource]
+    if resource == "roles" and action == "create":
+        role_scope = role_scope or "workshop"
     obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
     cancel_url = f'panel:{resource}'
     if action == 'detail':
@@ -1352,8 +1370,14 @@ def resource_action(request, resource, action, pk=None):
         })
     if action == 'delete':
         return _delete_object(request, obj, title=title, active=resource, cancel_url=cancel_url)
-    return _save_form(request, form_class, instance=obj, title=('Edit ' if obj else 'Add ') + title,
-                      active=resource, cancel_url=cancel_url)
+    editor_title = ('Edit ' if obj else 'Add ') + title
+    if resource == "roles" and action == "create":
+        editor_title = "Add SaaS Admin Staff Role" if role_scope == "platform" else "Add Workshop Role"
+    return _save_form(
+        request, form_class, instance=obj, title=editor_title,
+        active=resource, cancel_url=cancel_url,
+        form_kwargs={"scope": role_scope} if resource == "roles" and action == "create" else None,
+    )
 
 
 # Dedicated SaaS platform tools; never accessible to tenant company admins.
