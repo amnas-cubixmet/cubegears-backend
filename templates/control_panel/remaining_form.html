@@ -5,9 +5,22 @@
   <header class="remaining-editor-header">
     <div><nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url cancel_url %}">{{ page_title }}</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit{% else %}Create{% endif %}</span></nav>
     <h2>{{ page_title }}</h2>
-    <p>{% if active == 'vehicles' %}Maintain registration, customer assignment and vehicle details.{% elif active == 'roles' %}Edit role permissions carefully; changes affect access authorization.{% elif active == 'branches' %}Configure workshop location and office settings.{% else %}Configure feature labels and groups for the platform catalog.{% endif %}</p></div>
+    <p>{% if active == 'vehicles' %}Maintain registration, customer assignment and vehicle details.{% elif active == 'roles' %}{% if role_scope == 'platform' %}Create a company-independent SaaS Admin Staff role and select its Control Panel permissions.{% else %}Define workshop access with company-scoped permissions.{% endif %}{% elif active == 'branches' %}Configure workshop location and office settings.{% else %}Configure feature labels and groups for the platform catalog.{% endif %}</p></div>
     <a class="btn" href="{% url cancel_url %}">← Back</a>
   </header>
+  {% if active == 'roles' %}
+    {% if not is_edit %}
+      <nav class="role-editor-type-switch" aria-label="Choose role account type">
+        <a href="{% url 'panel:role-create' %}" {% if role_scope == 'workshop' %}aria-current="page"{% endif %}>Workshop Role</a>
+        <a href="{% url 'panel:role-saas-create' %}" {% if role_scope == 'platform' %}aria-current="page"{% endif %}>SaaS Admin Staff Role</a>
+      </nav>
+    {% endif %}
+    {% if role_scope == 'platform' %}
+      <p class="role-platform-info"><strong>SaaS platform role:</strong> This role has no workshop company. Selected permissions control access to SaaS Admin pages only. You can assign it when adding SaaS Admin Staff.</p>
+    {% else %}
+      <p class="role-platform-info"><strong>Workshop role:</strong> Select a company and grant access only to that company's permitted modules.</p>
+    {% endif %}
+  {% endif %}
   <form class="remaining-editor-form" method="post" novalidate>{% csrf_token %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
     <section class="panel-card remaining-editor-section">
@@ -26,7 +39,7 @@
       </div>
 
       {% if active == 'roles' %}
-      <section class="role-matrix" data-role-editor aria-labelledby="role-matrix-title">
+      <section class="role-matrix" data-role-editor data-fixed-scope="{% if not is_edit %}{{ role_scope }}{% endif %}" aria-labelledby="role-matrix-title">
         <div class="role-matrix-heading">
           <div><h3 id="role-matrix-title">Module access matrix</h3><p>Choose the actions allowed for this role. Platform and workshop access are strictly separated.</p></div>
           <span class="role-scope-label" data-role-scope-label>Permission scope</span>
