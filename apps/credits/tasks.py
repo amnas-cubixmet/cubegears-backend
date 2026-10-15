@@ -18,7 +18,8 @@ def renew_due_features(self):
         return "disabled"
     # The Django management command calls the existing atomic/idempotent
     # billing service, which uses stable renewal references.
-    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+    if (settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+            or getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)):
         logger.info("Prepaid feature renewals skipped in postpaid mode")
         return "postpaid"
     call_command("charge_credit_features")
@@ -30,6 +31,9 @@ def bill_due_storage(self):
     if not settings.CREDIT_BILLING_CELERY_ENABLED:
         logger.info("Storage credit billing disabled: no charge")
         return "disabled"
+    if getattr(settings, "STORAGE_MONTHLY_METERED_ENABLED", False):
+        logger.info("Legacy storage snapshot billing skipped for newer monthly meter")
+        return "monthly_metered"
     # This is currently period-snapshot billing, NOT GB-hours/postpaid.
     call_command("bill_storage_credits")
     return "completed"
@@ -84,3 +88,41 @@ def sync_postpaid_feature_rates(self):
             failures += 1
             logger.exception("Postpaid seat rate reconciliation failed for company=%s", company.pk)
     return {"changed": changed, "errors": failures}
+
+
+# New monthly time-metered tasks use separate immutable reading/period tables.
+# These names only enter Beat when enabled explicitly in config/settings.py.
+@shared_task(ignore_result=True, name="cubegear.storage.monthly.sample")
+def sample_monthly_storage():
+    if not (settings.CREDIT_BILLING_CELERY_ENABLED
+            and settings.STORAGE_MONTHLY_METERED_ENABLED):
+        return {"disabled": 1}
+    from .monthly_storage import meter_all_company_storage
+    return meter_all_company_storage()
+
+
+@shared_task(ignore_result=True, name="cubegear.storage.monthly.settle")
+def settle_monthly_storage():
+    if not (settings.CREDIT_BILLING_CELERY_ENABLED
+            and settings.STORAGE_MONTHLY_METERED_ENABLED):
+        return {"disabled": 1}
+    from .monthly_storage import settle_due_storage
+    return settle_due_storage()
+
+
+@shared_task(ignore_result=True, name="cubegear.features.monthly.sample")
+def sample_monthly_features():
+    if not (settings.CREDIT_BILLING_CELERY_ENABLED
+            and settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED):
+        return {"disabled": 1}
+    from .monthly_features import meter_all_postpaid_features
+    return meter_all_postpaid_features()
+
+
+@shared_task(ignore_result=True, name="cubegear.features.monthly.settle")
+def settle_monthly_features():
+    if not (settings.CREDIT_BILLING_CELERY_ENABLED
+            and settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED):
+        return {"disabled": 1}
+    from .monthly_features import settle_due_postpaid_features
+    return settle_due_postpaid_features()
