@@ -179,6 +179,7 @@ class FeatureBundlesAPITests(TestCase):
         self.bundle.save(update_fields=["billing_type"])
         CompanyBundleAccess.objects.create(
             company=self.company, bundle=self.bundle, enabled=True, uses_remaining=1,
+            billing_type_at_purchase="per_use",
         )
         self.assertTrue(consume_bundle_use(
             self.company, self.bundle, self.jobs, operation_ref="real-job-7", actor=self.admin
