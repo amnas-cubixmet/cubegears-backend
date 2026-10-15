@@ -70,14 +70,20 @@ class RazorpayBillingTests(TestCase):
             "status": "captured", "method": "upi",
         }
 
-    def test_unpaid_account_cannot_access_dashboard_api(self):
+    def test_unpaid_account_can_access_dashboard_when_role_allows(self):
+        # Credit-wallet billing replaced the old subscription paywall. Only
+        # tenant RBAC and (if enabled) paid feature entitlements gate access.
+        role = self.user.role
+        role.permissions = [*role.permissions, "dashboard.view"]
+        role.save(update_fields=["permissions"])
         jwt_client = APIClient()
         token = RefreshToken.for_user(self.user).access_token
         jwt_client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         result = jwt_client.get("/api/v1/dashboard")
-        self.assertEqual(result.status_code, 402)
-        self.assertEqual(result.json()["code"], "SUBSCRIPTION_PAYMENT_REQUIRED")
+        self.assertEqual(result.status_code, 200)
         self.assertEqual(jwt_client.get("/api/v1/saas/checkout/status").status_code, 200)
+        # The legacy subscription status remains queryable for historical data,
+        # but it does not restrict the credit-based dashboard.
         self.assertFalse(access_state(self.company)["allowed"])
 
     def test_checkout_never_accepts_client_supplied_price_or_validity(self):
@@ -213,7 +219,7 @@ class RazorpayBillingTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(RazorpayPlanPayment.objects.count(), 0)
 
-    def test_expired_captured_plan_is_blocked_and_status_is_expired(self):
+    def test_expired_legacy_plan_does_not_block_credit_based_dashboard(self):
         self.create_checkout()
         with patch("apps.saas.checkout_views.fetch_payment", return_value=self.captured()):
             answer = self.client.post("/api/v1/saas/checkout/verify", {
@@ -233,7 +239,10 @@ class RazorpayBillingTests(TestCase):
         self.assertEqual(access_state(self.company)["status"], "expired")
         jwt = APIClient()
         jwt.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(self.user).access_token}")
-        self.assertEqual(jwt.get("/api/v1/dashboard").status_code, 402)
+        role = self.user.role
+        role.permissions = [*role.permissions, "dashboard.view"]
+        role.save(update_fields=["permissions"])
+        self.assertEqual(jwt.get("/api/v1/dashboard").status_code, 200)
 
     def test_non_billing_staff_cannot_read_same_tenant_order_details(self):
         self.create_checkout()
