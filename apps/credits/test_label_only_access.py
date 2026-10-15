@@ -117,6 +117,19 @@ class LabelOnlyAccessTests(TestCase):
         self.assertFalse(user_has_permission(self.owner, "stock.view"))
         self.assertEqual(CreditWallet.objects.get(company=self.a).balance, Decimal("100.00"))
 
+    @override_settings(CREDIT_POSTPAID_FEATURE_BILLING_ENABLED=True)
+    def test_old_postpaid_engine_does_not_charge_for_hidden_standalone_features(self):
+        from apps.credits.postpaid import (
+            completed_month, refresh_postpaid_feature_rates, settle_monthly_usage,
+        )
+        self.assertEqual(refresh_postpaid_feature_rates(self.a), 0)
+        status, invoice = settle_monthly_usage(
+            self.a, "feature", completed_month(),
+        )
+        self.assertEqual(status, "label_only")
+        self.assertIsNone(invoice)
+        self.assertEqual(CreditWallet.objects.get(company=self.a).balance, Decimal("100.00"))
+
     def test_disabling_and_expiring_label_revokes_routes_immediately(self):
         access = CompanyBundleAccess.objects.create(
             company=self.a, bundle=self.label, enabled=True,
