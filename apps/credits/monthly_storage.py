@@ -87,7 +87,7 @@ def meter_company_storage(company, *, at=None):
         max_gap = int(settings.STORAGE_METER_INTERVAL_SECONDS) * 2
         # Never back-bill intervals during which the worker was down and file
         # changes could have gone unobserved.
-        start = max(cursor.sampled_at, at - timedelta(seconds=max_gap))
+        start = cursor.sampled_at if elapsed <= max_gap else at
         if elapsed > max_gap:
             LOG.warning(
                 "Storage metering gap for company %s: %s seconds; %s seconds not billed",
