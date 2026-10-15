@@ -42,6 +42,7 @@ jobs:
       - run: python manage.py test apps.credits.test_gateway_api --noinput
       - run: python manage.py test apps.credits.test_hosted_checkout --noinput
       - run: python manage.py test apps.credits.test_feature_bundles --noinput
+      - run: python manage.py test apps.credits.test_activation_readiness --noinput
       - run: python manage.py test apps.credits.test_celery_billing_tasks --noinput
       - run: python manage.py test apps.credits.test_module_entitlements --noinput
       - run: python manage.py test apps.credits.test_postpaid_monthly --noinput
