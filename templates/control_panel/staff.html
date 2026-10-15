@@ -8,11 +8,21 @@
     <p>Manage team members, workshop assignments, account invitations and employment details.</p>
   </div>
   {% panel_can 'panel:staff-create' as allowed %}
-  {% if allowed %}<div class="row-actions">
-    <a class="btn btn-primary" href="{% url 'panel:staff-create' %}">+ Add Workshop Staff</a>
-    {% panel_can 'panel:user-create' as can_add_saas_staff %}
-    {% if can_add_saas_staff %}<a class="btn" href="{% url 'panel:staff-create' %}?type=platform">+ Add SaaS Admin Staff</a>{% endif %}
-  </div>{% endif %}
+  {% if allowed %}
+    <nav class="staff-create-actions" aria-label="Add a staff member">
+      <a class="staff-create-btn staff-create-btn-primary" href="{% url 'panel:staff-create' %}">
+        <span class="staff-create-btn-icon" aria-hidden="true">+</span>
+        <span>Add Workshop Staff</span>
+      </a>
+      {% panel_can 'panel:user-create' as can_add_saas_staff %}
+      {% if can_add_saas_staff %}
+        <a class="staff-create-btn staff-create-btn-secondary" href="{% url 'panel:staff-create' %}?type=platform">
+          <span class="staff-create-btn-icon" aria-hidden="true">+</span>
+          <span>Add SaaS Admin Staff</span>
+        </a>
+      {% endif %}
+    </nav>
+  {% endif %}
 </section>
 
 <section class="directory-stats staff-stats" aria-label="Staff overview">

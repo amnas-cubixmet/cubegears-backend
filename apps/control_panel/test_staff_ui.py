@@ -69,6 +69,37 @@ class StaffManagementUITests(TestCase):
         self.assertEqual(response.context["staff_companies"], 2)
         self.assertIsNotNone(finders.find("control_panel/staff-ui.css"))
 
+    def test_staff_create_actions_render_as_buttons_not_table_links(self):
+        response = self.client.get(reverse("panel:staff"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="staff-create-actions"')
+        self.assertContains(response, 'class="staff-create-btn staff-create-btn-primary"')
+        self.assertContains(response, 'class="staff-create-btn staff-create-btn-secondary"')
+        self.assertContains(response, 'aria-label="Add a staff member"')
+        self.assertContains(response, "Add Workshop Staff")
+        self.assertContains(response, "Add SaaS Admin Staff")
+        self.assertContains(response, 'href="' + reverse("panel:staff-create") + '"')
+        self.assertContains(response, 'href="' + reverse("panel:staff-create") + '?type=platform"')
+        self.assertNotContains(response, '<div class="row-actions">\n    <a class="btn btn-primary" href="' + reverse("panel:staff-create"))
+        css_path = finders.find("control_panel/staff-ui.css")
+        self.assertIsNotNone(css_path)
+
+    def test_staff_header_only_shows_saas_creation_with_user_create_permission(self):
+        staff_only_role = Role.objects.create(
+            company=None, name="Staff Director", code="STAFF_DIRECTOR",
+            permissions=["panel.staff.view", "panel.staff.create"],
+        )
+        staff_only = User.objects.create_user(
+            email="staff-director@example.com", name="Staff Director",
+            password="SecureStaffDirector2026!", role=staff_only_role,
+            is_staff=True, company=None,
+        )
+        self.client.force_login(staff_only)
+        response = self.client.get(reverse("panel:staff"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Add Workshop Staff")
+        self.assertNotContains(response, "Add SaaS Admin Staff")
+
     def test_combined_search_company_status_and_login_filter(self):
         response = self.client.get(reverse("panel:staff"), {
             "q": "Aisha", "company": str(self.alpha.pk),
