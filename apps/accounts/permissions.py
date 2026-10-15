@@ -189,6 +189,11 @@ def can_delegate(user, permissions):
     """A manager cannot grant authority they do not possess."""
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False
+    # Platform superusers can delegate tenant roles without receiving tenant
+    # API permissions themselves. Tenant access checks remain company-scoped.
+    if (user and user.is_authenticated and user.is_active and user.is_staff
+            and user.is_superuser and user.company_id is None):
+        return True
     return all(user_has_permission(user, code) for code in permissions)
 
 
