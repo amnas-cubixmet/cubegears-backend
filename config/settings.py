@@ -313,4 +313,53 @@ CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENAB
 # Opt-in replacement for individual FEATURE prepaid renewal. Existing accounts
 # require migration into usage sessions before enabling on production.
 CREDIT_POSTPAID_FEATURE_BILLING_ENABLED = env_bool("CREDIT_POSTPAID_FEATURE_BILLING_ENABLED", False)
+
+# Alternate, newer interval-metered billing engines are strictly opt-in.
+# Never activate both monthly feature engines for the same company.
+CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED = env_bool("CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
+CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool(
+    "CREDIT_FEATURE_STRICT_GATE_ENABLED", CREDIT_STRICT_MODULE_GATING_ENABLED,
+)
+STORAGE_MONTHLY_METERED_ENABLED = env_bool("STORAGE_MONTHLY_METERED_ENABLED", False)
+STORAGE_METER_INTERVAL_SECONDS = int(env("STORAGE_METER_INTERVAL_SECONDS", 300))
+if not 60 <= STORAGE_METER_INTERVAL_SECONDS <= 86400:
+    raise ValueError("STORAGE_METER_INTERVAL_SECONDS must be between 60 and 86400.")
+
+if CREDIT_POSTPAID_FEATURE_BILLING_ENABLED and CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "Choose ONE feature postpaid engine: CREDIT_POSTPAID_FEATURE_BILLING_ENABLED "
+        "or CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED."
+    )
+
+# Safe Celery wiring for the newer month-ledger engines; standalone snapshot
+# billing and older postpaid settlement are not scheduled at the same time.
+if CREDIT_BILLING_CELERY_ENABLED:
+    if STORAGE_MONTHLY_METERED_ENABLED and env_bool("CELERY_RUN_STORAGE_BILLING", False):
+        CELERY_BEAT_SCHEDULE.pop("cubegear-bill-storage-period", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-meter-storage", None)
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-monthly-storage-sample": {
+                "task": "cubegear.storage.monthly.sample",
+                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
+            },
+            "cubegear-monthly-storage-settle": {
+                "task": "cubegear.storage.monthly.settle",
+                "schedule": crontab(hour=0, minute=20),
+            },
+        })
+    if CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED and env_bool("CELERY_RUN_FEATURE_BILLING", False):
+        CELERY_BEAT_SCHEDULE.pop("cubegear-renew-credit-features", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-sync-postpaid-seat-rates", None)
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-monthly-feature-sample": {
+                "task": "cubegear.features.monthly.sample",
+                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
+            },
+            "cubegear-monthly-feature-settle": {
+                "task": "cubegear.features.monthly.settle",
+                "schedule": crontab(hour=0, minute=25),
+            },
+        })
+
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
