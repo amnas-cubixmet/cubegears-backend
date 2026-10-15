@@ -139,6 +139,57 @@ def record_storage_interval(company, *, now=None, policy=None):
     return ("metered" if created else "already_metered"), item
 
 
+@transaction.atomic
+def refresh_postpaid_feature_rates(company, *, now=None):
+    """Split active sessions when billable login seats or staff counts change.
+
+    Runs on a short Celery schedule, not on untrusted browser notifications.
+    A new segment preserves the previous period's unit price and quantity.
+    """
+    if not settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        return 0
+    from .models import CompanyCreditFeature, FeatureCreditPrice, CreditWallet
+    from .service import staff_count, billable_user_count, price_for
+    now = now or timezone.now()
+    wallet_for(company)
+    CreditWallet.objects.select_for_update().get(company=company)
+    users = billable_user_count(company)
+    staff = staff_count(company)
+    changed = 0
+    for state in CompanyCreditFeature.objects.filter(
+        company=company, enabled=True,
+    ).select_related("feature").select_for_update():
+        open_session = FeatureUsageSession.objects.filter(
+            company=company, feature=state.feature, ended_at__isnull=True,
+        ).first()
+        # Never silently convert a legacy prepaid entitlement into postpaid.
+        if not open_session:
+            logger.error("Postpaid feature session missing: company=%s feature=%s",
+                         company.pk, state.feature.key)
+            continue
+        price = FeatureCreditPrice.objects.filter(
+            feature=state.feature, is_available=True, feature__is_active=True,
+            billing_period="monthly",
+        ).first()
+        if not price:
+            logger.error("No valid monthly rate for postpaid company=%s feature=%s",
+                         company.pk, state.feature.key)
+            continue
+        new_rate = price_for(price, staff, users)
+        if (open_session.user_seats == users and open_session.staff_seats == staff
+                and open_session.monthly_credits == new_rate):
+            continue
+        open_session.ended_at = now
+        open_session.save(update_fields=["ended_at"])
+        FeatureUsageSession.objects.create(
+            company=company, feature=state.feature, started_at=now,
+            monthly_credits=new_rate, activation_credits=ZERO,
+            user_seats=users, staff_seats=staff,
+        )
+        changed += 1
+    return changed
+
+
 def storage_month_quote(company, month):
     # These are real rows created by a backend meter; the browser cannot submit
     # usage or price. No rows means no auditable basis for an invoice.
