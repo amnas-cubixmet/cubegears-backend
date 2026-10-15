@@ -117,6 +117,9 @@ class CompanyBundleAccess(models.Model):
     last_price_credits = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal("0.00")
     )
+    billing_type_at_purchase = models.CharField(
+        max_length=15, choices=FeatureBundle.PERIODS, default="weekly"
+    )
     purchased_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
 
