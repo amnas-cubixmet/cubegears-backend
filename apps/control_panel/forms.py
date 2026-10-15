@@ -513,6 +513,12 @@ class StaffInviteForm(EmployeeForm):
             ).first()
             if not self.login_role:
                 self.add_error("role_name", "Choose an active company staff role.")
+            elif (not getattr(self, "actor", None)
+                  or not can_delegate(self.actor, self.login_role.permissions)):
+                self.add_error(
+                    "role_name",
+                    "You cannot assign a workshop role beyond your own permissions.",
+                )
         if data.get("status", "Active") != "Active":
             self.add_error("status", "Create an active staff account to send a login invitation.")
         data["email"] = email
@@ -572,6 +578,41 @@ class RoleForm(AdminModelForm):
         choices = sorted(set(TENANT_PERMISSIONS + PANEL_PERMISSIONS + [v for v in current if isinstance(v, str)]))
         self.fields['permissions'].choices = [('*', 'Full access (administrator only)')] + [(code, code) for code in choices if code != '*']
         self.fields['permissions'].widget.attrs['class'] = 'permission-checkboxes'
+
+    @property
+    def permission_sections(self):
+        """Server-rendered, bound-form-safe matrix for the permission editor."""
+        from apps.roles.permission_catalog import TENANT_PERMISSIONS, PANEL_PERMISSIONS
+
+        selected = (
+            set(self.data.getlist("permissions"))
+            if self.is_bound
+            else set(self.instance.permissions or [])
+        )
+        sections = []
+        for scope, title, catalog in (
+            ("platform", "SaaS Control Panel", PANEL_PERMISSIONS),
+            ("workshop", "Workshop / Company", TENANT_PERMISSIONS),
+        ):
+            modules = {}
+            for code in catalog:
+                module_code, action = code.rsplit(".", 1)
+                module_code = module_code.removeprefix("panel.")
+                if module_code not in modules:
+                    modules[module_code] = {
+                        "key": module_code,
+                        "label": module_code.replace("_", " ").title(),
+                    }
+                modules[module_code][action] = {
+                    "code": code,
+                    "checked": code in selected,
+                }
+            sections.append({
+                "scope": scope,
+                "title": title,
+                "modules": [modules[key] for key in sorted(modules)],
+            })
+        return sections
 
     class Meta:
         model = Role
