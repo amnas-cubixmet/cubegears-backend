@@ -110,6 +110,7 @@ class CreditFeaturesView(APIView):
                 "perUserCredits": str(rate.per_user_credits),
                 "userCount": users,
                 "billingPeriod": rate.billing_period,
+                "billingMode": "monthly_postpaid" if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED else "prepaid",
                 "periodCredits": str(price_for(rate, count, users)),
                 "perStaffCredits": str(rate.per_staff_credits),
                 "staffCount": count,
