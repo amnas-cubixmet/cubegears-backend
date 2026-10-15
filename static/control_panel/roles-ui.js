@@ -18,7 +18,7 @@
   }
 
   function syncScope(clearOther) {
-    const scope = company?.value ? "workshop" : "platform";
+    const scope = editor.dataset.fixedScope || (company?.value ? "workshop" : "platform");
     for (const section of sections) {
       const isCurrent = section.dataset.roleScope === scope;
       section.hidden = !isCurrent;
