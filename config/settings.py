@@ -279,17 +279,30 @@ CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]
+CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED = env_bool("CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
 CELERY_BEAT_SCHEDULE = {}
-if CELERY_BROKER_URL and STORAGE_MONTHLY_METERED_ENABLED and env_bool("CELERY_RUN_STORAGE_BILLING", False):
+if CELERY_BROKER_URL:
     from celery.schedules import crontab
-    CELERY_BEAT_SCHEDULE = {
-        "cubegear-sample-company-storage": {
-            "task": "cubegear.storage.sample",
-            "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
-        },
-        "cubegear-settle-closed-storage-months": {
-            "task": "cubegear.storage.settle",
-            "schedule": crontab(hour=0, minute=20),
-        },
-    }
+    if STORAGE_MONTHLY_METERED_ENABLED and env_bool("CELERY_RUN_STORAGE_BILLING", False):
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-sample-company-storage": {
+                "task": "cubegear.storage.sample",
+                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
+            },
+            "cubegear-settle-closed-storage-months": {
+                "task": "cubegear.storage.settle",
+                "schedule": crontab(hour=0, minute=20),
+            },
+        })
+    if CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED and env_bool("CELERY_RUN_FEATURE_BILLING", False):
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-sample-paid-features": {
+                "task": "cubegear.features.sample",
+                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
+            },
+            "cubegear-settle-closed-feature-months": {
+                "task": "cubegear.features.settle",
+                "schedule": crontab(hour=0, minute=25),
+            },
+        })
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
