@@ -2,39 +2,56 @@
 {% load panel_access %}
 {% block content %}
 <section class="directory-heading remaining-heading">
-  <div><p class="eyebrow">Platform / Feature pricing</p><h2>Paid Feature Labels</h2><p>Manage credit-priced feature packages and their access duration. Backend role permissions remain unchanged.</p></div>
+  <div>
+    <p class="eyebrow">Platform / Feature labels</p>
+    <h2>Feature Labels</h2>
+    <p>Create labels using only name, description, included features, per-user credits and billing type.</p>
+  </div>
   <div class="remaining-head-actions">
-    {% panel_can 'panel:featurebundle-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:featurebundle-create' %}">+ Create Paid Label</a>{% endif %}
+    {% panel_can 'panel:featurebundle-create' as allowed %}{% if allowed %}
+      <a class="btn btn-primary" href="{% url 'panel:featurebundle-create' %}">+ Create Feature Label</a>
+    {% endif %}
   </div>
 </section>
-<section class="panel-card remaining-directory cg-paid-labels" aria-label="Paid feature labels">
+
+<section class="panel-card remaining-directory cg-paid-labels" aria-label="All feature labels">
   <header class="section-head directory-section-heading">
-    <div>
-      <p class="eyebrow">Paid feature labels</p>
-      <h2>Multi-feature packages</h2>
-      <p>Combine existing modules under one name and choose the credit price and access duration.</p>
+    <div><p class="eyebrow">Existing labels</p><h2>All feature labels ({{ bundles|length }})</h2>
+      <p>Each label is billed by the company's active login users for the selected duration.</p>
     </div>
   </header>
   <div class="cg-paid-label-grid">
-  {% for bundle in bundles %}
-    <article class="cg-paid-label-card">
-      <div class="cg-paid-label-top"><div><span class="eyebrow">PACKAGE / {{ bundle.key }}</span><h3>{{ bundle.name }}</h3></div><span class="remaining-state {% if bundle.is_active %}is-good{% else %}is-neutral{% endif %}">{% if bundle.is_active %}Published{% else %}Disabled{% endif %}</span></div>
-      {% if bundle.description %}<p>{{ bundle.description }}</p>{% endif %}
-      <div class="cg-paid-label-price"><strong>{{ bundle.price_credits }}</strong><span>base credits / {{ bundle.get_billing_type_display }}</span></div>
-      <p class="remaining-note">Activation: {{ bundle.activation_credits }} credits; per active login user: {{ bundle.per_user_credits }} credits. Total is calculated using that company's user count.</p>
-      <div class="cg-paid-label-features">
-        {% for feature in bundle.features.all %}<span>{{ feature.label }}</span>{% empty %}<small>No modules selected</small>{% endfor %}
-      </div>
-      {% if bundle.billing_type == 'per_use' %}<p class="cg-paid-label-notice">Per-use billing needs a trusted feature usage hook before purchases are enabled.</p>{% endif %}
-      {% panel_can 'panel:featurebundle-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featurebundle-edit' bundle.pk %}">Edit Package</a>{% endif %}
-    </article>
-  {% empty %}
-    <div class="cg-paid-label-empty"><strong>No paid feature labels yet.</strong><p>Create a paid package to group existing feature permissions and configure its credit price.</p></div>
-  {% endfor %}
+    {% for bundle in bundles %}
+      <article class="cg-paid-label-card">
+        <div class="cg-paid-label-top">
+          <h3>{{ bundle.name }}</h3>
+          <span class="remaining-state {% if bundle.is_active %}is-good{% else %}is-neutral{% endif %}">
+            {% if bundle.is_active %}Published{% else %}Disabled{% endif %}
+          </span>
+        </div>
+        {% if bundle.description %}<p>{{ bundle.description }}</p>{% endif %}
+        <div class="cg-paid-label-price">
+          <strong>{{ bundle.per_user_credits }}</strong>
+          <span>credits / active login user / {{ bundle.get_billing_type_display }}</span>
+        </div>
+        <div class="cg-paid-label-features">
+          {% for feature in bundle.features.all %}
+            <span>{{ feature.label }}</span>
+          {% empty %}
+            <small>No existing features selected</small>
+          {% endfor %}
+        </div>
+        {% if bundle.billing_type == 'per_use' %}
+          <p class="cg-paid-label-notice">Per-use activation needs trusted backend metering before purchases are allowed.</p>
+        {% endif %}
+        {% panel_can 'panel:featurebundle-edit' as allowed %}{% if allowed %}
+          <a class="btn" href="{% url 'panel:featurebundle-edit' bundle.pk %}">Edit Label</a>
+        {% endif %}
+      </article>
+    {% empty %}
+      <div class="cg-paid-label-empty"><strong>No feature labels yet.</strong>
+        <p>Create a label by selecting existing published features.</p></div>
+    {% endfor %}
   </div>
-</section>
-<section class="panel-card cg-paid-labels-guide" aria-label="Feature billing information">
-  <p>Packages are priced in wallet credits. Publishing a package does not grant role permissions by itself; backend authorization and verified purchase entitlements still apply.</p>
-  <a class="btn" href="{% url 'panel:plans' %}">Open Plan Builder</a>
 </section>
 {% endblock %}

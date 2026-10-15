@@ -1,4 +1,5 @@
 """Tenant-scoped prepaid feature label catalog and activation API."""
+from decimal import Decimal
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
@@ -20,23 +21,37 @@ class BundleInput(serializers.Serializer):
     bundleId = serializers.IntegerField(min_value=1)
 
 
-def _public_bundle(bundle, access=None):
+def _public_bundle(bundle, access=None, user_count=0):
+    active_features = [
+        {"key": feature.key, "label": feature.label}
+        for feature in bundle.features.all() if feature.is_active
+    ]
+    # Expose the platform's real readiness state, not a browser-only toggle.
+    disabled_reason = (
+        "FEATURE_ENTITLEMENTS_NOT_ENABLED"
+        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+        else "METERED_OPERATION_NOT_READY"
+        if bundle.billing_type == "per_use"
+        else "FEATURE_LABEL_EMPTY"
+        if not active_features
+        else "INVALID_USER_PRICE"
+        if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00")
+        else None
+    )
     return {
         "id": bundle.pk, "key": bundle.key, "name": bundle.name,
         "description": bundle.description,
-        "priceCredits": str(bundle.price_credits),
-        "activationCredits": str(bundle.activation_credits),
         "perUserCredits": str(bundle.per_user_credits),
+        "userCount": user_count,
+        "totalCredits": str((bundle.per_user_credits * user_count).quantize(Decimal("0.01"))),
         "billingType": bundle.billing_type,
-        "features": [
-            {"key": feature.key, "label": feature.label}
-            for feature in bundle.features.all() if feature.is_active
-        ],
+        "features": active_features,
         "active": bundle_is_usable(access) if access else False,
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
         "meteredReady": bundle.billing_type != "per_use",
-        "purchaseEnabled": bundle.billing_type != "per_use" and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED,
+        "purchaseEnabled": disabled_reason is None,
+        "purchaseDisabledReason": disabled_reason,
     }
 
 
@@ -52,7 +67,8 @@ class BundleListView(APIView):
                 company=request.user.company, bundle_id__in=[b.pk for b in bundles]
             ).select_related("bundle")
         }
-        return Response([_public_bundle(b, accesses.get(b.id)) for b in bundles])
+        count = billable_user_count(request.user.company)
+        return Response([_public_bundle(b, accesses.get(b.id), count) for b in bundles])
 
 
 class BundlePurchaseView(APIView):
@@ -84,7 +100,7 @@ class BundlePurchaseView(APIView):
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
         return Response({
-            "bundle": _public_bundle(bundle, access),
+            "bundle": _public_bundle(bundle, access, billable_user_count(request.user.company)),
             "chargedCredits": str(charged),
         })
 
@@ -101,4 +117,4 @@ class BundleDisableView(APIView):
         access = disable_feature_bundle(request.user.company, bundle)
         if not access:
             return Response({"message": "This company has not purchased this label."}, status=404)
-        return Response({"bundle": _public_bundle(bundle, access), "chargedCredits": "0.00"})
+        return Response({"bundle": _public_bundle(bundle, access, billable_user_count(request.user.company)), "chargedCredits": "0.00"})

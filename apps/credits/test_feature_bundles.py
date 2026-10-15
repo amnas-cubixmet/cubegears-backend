@@ -41,7 +41,8 @@ class FeatureBundlesAPITests(TestCase):
         self.jobs = PlanFeature.objects.create(key="jobs", label="Job Cards", group=self.group)
         self.invoices = PlanFeature.objects.create(key="invoices", label="Invoices", group=self.group)
         self.bundle = FeatureBundle.objects.create(
-            key="garage-plus", name="Garage Plus", price_credits=Decimal("40.00"),
+            key="garage-plus", name="Garage Plus", price_credits=Decimal("85.00"),
+            activation_credits=Decimal("19.00"), per_user_credits=Decimal("20.00"),
             billing_type="weekly",
         )
         self.bundle.features.set([self.jobs, self.invoices])
@@ -52,7 +53,11 @@ class FeatureBundlesAPITests(TestCase):
     def test_company_sees_label_and_cannot_choose_price(self):
         response = self.client.get("/api/v1/saas/credits/bundles")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data[0]["priceCredits"], "40.00")
+        self.assertEqual(response.data[0]["perUserCredits"], "20.00")
+        self.assertEqual(response.data[0]["userCount"], 2)
+        self.assertEqual(response.data[0]["totalCredits"], "40.00")
+        self.assertNotIn("priceCredits", response.data[0])
+        self.assertNotIn("activationCredits", response.data[0])
         self.assertEqual({f["key"] for f in response.data[0]["features"]}, {"jobs", "invoices"})
         self.assertFalse(response.data[0]["active"])
         result = self.client.post("/api/v1/saas/credits/bundles/purchase", {
@@ -213,13 +218,14 @@ class FeatureBundlePanelUITests(TestCase):
         result = self.client.post(url, {
             "name": "Operations Bundle", "description": "Two modules",
             "features": [str(self.a.pk), str(self.b.pk)],
-            "price_credits": "35.00", "billing_type": "daily",
-            "is_active": "on", "sort_order": "2",
+            "per_user_credits": "35.00", "billing_type": "daily",
         })
         self.assertRedirects(result, reverse("panel:features"))
         bundle = FeatureBundle.objects.get(key="operations-bundle")
         self.assertEqual(bundle.features.count(), 2)
-        self.assertEqual(bundle.price_credits, Decimal("35.00"))
+        self.assertEqual(bundle.price_credits, Decimal("0.00"))
+        self.assertEqual(bundle.activation_credits, Decimal("0.00"))
+        self.assertEqual(bundle.per_user_credits, Decimal("35.00"))
         page = self.client.get(reverse("panel:features"))
         self.assertContains(page, "Operations Bundle")
         self.assertContains(page, "35.00")
@@ -227,7 +233,7 @@ class FeatureBundlePanelUITests(TestCase):
     def test_label_requires_multiple_existing_features(self):
         result = self.client.post(reverse("panel:featurebundle-create"), {
             "name": "Invalid Bundle", "features": [str(self.a.pk)],
-            "price_credits": "5.00", "billing_type": "weekly", "is_active": "on",
+            "per_user_credits": "5.00", "billing_type": "weekly",
         })
         self.assertEqual(result.status_code, 200)
         self.assertContains(result, "Select at least two existing features")

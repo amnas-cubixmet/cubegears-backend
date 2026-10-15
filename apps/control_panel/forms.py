@@ -765,34 +765,27 @@ class PlanFeatureForm(AdminModelForm):
 
 
 class FeatureBundleForm(AdminModelForm):
-    """Build a priced label by selecting existing, independently managed features."""
+    """Five fields only: charge exclusively by active company login users."""
     features = forms.ModelMultipleChoiceField(
         label="Included existing features",
         queryset=PlanFeature.objects.filter(is_active=True),
         widget=forms.CheckboxSelectMultiple(),
-        help_text="Choose 2 or more existing features. No new feature is created.",
+        help_text="Choose 2 or more existing features. All active published modules are listed.",
     )
 
     class Meta:
         model = FeatureBundle
-        fields = ["name", "description", "features", "price_credits",
-                  "activation_credits", "per_user_credits", "billing_type", "is_active", "sort_order"]
+        fields = ["name", "description", "features", "per_user_credits", "billing_type"]
+        labels = {"per_user_credits": "Per user credits"}
+        help_texts = {
+            "per_user_credits": "Credits per active login account for each selected billing period.",
+        }
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Existing paid labels may have historical catalog keys; preserve edit
-        # compatibility, while new modules are registered from the RBAC registry.
-        for field in ("activation_credits", "per_user_credits"):
-            self.fields[field].required = False
-
-    def clean(self):
-        data = super().clean()
-        for field in ("activation_credits", "per_user_credits"):
-            if data.get(field) is None:
-                data[field] = Decimal("0.00")
-            if not Decimal("0") <= data[field] <= Decimal("1000000"):
-                self.add_error(field, "Enter 0 to 1,000,000 credits.")
-        return data
+    def clean_per_user_credits(self):
+        price = self.cleaned_data["per_user_credits"]
+        if price is None or not Decimal("0.01") <= price <= Decimal("1000000.00"):
+            raise forms.ValidationError("Enter 0.01 to 1,000,000 credits per user.")
+        return price
 
     def clean_features(self):
         features = self.cleaned_data["features"]
@@ -816,12 +809,6 @@ class FeatureBundleForm(AdminModelForm):
             )
         return period
 
-    def clean_price_credits(self):
-        price = self.cleaned_data["price_credits"]
-        if not Decimal("0.01") <= price <= Decimal("1000000.00"):
-            raise forms.ValidationError("Set a price between 0.01 and 1,000,000 credits.")
-        return price
-
     def save(self, commit=True):
         if self.instance._state.adding:
             base = slugify(self.cleaned_data["name"])[:100].strip("-_") or "label"
@@ -831,4 +818,8 @@ class FeatureBundleForm(AdminModelForm):
                 key = f"{base[:100 - len(suffix)]}{suffix}"
                 number += 1
             self.instance.key = key
+        # Legacy model columns remain for existing transactions, but new
+        # purchases use per-user credits exclusively.
+        self.instance.price_credits = Decimal("0.00")
+        self.instance.activation_credits = Decimal("0.00")
         return super().save(commit=commit)

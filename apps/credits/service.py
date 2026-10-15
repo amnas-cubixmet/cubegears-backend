@@ -262,11 +262,11 @@ def purchase_feature_bundle(company, bundle, actor):
             raise ValueError("This package overlaps an active monthly-postpaid feature. Disable it first.")
     if not bundle.features.filter(is_active=True).exists():
         raise ValueError("This label has no active features.")
-    if not Decimal("0.01") <= bundle.price_credits <= Decimal("1000000.00"):
-        raise ValueError("Invalid published price for this label.")
+    if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00"):
+        raise ValueError("Invalid per-user credit price for this label.")
     wallet_for(company)
     now = timezone.now()
-    access, created = CompanyBundleAccess.objects.select_for_update().get_or_create(
+    access, _ = CompanyBundleAccess.objects.select_for_update().get_or_create(
         company=company, bundle=bundle,
         defaults={"enabled": False},
     )
@@ -274,13 +274,11 @@ def purchase_feature_bundle(company, bundle, actor):
         return access, ZERO
 
     users = billable_user_count(company)
-    price = (
-        bundle.price_credits
-        + bundle.per_user_credits * users
-        + (bundle.activation_credits if created or not access.enabled else ZERO)
-    )
-    if price > Decimal("1000000.00"):
-        raise ValueError("Bundle charge is above the maximum allowed.")
+    # Single clear rate: no base charge, activation fee, or employee-seat fee.
+    # The user count is read from authenticated company accounts, never from JS.
+    price = bundle.per_user_credits * users
+    if not Decimal("0.01") <= price <= Decimal("1000000.00"):
+        raise ValueError("Bundle charge must be between 0.01 and 1,000,000 credits.")
     # Price and authorization are never accepted from the browser.
     change_balance(
         company, -price, kind="bundle_charge",
