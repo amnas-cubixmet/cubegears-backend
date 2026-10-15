@@ -6,6 +6,7 @@ from io import StringIO
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 from django.utils import timezone
 
 from apps.accounts.models import User
@@ -68,9 +69,10 @@ class MonthlyMeteredBillingTests(TestCase):
         CreditWallet.objects.create(company=self.company, balance=Decimal("100.00"))
 
     def test_backend_access_is_role_and_entitlement_based(self):
-        self.client.force_login(self.user)
+        self.api_client = APIClient()
+        self.api_client.force_authenticate(user=self.user)
         url = "/api/v1/saas/credits/access"
-        initial = self.client.get(url)
+        initial = self.api_client.get(url)
         self.assertEqual(initial.status_code, 200)
         self.assertNotIn("jobs.view", initial.data["permissions"])
         self.assertNotIn("jobs", initial.data["enabledModules"])
@@ -81,7 +83,7 @@ class MonthlyMeteredBillingTests(TestCase):
         self.assertEqual(upfront, Decimal("0"))
         self.assertTrue(user_has_permission(self.user, "jobs.view"))
         self.assertTrue(user_has_permission(self.member, "jobs.view"))
-        activated = self.client.get(url)
+        activated = self.api_client.get(url)
         self.assertIn("jobs", activated.data["enabledModules"])
         self.assertIn("jobs.view", activated.data["permissions"])
         deactivate_postpaid_feature(self.company, self.feature)
@@ -150,15 +152,16 @@ class MonthlyMeteredBillingTests(TestCase):
             call_command("bill_storage_credits", "--dry-run", stdout=StringIO())
 
     def test_paid_feature_api_reports_postpaid_billing_mode(self):
-        self.client.force_login(self.user)
-        listing = self.client.get("/api/v1/saas/credits/features")
+        self.api_client = APIClient()
+        self.api_client.force_authenticate(user=self.user)
+        listing = self.api_client.get("/api/v1/saas/credits/features")
         self.assertEqual(listing.status_code, 200)
         self.assertEqual(listing.data[0]["billingMode"], "monthly_postpaid")
-        enabled = self.client.post("/api/v1/saas/credits/features/enable", {"key": "jobs"}, content_type="application/json")
+        enabled = self.api_client.post("/api/v1/saas/credits/features/enable", {"key": "jobs"}, format="json")
         self.assertEqual(enabled.status_code, 200)
         self.assertEqual(enabled.data["chargedCredits"], "0")
         self.assertEqual(enabled.data["billingMode"], "monthly_postpaid")
         self.assertTrue(user_has_permission(self.member, "jobs.view"))
-        disabled = self.client.post("/api/v1/saas/credits/features/disable", {"key": "jobs"}, content_type="application/json")
+        disabled = self.api_client.post("/api/v1/saas/credits/features/disable", {"key": "jobs"}, format="json")
         self.assertEqual(disabled.status_code, 200)
         self.assertFalse(user_has_permission(self.member, "jobs.view"))
