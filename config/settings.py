@@ -313,4 +313,13 @@ CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENAB
 # Opt-in replacement for individual FEATURE prepaid renewal. Existing accounts
 # require migration into usage sessions before enabling on production.
 CREDIT_POSTPAID_FEATURE_BILLING_ENABLED = env_bool("CREDIT_POSTPAID_FEATURE_BILLING_ENABLED", False)
+# Legacy metered-month billing is disabled unless explicitly enabled with
+# an audited broker/worker; do not run two feature billing engines together.
+CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED = env_bool("CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
+STORAGE_MONTHLY_METERED_ENABLED = env_bool("STORAGE_MONTHLY_METERED_ENABLED", False)
+STORAGE_METER_INTERVAL_SECONDS = int(env("STORAGE_METER_INTERVAL_SECONDS", 300))
+CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool(
+    "CREDIT_FEATURE_STRICT_GATE_ENABLED",
+    CREDIT_STRICT_MODULE_GATING_ENABLED,
+)
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
