@@ -17,6 +17,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
+      - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
       # Validate login security, responsive dashboard templates, and company directory UI.
@@ -35,6 +36,7 @@ jobs:
       - run: python manage.py test apps.credits.test_gateway_api --noinput
       - run: python manage.py test apps.credits.test_hosted_checkout --noinput
       - run: python manage.py test apps.credits.test_feature_bundles --noinput
+      - run: python manage.py test apps.credits.test_celery_billing_tasks --noinput
       - run: python manage.py test apps.saas.test_feature_catalog_audit --noinput
       - run: python manage.py test apps.control_panel.test_feature_catalog_cleanup --noinput
       - run: python manage.py test apps.credits.test_metered_feature_pricing --noinput
