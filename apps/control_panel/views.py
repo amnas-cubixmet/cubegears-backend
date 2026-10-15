@@ -883,6 +883,10 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url)
         ),
         "permission_sections": form.permission_sections if isinstance(form, RoleForm) else [],
         "can_grant_wildcard": request.user.is_superuser,
+        "wildcard_selected": (
+            "*" in (form.data.getlist("permissions") if form.is_bound else (form.instance.permissions or []))
+            if isinstance(form, RoleForm) else False
+        ),
     })
 
 
