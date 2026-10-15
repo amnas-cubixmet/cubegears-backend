@@ -251,12 +251,16 @@ def settle_monthly_usage(company, category, month, *, now=None):
     except ValueError:
         invoice.status = "insufficient"
         invoice.save(update_fields=["credits_due", "details", "status"])
+        from .billing_notices import record_billing_notice
+        record_billing_notice(company, category, month, "insufficient", amount)
         logger.warning("Insufficient wallet credit for company=%s, category=%s, period=%s",
                        company.pk, category, month)
         return "insufficient", invoice
     invoice.status = "paid"
     invoice.settled_at = now
     invoice.save(update_fields=["credits_due", "details", "status", "settled_at"])
+    from .billing_notices import record_billing_notice
+    record_billing_notice(company, category, month, "paid", amount)
     return "paid", invoice
 
 

@@ -323,3 +323,13 @@ CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool(
     CREDIT_STRICT_MODULE_GATING_ENABLED,
 )
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
+
+
+# Email notices use a persisted outbox; billing charges never depend on SMTP.
+# Switch both flags on only after Redis, a single Celery Beat and SMTP are ready.
+BILLING_EMAIL_ALERTS_ENABLED = env_bool("BILLING_EMAIL_ALERTS_ENABLED", False)
+if CREDIT_BILLING_CELERY_ENABLED and EMAIL_CELERY_ENABLED and BILLING_EMAIL_ALERTS_ENABLED:
+    CELERY_BEAT_SCHEDULE["cubegear-billing-email-outbox"] = {
+        "task": "cubegear.billing.send_monthly_notices",
+        "schedule": crontab(minute="*/10"),
+    }

@@ -126,3 +126,13 @@ def settle_monthly_features():
         return {"disabled": 1}
     from .monthly_features import settle_due_postpaid_features
     return settle_due_postpaid_features()
+
+
+@shared_task(ignore_result=True, name="cubegear.billing.send_monthly_notices")
+def send_monthly_billing_notices():
+    """Dispatch durable admin email outbox; never mutates the credit ledger."""
+    if not (getattr(settings, "EMAIL_CELERY_ENABLED", False)
+            and getattr(settings, "BILLING_EMAIL_ALERTS_ENABLED", False)):
+        return {"disabled": 1}
+    from .billing_notices import dispatch_pending_billing_notices
+    return dispatch_pending_billing_notices()
