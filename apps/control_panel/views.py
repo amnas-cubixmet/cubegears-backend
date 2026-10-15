@@ -1460,6 +1460,8 @@ def feature_bundle_create(request):
 @panel_admin_required
 def feature_bundle_edit(request, pk):
     obj = get_object_or_404(FeatureBundle, pk=pk)
+    if hasattr(obj, "module_price"):
+        return redirect(reverse("panel:feature-pricing") + "#module-" + obj.module_price.feature.key)
     return _save_form(request, FeatureBundleForm, instance=obj, title="Edit Paid Feature Label",
                       active="features", cancel_url="panel:features")
 

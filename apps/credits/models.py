@@ -363,3 +363,11 @@ class BillingEmailNotice(models.Model):
         indexes = [
             models.Index(fields=["status", "next_attempt_at"], name="billing_email_due"),
         ]
+
+
+class ModulePriceLabel(models.Model):
+    """A platform-managed single-module price uses the existing paid-label engine."""
+    feature = models.OneToOneField("saas.PlanFeature", on_delete=models.PROTECT, related_name="module_price_label")
+    bundle = models.OneToOneField(FeatureBundle, on_delete=models.PROTECT, related_name="module_price")
+    updated_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
+    updated_at = models.DateTimeField(auto_now=True)

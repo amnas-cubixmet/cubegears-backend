@@ -16,7 +16,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
 CORE_MODULES = frozenset({
-    "dashboard", "billing", "company", "roles",
+    "billing", "company", "roles",
 })
 
 
@@ -32,7 +32,7 @@ class TenantFeatureAccessView(APIView):
             code for code in TENANT_PERMISSIONS
             if user_has_permission(user, code)
         )
-        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
+        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"dashboard", "settings", "storage", "notifications"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core

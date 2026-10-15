@@ -9,7 +9,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import PlanFeature
 from apps.saas.access import active_label_modules
 
-_CORE = frozenset({"dashboard", "billing", "company", "roles"})
+_CORE = frozenset({"billing", "company", "roles"})
 
 
 class CompanyModuleEntitlementsView(APIView):
@@ -23,7 +23,7 @@ class CompanyModuleEntitlementsView(APIView):
             settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED and
             settings.CREDIT_STRICT_MODULE_GATING_ENABLED
         ))
-        core = _CORE if request.user.company.require_paid_features else _CORE | {"settings", "storage", "notifications"}
+        core = _CORE if request.user.company.require_paid_features else _CORE | {"dashboard", "settings", "storage", "notifications"}
         module_actions = {}
         for code in TENANT_PERMISSIONS:
             module, _, action = code.partition(".")

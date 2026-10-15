@@ -19,7 +19,7 @@ from apps.saas.models import FeatureGroup, PlanFeature
 
 
 CORE_MODULES = frozenset({
-    "dashboard", "billing", "company", "roles",
+    "billing", "company", "roles",
 })
 
 
