@@ -6,6 +6,7 @@ import django.utils.timezone
 class Migration(migrations.Migration):
     dependencies = [
         ("credits", "0008_merge_postpaid_metering"),
+        ("credits", "0008_merge_postpaid_and_monthly_metering"),
         ("companies", "0001_initial"),
     ]
 
