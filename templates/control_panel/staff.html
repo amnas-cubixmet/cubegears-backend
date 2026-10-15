@@ -8,7 +8,11 @@
     <p>Manage team members, workshop assignments, account invitations and employment details.</p>
   </div>
   {% panel_can 'panel:staff-create' as allowed %}
-  {% if allowed %}<a class="btn btn-primary" href="{% url 'panel:staff-create' %}">+ Add Staff</a>{% endif %}
+  {% if allowed %}<div class="row-actions">
+    <a class="btn btn-primary" href="{% url 'panel:staff-create' %}">+ Add Workshop Staff</a>
+    {% panel_can 'panel:user-create' as can_add_saas_staff %}
+    {% if can_add_saas_staff %}<a class="btn" href="{% url 'panel:staff-create' %}?type=platform">+ Add SaaS Admin Staff</a>{% endif %}
+  </div>{% endif %}
 </section>
 
 <section class="directory-stats staff-stats" aria-label="Staff overview">
@@ -92,4 +96,45 @@
   </div>
   <p class="staff-directory-footnote">Linked means an account is associated with the staff profile. It does not guarantee email delivery, verification or successful sign-in.</p>
 </section>
+
+{% if platform_staff %}
+<section class="panel-card staff-directory" aria-labelledby="platform-staff-title">
+  <header class="section-head directory-section-heading">
+    <div>
+      <p class="eyebrow">Platform Team</p>
+      <h2 id="platform-staff-title">SaaS Admin Staff</h2>
+      <p>Companyless Control Panel users. Role permissions are checked server-side.</p>
+    </div>
+  </header>
+  <div class="responsive-table staff-directory-table">
+    <table>
+      <thead><tr><th>Name</th><th>Email</th><th>Platform Role</th><th>Account</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for member in platform_staff %}
+        <tr>
+          <td data-label="Name">{{ member.name }}</td>
+          <td data-label="Email">{{ member.email }}</td>
+          <td data-label="Platform Role">{{ member.role.name|default:"No role" }}</td>
+          <td data-label="Account">
+            {% if member.is_active %}
+              {% if member.has_usable_password %}Login configured{% else %}Password setup pending{% endif %}
+            {% else %}Disabled{% endif %}
+          </td>
+          <td data-label="Actions"><div class="row-actions">
+            {% panel_can 'panel:user-edit' as can_edit_account %}
+            {% if can_edit_account %}
+              <a href="{% url 'panel:user-edit' member.pk %}">Edit Role / Account</a>
+              <form method="post" action="{% url 'panel:user-invite' member.pk %}">
+                {% csrf_token %}
+                <button type="submit" aria-label="Send login email to {{ member.name }}">Resend Login Email</button>
+              </form>
+            {% endif %}
+          </div></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
 {% endblock %}
