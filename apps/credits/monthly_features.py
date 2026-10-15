@@ -136,8 +136,8 @@ def meter_postpaid_feature(item, *, at=None):
         start = old if elapsed <= max_gap else at
         if elapsed > max_gap:
             LOG.warning(
-                "Feature metering gap company=%s feature=%s: %s seconds not billed",
-                state.company_id, state.feature_id, elapsed - max_gap,
+                "Feature metering gap company=%s feature=%s: %s seconds unobserved (no charge)",
+                state.company_id, state.feature_id, elapsed,
             )
         while start < at:
             period_name = _period_for(start)
