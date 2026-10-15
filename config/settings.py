@@ -285,6 +285,14 @@ if CREDIT_BILLING_CELERY_ENABLED:
             "task": "credits.bill_due_storage",
             "schedule": crontab(hour=2, minute=15),
         },
+        "cubegear-meter-storage": {
+            "task": "credits.meter_postpaid_storage",
+            "schedule": crontab(minute="*"),
+        },
+        "cubegear-monthly-usage-settlement": {
+            "task": "credits.settle_previous_month",
+            "schedule": crontab(day_of_month=1, hour=0, minute=20),
+        },
     }
 
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
@@ -295,4 +303,7 @@ CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLE
 # Phase-gated: deny any unregistered tenant modules, while keeping core/auth/billing accessible.
 # Turn on only after catalog and all tenant entitlements have been backfilled.
 CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENABLED", False)
+# Opt-in replacement for individual FEATURE prepaid renewal. Existing accounts
+# require migration into usage sessions before enabling on production.
+CREDIT_POSTPAID_FEATURE_BILLING_ENABLED = env_bool("CREDIT_POSTPAID_FEATURE_BILLING_ENABLED", False)
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
