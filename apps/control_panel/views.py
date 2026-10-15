@@ -33,6 +33,7 @@ from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment
 from apps.vehicles.models import Vehicle
+from apps.credits.models import FeatureBundle
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
 from apps.accounts.permissions import can_delegate
@@ -41,7 +42,7 @@ from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
     PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
-    PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
+    PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
 )
 
 
@@ -1291,11 +1292,25 @@ def feature_catalog(request):
     return render(request, "control_panel/feature_catalog.html", {
         "page_title": "Feature Groups", "active": "features",
         "groups": groups.all(),
+        "bundles": FeatureBundle.objects.prefetch_related("features").all(),
         "group_total": groups.count(),
         "feature_total": all_features.count(),
         "enabled_features": all_features.filter(is_active=True).count(),
         "disabled_features": all_features.filter(is_active=False).count(),
     })
+
+
+@panel_admin_required
+def feature_bundle_create(request):
+    return _save_form(request, FeatureBundleForm, title="Create Paid Feature Label",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+def feature_bundle_edit(request, pk):
+    obj = get_object_or_404(FeatureBundle, pk=pk)
+    return _save_form(request, FeatureBundleForm, instance=obj, title="Edit Paid Feature Label",
+                      active="features", cancel_url="panel:features")
 
 
 @panel_admin_required
