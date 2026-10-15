@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
+from apps.saas.feature_discovery import module_inventory
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess
 from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
@@ -75,7 +76,22 @@ class BundleListView(APIView):
             ).select_related("bundle")
         }
         count = billable_user_count(request.user.company)
-        return Response([_public_bundle(b, accesses.get(b.id), count, request.user.company) for b in bundles])
+        rows = [_public_bundle(b, accesses.get(b.id), count, request.user.company) for b in bundles]
+        represented = {feature['key'] for row in rows for feature in row['features']}
+        # Read-only placeholders: listing a module must never create a free offer.
+        for module in module_inventory():
+            if not module['billable'] or module['key'] in represented:
+                continue
+            rows.append({
+                'id': None, 'key': module['key'], 'name': module['label'],
+                'description': 'A SaaS administrator must publish a price before activation.',
+                'perUserCredits': '0.00', 'userCount': count, 'totalCredits': '0.00',
+                'billingType': 'monthly', 'features': [{'key': module['key'], 'label': module['label']}],
+                'active': False, 'canResume': False, 'validUntil': None,
+                'usesRemaining': 0, 'meteredReady': True,
+                'purchaseEnabled': False, 'purchaseDisabledReason': 'MODULE_PRICE_NOT_SET',
+            })
+        return Response(rows)
 
 
 class BundlePurchaseView(APIView):

@@ -77,6 +77,36 @@ class OwnerOnboardingTests(TestCase):
         self.role.save()
         self.assertFalse(user_has_permission(self.staff, 'customers.view'))
 
+    def test_catalog_lists_unpriced_modules_as_zero_without_creating_prices(self):
+        from apps.saas.feature_discovery import module_inventory
+        before = (PlanFeature.objects.count(), FeatureBundle.objects.count())
+        rows = self.client.get('/api/v1/saas/credits/bundles').data
+        included = {feature['key'] for row in rows for feature in row['features']}
+        self.assertTrue({m['key'] for m in module_inventory() if m['billable']} <= included)
+        unpriced = next(row for row in rows if row['key'] == 'jobs')
+        self.assertEqual(unpriced['perUserCredits'], '0.00')
+        self.assertEqual(unpriced['totalCredits'], '0.00')
+        self.assertFalse(unpriced['purchaseEnabled'])
+        self.assertIsNone(unpriced['id'])
+        self.assertEqual(before, (PlanFeature.objects.count(), FeatureBundle.objects.count()))
+
+    def test_zero_price_cannot_activate_customers_through_either_api(self):
+        from .models import FeatureCreditPrice, CompanyCreditFeature, CompanyBundleAccess
+        FeatureCreditPrice.objects.create(feature=self.feature)
+        self.bundle.per_user_credits = Decimal('0')
+        self.bundle.save()
+        self.assertEqual(self.client.post('/api/v1/saas/credits/bundles/purchase', {'bundleId': self.bundle.pk}, format='json').status_code, 409)
+        for monthly in (False, True):
+            with override_settings(CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED=monthly):
+                response = self.client.post('/api/v1/saas/credits/features/enable', {'key': 'customers'}, format='json')
+                self.assertEqual(response.status_code, 409, response.data)
+                self.assertEqual(response.data['code'], 'MODULE_PRICE_NOT_SET')
+        self.assertFalse(CompanyCreditFeature.objects.exists())
+        self.assertFalse(CompanyBundleAccess.objects.exists())
+        self.assertFalse(CreditLedger.objects.exists())
+        self.assertFalse(user_has_permission(self.owner, 'customers.view'))
+        self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal('100'))
+
     def test_owner_can_edit_shop_details_without_activating_modules(self):
         self.assertEqual(self.client.get('/api/v1/company/me').status_code, 200)
         result = self.client.patch('/api/v1/company/me', {'name': 'Updated Shop', 'city': 'Kochi'}, format='json')
