@@ -48,7 +48,24 @@ def feature_allowed(user, permission):
     from django.utils import timezone
     if not PlanFeature.objects.filter(key=module, is_active=True).exists():
         return True
-    return CompanyCreditFeature.objects.filter(
+    individually_enabled = CompanyCreditFeature.objects.filter(
         company=user.company, feature__key=module, feature__is_active=True,
         enabled=True, next_charge_at__gt=timezone.now(),
+    ).exists()
+    if individually_enabled:
+        return True
+
+    # A paid label grants feature entitlement, never role permission.
+    # Time-limited access stops at expiry without needing a cron job.
+    # Per-use access is blocked until an authenticated server operation
+    # is explicitly wired to the usage-consumption service hook.
+    from django.db.models import Q
+    from apps.credits.models import CompanyBundleAccess
+    return CompanyBundleAccess.objects.filter(
+        company=user.company, enabled=True, bundle__is_active=True,
+        bundle__features__key=module, bundle__features__is_active=True,
+    ).filter(
+        Q(bundle__billing_type="permanent", valid_until__isnull=True) |
+        Q(bundle__billing_type__in=["hourly", "daily", "weekly"],
+          valid_until__gt=timezone.now())
     ).exists()
