@@ -255,6 +255,38 @@ LOGOUT_REDIRECT_URL = "panel:login"
 #     },
 # }
 
+# Optional Redis/Celery scheduler: completely opt-in on deployments where a
+# dedicated Redis broker, single Beat instance and worker have been provisioned.
+# The jobs below run the EXISTING prepaid-renewal and storage-snapshot policies.
+# They are NOT usage-accrual/month-end billing (that requires a separate ledger).
+CREDIT_BILLING_CELERY_ENABLED = env_bool("CREDIT_BILLING_CELERY_ENABLED", False)
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BEAT_SCHEDULE = {}
+if CREDIT_BILLING_CELERY_ENABLED:
+    if not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "CREDIT_BILLING_CELERY_ENABLED requires an explicit Redis CELERY_BROKER_URL."
+        )
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        "cubegear-renew-credit-features": {
+            "task": "credits.renew_due_features",
+            "schedule": crontab(hour=2, minute=5),
+        },
+        "cubegear-bill-storage-period": {
+            "task": "credits.bill_due_storage",
+            "schedule": crontab(hour=2, minute=15),
+        },
+    }
+
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
