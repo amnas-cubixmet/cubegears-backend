@@ -32,3 +32,17 @@
 .role-bulk-actions button:focus-visible, .role-permission-toggle input:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .role-selection-summary { color: var(--muted, #475569); font-size: .9rem; margin: 15px 0 0; }
 @media (max-width: 620px) { .role-matrix { padding: 14px; } .role-matrix-table th, .role-matrix-table td { padding: 10px 7px; } }
+
+/* Two dedicated role-creation flows: SaaS platform and workshop. */
+.role-directory-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.role-directory-actions .btn{display:inline-flex;min-height:44px;padding:10px 16px;line-height:1.25;font-size:14px;white-space:normal;text-align:center}
+.role-scope-tabs,.role-editor-type-switch{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 18px}
+.role-scope-tabs a,.role-editor-type-switch a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:9px 14px;border:1px solid var(--line,#dbe1ea);border-radius:10px;background:var(--surface,#fff);color:var(--text,#1e293b);font-size:14px;font-weight:700;line-height:1.35;text-decoration:none}
+.role-scope-tabs a:hover,.role-editor-type-switch a:hover{background:var(--surface-soft,#f1f5f9);text-decoration:none}
+.role-scope-tabs a[aria-current="page"],.role-editor-type-switch a[aria-current="page"]{background:var(--brand-soft,#eef2ff);border-color:var(--brand,#2563eb);color:var(--brand,#2563eb)}
+.role-scope-tabs span{font-size:12px;border-radius:999px;background:var(--surface-soft,#f1f5f9);color:var(--muted,#64748b);padding:2px 7px}
+.role-scope-tabs a:focus-visible,.role-editor-type-switch a:focus-visible{outline:3px solid var(--brand,#2563eb);outline-offset:2px}
+.role-platform-info{margin:0 0 16px;padding:13px 16px;border:1px solid var(--line,#dbe1ea);border-radius:11px;background:var(--surface-soft,#f8fafc);color:var(--text,#334155);font-size:14px;line-height:1.55}
+.role-platform-info strong{font-weight:750}
+@media(max-width:760px){.role-directory-actions{justify-content:flex-start;flex:1 1 100%;width:100%}}
+@media(max-width:520px){.role-directory-actions{display:grid;grid-template-columns:1fr}.role-directory-actions .btn,.role-editor-type-switch a{width:100%;justify-content:center}.role-editor-type-switch{flex-direction:column;align-items:stretch}.role-scope-tabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:5px}.role-scope-tabs a{white-space:nowrap}}

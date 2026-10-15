@@ -574,7 +574,7 @@ class RoleForm(AdminModelForm):
         self.scope = kwargs.pop("scope", None)
         super().__init__(*args, **kwargs)
         from apps.roles.permission_catalog import TENANT_PERMISSIONS, PANEL_PERMISSIONS
-        if self.instance.pk:
+        if not self.instance._state.adding:
             # Editing a role may never transfer authority between companies
             # or between workshop and SaaS platform accounts.
             self.fields["company"].disabled = True
