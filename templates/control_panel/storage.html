@@ -1,11 +1,118 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
-<section class="directory-heading remaining-heading"><div><p class="eyebrow">Platform / Capacity</p><h2>Storage Management</h2><p>Browse recorded storage snapshots, file counts and usage by company.</p></div></section>
+<section class="directory-heading remaining-heading">
+  <div>
+    <p class="eyebrow">Platform / Capacity</p>
+    <h2>Storage Management</h2>
+    <p>Configure per-GB credit pricing, view actual stored bytes, and audit company storage history.</p>
+  </div>
+</section>
+<section class="panel-card cg-storage-pricing" aria-labelledby="storage-pricing-title">
+  <header class="section-head directory-section-heading">
+    <div>
+      <p class="eyebrow">Storage / Credit billing</p>
+      <h2 id="storage-pricing-title">Per-GB Storage Pricing</h2>
+      <p>One platform-wide rate. Prices are wallet credits, not rupees.</p>
+    </div>
+    <span class="remaining-state {% if storage_policy.is_active %}is-good{% else %}is-neutral{% endif %}">
+      {% if storage_policy.is_active %}Billing enabled{% else %}Billing disabled{% endif %}
+    </span>
+  </header>
+  {% if can_edit_storage_pricing %}
+    <form method="post" class="cg-storage-pricing-form" aria-label="Configure storage credit pricing">
+      {% csrf_token %}
+      {% if storage_policy_form.non_field_errors %}
+        <div class="cg-storage-errors" role="alert">{{ storage_policy_form.non_field_errors }}</div>
+      {% endif %}
+      <div class="cg-storage-fields">
+        <div class="cg-storage-field">
+          <label for="{{ storage_policy_form.credits_per_gb.id_for_label }}">Credits per GB</label>
+          {{ storage_policy_form.credits_per_gb }}
+          {% for error in storage_policy_form.credits_per_gb.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+          <small>Example: 10 credits for each billable GB per billing period.</small>
+        </div>
+        <div class="cg-storage-field">
+          <label for="{{ storage_policy_form.included_gb.id_for_label }}">Free Storage / Company (GB)</label>
+          {{ storage_policy_form.included_gb }}
+          {% for error in storage_policy_form.included_gb.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+          <small>First included GB are free; usage beyond this is billable.</small>
+        </div>
+        <div class="cg-storage-field">
+          <label for="{{ storage_policy_form.billing_period.id_for_label }}">Billing Period</label>
+          {{ storage_policy_form.billing_period }}
+          {% for error in storage_policy_form.billing_period.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+          <small>Daily or monthly (one charge per calendar period).</small>
+        </div>
+      </div>
+      <div class="cg-storage-pricing-footer">
+        <label class="cg-storage-switch" for="{{ storage_policy_form.is_active.id_for_label }}">
+          {{ storage_policy_form.is_active }}
+          <span>Enable storage credit billing</span>
+        </label>
+        <button type="submit" class="btn btn-primary">Save Storage Pricing</button>
+      </div>
+      <p class="remaining-note">Saving does not deduct credits. Run the storage billing scheduler separately after reviewing a dry run. This rate applies to currently stored MediaFile bytes; billed periods are not charged twice.</p>
+    </form>
+  {% else %}
+    <div class="cg-storage-policy-readonly">
+      <strong>{{ storage_policy.credits_per_gb|default:"0" }} credits / GB</strong>
+      <span>{{ storage_policy.included_gb|default:"0" }} GB included per company</span>
+      <span>Frequency: {{ storage_policy.get_billing_period_display|default:"Not configured" }}</span>
+    </div>
+    <p class="remaining-note">A platform administrator with Storage Edit permission can change these rates.</p>
+  {% endif %}
+</section>
 <section class="directory-stats remaining-stats" aria-label="Storage overview">
   <article class="user-stat-card"><div class="user-stat-top"><span>Usage Records</span><span class="user-stat-icon" aria-hidden="true">R</span></div><strong class="user-stat-value">{{ snapshot_count }}</strong><small class="user-stat-meta">Snapshots for selected company filter</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Recorded Files</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ total_files }}</strong><small class="user-stat-meta">Sum across selected snapshots</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Recorded Storage</span><span class="user-stat-icon" aria-hidden="true">B</span></div><strong class="user-stat-value remaining-byte-value">{{ total_bytes|filesizeformat }}</strong><small class="user-stat-meta">Sum across selected snapshots</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Companies Included</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ covered_companies }}</strong><small class="user-stat-meta">Distinct companies in selection</small></article>
+</section>
+<section class="panel-card remaining-directory cg-storage-live" aria-labelledby="storage-live-title">
+  <header class="section-head directory-section-heading">
+    <div>
+      <p class="eyebrow">Actual stored files / per-company estimate</p>
+      <h2 id="storage-live-title">Live Storage &amp; Credit Estimate</h2>
+      <p>Current MediaFile bytes, calculated with a binary GB (1 GB = 1,073,741,824 bytes).</p>
+    </div>
+    <span class="directory-result-count">{{ live_storage_count }} companies</span>
+  </header>
+  <form class="remaining-filter-form" method="get" aria-label="Filter live storage by company">
+    <label class="sr-only" for="storage-live-company">Company</label>
+    <select id="storage-live-company" name="company">
+      <option value="">All companies</option>
+      {% for c in companies %}
+        <option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    {% if company_id %}<a class="btn" href="{% url 'panel:storage' %}">Clear</a>{% endif %}
+  </form>
+  <div class="responsive-table remaining-table">
+    <table>
+      <thead><tr><th>Company</th><th>Stored data</th><th>Files</th><th>Used GB</th><th>Billable GB</th><th>Estimated credits</th><th>Current period</th></tr></thead>
+      <tbody>
+      {% for item in live_storage_rows %}
+        <tr>
+          <td data-label="Company"><strong>{{ item.company.name }}</strong></td>
+          <td data-label="Stored data">{{ item.bytes_used|filesizeformat }}</td>
+          <td data-label="Files">{{ item.file_count }}</td>
+          <td data-label="Used GB">{{ item.used_gb }}</td>
+          <td data-label="Billable GB">{{ item.billable_gb }}</td>
+          <td data-label="Estimated credits"><strong>{{ item.estimated_credits }}</strong></td>
+          <td data-label="Current period">
+            {% if item.already_billed %}<span class="remaining-state is-good">Billed</span>
+            {% elif not storage_policy.is_active %}<span class="remaining-state is-neutral">Billing off</span>
+            {% else %}<span class="remaining-state is-neutral">Not charged</span>{% endif %}
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" class="empty-cell">No companies match the selected filter.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="remaining-note">Estimate uses current storage and the saved pricing policy. Billing actually runs only through <code>python manage.py bill_storage_credits</code> (schedule daily; monthly policies charge once each month). Usage changes after a period has been billed are reflected in the next period, not billed retroactively.</p>
 </section>
 <section class="panel-card remaining-directory" aria-labelledby="storage-directory-title">
   <header class="section-head directory-section-heading"><div><p class="eyebrow">Usage snapshots</p><h2 id="storage-directory-title">Storage History</h2><p>Stored usage reporting records, not a live disk scan</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
