@@ -52,6 +52,14 @@ def activate_postpaid_feature(company, feature, *, at=None):
         raise ValueError("Monthly postpaid feature billing is disabled.")
     if CompanyCreditFeature.objects.filter(company=company, feature=feature, enabled=True).exists():
         raise ValueError("Turn off the existing prepaid feature before changing its billing model.")
+    # Never sell overlapping paid bundle access and individual postpaid access.
+    from .models import CompanyBundleAccess
+    from .service import bundle_is_usable
+    for entitlement in CompanyBundleAccess.objects.filter(
+        company=company, enabled=True, bundle__features=feature,
+    ).select_related("bundle").distinct():
+        if bundle_is_usable(entitlement):
+            raise ValueError("This module already belongs to an active paid package.")
     price, rate, users, staff = _rate(company, feature)
     at = at or timezone.now()
     item, _ = CompanyPostpaidFeature.objects.get_or_create(company=company, feature=feature)
