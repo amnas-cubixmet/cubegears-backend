@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import user_has_permission
 from .models import FeatureBundle, CompanyBundleAccess
-from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable
+from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
 
 
 class BundlePurchaseThrottle(UserRateThrottle):
@@ -25,6 +25,8 @@ def _public_bundle(bundle, access=None):
         "id": bundle.pk, "key": bundle.key, "name": bundle.name,
         "description": bundle.description,
         "priceCredits": str(bundle.price_credits),
+        "activationCredits": str(bundle.activation_credits),
+        "perUserCredits": str(bundle.per_user_credits),
         "billingType": bundle.billing_type,
         "features": [
             {"key": feature.key, "label": feature.label}

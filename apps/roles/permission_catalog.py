@@ -12,4 +12,4 @@ PANEL_MODULES = ['companies', 'users', 'branches', 'roles', 'subscriptions',
                  'customers', 'vehicles', 'jobs', 'stock', 'invoices', 'staff']
 PANEL_PERMISSIONS = sorted({f'panel.{module}.{action}' for module in PANEL_MODULES
                            for action in ['view', 'create', 'edit', 'delete']} |
-                          {'panel.dashboard.view', 'panel.storage.view', 'panel.security.view'})
+                          {'panel.dashboard.view', 'panel.storage.view', 'panel.storage.edit', 'panel.security.view'})

@@ -16,7 +16,7 @@ from apps.accounts.permissions import user_has_permission
 from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent
-from .service import wallet_for, staff_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
 from .hosted_checkout import reconcile_hosted_purchase
 
 
@@ -37,10 +37,13 @@ class CompanyCreditsView(APIView):
         company = request.user.company
         wallet = wallet_for(company)
         count = staff_count(company)
-        active = CompanyCreditFeature.objects.filter(company=company, enabled=True).select_related("feature")
+        users = billable_user_count(company)
+        active = CompanyCreditFeature.objects.filter(company=company, enabled=True, next_charge_at__gt=timezone.now()).select_related("feature")
         prices = {p.feature_id: p for p in FeatureCreditPrice.objects.filter(feature_id__in=[f.feature_id for f in active])}
         monthly = sum(
-            (price_for(prices[state.feature_id], count) for state in active if state.feature_id in prices),
+            (price_for(prices[state.feature_id], count, users) * Decimal("30") /
+             Decimal({"daily": 1, "weekly": 7, "monthly": 30}.get(prices[state.feature_id].billing_period, 30))
+             for state in active if state.feature_id in prices),
             Decimal("0.00"),
         )
         return Response({
@@ -48,6 +51,7 @@ class CompanyCreditsView(APIView):
             "lowThreshold": str(wallet.low_threshold),
             "lowBalance": wallet.balance <= wallet.low_threshold,
             "staffCount": count,
+            "userCount": users,
             "activeFeatures": active.count(),
             "monthlyCredits": str(monthly),
             "checkoutAvailable": configured(),
@@ -75,6 +79,7 @@ class CreditFeaturesView(APIView):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
         count = staff_count(request.user.company)
+        users = billable_user_count(request.user.company)
         current = {v.feature_id: v for v in CompanyCreditFeature.objects.filter(company=request.user.company)}
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
@@ -82,10 +87,17 @@ class CreditFeaturesView(APIView):
                 "key": rate.feature.key, "label": rate.feature.label,
                 "description": rate.feature.description,
                 "baseCredits": str(rate.base_credits),
+                "activationCredits": str(rate.activation_credits),
+                "perUserCredits": str(rate.per_user_credits),
+                "userCount": users,
+                "billingPeriod": rate.billing_period,
+                "periodCredits": str(price_for(rate, count, users)),
                 "perStaffCredits": str(rate.per_staff_credits),
                 "staffCount": count,
-                "monthlyCredits": str(price_for(rate, count)),
-                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled),
+                "monthlyCredits": str((price_for(rate, count, users) *
+                    Decimal("30") / Decimal({"daily": 1, "weekly": 7, "monthly": 30}[rate.billing_period])
+                    ).quantize(Decimal("0.01"))),
+                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()),
                 "nextChargeAt": (
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None

@@ -27,6 +27,9 @@ class FeatureCreditPrice(models.Model):
     feature = models.OneToOneField("saas.PlanFeature", on_delete=models.PROTECT, related_name="credit_price")
     base_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     per_staff_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    billing_period = models.CharField(max_length=8, choices=[("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "30 days")], default="monthly")
     is_available = models.BooleanField(default=True)
 
 
@@ -85,6 +88,7 @@ class FeatureBundle(models.Model):
     PERIODS = [
         ("permanent", "Permanent"),
         ("weekly", "Weekly (7 days)"),
+        ("monthly", "Monthly (30 days)"),
         ("daily", "Daily (24 hours)"),
         ("hourly", "Hourly (1 hour)"),
         ("per_use", "Per use (one prepaid operation)"),
@@ -94,6 +98,8 @@ class FeatureBundle(models.Model):
     description = models.CharField(max_length=400, blank=True)
     features = models.ManyToManyField("saas.PlanFeature", related_name="credit_bundles")
     price_credits = models.DecimalField(max_digits=12, decimal_places=2)
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     billing_type = models.CharField(max_length=15, choices=PERIODS, default="weekly")
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0)
@@ -131,3 +137,18 @@ class CompanyBundleAccess(models.Model):
                 fields=["company", "bundle"], name="credits_unique_company_bundle"
             )
         ]
+
+
+class StorageCreditPolicy(models.Model):
+    """Global metered storage policy; one published rule for all tenant wallets."""
+    billing_period = models.CharField(
+        max_length=8, choices=[("daily", "Daily"), ("monthly", "Monthly")],
+        default="monthly",
+    )
+    included_gb = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("0"))
+    credits_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    is_active = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "Storage wallet billing policy"

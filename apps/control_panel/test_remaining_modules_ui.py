@@ -164,7 +164,7 @@ class RemainingModulesUITests(TestCase):
         for action in ("package", "price", "adjust"):
             self.assertContains(response, f'name="action" value="{action}"', count=1)
         # Three credit action forms plus the shared sidebar logout form.
-        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=4)
+        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=5)  # Includes separate storage pricing form
         self.assertContains(response, 'name="request_id"', count=1)
         self.assertContains(response, 'name="reason"')
         self.assertContains(response, 'name="delta"')
