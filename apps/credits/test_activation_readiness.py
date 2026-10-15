@@ -29,7 +29,7 @@ class ActivationReadinessTests(TestCase):
         self.customers = PlanFeature.objects.create(key="customers", label="Customers", group=self.group)
         self.bundle = FeatureBundle.objects.create(
             key="starter-tools", name="Starter Tools", billing_type="weekly",
-            price_credits=Decimal("23.00"),
+            price_credits=Decimal("23.00"), per_user_credits=Decimal("23.00"),
         )
         self.bundle.features.set([self.jobs, self.customers])
         FeatureCreditPrice.objects.create(
