@@ -93,7 +93,12 @@ class BillingModelIntegrationTests(TestCase):
 class BillingFlagTests(SimpleTestCase):
     def test_legacy_charging_tasks_do_not_execute_without_optin(self):
         from django.conf import settings
-        from apps.credits import tasks
+        try:
+            from apps.credits import tasks
+        except ImportError as exc:
+            if exc.name == "celery":
+                self.skipTest("Optional Celery package is not installed in web-only CI.")
+            raise
         with override_settings(
             CREDIT_BILLING_CELERY_ENABLED=False,
             STORAGE_MONTHLY_METERED_ENABLED=False,
