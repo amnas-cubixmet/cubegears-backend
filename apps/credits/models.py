@@ -76,3 +76,53 @@ class CreditWebhookEvent(models.Model):
     event_id = models.CharField(max_length=150, unique=True)
     event_type = models.CharField(max_length=100)
     received_at = models.DateTimeField(auto_now_add=True)
+
+
+class FeatureBundle(models.Model):
+    """One paid label that reuses multiple existing platform features."""
+    PERIODS = [
+        ("permanent", "Permanent"),
+        ("weekly", "Weekly (7 days)"),
+        ("daily", "Daily (24 hours)"),
+        ("hourly", "Hourly (1 hour)"),
+        ("per_use", "Per use (one prepaid operation)"),
+    ]
+    key = models.SlugField(max_length=100, unique=True)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=400, blank=True)
+    features = models.ManyToManyField("saas.PlanFeature", related_name="credit_bundles")
+    price_credits = models.DecimalField(max_digits=12, decimal_places=2)
+    billing_type = models.CharField(max_length=15, choices=PERIODS, default="weekly")
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class CompanyBundleAccess(models.Model):
+    """Company-scoped, prepaid entitlement. Prices are snapshotted on purchase."""
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE, related_name="bundle_access"
+    )
+    bundle = models.ForeignKey(
+        FeatureBundle, on_delete=models.PROTECT, related_name="company_access"
+    )
+    enabled = models.BooleanField(default=True)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    uses_remaining = models.PositiveIntegerField(default=0)
+    last_price_credits = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal("0.00")
+    )
+    purchased_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "bundle"], name="credits_unique_company_bundle"
+            )
+        ]
