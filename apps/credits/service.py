@@ -2,6 +2,7 @@
 from datetime import timedelta
 from decimal import Decimal
 from django.db import transaction
+from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
@@ -91,6 +92,30 @@ def enable_paid_feature(company, feature, actor):
         company=company, feature=feature,
     )
     now = timezone.now()
+    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        if pricing.billing_period != "monthly":
+            raise ValueError("Postpaid usage requires a monthly feature rate.")
+        from .models import FeatureUsageSession
+        active_session = FeatureUsageSession.objects.filter(
+            company=company, feature=feature, ended_at__isnull=True
+        ).first()
+        if state.enabled:
+            if active_session:
+                return state, ZERO
+            raise ValueError("Existing prepaid entitlement must be migrated before postpaid activation.")
+        users = billable_user_count(company)
+        staff = staff_count(company)
+        FeatureUsageSession.objects.create(
+            company=company, feature=feature,
+            started_at=now,
+            monthly_credits=price_for(pricing, staff, users),
+            activation_credits=pricing.activation_credits,
+            user_seats=users, staff_seats=staff,
+        )
+        state.enabled = True
+        state.next_charge_at = None
+        state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
+        return state, ZERO
     if state.enabled and state.next_charge_at and state.next_charge_at > now:
         return state, ZERO
     staff = staff_count(company)
@@ -113,6 +138,11 @@ def disable_paid_feature(company, feature, actor):
     state = CompanyCreditFeature.objects.select_for_update().filter(company=company, feature=feature).first()
     if not state or not state.enabled:
         return
+    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        from .models import FeatureUsageSession
+        FeatureUsageSession.objects.select_for_update().filter(
+            company=company, feature=feature, ended_at__isnull=True,
+        ).update(ended_at=timezone.now())
     state.enabled = False
     state.next_charge_at = None
     state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
@@ -127,6 +157,9 @@ def disable_paid_feature(company, feature, actor):
 
 @transaction.atomic
 def renew_feature(state):
+    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        # Never perform prepaid due-date charge while monthly usage mode runs.
+        return "postpaid"
     state = CompanyCreditFeature.objects.select_for_update().get(pk=state.pk)
     if not state.enabled or not state.next_charge_at or state.next_charge_at > timezone.now():
         return None

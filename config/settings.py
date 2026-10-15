@@ -201,6 +201,9 @@ EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", 15))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.com>")
+# Optional brokered notifications; security flows needing immediate on_delivery
+# confirmation remain synchronous until a durable outbox is introduced.
+EMAIL_CELERY_ENABLED = env_bool("EMAIL_CELERY_ENABLED", False)
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
 MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
@@ -255,54 +258,59 @@ LOGOUT_REDIRECT_URL = "panel:login"
 #     },
 # }
 
+# Optional Redis/Celery scheduler: completely opt-in on deployments where a
+# dedicated Redis broker, single Beat instance and worker have been provisioned.
+# The jobs below run the EXISTING prepaid-renewal and storage-snapshot policies.
+# They are NOT usage-accrual/month-end billing (that requires a separate ledger).
+CREDIT_BILLING_CELERY_ENABLED = env_bool("CREDIT_BILLING_CELERY_ENABLED", False)
+CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
+CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_BEAT_SCHEDULE = {}
+if CREDIT_BILLING_CELERY_ENABLED:
+    if not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+        from django.core.exceptions import ImproperlyConfigured
+        raise ImproperlyConfigured(
+            "CREDIT_BILLING_CELERY_ENABLED requires an explicit Redis CELERY_BROKER_URL."
+        )
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        "cubegear-renew-credit-features": {
+            "task": "credits.renew_due_features",
+            "schedule": crontab(hour=2, minute=5),
+        },
+        "cubegear-bill-storage-period": {
+            "task": "credits.bill_due_storage",
+            "schedule": crontab(hour=2, minute=15),
+        },
+        "cubegear-meter-storage": {
+            "task": "credits.meter_postpaid_storage",
+            "schedule": crontab(minute="*"),
+        },
+        "cubegear-sync-postpaid-seat-rates": {
+            "task": "credits.sync_postpaid_feature_rates",
+            "schedule": crontab(minute="*/5"),
+        },
+        "cubegear-monthly-usage-settlement": {
+            "task": "credits.settle_previous_month",
+            "schedule": crontab(day_of_month=1, hour=0, minute=20),
+        },
+    }
+
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
 CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
-# When enabled, paid module keys not yet in PlanFeature fail closed rather than
-# silently exposing unpriced operations. Roll out only after catalog reconciliation.
-CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool("CREDIT_FEATURE_STRICT_GATE_ENABLED", False)
-
-# NEW, opt-in. This replaces (never supplements) legacy period-snapshot storage
-# charging. A 300-second cycle measures actual MediaFile bytes and accrues
-# time-weighted wallet credits for the CLOSED calendar month.
-STORAGE_MONTHLY_METERED_ENABLED = env_bool("STORAGE_MONTHLY_METERED_ENABLED", False)
-STORAGE_METER_INTERVAL_SECONDS = int(env("STORAGE_METER_INTERVAL_SECONDS", 300))
-if not 60 <= STORAGE_METER_INTERVAL_SECONDS <= 86400:
-    raise ValueError("STORAGE_METER_INTERVAL_SECONDS must be between 60 and 86400.")
-
-# Celery only runs on a dedicated worker with a real broker. Do not enable
-# scheduled charges on web-only WSGI deployments; run exactly ONE Beat process.
-CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
-CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
-CELERY_TIMEZONE = TIME_ZONE
-CELERY_TASK_SERIALIZER = "json"
-CELERY_ACCEPT_CONTENT = ["json"]
-CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED = env_bool("CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
-CELERY_BEAT_SCHEDULE = {}
-if CELERY_BROKER_URL:
-    from celery.schedules import crontab
-    if STORAGE_MONTHLY_METERED_ENABLED and env_bool("CELERY_RUN_STORAGE_BILLING", False):
-        CELERY_BEAT_SCHEDULE.update({
-            "cubegear-sample-company-storage": {
-                "task": "cubegear.storage.sample",
-                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
-            },
-            "cubegear-settle-closed-storage-months": {
-                "task": "cubegear.storage.settle",
-                "schedule": crontab(hour=0, minute=20),
-            },
-        })
-    if CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED and env_bool("CELERY_RUN_FEATURE_BILLING", False):
-        CELERY_BEAT_SCHEDULE.update({
-            "cubegear-sample-paid-features": {
-                "task": "cubegear.features.sample",
-                "schedule": float(STORAGE_METER_INTERVAL_SECONDS),
-            },
-            "cubegear-settle-closed-feature-months": {
-                "task": "cubegear.features.settle",
-                "schedule": crontab(hour=0, minute=25),
-            },
-        })
+# Phase-gated: deny any unregistered tenant modules, while keeping core/auth/billing accessible.
+# Turn on only after catalog and all tenant entitlements have been backfilled.
+CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENABLED", False)
+# Opt-in replacement for individual FEATURE prepaid renewal. Existing accounts
+# require migration into usage sessions before enabling on production.
+CREDIT_POSTPAID_FEATURE_BILLING_ENABLED = env_bool("CREDIT_POSTPAID_FEATURE_BILLING_ENABLED", False)
 # Old subscription paywall is retired. Legacy transactions remain for audit history.

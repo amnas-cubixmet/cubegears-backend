@@ -20,8 +20,8 @@ class Command(BaseCommand):
         if settings.STORAGE_MONTHLY_METERED_ENABLED:
             raise CommandError("Monthly metered storage is enabled. Do NOT run legacy snapshot billing; use settle_metered_storage.")
         policy = StorageCreditPolicy.objects.filter(is_active=True).order_by("pk").first()
-        if not policy:
-            self.stdout.write("Storage billing is disabled. Nothing charged.")
+        if not policy or policy.billing_mode != "snapshot":
+            self.stdout.write("Snapshot billing is disabled. No snapshot charge; metered invoices use monthly settlement.")
             return
         totals = {"charged": 0, "already_billed": 0, "insufficient_credits": 0}
         for company in Company.objects.filter(is_active=True).iterator():

@@ -126,6 +126,14 @@ class StorageCreditPolicy(models.Model):
         max_length=8, choices=[("daily", "Daily"), ("monthly", "Monthly")],
         default="monthly",
     )
+    billing_mode = models.CharField(
+        max_length=16, choices=[
+            ("snapshot", "Period snapshot (prepaid)"),
+            ("metered_monthly", "Metered usage / monthly settlement"),
+        ], default="snapshot",
+    )
+    meter_interval_seconds = models.PositiveIntegerField(default=3600)
+
     included_gb = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("0"))
     credits_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     is_active = models.BooleanField(default=False)
@@ -135,82 +143,61 @@ class StorageCreditPolicy(models.Model):
         return "Storage wallet billing policy"
 
 
-class StorageMeterCursor(models.Model):
-    """Last real server-side media measurement; one lock per tenant."""
-    company = models.OneToOneField("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_cursor")
-    sampled_at = models.DateTimeField(null=True, blank=True)
-    used_bytes = models.BigIntegerField(default=0)
-    billable_gb = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal("0"))
-    rate_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
-    updated_at = models.DateTimeField(auto_now=True)
+class FeatureUsageSession(models.Model):
+    """Immutable price snapshot for a postpaid feature's enabled interval."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_usage_sessions")
+    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT, related_name="postpaid_sessions")
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    monthly_credits = models.DecimalField(max_digits=16, decimal_places=2)
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    user_seats = models.PositiveIntegerField(default=0)
+    staff_seats = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "feature"], condition=models.Q(ended_at__isnull=True),
+                name="credits_one_open_feature_usage",
+            ),
+        ]
 
 
-class StorageMeterPeriod(models.Model):
-    """One month of time-weighted measured usage and a single settlement."""
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="metered_storage_periods")
-    period = models.CharField(max_length=7)
-    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
-    covered_seconds = models.PositiveBigIntegerField(default=0)
+class StorageUsageInterval(models.Model):
+    """Measured bytes per fixed interval; a gap is never fabricated."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_intervals")
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    billing_month = models.CharField(max_length=7, db_index=True)
+    measured_bytes = models.PositiveBigIntegerField()
+    credits_accrued = models.DecimalField(max_digits=18, decimal_places=6)
+    rate_per_gb_month = models.DecimalField(max_digits=12, decimal_places=2)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "ends_at"], name="credits_unique_company_storage_tick",
+            ),
+        ]
+        indexes = [models.Index(fields=["company", "billing_month"], name="credit_storage_company_mo")]
+
+
+class MonthlyUsageInvoice(models.Model):
+    """Month-end settlement for exactly one category and company."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="monthly_usage_invoices")
+    category = models.CharField(max_length=12, choices=[("feature", "Feature"), ("storage", "Storage")])
+    billing_month = models.CharField(max_length=7)
+    credits_due = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField(max_length=14, choices=[
+        ("pending", "Pending"), ("paid", "Paid"), ("insufficient", "Insufficient credits"),
+    ], default="pending")
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
     settled_at = models.DateTimeField(null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["company", "period"], name="storage_meter_unique_month")]
-
-
-class StorageMeterReading(models.Model):
-    """Immutable reading log for reconciliation and audit."""
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_readings")
-    sampled_at = models.DateTimeField()
-    used_bytes = models.BigIntegerField(default=0)
-    billable_gb = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal("0"))
-    rate_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
-    covered_seconds = models.PositiveIntegerField(default=0)
-    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
-
-    class Meta:
-        ordering = ["-sampled_at", "-pk"]
-        indexes = [models.Index(fields=["company", "sampled_at"], name="storage_read_company_dt")]
-
-
-class CompanyPostpaidFeature(models.Model):
-    """Opt-in company-wide feature entitlement; no prepaid period is reused."""
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="postpaid_features")
-    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT, related_name="postpaid_tenants")
-    enabled = models.BooleanField(default=False)
-    suspended = models.BooleanField(default=False)
-    sampled_at = models.DateTimeField(null=True, blank=True)
-    monthly_rate = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["company", "feature"], name="credits_unique_postpaid_feature")]
-
-
-class FeatureMeterPeriod(models.Model):
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="metered_feature_periods")
-    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT)
-    period = models.CharField(max_length=7)
-    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
-    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
-    covered_seconds = models.PositiveBigIntegerField(default=0)
-    settled_at = models.DateTimeField(null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["company", "feature", "period"], name="credits_unique_feature_meter_month")]
-
-
-class FeatureMeterReading(models.Model):
-    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_meter_readings")
-    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT)
-    sampled_at = models.DateTimeField()
-    users = models.PositiveIntegerField(default=0)
-    staff = models.PositiveIntegerField(default=0)
-    monthly_rate = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
-    covered_seconds = models.PositiveIntegerField(default=0)
-    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
-
-    class Meta:
-        ordering = ["-sampled_at", "-pk"]
-        indexes = [models.Index(fields=["company", "sampled_at"], name="feature_read_company_dt")]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "category", "billing_month"],
+                                    name="credits_unique_company_monthly_usage"),
+        ]

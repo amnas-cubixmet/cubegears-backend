@@ -10,6 +10,7 @@ from django.core.mail import send_mail
     retry_backoff_max=300,
     retry_jitter=True,
     retry_kwargs={"max_retries": 5},
+    ignore_result=True,
 )
 def send_email_task(self, subject, message, recipient_list, from_email=None):
     send_mail(
@@ -19,4 +20,4 @@ def send_email_task(self, subject, message, recipient_list, from_email=None):
         recipient_list=recipient_list,
         fail_silently=False,
     )
-    return {"sent": len(recipient_list), "recipients": recipient_list}
+    return {"sent": len(recipient_list)}
