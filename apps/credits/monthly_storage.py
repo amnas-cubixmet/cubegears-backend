@@ -52,7 +52,18 @@ def _period_for(point):
 def _policy():
     if not settings.STORAGE_MONTHLY_METERED_ENABLED:
         return None
-    policy = StorageCreditPolicy.objects.filter(is_active=True, billing_period="monthly").order_by("pk").first()
+    # Older StorageUsageInterval metering is selected using billing_mode.
+    # Never sample the same merchant storage using BOTH independent engines.
+    if StorageCreditPolicy.objects.filter(
+        is_active=True, billing_mode="metered_monthly",
+    ).exists():
+        raise ValueError(
+            "Legacy monthly storage engine is active. Disable it before enabling "
+            "the alternative time-weighted storage meter."
+        )
+    policy = StorageCreditPolicy.objects.filter(
+        is_active=True, billing_period="monthly", billing_mode="snapshot",
+    ).order_by("pk").first()
     if policy and (policy.included_gb < 0 or policy.credits_per_gb < 0):
         raise ValueError("Negative metered storage rate / allowance is forbidden.")
     return policy
