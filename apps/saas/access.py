@@ -47,7 +47,10 @@ def feature_allowed(user, permission):
     from apps.credits.models import CompanyCreditFeature
     from django.utils import timezone
     if not PlanFeature.objects.filter(key=module, is_active=True).exists():
-        return True
+        # Strict mode is an explicit migration/rollout choice. It prevents
+        # active API routes from accidentally bypassing paid entitlements
+        # just because their catalog entry was never seeded.
+        return not getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)
     individually_enabled = CompanyCreditFeature.objects.filter(
         company=user.company, feature__key=module, feature__is_active=True,
         enabled=True, next_charge_at__gt=timezone.now(),
