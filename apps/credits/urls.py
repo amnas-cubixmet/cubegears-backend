@@ -1,6 +1,7 @@
 from django.urls import path
 from .hosted_views import HostedCreditCheckoutView, HostedCreditStatusView
 from .bundle_views import BundleListView, BundlePurchaseView, BundleDisableView
+from .entitlement_views import CompanyModuleEntitlementsView
 from .gateway_diagnostics import GatewayStatusView, GatewayTestView
 from .views import (
     CompanyCreditsView, CreditPackagesView, CreditFeaturesView,
@@ -16,6 +17,7 @@ urlpatterns = [
     path("bundles", BundleListView.as_view(), name="credit-bundles"),
     path("bundles/purchase", BundlePurchaseView.as_view(), name="credit-bundle-purchase"),
     path("bundles/disable", BundleDisableView.as_view(), name="credit-bundle-disable"),
+    path("entitlements", CompanyModuleEntitlementsView.as_view(), name="credit-entitlements"),
     path("features", CreditFeaturesView.as_view(), name="credit-features"),
     path("logs", CreditLogsView.as_view(), name="credit-logs"),
     path("orders", CreateCreditOrderView.as_view(), name="credit-orders"),
