@@ -20,6 +20,7 @@ jobs:
       - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
+      - run: python manage.py test apps.control_panel.test_role_permission_editor --noinput
       # Block merged billing-model regressions before the slower full suite.
       - run: python manage.py test apps.credits.test_integration_recovery --noinput
       # Validate login security, responsive dashboard templates, and company directory UI.
