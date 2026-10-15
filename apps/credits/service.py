@@ -226,19 +226,26 @@ def purchase_feature_bundle(company, bundle, actor):
         raise ValueError("Invalid published price for this label.")
     wallet_for(company)
     now = timezone.now()
-    access, _ = CompanyBundleAccess.objects.select_for_update().get_or_create(
+    access, created = CompanyBundleAccess.objects.select_for_update().get_or_create(
         company=company, bundle=bundle,
         defaults={"enabled": False},
     )
     if access.billing_type_at_purchase == "permanent" and access.enabled and access.valid_until is None:
         return access, ZERO
 
-    price = bundle.price_credits
+    users = billable_user_count(company)
+    price = (
+        bundle.price_credits
+        + bundle.per_user_credits * users
+        + (bundle.activation_credits if created or not access.enabled else ZERO)
+    )
+    if price > Decimal("1000000.00"):
+        raise ValueError("Bundle charge is above the maximum allowed.")
     # Price and authorization are never accepted from the browser.
     change_balance(
         company, -price, kind="bundle_charge",
         reference=f"bundle-purchase:{uuid4().hex}",
-        description=f"Feature label: {bundle.name} ({bundle.billing_type})",
+        description=f"Feature label: {bundle.name} ({bundle.billing_type}); {users} login users",
         actor=actor,
     )
     if bundle.billing_type == "per_use":
@@ -249,7 +256,7 @@ def purchase_feature_bundle(company, bundle, actor):
         access.valid_until = None
     else:
         periods = {"hourly": timedelta(hours=1), "daily": timedelta(days=1),
-                   "weekly": timedelta(days=7)}
+                   "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
         if bundle.billing_type not in periods:
             raise ValueError("Invalid billing period.")
         start = max(now, access.valid_until) if access.enabled and access.valid_until else now
