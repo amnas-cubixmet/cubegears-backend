@@ -67,6 +67,8 @@ class CreditPurchase(models.Model):
     status = models.CharField(max_length=16, default="pending", db_index=True)
     receipt = models.CharField(max_length=40, unique=True)
     order_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    payment_link_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    checkout_url = models.URLField(max_length=500, blank=True)
     payment_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     paid_at = models.DateTimeField(null=True, blank=True)
