@@ -245,9 +245,14 @@ def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False)
     except ValueError:
         item.suspended = True
         item.save(update_fields=["suspended", "updated_at"])
+        from .billing_notices import record_billing_notice
+        record_billing_notice(company, "feature", period, "insufficient", credits, feature=feature.key)
         return "insufficient_credits", credits
     row.settled_at = at
     row.save(update_fields=["settled_at", "updated_at"])
+    if created:
+        from .billing_notices import record_billing_notice
+        record_billing_notice(company, "feature", period, "paid", credits, feature=feature.key)
     # Only restore service after ALL earlier feature invoices have settled.
     has_unpaid = FeatureMeterPeriod.objects.filter(
         company=company, feature=feature,
