@@ -152,3 +152,76 @@ class StorageCreditPolicy(models.Model):
 
     def __str__(self):
         return "Storage wallet billing policy"
+
+
+class PostpaidFeatureState(models.Model):
+    """Opt-in monthly usage mode for one company's explicitly activated feature."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="postpaid_feature_states")
+    feature = models.ForeignKey("saas.PlanFeature", on_delete=models.PROTECT, related_name="postpaid_states")
+    enabled = models.BooleanField(default=False)
+    meter_started_at = models.DateTimeField(null=True, blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    base_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    per_staff_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "feature"], name="credit_postpaid_unique_company_feature")
+        ]
+
+
+class PostpaidUsageRecord(models.Model):
+    """Immutable charge accrual; no wallet debit until the monthly settlement."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="postpaid_usage")
+    feature = models.ForeignKey("saas.PlanFeature", null=True, blank=True, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=32, choices=[
+        ("feature_usage", "Feature usage"), ("feature_activation", "Feature activation")
+    ])
+    period = models.CharField(max_length=7, db_index=True)  # YYYY-MM in configured timezone
+    from_at = models.DateTimeField()
+    until_at = models.DateTimeField()
+    user_count = models.PositiveIntegerField(default=0)
+    staff_count = models.PositiveIntegerField(default=0)
+    credits = models.DecimalField(max_digits=18, decimal_places=8, default=Decimal("0"))
+    reference = models.CharField(max_length=180, unique=True)
+    recorded_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["from_at", "id"]
+        indexes = [models.Index(fields=["company", "period", "kind"], name="credit_postpaid_usage_period")]
+
+
+class StorageMeterSample(models.Model):
+    """Server-observed storage at a scheduled cycle; never browser-supplied."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_samples")
+    sampled_at = models.DateTimeField(default=timezone.now)
+    bytes_used = models.PositiveBigIntegerField(default=0)
+    file_count = models.PositiveIntegerField(default=0)
+    reference = models.CharField(max_length=180, unique=True)
+
+    class Meta:
+        ordering = ["-sampled_at"]
+        indexes = [models.Index(fields=["company", "sampled_at"], name="credit_storage_sample_dt")]
+
+
+class MonthlyCreditStatement(models.Model):
+    """One immutable invoice snapshot per company and calendar month."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="monthly_credit_statements")
+    period = models.CharField(max_length=7)
+    feature_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    storage_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    total_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    details = models.JSONField(default=dict)
+    status = models.CharField(max_length=16, default="pending", choices=[
+        ("pending", "Pending"), ("paid", "Paid"),
+    ])
+    created_at = models.DateTimeField(default=timezone.now)
+    paid_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "period"], name="credit_monthly_company_period")
+        ]
+        ordering = ["-period", "-id"]
