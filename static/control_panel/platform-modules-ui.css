@@ -170,3 +170,26 @@ html[data-theme=dark] .remaining-state.is-good{color:#6ee7b7;background:#064e3b}
 .credit-tabs-content .credit-summary-title{align-items:stretch}
 .credit-tabs-content .credit-panel-filter{max-width:100%}
 }
+
+
+/* Feature Labels / paid module bundles */
+.cg-paid-labels{margin-bottom:22px}
+.cg-paid-label-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,285px),1fr));gap:16px;margin-top:18px}
+.cg-paid-label-card{display:flex;flex-direction:column;gap:12px;min-width:0;padding:20px;border:1px solid var(--border,#dfe5ee);border-radius:16px;background:var(--surface,#fff)}
+.cg-paid-label-top{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.cg-paid-label-top h3{font-size:18px;font-weight:800;margin:5px 0 0}
+.cg-paid-label-top .eyebrow{overflow-wrap:anywhere}
+.cg-paid-label-card>p{font-size:13px;line-height:1.6;margin:0}
+.cg-paid-label-price{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px}
+.cg-paid-label-price strong{font-size:28px;font-weight:850}
+.cg-paid-label-price span{font-size:13px;opacity:.78}
+.cg-paid-label-features{display:flex;flex-wrap:wrap;gap:7px;flex:1;align-content:start}
+.cg-paid-label-features span{border-radius:9px;padding:7px 10px;background:#eef4ff;color:#1b50a0;font-size:12px;font-weight:700}
+.cg-paid-label-card>.btn{align-self:flex-start}
+.cg-paid-label-empty{border:1px dashed #a6bbdb;border-radius:14px;padding:22px;grid-column:1/-1}
+.cg-paid-label-notice{background:#fff4e5;color:#8b520b;border-radius:10px;padding:10px}
+.remaining-editor-form #id_features{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:9px}
+.remaining-editor-form #id_features label{display:flex;align-items:center;gap:9px;border:1px solid #d7e2f2;padding:10px 12px;border-radius:10px;cursor:pointer}
+.remaining-editor-form #id_features input[type=checkbox]{width:18px;height:18px;flex-shrink:0}
+.remaining-editor-form .company-editor-field:has(#id_features){grid-column:1/-1}
+@media(max-width:600px){.cg-paid-label-card{padding:16px}.cg-paid-label-grid{grid-template-columns:1fr}}
