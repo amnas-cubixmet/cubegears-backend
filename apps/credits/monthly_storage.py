@@ -199,9 +199,14 @@ def settle_company_storage(company, period, *, at=None, dry_run=False):
             ),
         )
     except ValueError:
+        from .billing_notices import record_billing_notice
+        record_billing_notice(company, "storage", period, "insufficient", credits)
         return "insufficient_credits", credits
     row.settled_at = at
     row.save(update_fields=["settled_at", "updated_at"])
+    if created:
+        from .billing_notices import record_billing_notice
+        record_billing_notice(company, "storage", period, "paid", credits)
     return ("charged" if created else "already_billed"), credits
 
 
