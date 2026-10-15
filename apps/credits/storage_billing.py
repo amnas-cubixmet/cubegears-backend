@@ -57,6 +57,11 @@ def charge_storage_period(company, policy=None, now=None):
         return "disabled", quote
     if CreditLedger.objects.filter(reference=quote["reference"], company=company).exists():
         return "already_billed", quote
+    from .models import MonthlyUsageInvoice
+    if MonthlyUsageInvoice.objects.filter(
+        company=company, category="storage", billing_month=quote["period"], status="paid",
+    ).exists():
+        return "already_billed", quote
     wallet_for(company)
     try:
         _, created = change_balance(
