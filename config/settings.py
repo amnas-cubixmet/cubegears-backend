@@ -307,6 +307,9 @@ RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
 CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
+# Opt-in: non-core workshop APIs require an ACTIVE purchased feature label.
+# Existing tenants need label entitlements and operator approval before rollout.
+CREDIT_LABEL_ONLY_ACCESS_ENABLED = env_bool("CREDIT_LABEL_ONLY_ACCESS_ENABLED", False)
 # Phase-gated: deny any unregistered tenant modules, while keeping core/auth/billing accessible.
 # Turn on only after catalog and all tenant entitlements have been backfilled.
 CREDIT_STRICT_MODULE_GATING_ENABLED = env_bool("CREDIT_STRICT_MODULE_GATING_ENABLED", False)

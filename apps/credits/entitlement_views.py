@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import user_has_permission
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import PlanFeature
+from apps.saas.access import active_label_modules
 
 _CORE = frozenset({"dashboard", "billing", "company", "settings",
                    "storage", "notifications", "roles"})
@@ -18,10 +19,11 @@ class CompanyModuleEntitlementsView(APIView):
     def get(self, request):
         if not request.user.company_id or not request.user.is_active:
             return Response({"message": "Workshop account required."}, status=403)
-        enforced = bool(
+        label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
+        enforced = bool(label_only or (
             settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED and
             settings.CREDIT_STRICT_MODULE_GATING_ENABLED
-        )
+        ))
         module_actions = {}
         for code in TENANT_PERMISSIONS:
             module, _, action = code.partition(".")
@@ -36,6 +38,8 @@ class CompanyModuleEntitlementsView(APIView):
         registered = set(PlanFeature.objects.filter(is_active=True).values_list("key", flat=True))
         return Response({
             "enforced": enforced,
+            "labelOnly": label_only,
+            "activeLabelModules": sorted(active_label_modules(request.user.company)) if label_only else [],
             "modules": available,
             "registeredModules": sorted(registered),
             "canManageFeatures": user_has_permission(request.user, "billing.edit"),

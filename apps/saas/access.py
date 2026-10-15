@@ -33,15 +33,48 @@ def enforce_user_limit(company):
         raise ValidationError({"users": f"Your {plan.name} plan allows {plan.max_users} active users. Request an upgrade."})
 
 
+
+def active_label_modules(company):
+    """Only currently usable, company-purchased label modules count.
+
+    No role permissions are granted here. Individual paid features and
+    standalone price rows do NOT qualify for label-only access.
+    """
+    if not company:
+        return set()
+    from django.db.models import Q
+    from django.utils import timezone
+    from apps.credits.models import CompanyBundleAccess
+    now = timezone.now()
+    return set(CompanyBundleAccess.objects.filter(
+        company=company,
+        enabled=True,
+        bundle__is_active=True,
+        bundle__features__is_active=True,
+    ).filter(
+        Q(billing_type_at_purchase="permanent", valid_until__isnull=True)
+        | Q(billing_type_at_purchase__in=("hourly", "daily", "weekly", "monthly"),
+            valid_until__gt=now)
+    ).values_list("bundle__features__key", flat=True).distinct())
+
+
+
 def feature_allowed(user, permission):
     """Paid feature access never grants tenant RBAC; it can only restrict it."""
     from django.conf import settings
-    if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
-        return True
     module = permission.split(".")[0]
-    # Core pages, profile and purchase/credit management remain accessible.
+    # Core pages remain available so a company can purchase/recover access.
     if module in {"dashboard", "billing", "settings", "company", "storage",
                   "notifications", "roles"}:
+        return True
+
+    # Strict label-only mode is OPT-IN. Fail closed if it is enabled without
+    # the paid-access enforcement switch; never treat a missing config as a grant.
+    if getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False):
+        return bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+                    and module in active_label_modules(user.company))
+
+    if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
         return True
     if permission == "attendance.self" and not settings.CREDIT_STRICT_MODULE_GATING_ENABLED:
         return True
