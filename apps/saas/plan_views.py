@@ -1,3 +1,4 @@
+from apps.accounts.permissions import IsCompanyOwner
 """Tenant-safe SaaS plan catalog and quote/change request APIs.
 
 Requests never activate subscriptions or change billed amounts. Platform staff
@@ -69,7 +70,7 @@ def plan_payload(plan):
 
 
 class PlanCatalogView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         plans = SubscriptionPlan.objects.filter(is_active=True, is_public=True).prefetch_related("feature_access")

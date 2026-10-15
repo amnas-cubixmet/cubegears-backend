@@ -29,6 +29,8 @@ class HostedCheckoutTests(TestCase):
             email="hosted-billing@example.test", name="Workshop Owner",
             password="StrongSecretTest123!", company=self.company, role=role,
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.package = CreditPackage.objects.create(
             name="70 Rupee Test Package", price_inr=Decimal("70.00"),
             credits=Decimal("140.00"), is_active=True,
@@ -138,6 +140,8 @@ class HostedCheckoutTests(TestCase):
             email="other-billing@example.test", name="Other Admin",
             password="StrongSecretTest123!", company=other, role=role,
         )
+        stranger.company.owner = stranger
+        stranger.company.save(update_fields=["owner"])
         self.client.force_authenticate(stranger)
         self.assertEqual(self.status(purchase).status_code, 404)
 

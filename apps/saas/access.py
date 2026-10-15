@@ -63,20 +63,30 @@ def feature_allowed(user, permission):
     """Paid feature access never grants tenant RBAC; it can only restrict it."""
     from django.conf import settings
     module = permission.split(".")[0]
-    # Core pages remain available so a company can purchase/recover access.
-    if module in {"dashboard", "billing", "settings", "company", "storage",
+    strict_company = user.company.require_paid_features
+    if strict_company and module == "dashboard":
+        from .models import PlanFeature
+        return any(feature_allowed(user, key + ".view") for key in
+                   PlanFeature.objects.filter(is_active=True).exclude(
+                       key__in=["dashboard", "billing", "company", "roles"]
+                   ).values_list("key", flat=True))
+    # Account purchase/recovery controls do not require a paid module.
+    if strict_company and module in {"billing", "company", "roles"}:
+        return True
+    # Legacy rollout compatibility.
+    if not strict_company and module in {"dashboard", "billing", "settings", "company", "storage",
                   "notifications", "roles"}:
         return True
 
     # Strict label-only mode is OPT-IN. Fail closed if it is enabled without
     # the paid-access enforcement switch; never treat a missing config as a grant.
     if getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False):
-        return bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+        return bool((strict_company or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED)
                     and module in active_label_modules(user.company))
 
-    if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+    if not strict_company and not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
         return True
-    if permission == "attendance.self" and not settings.CREDIT_STRICT_MODULE_GATING_ENABLED:
+    if not strict_company and permission == "attendance.self" and not settings.CREDIT_STRICT_MODULE_GATING_ENABLED:
         return True
     from .models import PlanFeature
     from apps.credits.models import CompanyCreditFeature
@@ -85,7 +95,7 @@ def feature_allowed(user, permission):
         # Legacy installations allow unregistered modules. Strict tenant
         # rollouts deny them instead; otherwise an unregistered permission
         # would bypass a company's feature purchases.
-        return not settings.CREDIT_STRICT_MODULE_GATING_ENABLED
+        return not (strict_company or settings.CREDIT_STRICT_MODULE_GATING_ENABLED)
     if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
         from apps.credits.models import FeatureUsageSession
         individually_enabled = CompanyCreditFeature.objects.filter(

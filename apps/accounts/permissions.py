@@ -51,6 +51,21 @@ MODEL_PERMISSION_PREFIX = {
 }
 
 
+def is_company_owner(user):
+    return bool(user and user.is_authenticated and user.is_active
+                and user.company_id and user.company.is_active
+                and user.company.owner_id == user.pk
+                and user.role_id and user.role.is_active
+                and user.role.company_id == user.company_id)
+
+
+class IsCompanyOwner(BasePermission):
+    message = "Only the company account owner can access the SaaS account."
+
+    def has_permission(self, request, view):
+        return is_company_owner(request.user)
+
+
 def user_has_permission(user, permission_code):
     if (
         not user
@@ -79,6 +94,10 @@ def user_has_permission(user, permission_code):
         role = getattr(user, "role", None)
         if not role or not role.is_active or role.company_id != user.company_id:
             return False
+
+    # Ownership cannot be delegated through a wildcard or billing role permission.
+    if permission_code.startswith("billing."):
+        return is_company_owner(user)
 
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):

@@ -29,6 +29,8 @@ class FeatureBundlesAPITests(TestCase):
             email="bundle-admin@example.test", name="Billing Admin",
             password="SecureBundlePass123!", company=self.company, role=admin_role,
         )
+        self.admin.company.owner = self.admin
+        self.admin.company.save(update_fields=["owner"])
         role = Role.objects.create(
             company=self.company, name="Basic Staff", code="STAFF",
             permissions=["jobs.view"],
@@ -91,6 +93,8 @@ class FeatureBundlesAPITests(TestCase):
             email="bundle-other@example.test", name="Other Admin",
             password="SecureBundlePass123!", company=self.other, role=other_role,
         )
+        self.other.owner = other_admin
+        self.other.save(update_fields=["owner"])
         self.assertFalse(user_has_permission(other_admin, "jobs.view"))
         other_client = APIClient()
         other_client.force_authenticate(other_admin)
@@ -232,11 +236,10 @@ class FeatureBundlePanelUITests(TestCase):
         self.assertContains(page, "Operations Bundle")
         self.assertContains(page, "35.00")
 
-    def test_label_requires_multiple_existing_features(self):
+    def test_label_can_price_one_existing_module(self):
         result = self.client.post(reverse("panel:featurebundle-create"), {
-            "name": "Invalid Bundle", "features": [str(self.a.pk)],
+            "name": "Single Module", "features": [str(self.a.pk)],
             "per_user_credits": "5.00", "billing_type": "weekly",
         })
-        self.assertEqual(result.status_code, 200)
-        self.assertContains(result, "Select at least two existing features")
-        self.assertFalse(FeatureBundle.objects.filter(name="Invalid Bundle").exists())
+        self.assertRedirects(result, reverse("panel:features"))
+        self.assertEqual(FeatureBundle.objects.get(name="Single Module").features.count(), 1)

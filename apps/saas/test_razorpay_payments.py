@@ -20,6 +20,8 @@ class RazorpaySubscriptionTests(TestCase):
         role=Role.objects.create(company=self.company,name="Owner",code="SUPER_ADMIN",permissions=["*"])
         self.owner=User.objects.create_user(company=self.company,role=role,name="Owner",
             email="billingowner@example.test",password="SecretPass123!")
+        self.owner.company.owner = self.owner
+        self.owner.company.save(update_fields=["owner"])
         self.plan=SubscriptionPlan.objects.create(key="pro-payment-test",name="Pro",
             monthly_price="999.00",yearly_price="9999.00")
         self.client=APIClient()

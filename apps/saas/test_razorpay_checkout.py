@@ -38,6 +38,8 @@ class RazorpayBillingTests(TestCase):
             email="checkout-admin@example.test", name="Billing Owner",
             password="CheckoutSecure371!", company=self.company, role=role,
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.plan = SubscriptionPlan.objects.create(
             key="billing-monthly-plan", name="Workshop Pro",
             monthly_price=Decimal("499.00"), yearly_price=Decimal("3999.00"),
@@ -174,6 +176,8 @@ class RazorpayBillingTests(TestCase):
             email="other-checkout@example.test", name="Other Owner",
             password="CheckoutSecure371!", company=self.foreign, role=other_role,
         )
+        other_user.company.owner = other_user
+        other_user.company.save(update_fields=["owner"])
         self.client.force_authenticate(other_user)
         self.assertEqual(self.client.get("/api/v1/saas/checkout/history").data, [])
         self.assertEqual(

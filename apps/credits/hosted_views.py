@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from apps.saas.razorpay_client import GatewayError, api_request, configured
 from .hosted_checkout import reconcile_hosted_purchase
 from .models import CreditPackage, CreditPurchase
@@ -41,7 +41,7 @@ def _safe_hosted_url(url):
 
 
 class HostedCreditCheckoutView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [HostedLinkThrottle]
 
     def post(self, request):
@@ -115,7 +115,7 @@ class HostedCreditCheckoutView(APIView):
 
 
 class HostedCreditStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [HostedStatusThrottle]
 
     def get(self, request, purchase_id):

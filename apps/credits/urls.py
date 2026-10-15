@@ -12,7 +12,12 @@ from .views import (
     EnableCreditFeatureView, DisableCreditFeatureView, CreditWebhookView,
 )
 
+from .account_views import CompanyAccountView, FeatureActivityView, MonthlyStatementsView
+
 urlpatterns = [
+    path("account", CompanyAccountView.as_view(), name="credit-account"),
+    path("feature-activity", FeatureActivityView.as_view(), name="credit-feature-activity"),
+    path("monthly-statements", MonthlyStatementsView.as_view(), name="credit-monthly-statements"),
     path("overview", CompanyCreditsView.as_view(), name="credit-overview"),
     path("access", TenantFeatureAccessView.as_view(), name="credit-access"),
     path("gateway/status", GatewayStatusView.as_view(), name="credit-gateway-status"),

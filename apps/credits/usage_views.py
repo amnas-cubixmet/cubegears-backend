@@ -5,12 +5,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import MonthlyUsageInvoice, StorageUsageInterval
 
 
 class CompanyUsageInvoicesView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.view"):

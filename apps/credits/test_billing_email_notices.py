@@ -42,6 +42,8 @@ class BillingEmailOutboxTests(TestCase):
             name="Billing Manager", company=self.company, role=self.role,
             email="billing-manager@example.test", password="StrongTestPass123!",
         )
+        self.admin.company.owner = self.admin
+        self.admin.company.save(update_fields=["owner"])
         self.viewer = User.objects.create_user(
             name="Viewer", company=self.company, role=self.viewer_role,
             email="viewer@example.test", password="StrongTestPass123!",

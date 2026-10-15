@@ -19,6 +19,8 @@ class ModuleVisibilityTests(TestCase):
         self.user = User.objects.create_user(email="module-visibility@example.test",
                     name="Module User", password="ModuleSecurePass123!",
                     company=self.company, role=self.role)
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.group = FeatureGroup.objects.create(key="visibility-group", label="Visibility")
         self.jobs = PlanFeature.objects.create(key="jobs", label="Jobs", group=self.group)
         self.stock = PlanFeature.objects.create(key="stock", label="Stock", group=self.group)

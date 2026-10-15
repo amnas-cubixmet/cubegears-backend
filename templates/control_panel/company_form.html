@@ -77,6 +77,9 @@
         <div class="company-editor-workspace">
           {% include "control_panel/company_field.html" with field=form.currency %}
           {% include "control_panel/company_field.html" with field=form.plan %}
+          {% include "control_panel/company_field.html" with field=form.owner %}
+          {% include "control_panel/company_field.html" with field=form.require_paid_features %}
+          <p class="help-text">Only the selected owner can manage this company's SaaS wallet and feature purchases. Paid access locks workshop modules until activation. Tenant identifier: {{ form.instance.slug|default:"Generated on save" }}</p>
           <div class="company-editor-field company-active-control">
             <label for="{{ form.is_active.id_for_label }}">Company Access</label>
             <label class="company-check-label">{{ form.is_active }} <span>Activate this company</span></label>

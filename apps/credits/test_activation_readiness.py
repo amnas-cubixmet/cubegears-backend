@@ -24,6 +24,8 @@ class ActivationReadinessTests(TestCase):
             email="activation-owner@example.test", name="Owner",
             password="TestActivationPass123!", company=self.company, role=self.role,
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         self.group = FeatureGroup.objects.create(key="activation-group", label="Operations")
         self.jobs = PlanFeature.objects.create(key="jobs", label="Jobs", group=self.group)
         self.customers = PlanFeature.objects.create(key="customers", label="Customers", group=self.group)

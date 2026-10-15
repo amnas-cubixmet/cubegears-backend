@@ -1,3 +1,4 @@
+from apps.accounts.permissions import IsCompanyOwner
 """Authenticated plan checkout, server verification and signed Razorpay webhooks."""
 import json
 import uuid
@@ -38,7 +39,7 @@ class VerifyInput(serializers.Serializer):
 
 
 class CheckoutStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not request.user.company_id:
@@ -51,7 +52,7 @@ class CheckoutStatusView(APIView):
 
 
 class CheckoutCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [CheckoutOrderThrottle]
 
     def post(self, request):
@@ -106,7 +107,7 @@ class CheckoutCreateView(APIView):
 
 
 class CheckoutVerifyView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
     throttle_classes = [CheckoutVerifyThrottle]
 
     def post(self, request):
@@ -135,7 +136,7 @@ class CheckoutVerifyView(APIView):
 
 
 class CheckoutPaymentHistoryView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request):
         if not user_has_permission(request.user, "billing.view"):
@@ -145,7 +146,7 @@ class CheckoutPaymentHistoryView(APIView):
 
 
 class CheckoutOrderStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsCompanyOwner]
 
     def get(self, request, order_id):
         record = RazorpayPlanPayment.objects.filter(

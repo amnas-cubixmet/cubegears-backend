@@ -35,6 +35,8 @@ class PostpaidFeatureTests(TestCase):
             email="postpaid-feature@example.test", name="Paid User",
             password="StrongPostpaidPassword123!", company=self.company, role=self.role,
         )
+        self.user.company.owner = self.user
+        self.user.company.save(update_fields=["owner"])
         group = FeatureGroup.objects.create(key="postpaid", label="Postpaid")
         self.feature = PlanFeature.objects.create(key="jobs", label="Job Cards", group=group)
         self.price = FeatureCreditPrice.objects.create(
@@ -219,6 +221,8 @@ class MeteredStorageTests(TestCase):
             email="storage-billing-view@example.test", name="Billing Viewer",
             password="SecureBillingTest123!", company=self.company, role=user_role,
         )
+        user.company.owner = user
+        user.company.save(update_fields=["owner"])
         record_storage_interval(self.company, now=self.at, policy=self.policy)
         client = APIClient()
         client.force_authenticate(user)
@@ -235,6 +239,8 @@ class MeteredStorageTests(TestCase):
             email="other-storage-billing@example.test", name="Other Billing",
             password="SecureBillingTest123!", company=other, role=other_role,
         )
+        other_user.company.owner = other_user
+        other_user.company.save(update_fields=["owner"])
         client.force_authenticate(other_user)
         other_response = client.get("/api/v1/saas/credits/usage-invoices")
         self.assertEqual(other_response.status_code, 200)

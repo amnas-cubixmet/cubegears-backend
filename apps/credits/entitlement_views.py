@@ -9,8 +9,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import PlanFeature
 from apps.saas.access import active_label_modules
 
-_CORE = frozenset({"dashboard", "billing", "company", "settings",
-                   "storage", "notifications", "roles"})
+_CORE = frozenset({"dashboard", "billing", "company", "roles"})
 
 
 class CompanyModuleEntitlementsView(APIView):
@@ -20,14 +19,15 @@ class CompanyModuleEntitlementsView(APIView):
         if not request.user.company_id or not request.user.is_active:
             return Response({"message": "Workshop account required."}, status=403)
         label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
-        enforced = bool(label_only or (
+        enforced = bool(request.user.company.require_paid_features or label_only or (
             settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED and
             settings.CREDIT_STRICT_MODULE_GATING_ENABLED
         ))
+        core = _CORE if request.user.company.require_paid_features else _CORE | {"settings", "storage", "notifications"}
         module_actions = {}
         for code in TENANT_PERMISSIONS:
             module, _, action = code.partition(".")
-            if module not in _CORE and action:
+            if module not in core and action:
                 module_actions.setdefault(module, []).append(code)
         # Once strict mode is enabled, the same user_has_permission() that
         # protects DRF endpoints determines feature visibility per staff role.

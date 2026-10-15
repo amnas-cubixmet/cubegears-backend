@@ -273,6 +273,17 @@ def purchase_feature_bundle(company, bundle, actor):
     if access.billing_type_at_purchase == "permanent" and access.enabled and access.valid_until is None:
         return access, ZERO
 
+    if (not access.enabled and access.last_price_credits > ZERO and access.purchased_at and
+        (access.billing_type_at_purchase == "permanent" or
+         (access.billing_type_at_purchase in {"hourly", "daily", "weekly", "monthly"}
+          and access.valid_until and access.valid_until > now))):
+        access.enabled = True
+        access.save(update_fields=["enabled", "updated_at"])
+        from apps.saas.models import SecurityEvent
+        SecurityEvent.objects.create(company=company, user=actor, event="feature_label_resumed",
+                                     metadata={"bundleId": bundle.pk, "name": bundle.name})
+        return access, ZERO
+
     users = billable_user_count(company)
     # Single clear rate: no base charge, activation fee, or employee-seat fee.
     # The user count is read from authenticated company accounts, never from JS.
@@ -308,11 +319,18 @@ def purchase_feature_bundle(company, bundle, actor):
         "enabled", "valid_until", "uses_remaining", "last_price_credits",
         "billing_type_at_purchase", "purchased_at", "updated_at",
     ])
+    from apps.saas.models import SecurityEvent
+    SecurityEvent.objects.create(company=company, user=actor, event="feature_label_activated", metadata={
+        "bundleId": bundle.pk, "name": bundle.name, "credits": str(price),
+        "billingType": access.billing_type_at_purchase,
+        "validUntil": access.valid_until.isoformat() if access.valid_until else None,
+        "userCount": users,
+    })
     return access, price
 
 
 @transaction.atomic
-def disable_feature_bundle(company, bundle):
+def disable_feature_bundle(company, bundle, actor=None):
     """Stop access, without changing purchases or refunding prepaid credits."""
     access = CompanyBundleAccess.objects.select_for_update().filter(
         company=company, bundle=bundle,
@@ -320,6 +338,10 @@ def disable_feature_bundle(company, bundle):
     if access and access.enabled:
         access.enabled = False
         access.save(update_fields=["enabled", "updated_at"])
+        from apps.saas.models import SecurityEvent
+        SecurityEvent.objects.create(company=company, user=actor, event="feature_label_disabled", metadata={
+            "bundleId": bundle.pk, "name": bundle.name,
+        })
     return access
 
 
