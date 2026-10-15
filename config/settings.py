@@ -325,6 +325,40 @@ CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool(
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
 
 
+# The newer monthly usage engines are independent of prepaid renewals.
+# Register each sampler and previous-month settlement only when its own
+# enforcement/billing switch is enabled. Do not schedule legacy equivalents.
+if CREDIT_BILLING_CELERY_ENABLED:
+    if CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+        CELERY_BEAT_SCHEDULE.pop("cubegear-renew-credit-features", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-sync-postpaid-seat-rates", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-monthly-usage-settlement", None)
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-sample-paid-features": {
+                "task": "cubegear.features.monthly.sample",
+                "schedule": crontab(minute="*/5"),
+            },
+            "cubegear-settle-closed-feature-months": {
+                "task": "cubegear.features.monthly.settle",
+                "schedule": crontab(hour=0, minute=25),
+            },
+        })
+    if STORAGE_MONTHLY_METERED_ENABLED:
+        CELERY_BEAT_SCHEDULE.pop("cubegear-bill-storage-period", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-meter-storage", None)
+        CELERY_BEAT_SCHEDULE.pop("cubegear-monthly-usage-settlement", None)
+        CELERY_BEAT_SCHEDULE.update({
+            "cubegear-sample-company-storage": {
+                "task": "cubegear.storage.monthly.sample",
+                "schedule": crontab(minute="*"),
+            },
+            "cubegear-settle-closed-storage-months": {
+                "task": "cubegear.storage.monthly.settle",
+                "schedule": crontab(hour=0, minute=30),
+            },
+        })
+
+
 # Email notices use a persisted outbox; billing charges never depend on SMTP.
 # Switch both flags on only after Redis, a single Celery Beat and SMTP are ready.
 BILLING_EMAIL_ALERTS_ENABLED = env_bool("BILLING_EMAIL_ALERTS_ENABLED", False)
