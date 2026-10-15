@@ -53,10 +53,19 @@ def feature_allowed(user, permission):
         # rollouts deny them instead; otherwise an unregistered permission
         # would bypass a company's feature purchases.
         return not settings.CREDIT_STRICT_MODULE_GATING_ENABLED
-    individually_enabled = CompanyCreditFeature.objects.filter(
-        company=user.company, feature__key=module, feature__is_active=True,
-        enabled=True, next_charge_at__gt=timezone.now(),
-    ).exists()
+    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+        from apps.credits.models import FeatureUsageSession
+        individually_enabled = CompanyCreditFeature.objects.filter(
+            company=user.company, feature__key=module, feature__is_active=True,
+            enabled=True,
+        ).exists() and FeatureUsageSession.objects.filter(
+            company=user.company, feature__key=module, ended_at__isnull=True,
+        ).exists()
+    else:
+        individually_enabled = CompanyCreditFeature.objects.filter(
+            company=user.company, feature__key=module, feature__is_active=True,
+            enabled=True, next_charge_at__gt=timezone.now(),
+        ).exists()
     if individually_enabled:
         return True
 
