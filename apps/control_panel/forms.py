@@ -406,8 +406,10 @@ class EmployeeForm(AdminModelForm):
 
         if branch and company and branch.company_id != company.id:
             self.add_error("branch", "Selected branch does not belong to this company.")
-        if user and company and user.company_id and user.company_id != company.id:
-            self.add_error("user", "Selected user belongs to another company.")
+        if user and company and user.company_id != company.id:
+            self.add_error("user", "Selected user must belong to this workshop company.")
+        if user and (user.is_staff or user.is_superuser):
+            self.add_error("user", "A SaaS platform administrator cannot be linked as workshop staff.")
         if team and company and team.company_id != company.id:
             self.add_error("team", "Selected team belongs to another company.")
         if shift and company and shift.company_id != company.id:
