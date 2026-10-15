@@ -38,7 +38,18 @@ class CompanyCreditsView(APIView):
         wallet = wallet_for(company)
         count = staff_count(company)
         users = billable_user_count(company)
-        active = CompanyCreditFeature.objects.filter(company=company, enabled=True, next_charge_at__gt=timezone.now()).select_related("feature")
+        if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+            from .models import FeatureUsageSession
+            active = CompanyCreditFeature.objects.filter(
+                company=company, enabled=True,
+                feature_id__in=FeatureUsageSession.objects.filter(
+                    company=company, ended_at__isnull=True,
+                ).values("feature_id"),
+            ).select_related("feature")
+        else:
+            active = CompanyCreditFeature.objects.filter(
+                company=company, enabled=True, next_charge_at__gt=timezone.now()
+            ).select_related("feature")
         prices = {p.feature_id: p for p in FeatureCreditPrice.objects.filter(feature_id__in=[f.feature_id for f in active])}
         monthly = sum(
             (price_for(prices[state.feature_id], count, users) * Decimal("30") /
@@ -81,6 +92,14 @@ class CreditFeaturesView(APIView):
         count = staff_count(request.user.company)
         users = billable_user_count(request.user.company)
         current = {v.feature_id: v for v in CompanyCreditFeature.objects.filter(company=request.user.company)}
+        postpaid_open_features = set()
+        if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+            from .models import FeatureUsageSession
+            postpaid_open_features = set(
+                FeatureUsageSession.objects.filter(
+                    company=request.user.company, ended_at__isnull=True,
+                ).values_list("feature_id", flat=True)
+            )
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
             {
@@ -97,7 +116,10 @@ class CreditFeaturesView(APIView):
                 "monthlyCredits": str((price_for(rate, count, users) *
                     Decimal("30") / Decimal({"daily": 1, "weekly": 7, "monthly": 30}[rate.billing_period])
                     ).quantize(Decimal("0.01"))),
-                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()),
+                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and (
+                    rate.feature_id in postpaid_open_features if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+                    else current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()
+                )),
                 "nextChargeAt": (
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
@@ -125,7 +147,8 @@ class EnableCreditFeatureView(APIView):
             state, charge = enable_paid_feature(request.user.company, feature, request.user)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
-        return Response({"enabled": state.enabled, "chargedCredits": str(charge), "nextChargeAt": state.next_charge_at})
+        return Response({"enabled": state.enabled, "chargedCredits": str(charge), "nextChargeAt": state.next_charge_at,
+                         "postpaid": bool(settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED)})
 
 
 class DisableCreditFeatureView(APIView):
