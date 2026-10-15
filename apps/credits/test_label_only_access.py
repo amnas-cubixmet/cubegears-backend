@@ -103,6 +103,37 @@ class LabelOnlyAccessTests(TestCase):
         self.assertFalse(user_has_permission(self.owner, "stock.view"))
         self.assertEqual(self.client.get("/api/v1/stock/items").status_code, 403)
 
+    def test_standalone_purchase_and_renewal_do_not_charge_while_label_only(self):
+        from apps.credits.models import FeatureCreditPrice
+        from apps.credits.service import renew_feature
+        FeatureCreditPrice.objects.create(feature=self.stock, base_credits=Decimal("4.00"))
+        self.assertEqual(self.client.get("/api/v1/saas/credits/features").data, [])
+        purchase = self.client.post(
+            "/api/v1/saas/credits/features/enable", {"key": "stock"}, format="json"
+        )
+        self.assertEqual(purchase.status_code, 409)
+        self.assertEqual(purchase.data["code"], "LABEL_ONLY_ACCESS_ENABLED")
+        state = CompanyCreditFeature.objects.create(
+            company=self.a, feature=self.stock, enabled=True,
+            next_charge_at=timezone.now() - timedelta(seconds=1),
+        )
+        self.assertEqual(renew_feature(state), "label_only")
+        self.assertFalse(user_has_permission(self.owner, "stock.view"))
+        self.assertEqual(CreditWallet.objects.get(company=self.a).balance, Decimal("100.00"))
+
+    @override_settings(CREDIT_POSTPAID_FEATURE_BILLING_ENABLED=True)
+    def test_old_postpaid_engine_does_not_charge_for_hidden_standalone_features(self):
+        from apps.credits.postpaid import (
+            completed_month, refresh_postpaid_feature_rates, settle_monthly_usage,
+        )
+        self.assertEqual(refresh_postpaid_feature_rates(self.a), 0)
+        status, invoice = settle_monthly_usage(
+            self.a, "feature", completed_month(),
+        )
+        self.assertEqual(status, "label_only")
+        self.assertIsNone(invoice)
+        self.assertEqual(CreditWallet.objects.get(company=self.a).balance, Decimal("100.00"))
+
     def test_disabling_and_expiring_label_revokes_routes_immediately(self):
         access = CompanyBundleAccess.objects.create(
             company=self.a, bundle=self.label, enabled=True,

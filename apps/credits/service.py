@@ -82,6 +82,8 @@ def adjust_company_balance(company, delta, *, reason, actor, reference):
 
 @transaction.atomic
 def enable_paid_feature(company, feature, actor):
+    if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
+        raise ValueError('Activate a Feature Label instead of a standalone module.')
     pricing = FeatureCreditPrice.objects.select_related("feature").filter(
         feature=feature, feature__is_active=True, is_available=True,
     ).first()
@@ -157,6 +159,8 @@ def disable_paid_feature(company, feature, actor):
 
 @transaction.atomic
 def renew_feature(state):
+    if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
+        return 'label_only'
     if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
         # Never perform prepaid due-date charge while monthly usage mode runs.
         return "postpaid"

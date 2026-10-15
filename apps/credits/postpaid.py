@@ -146,7 +146,8 @@ def refresh_postpaid_feature_rates(company, *, now=None):
     Runs on a short Celery schedule, not on untrusted browser notifications.
     A new segment preserves the previous period's unit price and quantity.
     """
-    if not settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
+    if (not settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+            or getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False)):
         return 0
     from .models import CompanyCreditFeature, FeatureCreditPrice, CreditWallet
     from .service import staff_count, billable_user_count, price_for
@@ -209,6 +210,10 @@ def settle_monthly_usage(company, category, month, *, now=None):
     if end > now:
         raise ValueError("Cannot settle a month that has not ended.")
     if category == "feature":
+        # Label-only entitlements must not auto-debit hidden standalone sessions.
+        # Keep historical readings for an explicit administrator reconciliation.
+        if getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False):
+            return "label_only", None
         if not settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
             return "disabled", None
         amount, details = feature_month_quote(company, month)

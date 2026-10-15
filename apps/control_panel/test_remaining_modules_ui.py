@@ -119,9 +119,9 @@ class RemainingModulesUITests(TestCase):
 
     def test_feature_catalog_only_shows_paid_labels_and_preserves_edit_routes(self):
         list_response = self.client.get(reverse("panel:features"))
-        self.assertContains(list_response, "Paid Feature Labels")
-        self.assertContains(list_response, "Multi-feature packages")
-        self.assertContains(list_response, "Create Paid Label")
+        self.assertContains(list_response, "Feature Labels")
+        self.assertContains(list_response, "All feature labels")
+        self.assertContains(list_response, "Create Feature Label")
         self.assertNotContains(list_response, "Discovered Module Inventory")
         self.assertNotContains(list_response, "Sync Missing Modules")
         self.assertNotContains(list_response, "Discovered Workshop Modules")

@@ -32,6 +32,7 @@ def _enabled():
     return bool(
         settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
         and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+        and not getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False)
     )
 
 
