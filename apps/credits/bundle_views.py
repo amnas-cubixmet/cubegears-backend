@@ -1,4 +1,5 @@
 """Tenant-scoped prepaid feature label catalog and activation API."""
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
@@ -33,6 +34,7 @@ def _public_bundle(bundle, access=None):
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
         "meteredReady": bundle.billing_type != "per_use",
+        "purchaseEnabled": bundle.billing_type != "per_use" and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED,
     }
 
 
@@ -63,6 +65,11 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
+        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+            return Response({
+                "message": "Paid feature enforcement must be enabled by the platform administrator before purchasing labels.",
+                "code": "FEATURE_ENTITLEMENTS_NOT_ENABLED",
+            }, status=409)
         if bundle.billing_type == "per_use":
             # Do not sell an unredeemable token until real server-side feature
             # operations have been wired to consume_bundle_use().
