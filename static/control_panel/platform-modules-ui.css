@@ -133,3 +133,40 @@ html[data-theme=dark] .remaining-state.is-good{color:#6ee7b7;background:#064e3b}
 .remaining-profile-info>p:not(.eyebrow){font-size:12px;color:var(--muted);margin:0 0 11px;line-height:1.5;overflow-wrap:anywhere}
 .remaining-profile-tags{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 @media(max-width:650px){.remaining-profile-header{padding:14px;gap:13px}.remaining-profile-symbol{width:62px;height:62px;flex-basis:62px;font-size:23px}.remaining-profile-info h2{font-size:17px}}
+
+/* Credit Control has six independent sections: navigation and no fake action buttons.
+   Without JavaScript, tab navigation stays hidden and every section remains readable. */
+.credit-tab-navigation{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:8px}
+.credit-tab-navigation[hidden],.credit-tab-panel[hidden]{display:none!important}
+.credit-tab-list{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.credit-tab-list [role=tab]{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:45px;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);cursor:pointer;font:inherit;font-size:11px;font-weight:750;line-height:1.35;text-align:center;transition:background .15s,border-color .15s,color .15s}
+.credit-tab-list [role=tab]:hover{background:var(--surface-soft);color:var(--text)}
+.credit-tab-list [role=tab][aria-selected=true]{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
+.credit-tab-list [role=tab]:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.credit-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;padding:2px 5px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.credit-tab-list [role=tab][aria-selected=true] .credit-tab-count{border-color:var(--brand);color:var(--brand);background:var(--surface)}
+.credit-tabs-content{display:block;min-width:0}
+.credit-tabs-content>.panel-card{padding:22px;min-width:0}
+.credit-tabs-content>.credit-tab-panel{scroll-margin-top:95px}
+.credit-tabs-content>.credit-tab-panel:focus{outline:none}
+.credit-tabs-content>.credit-tab-panel h3{font-size:16px;font-weight:750;margin:0 0 8px;color:var(--text)}
+.credit-tabs-content>.credit-tab-panel>p{max-width:850px;margin:0 0 15px;color:var(--muted);line-height:1.65;font-size:12px}
+.credit-tabs-content .credit-panel-form{max-width:760px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 18px;margin:18px 0 24px}
+.credit-tabs-content .credit-panel-form>label:has(textarea),.credit-tabs-content .credit-panel-form>label.credit-panel-check{grid-column:1/-1}
+.credit-tabs-content .credit-panel-form>.btn{grid-column:1/-1;justify-self:start;min-height:40px;font-size:12px}
+.credit-tabs-content .credit-summary-title{align-items:center}
+.credit-tabs-content .credit-panel-filter{max-width:420px}
+.credit-tabs-content .responsive-table{max-width:100%}
+.credit-tabs-content .credit-tab-panel tr:last-child td{border-bottom:0}
+@media(max-width:1200px){.credit-tab-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){
+.credit-tab-navigation{padding:6px}
+.credit-tab-list{display:flex;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;padding:3px 1px 7px;gap:6px;scrollbar-width:thin}
+.credit-tab-list [role=tab]{flex:0 0 auto;min-width:134px;scroll-snap-align:start}
+.credit-tabs-content>.panel-card{padding:15px}
+.credit-tabs-content .credit-panel-form{grid-template-columns:1fr;gap:12px}
+.credit-tabs-content .credit-panel-form>label:has(textarea),.credit-tabs-content .credit-panel-form>label.credit-panel-check,.credit-tabs-content .credit-panel-form>.btn{grid-column:auto}
+.credit-tabs-content .credit-panel-form>.btn{width:100%}
+.credit-tabs-content .credit-summary-title{align-items:stretch}
+.credit-tabs-content .credit-panel-filter{max-width:100%}
+}
