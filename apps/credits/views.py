@@ -188,7 +188,7 @@ class CreditFeaturesView(APIView):
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
                 ),
-                "available": rate.is_available,
+                "available": rate.is_available and price_for(rate, count, users) > 0,
                 "activationEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features),
             }
             for rate in rows
@@ -229,6 +229,12 @@ class EnableCreditFeatureView(APIView):
         payload = FeatureInput(data=request.data)
         payload.is_valid(raise_exception=True)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)
+        rate = FeatureCreditPrice.objects.filter(feature=feature, is_available=True).first()
+        if not rate or price_for(rate, staff_count(request.user.company), billable_user_count(request.user.company)) <= 0:
+            return Response({
+                'code': 'MODULE_PRICE_NOT_SET',
+                'message': 'A positive module price must be configured before activation.',
+            }, status=409)
         try:
             if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
                 state, charge = activate_postpaid_feature(request.user.company, feature)

@@ -226,20 +226,18 @@ class FeatureBundlePanelUITests(TestCase):
             "features": [str(self.a.pk), str(self.b.pk)],
             "per_user_credits": "35.00", "billing_type": "daily",
         })
-        self.assertRedirects(result, reverse("panel:features"))
+        self.assertRedirects(result, reverse("panel:features"), fetch_redirect_response=False)
         bundle = FeatureBundle.objects.get(key="operations-bundle")
         self.assertEqual(bundle.features.count(), 2)
         self.assertEqual(bundle.price_credits, Decimal("0.00"))
         self.assertEqual(bundle.activation_credits, Decimal("0.00"))
         self.assertEqual(bundle.per_user_credits, Decimal("35.00"))
-        page = self.client.get(reverse("panel:features"))
-        self.assertContains(page, "Operations Bundle")
-        self.assertContains(page, "35.00")
+        self.assertRedirects(self.client.get(reverse("panel:features")), reverse("panel:feature-pricing"))
 
     def test_label_can_price_one_existing_module(self):
         result = self.client.post(reverse("panel:featurebundle-create"), {
             "name": "Single Module", "features": [str(self.a.pk)],
             "per_user_credits": "5.00", "billing_type": "weekly",
         })
-        self.assertRedirects(result, reverse("panel:features"))
+        self.assertRedirects(result, reverse("panel:features"), fetch_redirect_response=False)
         self.assertEqual(FeatureBundle.objects.get(name="Single Module").features.count(), 1)

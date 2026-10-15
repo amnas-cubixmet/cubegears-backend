@@ -59,3 +59,7 @@ Deploy alongside the frontend account-only shell and run `python manage.py migra
 The sidebar now links directly to Feature Pricing at `/features/pricing/`. Historical `/features/` bookmarks redirect there. The standalone Feature Labels list and its navigation links are removed; stored labels and purchased entitlements are preserved.
 
 Owners retain Profile, Shop Details and SaaS Account in their sidebar before activation. Shop Details uses `/api/v1/company/me` without unlocking Settings or other paid modules. Operational links, including Dashboard, require the server feature/role permission intersection.
+
+## Unpriced modules
+
+The owner module catalogue includes every billable registry module without scanning or selecting feature checkboxes. Missing/unpublished module offers appear as read-only placeholders with 0 credits and `MODULE_PRICE_NOT_SET`; they have no purchasable bundle ID. Catalogue reads create no pricing or access records. SaaS admins must publish a positive per-user rate before purchase. Legacy individual-feature activation also rejects zero recurring rates, for prepaid and monthly-postpaid modes. Previously paid resume remains governed by its stored entitlement.
