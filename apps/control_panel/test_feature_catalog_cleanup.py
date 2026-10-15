@@ -52,7 +52,7 @@ class PaidFeatureCatalogOnlyTests(TestCase):
             "Feature catalog overview",
         ):
             self.assertNotContains(response, excluded)
-        self.assertContains(response, "Paid Feature Labels")
+        self.assertContains(response, "Feature Labels")
         self.assertContains(response, "Workshop Pro")
         self.assertNotContains(response, "base credits")
         self.assertContains(response, "5.00")

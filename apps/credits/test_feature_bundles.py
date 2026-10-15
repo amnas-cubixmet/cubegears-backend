@@ -213,8 +213,10 @@ class FeatureBundlePanelUITests(TestCase):
         url = reverse("panel:featurebundle-create")
         page = self.client.get(url)
         self.assertEqual(page.status_code, 200)
-        self.assertContains(page, 'name="features"')
-        self.assertContains(page, 'name="billing_type"')
+        for field in ("name", "description", "features", "per_user_credits", "billing_type"):
+            self.assertContains(page, f'name="{field}"')
+        for removed in ("price_credits", "activation_credits", "is_active", "sort_order"):
+            self.assertNotContains(page, f'name="{removed}"')
         result = self.client.post(url, {
             "name": "Operations Bundle", "description": "Two modules",
             "features": [str(self.a.pk), str(self.b.pk)],
