@@ -146,6 +146,39 @@ class RemainingModulesUITests(TestCase):
         self.assertContains(response, 'name="action"')
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
 
+    def test_credit_controls_are_split_into_six_functional_accessible_tabs(self):
+        response = self.client.get(reverse("panel:credits"))
+        self.assertEqual(response.status_code, 200)
+        for key in ("packages", "pricing", "adjustment", "wallets", "purchases", "ledger"):
+            self.assertContains(response, f'data-credit-tab="{key}"', count=1)
+            self.assertContains(response, f'data-credit-panel="{key}"', count=1)
+            self.assertContains(response, f'aria-controls="credit-panel-{key}"', count=1)
+            self.assertContains(response, f'aria-labelledby="credit-tab-{key}"', count=1)
+        self.assertContains(response, 'role="tab"', count=6)
+        self.assertContains(response, 'role="tabpanel"', count=6)
+        self.assertContains(response, 'data-credit-tab-navigation')
+        self.assertContains(response, "credits-tabs.js")
+        self.assertIsNotNone(finders.find("control_panel/credits-tabs.js"))
+
+        # Keep the server-validated forms, audited adjustment ID, CSRF.
+        for action in ("package", "price", "adjust"):
+            self.assertContains(response, f'name="action" value="{action}"', count=1)
+        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=3)
+        self.assertContains(response, 'name="request_id"', count=1)
+        self.assertContains(response, 'name="reason"')
+        self.assertContains(response, 'name="delta"')
+        self.assertContains(response, "All companies")
+        self.assertContains(response, 'name="company"')
+
+    def test_credit_ledger_company_filter_preserved_in_tabbed_view(self):
+        response = self.client.get(
+            reverse("panel:credits"), {"company": str(self.company.pk)}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Full credit activity ledger")
+        self.assertContains(response, 'data-credit-panel="ledger"')
+        self.assertEqual(response.context["filter_company"], str(self.company.pk))
+
     def test_anonymous_access_still_requires_login(self):
         self.client.logout()
         for page in ("panel:customers", "panel:vehicles", "panel:branches", "panel:roles",
