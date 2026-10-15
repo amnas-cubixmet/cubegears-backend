@@ -3,7 +3,8 @@
 Storage is a prepaid-period snapshot of current stored bytes (not historical
 byte-hours). The ledger reference prevents double charges on repeated runs.
 """
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from django.conf import settings
 from apps.companies.models import Company
 from apps.credits.models import StorageCreditPolicy
 from apps.credits.storage_billing import charge_storage_period, storage_quote
