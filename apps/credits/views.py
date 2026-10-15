@@ -51,6 +51,19 @@ class CompanyCreditsView(APIView):
             active = CompanyCreditFeature.objects.filter(
                 company=company, enabled=True, next_charge_at__gt=timezone.now()
             ).select_related("feature")
+        postpaid = CompanyPostpaidFeature.objects.none()
+        pending_postpaid = Decimal("0.00")
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            postpaid = CompanyPostpaidFeature.objects.filter(
+                company=company, enabled=True, suspended=False,
+            )
+            pending_postpaid = sum((
+                period.accrued_credits + period.activation_credits
+                for period in FeatureMeterPeriod.objects.filter(
+                    company=company, settled_at__isnull=True,
+                )
+            ), Decimal("0.00"))
+        postpaid_count = postpaid.count()
         prices = {p.feature_id: p for p in FeatureCreditPrice.objects.filter(feature_id__in=[f.feature_id for f in active])}
         monthly = sum(
             (price_for(prices[state.feature_id], count, users) * Decimal("30") /
@@ -102,6 +115,13 @@ class CreditFeaturesView(APIView):
                     company=request.user.company, ended_at__isnull=True,
                 ).values_list("feature_id", flat=True)
             )
+        monthly_states = {}
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            monthly_states = {
+                state.feature_id: state for state in CompanyPostpaidFeature.objects.filter(
+                    company=request.user.company,
+                )
+            }
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
             {
@@ -112,17 +132,40 @@ class CreditFeaturesView(APIView):
                 "perUserCredits": str(rate.per_user_credits),
                 "userCount": users,
                 "billingPeriod": rate.billing_period,
-                "billingMode": "monthly_postpaid" if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED else "prepaid",
+                "billingMode": (
+                    "monthly_postpaid"
+                    if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+                    or (settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED and rate.billing_period == "monthly")
+                    else "prepaid"
+                ),
                 "periodCredits": str(price_for(rate, count, users)),
                 "perStaffCredits": str(rate.per_staff_credits),
                 "staffCount": count,
                 "monthlyCredits": str((price_for(rate, count, users) *
                     Decimal("30") / Decimal({"daily": 1, "weekly": 7, "monthly": 30}[rate.billing_period])
                     ).quantize(Decimal("0.01"))),
-                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and (
-                    rate.feature_id in postpaid_open_features if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
-                    else current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()
-                )),
+                "enabled": bool(
+                    (
+                        monthly_states.get(rate.feature_id)
+                        and monthly_states[rate.feature_id].enabled
+                        and not monthly_states[rate.feature_id].suspended
+                    ) if (settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
+                          and rate.billing_period == "monthly")
+                    else (
+                        current.get(rate.feature_id) and current[rate.feature_id].enabled and (
+                            rate.feature_id in postpaid_open_features
+                            if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+                            else (
+                                current[rate.feature_id].next_charge_at
+                                and current[rate.feature_id].next_charge_at > timezone.now()
+                            )
+                        )
+                    )
+                ),
+                "suspended": bool(
+                    monthly_states.get(rate.feature_id)
+                    and monthly_states[rate.feature_id].suspended
+                ),
                 "nextChargeAt": (
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
