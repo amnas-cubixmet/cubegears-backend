@@ -36,7 +36,7 @@ from apps.saas.models import Subscription, StorageUsage, SecurityEvent, Subscrip
 from apps.vehicles.models import Vehicle
 from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger
 from apps.credits.storage_forms import StorageCreditPolicyForm
-from apps.saas.feature_discovery import module_inventory, sync_existing_modules
+from apps.saas.feature_discovery import sync_existing_modules
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
 from apps.accounts.permissions import can_delegate, panel_permission
@@ -1361,18 +1361,10 @@ def plan_edit(request, pk):
 
 @panel_admin_required
 def feature_catalog(request):
-    all_features = PlanFeature.objects.all()
-    groups = FeatureGroup.objects.select_related("parent").prefetch_related("features")
+    """List configured paid labels only; do not auto-discover or alter RBAC catalog."""
     return render(request, "control_panel/feature_catalog.html", {
-        "page_title": "Feature Groups", "active": "features",
-        "groups": groups.all(),
+        "page_title": "Paid Feature Labels", "active": "features",
         "bundles": FeatureBundle.objects.prefetch_related("features").all(),
-        "discovered_modules": module_inventory(),
-        "catalog_keys": set(all_features.values_list("key", flat=True)),
-        "group_total": groups.count(),
-        "feature_total": all_features.count(),
-        "enabled_features": all_features.filter(is_active=True).count(),
-        "disabled_features": all_features.filter(is_active=False).count(),
     })
 
 
@@ -1392,8 +1384,7 @@ def feature_bundle_edit(request, pk):
 @panel_admin_required
 @require_POST
 def feature_sync(request):
-    """Explicit, permission-checked catalog sync; never creates a price or entitlement."""
-    from apps.accounts.permissions import panel_permission
+    """Backwards-compatible administrator-only sync, intentionally hidden from /features/."""
     if not panel_permission(request.user, "features", "edit"):
         return HttpResponseForbidden("Feature catalog edit permission required.")
     with transaction.atomic():

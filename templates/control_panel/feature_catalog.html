@@ -2,33 +2,10 @@
 {% load panel_access %}
 {% block content %}
 <section class="directory-heading remaining-heading">
-  <div><p class="eyebrow">Platform / Access catalog</p><h2>Feature Labels &amp; Modules</h2><p>Configure grouped feature labels for entitlements and the credit-based feature catalog.</p></div>
+  <div><p class="eyebrow">Platform / Feature pricing</p><h2>Paid Feature Labels</h2><p>Manage credit-priced feature packages and their access duration. Backend role permissions remain unchanged.</p></div>
   <div class="remaining-head-actions">
-    {% panel_can 'panel:featuregroup-create' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-create' %}">+ Add Label Group</a>{% endif %}
     {% panel_can 'panel:featurebundle-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:featurebundle-create' %}">+ Create Paid Label</a>{% endif %}
-    
   </div>
-</section>
-<section class="panel-card remaining-directory" aria-label="Detected backend features">
-  <header class="section-head directory-section-heading"><div>
-    <p class="eyebrow">Verified backend permissions</p>
-    <h2>Discovered Module Inventory</h2>
-    <p>Only modules from the actual tenant permission catalog appear here. Core settings, billing and storage are handled separately.</p>
-  </div>
-  {% panel_can 'panel:feature-edit' as allowed %}{% if allowed %}
-  <form method="post" action="{% url 'panel:features-edit' %}">
-    {% csrf_token %}
-    <button class="btn btn-primary" type="submit">Sync Missing Modules</button>
-  </form>{% endif %}
-  </header>
-  <div class="responsive-table"><table><thead><tr><th>Module</th><th>Backend permission key</th><th>Type</th><th>Registered</th></tr></thead><tbody>
-  {% for module in discovered_modules %}<tr>
-    <td><strong>{{ module.label }}</strong><small class="table-sub">{{ module.actions|join:", " }}</small></td>
-    <td><code>{{ module.key }}</code></td>
-    <td>{% if module.billable %}Feature candidate{% else %}Core / system{% endif %}</td>
-    <td>{% if module.key in catalog_keys %}Registered{% elif module.billable %}Missing — sync{% else %}Not billable{% endif %}</td>
-  </tr>{% empty %}<tr><td colspan="4">No tenant permissions registered.</td></tr>{% endfor %}
-  </tbody></table></div>
 </section>
 <section class="panel-card remaining-directory cg-paid-labels" aria-label="Paid feature labels">
   <header class="section-head directory-section-heading">
@@ -52,39 +29,12 @@
       {% panel_can 'panel:featurebundle-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featurebundle-edit' bundle.pk %}">Edit Package</a>{% endif %}
     </article>
   {% empty %}
-    <div class="cg-paid-label-empty"><strong>No paid feature labels yet.</strong><p>Select Create Paid Label to combine at least two already registered features.</p></div>
+    <div class="cg-paid-label-empty"><strong>No paid feature labels yet.</strong><p>Create a paid package to group existing feature permissions and configure its credit price.</p></div>
   {% endfor %}
   </div>
 </section>
-<section class="directory-stats remaining-stats" aria-label="Feature catalog overview">
-  <article class="user-stat-card"><div class="user-stat-top"><span>Label Groups</span><span class="user-stat-icon" aria-hidden="true">G</span></div><strong class="user-stat-value">{{ group_total }}</strong><small class="user-stat-meta">All feature groups</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Features</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ feature_total }}</strong><small class="user-stat-meta">Registered catalog modules</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Active Features</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ enabled_features }}</strong><small class="user-stat-meta">Modules marked active</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Disabled Features</span><span class="user-stat-icon" aria-hidden="true">–</span></div><strong class="user-stat-value">{{ disabled_features }}</strong><small class="user-stat-meta">Modules marked disabled</small></article>
-</section>
-<section class="panel-card remaining-directory" aria-label="Feature catalog groups">
-  <header class="section-head directory-section-heading"><div><p class="eyebrow">Feature catalog</p><h2>Module Groups</h2><p>Organize permission modules and feature labels</p></div><a class="btn" href="{% url 'panel:plans' %}">Open Plan Builder</a></header>
-  <div class="remaining-feature-groups">
-  {% for group in groups %}
-    <section class="remaining-feature-group" aria-label="{{ group.label }}">
-      <div class="remaining-feature-group-heading">
-        <span class="remaining-avatar" aria-hidden="true">{{ group.label|slice:":1"|upper }}</span>
-        <div class="remaining-feature-group-copy"><h3>{{ group.label }}</h3><p>{% if group.parent %}{{ group.parent.label }} / {% endif %}{{ group.key }}</p></div>
-        <span class="remaining-state {% if group.is_active %}is-good{% else %}is-neutral{% endif %}">{% if group.is_active %}Active{% else %}Disabled{% endif %}</span>
-        {% panel_can 'panel:featuregroup-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:featuregroup-edit' group.pk %}">Edit Group</a>{% endif %}
-      </div>
-      <div class="remaining-feature-list">
-      {% for item in group.features.all %}
-        <div class="remaining-feature-row">
-          <div><strong>{{ item.label }}</strong><span class="table-sub">{{ item.key }}</span>{% if item.description %}<p>{{ item.description|truncatechars:120 }}</p>{% endif %}</div>
-          <span class="remaining-state {% if item.is_active %}is-good{% else %}is-neutral{% endif %}">{% if item.is_active %}Active{% else %}Disabled{% endif %}</span>
-          {% panel_can 'panel:feature-edit' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:feature-edit' item.pk %}">Edit</a>{% endif %}
-        </div>
-      {% empty %}<p class="remaining-empty">No features in this group.</p>{% endfor %}
-      </div>
-    </section>
-  {% empty %}<p class="remaining-empty">No feature groups exist. Add a label group to start configuring features.</p>{% endfor %}
-  </div>
-  <p class="remaining-note">A feature label's active setting does not by itself grant permissions or credit entitlements. Authorization still depends on the existing backend checks.</p>
+<section class="panel-card cg-paid-labels-guide" aria-label="Feature billing information">
+  <p>Packages are priced in wallet credits. Publishing a package does not grant role permissions by itself; backend authorization and verified purchase entitlements still apply.</p>
+  <a class="btn" href="{% url 'panel:plans' %}">Open Plan Builder</a>
 </section>
 {% endblock %}

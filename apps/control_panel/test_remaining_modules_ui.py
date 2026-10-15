@@ -117,13 +117,20 @@ class RemainingModulesUITests(TestCase):
         self.assertEqual(storage.context["snapshot_count"], 0)
         self.assertEqual(storage.context["covered_companies"], 0)
 
-    def test_feature_catalog_and_edit_views_display_actual_feature_data(self):
+    def test_feature_catalog_only_shows_paid_labels_and_preserves_edit_routes(self):
         list_response = self.client.get(reverse("panel:features"))
-        self.assertContains(list_response, "Feature Labels &amp; Modules")
-        self.assertContains(list_response, "UI Feature")
-        self.assertEqual(list_response.context["group_total"], 1)
-        self.assertEqual(list_response.context["feature_total"], 1)
-        self.assertEqual(list_response.context["enabled_features"], 1)
+        self.assertContains(list_response, "Paid Feature Labels")
+        self.assertContains(list_response, "Multi-feature packages")
+        self.assertContains(list_response, "Create Paid Label")
+        self.assertNotContains(list_response, "Discovered Module Inventory")
+        self.assertNotContains(list_response, "Sync Missing Modules")
+        self.assertNotContains(list_response, "Discovered Workshop Modules")
+        self.assertNotContains(list_response, "Module Groups")
+        self.assertNotContains(list_response, "UI Feature")
+        self.assertNotIn("groups", list_response.context)
+        self.assertNotIn("discovered_modules", list_response.context)
+        self.assertEqual(PlanFeature.objects.count(), 1)
+        self.assertEqual(FeatureGroup.objects.count(), 1)
         self.assertTemplateUsed(
             self.client.get(reverse("panel:feature-create")),
             "control_panel/remaining_form.html",
