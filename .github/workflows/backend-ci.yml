@@ -36,6 +36,7 @@ jobs:
       - run: python manage.py test apps.credits.test_hosted_checkout --noinput
       - run: python manage.py test apps.credits.test_feature_bundles --noinput
       - run: python manage.py test apps.saas.test_feature_catalog_audit --noinput
+      - run: python manage.py test apps.control_panel.test_feature_catalog_cleanup --noinput
       - run: python manage.py test apps.credits.test_metered_feature_pricing --noinput
       - run: python manage.py test apps.control_panel.test_storage_per_gb_pricing --noinput
       - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.jobs.test_workflow apps.jobs.test_workflow_api apps.jobs.test_india_gst apps.invoices.test_india_gst apps.invoices.test_eway_reset_api apps.jobs.test_qc_login apps.jobs.test_cost_summary apps.invoices.test_invoice_pdf apps.jobs.test_outside_part_approval apps.jobs.test_work_photos apps.payments.test_payment_guards apps.inventory.test_stock_operations apps.saas.tests_account apps.saas.test_dynamic_plans --noinput
