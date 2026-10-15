@@ -15,8 +15,9 @@ from rest_framework.throttling import UserRateThrottle
 from apps.accounts.permissions import user_has_permission
 from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
-from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent
+from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
 from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from .monthly_features import activate_postpaid_feature, deactivate_postpaid_feature
 from .hosted_checkout import reconcile_hosted_purchase
 
 
@@ -63,8 +64,9 @@ class CompanyCreditsView(APIView):
             "lowBalance": wallet.balance <= wallet.low_threshold,
             "staffCount": count,
             "userCount": users,
-            "activeFeatures": active.count(),
-            "monthlyCredits": str(monthly),
+            "activeFeatures": active.count() + postpaid_count,
+            "monthlyCredits": str(monthly + sum((p.monthly_rate for p in postpaid), Decimal("0.00"))),
+            "postpaidAccruedCredits": str(pending_postpaid.quantize(Decimal("0.01"))),
             "checkoutAvailable": configured(),
             "canManage": user_has_permission(request.user, "billing.edit"),
         })
@@ -145,6 +147,12 @@ class EnableCreditFeatureView(APIView):
         payload.is_valid(raise_exception=True)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)
         try:
+            if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+                state, charge = activate_postpaid_feature(request.user.company, feature)
+                return Response({
+                    "enabled": state.enabled, "chargedCredits": str(charge),
+                    "nextChargeAt": None, "billingMode": "monthly_postpaid",
+                })
             state, charge = enable_paid_feature(request.user.company, feature, request.user)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
@@ -161,6 +169,13 @@ class DisableCreditFeatureView(APIView):
         payload = FeatureInput(data=request.data)
         payload.is_valid(raise_exception=True)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            existing = CompanyPostpaidFeature.objects.filter(
+                company=request.user.company, feature=feature, enabled=True,
+            ).exists()
+            if existing:
+                deactivate_postpaid_feature(request.user.company, feature)
+                return Response({"enabled": False, "billingMode": "monthly_postpaid"})
         disable_paid_feature(request.user.company, feature, request.user)
         return Response({"enabled": False})
 

@@ -6,6 +6,7 @@ gets one ledger reference, including zero-cost periods. No invented usage.
 """
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -50,6 +51,10 @@ def storage_quote(company, policy=None, now=None):
 
 @transaction.atomic
 def charge_storage_period(company, policy=None, now=None):
+    if settings.STORAGE_MONTHLY_METERED_ENABLED:
+        # Strictly one storage ledger engine at a time; even direct callers
+        # may not debit a legacy monthly snapshot on top of usage accrual.
+        raise ValueError("Legacy snapshot storage charging is disabled by monthly metered mode.")
     quote = storage_quote(company, policy=policy, now=now)
     if not quote:
         return "disabled", None

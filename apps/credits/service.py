@@ -253,6 +253,13 @@ def purchase_feature_bundle(company, bundle, actor):
     usage token; only trusted server operations may consume that token.
     """
     bundle = FeatureBundle.objects.get(pk=bundle.pk, is_active=True)
+    from django.conf import settings
+    if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
+        from .models import CompanyPostpaidFeature
+        if CompanyPostpaidFeature.objects.filter(
+            company=company, enabled=True, feature__credit_bundles=bundle,
+        ).exists():
+            raise ValueError("This package overlaps an active monthly-postpaid feature. Disable it first.")
     if not bundle.features.filter(is_active=True).exists():
         raise ValueError("This label has no active features.")
     if not Decimal("0.01") <= bundle.price_credits <= Decimal("1000000.00"):
