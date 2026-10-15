@@ -35,6 +35,87 @@ class RolePermissionsEditorTests(TestCase):
         self.assertIsNotNone(finders.find("control_panel/roles-ui.css"))
         self.assertIsNotNone(finders.find("control_panel/roles-ui.js"))
 
+    def test_roles_directory_offers_distinct_saas_and_workshop_creation(self):
+        response = self.client.get(reverse("panel:roles"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Add SaaS Admin Staff Role")
+        self.assertContains(response, "Add Workshop Role")
+        self.assertContains(response, reverse("panel:role-saas-create"))
+        self.assertContains(response, "SaaS Admin Staff Roles")
+        self.assertContains(response, "Workshop Roles")
+
+    def test_saas_staff_role_creator_is_companyless_and_grants_only_panel_actions(self):
+        url = reverse("panel:role-saas-create")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "SaaS Admin Staff Role")
+        self.assertContains(response, 'data-fixed-scope="platform"')
+        self.assertContains(response, 'value="panel.users.view"')
+        self.assertNotContains(response, 'value="jobs.view"')
+        self.assertContains(response, 'name="company"')
+        self.assertContains(response, 'type="hidden"')
+        response = self.client.post(url, {
+            "name": "SaaS Accounts Operator",
+            "code": "SAAS_ACCOUNTS_OPERATOR",
+            "permissions": ["panel.dashboard.view", "panel.users.view"],
+            "is_active": "on",
+        })
+        self.assertEqual(response.status_code, 302, response.content)
+        role = Role.objects.get(code="SAAS_ACCOUNTS_OPERATOR")
+        self.assertIsNone(role.company_id)
+        self.assertEqual(role.permissions, ["panel.dashboard.view", "panel.users.view"])
+
+    def test_saas_role_creator_rejects_workshop_company_and_tenant_permissions(self):
+        url = reverse("panel:role-saas-create")
+        wrong_company = self.client.post(url, {
+            "name": "Bad Company Role", "code": "BAD_COMPANY_ROLE",
+            "company": str(self.company.pk),
+            "permissions": ["panel.users.view"], "is_active": "on",
+        })
+        self.assertEqual(wrong_company.status_code, 200)
+        self.assertContains(wrong_company, "SaaS Admin Staff roles cannot belong to a workshop.")
+        self.assertFalse(Role.objects.filter(code="BAD_COMPANY_ROLE").exists())
+        wrong_permissions = self.client.post(url, {
+            "name": "Bad Access Role", "code": "BAD_ACCESS_ROLE",
+            "permissions": ["jobs.view"], "is_active": "on",
+        })
+        self.assertEqual(wrong_permissions.status_code, 200)
+        self.assertFalse(Role.objects.filter(code="BAD_ACCESS_ROLE").exists())
+        no_view = self.client.post(url, {
+            "name": "No Navigation", "code": "NO_NAVIGATION",
+            "permissions": ["panel.users.create"], "is_active": "on",
+        })
+        self.assertEqual(no_view.status_code, 200)
+        self.assertContains(no_view, "Assign at least one SaaS view permission")
+
+    def test_workshop_role_creator_needs_company_and_shows_workshop_matrix(self):
+        url = reverse("panel:role-create")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-fixed-scope="workshop"')
+        self.assertContains(response, 'value="jobs.view"')
+        self.assertNotContains(response, 'value="panel.users.view"')
+        invalid = self.client.post(url, {
+            "name": "Unscoped Workshop", "code": "UNSCOPED_WORKSHOP",
+            "permissions": ["jobs.view"], "is_active": "on",
+        })
+        self.assertEqual(invalid.status_code, 200)
+        self.assertContains(invalid, "Select a workshop company for this role.")
+        self.assertFalse(Role.objects.filter(code="UNSCOPED_WORKSHOP").exists())
+
+    def test_saas_role_creation_requires_platform_role_create_permission(self):
+        limited = Role.objects.create(
+            company=None, name="Role Reader", code="ROLE_READER",
+            permissions=["panel.roles.view"],
+        )
+        user = User.objects.create_user(
+            email="limited-role-reader@example.com", name="Limited",
+            password="TestPassword2026!", role=limited, company=None,
+            is_staff=True,
+        )
+        self.client.force_login(user)
+        self.assertEqual(self.client.get(reverse("panel:role-saas-create")).status_code, 403)
+
     def test_can_save_company_scoped_action_selection(self):
         response = self.client.post(reverse("panel:role-create"), {
             "company": str(self.company.pk),
