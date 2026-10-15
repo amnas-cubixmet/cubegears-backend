@@ -167,7 +167,10 @@ class CreateCreditOrderView(APIView):
         if package.credits <= 0 or amount < 100 or amount > 10000000000:
             return Response({"message": "Invalid published credit package."}, status=400)
         if not configured():
-            return Response({"message": "Razorpay is not yet configured."}, status=503)
+            return Response({
+                "code": "RAZORPAY_NOT_CONFIGURED",
+                "message": "Razorpay is not configured on the backend server.",
+            }, status=503)
         receipt = "CW" + uuid.uuid4().hex[:32]
         purchase = CreditPurchase.objects.create(
             company=request.user.company, requested_by=request.user, package=package,
@@ -179,9 +182,22 @@ class CreateCreditOrderView(APIView):
                 or not str(remote.get("id", "")).startswith("order_")
                 or remote.get("amount") != amount or remote.get("currency") != "INR"):
                 raise GatewayError("Unexpected Razorpay response.")
-        except GatewayError:
+        except GatewayError as exc:
             purchase.delete()
-            return Response({"message": "Unable to create secure checkout order."}, status=503)
+            if exc.reason == "invalid_credentials":
+                return Response({
+                    "code": "RAZORPAY_AUTH_FAILED",
+                    "message": "Payment gateway authentication failed. Please contact CubeGear support.",
+                }, status=503)
+            if exc.reason == "provider_rejected":
+                return Response({
+                    "code": "RAZORPAY_ORDER_REJECTED",
+                    "message": "Payment provider rejected the order. Please contact CubeGear support.",
+                }, status=503)
+            return Response({
+                "code": "RAZORPAY_UNAVAILABLE",
+                "message": "The payment gateway is temporarily unavailable. Please try again.",
+            }, status=503)
         purchase.order_id = remote["id"]
         purchase.save(update_fields=["order_id"])
         return Response({
