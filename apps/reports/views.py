@@ -1,6 +1,6 @@
 from django.db.models import Count,Sum,F
 from django.utils import timezone
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -151,7 +151,7 @@ class DashboardView(APIView):
             delivered_at__date=today,
         ).count()
 
-        return Response({
+        payload = {
             "attendance": {
                 "status": attendance_status,
                 "clockInTime": (
@@ -254,7 +254,41 @@ class DashboardView(APIView):
                 "jobsDeliveredToday": delivered_today,
                 "expenses": money(expenses),
             },
-        })
+        }
+
+        # This dashboard is reachable through the core dashboard.view
+        # permission, so every paid-module result needs its OWN backend
+        # permission check. Hiding React cards alone is not security.
+        can = lambda code: user_has_permission(request.user, code)
+        if not can("jobs.view"):
+            payload["bookings"] = []
+            payload["recentJobs"] = []
+            payload["deliveries"] = []
+            payload["jobProgress"] = {}
+            payload["stats"]["ongoingJobs"] = 0
+            payload["stats"]["readyForDelivery"] = 0
+            payload["summary"]["jobsDeliveredToday"] = 0
+        if not can("vehicles.view"):
+            payload["stats"]["todaysVehicles"] = 0
+            payload["summary"]["vehicles"] = 0
+        if not can("customers.view"):
+            payload["summary"]["customers"] = 0
+        if not can("stock.view"):
+            payload["stockAlerts"] = []
+            payload["stats"]["lowStockAlerts"] = 0
+        if not can("staff.view"):
+            payload["staffAvailability"] = []
+        if not can("payments.view") and not can("invoices.view"):
+            payload["payments"] = {}
+            payload["stats"]["todaysCollection"] = None
+            payload["stats"]["totalRevenue"] = None
+            payload["stats"]["outstandingBalance"] = None
+        if not can("expenses.view"):
+            payload["summary"]["expenses"] = None
+        if not can("attendance.self"):
+            payload["attendance"] = {}
+            payload["myAttendanceSummary"] = {}
+        return Response(payload)
 
 class ReportsView(APIView):
     permission_classes=[RolePermission]
