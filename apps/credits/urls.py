@@ -11,6 +11,7 @@ from .views import (
 
 urlpatterns = [
     path("overview", CompanyCreditsView.as_view(), name="credit-overview"),
+    path("access", TenantFeatureAccessView.as_view(), name="credit-access"),
     path("gateway/status", GatewayStatusView.as_view(), name="credit-gateway-status"),
     path("gateway/test", GatewayTestView.as_view(), name="credit-gateway-test"),
     path("packages", CreditPackagesView.as_view(), name="credit-packages"),
