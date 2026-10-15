@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 from django import forms
@@ -17,6 +18,7 @@ from apps.jobs.models import Job
 from apps.roles.models import Role
 from apps.saas.models import Subscription, SubscriptionPlan, FeatureGroup, PlanFeature, PlanFeatureAccess
 from apps.vehicles.models import Vehicle
+from apps.credits.models import FeatureBundle
 
 
 class PanelLoginForm(forms.Form):
@@ -610,3 +612,73 @@ class PlanFeatureForm(AdminModelForm):
     class Meta:
         model = PlanFeature
         fields = ["key", "label", "group", "description", "sort_order", "is_active"]
+
+
+class FeatureBundleForm(AdminModelForm):
+    """Build a priced label by selecting existing, independently managed features."""
+    features = forms.ModelMultipleChoiceField(
+        label="Included existing features",
+        queryset=PlanFeature.objects.filter(is_active=True),
+        widget=forms.CheckboxSelectMultiple(),
+        help_text="Choose 2 or more existing features. No new feature is created.",
+    )
+
+    class Meta:
+        model = FeatureBundle
+        fields = ["name", "description", "features", "price_credits",
+                  "activation_credits", "per_user_credits", "billing_type", "is_active", "sort_order"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Existing paid labels may have historical catalog keys; preserve edit
+        # compatibility, while new modules are registered from the RBAC registry.
+        for field in ("activation_credits", "per_user_credits"):
+            self.fields[field].required = False
+
+    def clean(self):
+        data = super().clean()
+        for field in ("activation_credits", "per_user_credits"):
+            if data.get(field) is None:
+                data[field] = Decimal("0.00")
+            if not Decimal("0") <= data[field] <= Decimal("1000000"):
+                self.add_error(field, "Enter 0 to 1,000,000 credits.")
+        return data
+
+    def clean_features(self):
+        features = self.cleaned_data["features"]
+        if features.count() < 2:
+            raise forms.ValidationError("Select at least two existing features for this label.")
+        if self.instance.pk and self.instance.company_access.exists():
+            previous = set(self.instance.features.values_list("pk", flat=True))
+            selected = set(features.values_list("pk", flat=True))
+            if not previous.issubset(selected):
+                raise forms.ValidationError(
+                    "Cannot remove features from a label already purchased by companies. Create a new label instead."
+                )
+        return features
+
+    def clean_billing_type(self):
+        period = self.cleaned_data["billing_type"]
+        if (self.instance.pk and self.instance.company_access.exists()
+                and period != self.instance.billing_type):
+            raise forms.ValidationError(
+                "Cannot change the billing period after a company purchases this label. Create a new label."
+            )
+        return period
+
+    def clean_price_credits(self):
+        price = self.cleaned_data["price_credits"]
+        if not Decimal("0.01") <= price <= Decimal("1000000.00"):
+            raise forms.ValidationError("Set a price between 0.01 and 1,000,000 credits.")
+        return price
+
+    def save(self, commit=True):
+        if self.instance._state.adding:
+            base = slugify(self.cleaned_data["name"])[:100].strip("-_") or "label"
+            key, number = base, 2
+            while FeatureBundle.objects.filter(key=key).exists():
+                suffix = f"-{number}"
+                key = f"{base[:100 - len(suffix)]}{suffix}"
+                number += 1
+            self.instance.key = key
+        return super().save(commit=commit)

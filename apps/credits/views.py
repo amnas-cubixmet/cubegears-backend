@@ -16,7 +16,8 @@ from apps.accounts.permissions import user_has_permission
 from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent
-from .service import wallet_for, staff_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from .hosted_checkout import reconcile_hosted_purchase
 
 
 class CreditsOrderThrottle(UserRateThrottle):
@@ -36,10 +37,13 @@ class CompanyCreditsView(APIView):
         company = request.user.company
         wallet = wallet_for(company)
         count = staff_count(company)
-        active = CompanyCreditFeature.objects.filter(company=company, enabled=True).select_related("feature")
+        users = billable_user_count(company)
+        active = CompanyCreditFeature.objects.filter(company=company, enabled=True, next_charge_at__gt=timezone.now()).select_related("feature")
         prices = {p.feature_id: p for p in FeatureCreditPrice.objects.filter(feature_id__in=[f.feature_id for f in active])}
         monthly = sum(
-            (price_for(prices[state.feature_id], count) for state in active if state.feature_id in prices),
+            (price_for(prices[state.feature_id], count, users) * Decimal("30") /
+             Decimal({"daily": 1, "weekly": 7, "monthly": 30}.get(prices[state.feature_id].billing_period, 30))
+             for state in active if state.feature_id in prices),
             Decimal("0.00"),
         )
         return Response({
@@ -47,6 +51,7 @@ class CompanyCreditsView(APIView):
             "lowThreshold": str(wallet.low_threshold),
             "lowBalance": wallet.balance <= wallet.low_threshold,
             "staffCount": count,
+            "userCount": users,
             "activeFeatures": active.count(),
             "monthlyCredits": str(monthly),
             "checkoutAvailable": configured(),
@@ -74,6 +79,7 @@ class CreditFeaturesView(APIView):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
         count = staff_count(request.user.company)
+        users = billable_user_count(request.user.company)
         current = {v.feature_id: v for v in CompanyCreditFeature.objects.filter(company=request.user.company)}
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
@@ -81,10 +87,17 @@ class CreditFeaturesView(APIView):
                 "key": rate.feature.key, "label": rate.feature.label,
                 "description": rate.feature.description,
                 "baseCredits": str(rate.base_credits),
+                "activationCredits": str(rate.activation_credits),
+                "perUserCredits": str(rate.per_user_credits),
+                "userCount": users,
+                "billingPeriod": rate.billing_period,
+                "periodCredits": str(price_for(rate, count, users)),
                 "perStaffCredits": str(rate.per_staff_credits),
                 "staffCount": count,
-                "monthlyCredits": str(price_for(rate, count)),
-                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled),
+                "monthlyCredits": str((price_for(rate, count, users) *
+                    Decimal("30") / Decimal({"daily": 1, "weekly": 7, "monthly": 30}[rate.billing_period])
+                    ).quantize(Decimal("0.01"))),
+                "enabled": bool(current.get(rate.feature_id) and current[rate.feature_id].enabled and current[rate.feature_id].next_charge_at and current[rate.feature_id].next_charge_at > timezone.now()),
                 "nextChargeAt": (
                     current[rate.feature_id].next_charge_at.isoformat()
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
@@ -265,6 +278,21 @@ class CreditWebhookView(APIView):
         envelope = data.get("payload") or {}
         if not isinstance(envelope, dict):
             return Response({"message": "Invalid webhook payload."}, status=400)
+        # A signed Payment Link event can confirm payment even when the buyer
+        # closes the browser before returning to CubeGear.
+        if kind == "payment_link.paid":
+            link = ((envelope.get("payment_link") or {}).get("entity") or {})
+            link_id = link.get("id") if isinstance(link, dict) else None
+            purchase = CreditPurchase.objects.filter(payment_link_id=link_id).first() if link_id else None
+            if purchase and purchase.status == "pending":
+                try:
+                    outcome = reconcile_hosted_purchase(purchase)
+                except GatewayError:
+                    return Response({"message": "Provider verification pending."}, status=503)
+                except ValueError:
+                    return Response({"message": "Payment link verification failed."}, status=400)
+                if outcome.status != "credited":
+                    return Response({"message": "Payment capture pending."}, status=503)
         with transaction.atomic():
             if CreditWebhookEvent.objects.filter(event_id=delivery_id).exists():
                 return Response({"received": True, "duplicate": True})
@@ -288,8 +316,8 @@ class CreditWebhookView(APIView):
                     wallet_for(purchase.company)
                     change_balance(
                         purchase.company, -purchase.credits,
-                        kind="refund", reference=f"credit-refund:{purchase.order_id}",
-                        description=f"Fully refunded purchase {purchase.order_id}",
+                        kind="refund", reference=f"credit-refund:{purchase.order_id or purchase.payment_link_id or purchase.pk}",
+                        description=f"Fully refunded purchase {purchase.order_id or purchase.payment_link_id or purchase.pk}",
                         allow_negative=True,
                     )
                     purchase.status = "refunded"

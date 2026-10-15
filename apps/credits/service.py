@@ -6,6 +6,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.employees.models import Employee
+from apps.accounts.models import User
 from .models import (
     CreditWallet, CreditLedger, FeatureCreditPrice, CompanyCreditFeature,
     CreditPurchase,
@@ -13,6 +14,7 @@ from .models import (
 
 ZERO = Decimal("0.00")
 PERIOD_DAYS = 30
+BILLING_DURATIONS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
 
 
 def staff_count(company):
@@ -25,8 +27,22 @@ def wallet_for(company):
     return wallet
 
 
-def price_for(feature_price, staff):
-    return feature_price.base_credits + feature_price.per_staff_credits * staff
+def billable_user_count(company):
+    """Active tenant login accounts; excludes platform staff and inactive logins."""
+    return User.objects.filter(company=company, is_active=True).count()
+
+
+def price_for(feature_price, staff, users=0):
+    """Recurring charge is separate from the one-time activation fee."""
+    return (
+        feature_price.base_credits
+        + feature_price.per_staff_credits * staff
+        + feature_price.per_user_credits * users
+    )
+
+
+def period_duration(feature_price):
+    return BILLING_DURATIONS[feature_price.billing_period]
 
 
 def change_balance(company, delta, *, kind, reference, description, actor=None, allow_negative=False):
@@ -74,18 +90,20 @@ def enable_paid_feature(company, feature, actor):
     state, _ = CompanyCreditFeature.objects.select_for_update().get_or_create(
         company=company, feature=feature,
     )
-    if state.enabled:
+    now = timezone.now()
+    if state.enabled and state.next_charge_at and state.next_charge_at > now:
         return state, ZERO
     staff = staff_count(company)
-    charge = price_for(pricing, staff)
+    users = billable_user_count(company)
+    charge = price_for(pricing, staff, users) + pricing.activation_credits
     change_balance(
         company, -charge, kind="feature_charge",
         reference=f"feature-start:{state.pk}:{timezone.now().isoformat()}",
-        description=f"Enable {feature.label}: {staff} staff / {PERIOD_DAYS} days",
+        description=f"Enable {feature.label}: {users} users, {staff} employees; activation + {pricing.billing_period} rate",
         actor=actor,
     )
     state.enabled = True
-    state.next_charge_at = timezone.now() + timedelta(days=PERIOD_DAYS)
+    state.next_charge_at = now + period_duration(pricing)
     state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
     return state, charge
 
@@ -121,14 +139,15 @@ def renew_feature(state):
         state.save(update_fields=["enabled", "next_charge_at", "updated_at"])
         return "unavailable"
     count = staff_count(state.company)
-    cost = price_for(pricing, count)
+    users = billable_user_count(state.company)
+    cost = price_for(pricing, count, users)
     wallet_for(state.company)
     ref = f"feature-renew:{state.pk}:{state.next_charge_at.isoformat()}"
     try:
         change_balance(
             state.company, -cost, kind="feature_charge",
             reference=ref,
-            description=f"Renew {state.feature.label}: {count} staff / {PERIOD_DAYS} days",
+            description=f"Renew {state.feature.label}: {users} users, {count} employees / {pricing.billing_period}",
         )
     except ValueError:
         state.enabled = False
@@ -140,7 +159,7 @@ def renew_feature(state):
             description=f"{state.feature.label} suspended: insufficient wallet credits",
         )
         return "suspended"
-    state.next_charge_at = timezone.now() + timedelta(days=PERIOD_DAYS)
+    state.next_charge_at = timezone.now() + period_duration(pricing)
     state.save(update_fields=["next_charge_at", "updated_at"])
     return "renewed"
 
@@ -174,3 +193,126 @@ def confirm_purchase(purchase_id, payment):
     purchase.paid_at = timezone.now()
     purchase.save(update_fields=["payment_id", "status", "paid_at"])
     return purchase
+
+
+# Bundles use the same transactional wallet ledger as the existing 30-day features.
+# Existing single-feature pricing and subscriptions are unaffected.
+from uuid import uuid4
+from .models import FeatureBundle, CompanyBundleAccess
+
+
+def bundle_is_usable(access, now=None):
+    """Expired packages never grant access; permanent packages do not expire."""
+    now = now or timezone.now()
+    if not access.enabled or not access.bundle.is_active:
+        return False
+    if access.billing_type_at_purchase == "per_use":
+        return access.uses_remaining > 0
+    return access.valid_until is None or access.valid_until > now
+
+
+@transaction.atomic
+def purchase_feature_bundle(company, bundle, actor):
+    """Charge the *server's* published credit price and grant scoped entitlement.
+
+    Weekly/daily/hourly purchases extend from the unexpired end; permanent
+    purchases are not charged twice. Per-use purchases prepay exactly one
+    usage token; only trusted server operations may consume that token.
+    """
+    bundle = FeatureBundle.objects.get(pk=bundle.pk, is_active=True)
+    if not bundle.features.filter(is_active=True).exists():
+        raise ValueError("This label has no active features.")
+    if not Decimal("0.01") <= bundle.price_credits <= Decimal("1000000.00"):
+        raise ValueError("Invalid published price for this label.")
+    wallet_for(company)
+    now = timezone.now()
+    access, created = CompanyBundleAccess.objects.select_for_update().get_or_create(
+        company=company, bundle=bundle,
+        defaults={"enabled": False},
+    )
+    if access.billing_type_at_purchase == "permanent" and access.enabled and access.valid_until is None:
+        return access, ZERO
+
+    users = billable_user_count(company)
+    price = (
+        bundle.price_credits
+        + bundle.per_user_credits * users
+        + (bundle.activation_credits if created or not access.enabled else ZERO)
+    )
+    if price > Decimal("1000000.00"):
+        raise ValueError("Bundle charge is above the maximum allowed.")
+    # Price and authorization are never accepted from the browser.
+    change_balance(
+        company, -price, kind="bundle_charge",
+        reference=f"bundle-purchase:{uuid4().hex}",
+        description=f"Feature label: {bundle.name} ({bundle.billing_type}); {users} login users",
+        actor=actor,
+    )
+    if bundle.billing_type == "per_use":
+        access.uses_remaining += 1
+        access.valid_until = None
+    elif bundle.billing_type == "permanent":
+        access.uses_remaining = 0
+        access.valid_until = None
+    else:
+        periods = {"hourly": timedelta(hours=1), "daily": timedelta(days=1),
+                   "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
+        if bundle.billing_type not in periods:
+            raise ValueError("Invalid billing period.")
+        start = max(now, access.valid_until) if access.enabled and access.valid_until else now
+        access.valid_until = start + periods[bundle.billing_type]
+        access.uses_remaining = 0
+    access.enabled = True
+    access.last_price_credits = price
+    access.billing_type_at_purchase = bundle.billing_type
+    access.purchased_at = now
+    access.save(update_fields=[
+        "enabled", "valid_until", "uses_remaining", "last_price_credits",
+        "billing_type_at_purchase", "purchased_at", "updated_at",
+    ])
+    return access, price
+
+
+@transaction.atomic
+def disable_feature_bundle(company, bundle):
+    """Stop access, without changing purchases or refunding prepaid credits."""
+    access = CompanyBundleAccess.objects.select_for_update().filter(
+        company=company, bundle=bundle,
+    ).first()
+    if access and access.enabled:
+        access.enabled = False
+        access.save(update_fields=["enabled", "updated_at"])
+    return access
+
+
+@transaction.atomic
+def consume_bundle_use(company, bundle, feature, *, operation_ref, actor=None):
+    """Backend-only hook: call within the actual metered operation's transaction.
+
+    This is deliberately NOT exposed as a browser API: browser-reported usage
+    is untrusted. Hook to a real server-side completed operation with a stable
+    unique operation_ref; the caller must enforce RBAC independently.
+    """
+    if not operation_ref or len(str(operation_ref)) > 110:
+        raise ValueError("A stable operation reference is required.")
+    reference = f"bundle-use:{company.pk}:{operation_ref}"
+    if CreditLedger.objects.filter(reference=reference, company=company).exists():
+        return False
+    access = CompanyBundleAccess.objects.select_for_update().select_related("bundle").filter(
+        company=company, bundle=bundle,
+    ).first()
+    if (not access or access.billing_type_at_purchase != "per_use"
+        or not bundle_is_usable(access)
+        or not access.bundle.features.filter(pk=feature.pk, is_active=True).exists()):
+        raise ValueError("No prepaid use is available for this feature.")
+    access.uses_remaining -= 1
+    if access.uses_remaining == 0:
+        access.enabled = False
+    access.save(update_fields=["uses_remaining", "enabled", "updated_at"])
+    wallet_for(company)
+    change_balance(
+        company, ZERO, kind="bundle_use", reference=reference,
+        description=f"Used {feature.label} via {bundle.name}",
+        actor=actor,
+    )
+    return True

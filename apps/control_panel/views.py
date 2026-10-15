@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 from urllib.parse import quote
 
@@ -31,17 +32,20 @@ from apps.employees.models import Employee
 from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
-from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment
+from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
 from apps.vehicles.models import Vehicle
+from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger
+from apps.credits.storage_forms import StorageCreditPolicyForm
+from apps.saas.feature_discovery import sync_existing_modules
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
-from apps.accounts.permissions import can_delegate
+from apps.accounts.permissions import can_delegate, panel_permission
 from apps.roles.models import Role
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
     PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
-    PlanBuilderForm, FeatureGroupForm, PlanFeatureForm,
+    PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
 )
 
 
@@ -380,11 +384,75 @@ def subscription_payments(request):
 
 @panel_admin_required
 def storage(request):
+    """Storage rate controls and live previews; page views never debit a wallet."""
+    policy = StorageCreditPolicy.objects.order_by("pk").first()
+    can_edit_pricing = panel_permission(request.user, "storage", "edit")
+    if request.method == "POST" and not can_edit_pricing:
+        return HttpResponseForbidden("Platform storage pricing edit permission required.")
+
+    policy_form = StorageCreditPolicyForm(
+        request.POST if request.method == "POST" else None, instance=policy,
+    )
+    if request.method == "POST" and policy_form.is_valid():
+        with transaction.atomic():
+            saved = policy_form.save()
+            # Keep a single effective published rule, including for older databases
+            # which may already have multiple policy records.
+            StorageCreditPolicy.objects.exclude(pk=saved.pk).update(is_active=False)
+        messages.success(
+            request,
+            "Storage per-GB rate saved. Wallets are only charged by the scheduled storage billing command.",
+        )
+        return redirect("panel:storage")
+
     qs = StorageUsage.objects.select_related("company").order_by("-date")
     qs, company_id = _company_filter(request, qs)
     totals = qs.aggregate(bytes=Sum("bytes_used"), files=Sum("file_count"))
     snapshot_count = qs.count()
     covered_companies = qs.values("company_id").distinct().count()
+
+    # Current storage is calculated from REAL owned MediaFile rows rather than
+    # summing dated StorageUsage snapshots, which would double-count files.
+    company_rows = Company.objects.order_by("name").only("id", "name")
+    if company_id:
+        company_rows = company_rows.filter(pk=company_id)
+    company_page = Paginator(company_rows, 50).get_page(request.GET.get("live_page"))
+    company_rows = list(company_page.object_list)
+    usage = {
+        row["company_id"]: row
+        for row in MediaFile.objects.filter(company__in=company_rows)
+        .values("company_id").annotate(bytes=Sum("size_bytes"), files=Count("id"))
+    }
+    period = (
+        timezone.localdate().isoformat()
+        if policy and policy.billing_period == "daily"
+        else timezone.localdate().strftime("%Y-%m")
+    )
+    references = {
+        str(company.pk): f"storage:{company.pk}:{policy.billing_period}:{period}"
+        for company in company_rows
+    } if policy else {}
+    charged_refs = set(
+        CreditLedger.objects.filter(reference__in=references.values())
+        .values_list("reference", flat=True)
+    ) if references else set()
+    live_rows = []
+    for company in company_rows:
+        info = usage.get(company.pk) or {}
+        bytes_used = max(0, int(info.get("bytes") or 0))
+        used_gb = Decimal(bytes_used) / Decimal(1024 ** 3)
+        billable = max(Decimal("0"), used_gb - (policy.included_gb if policy else Decimal("0")))
+        rate = policy.credits_per_gb if policy else Decimal("0")
+        estimated = (billable * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        live_rows.append({
+            "company": company,
+            "bytes_used": bytes_used,
+            "file_count": info.get("files") or 0,
+            "used_gb": used_gb.quantize(Decimal("0.001")),
+            "billable_gb": billable.quantize(Decimal("0.001")),
+            "estimated_credits": estimated,
+            "already_billed": references.get(str(company.pk)) in charged_refs,
+        })
     return render(request, "control_panel/storage.html", {
         "page_title": "Storage", "active": "storage",
         "rows": _paginate(request, qs),
@@ -393,6 +461,13 @@ def storage(request):
         "snapshot_count": snapshot_count,
         "covered_companies": covered_companies,
         "company_id": company_id, "companies": _company_choices(),
+        "storage_policy_form": policy_form,
+        "storage_policy": policy,
+        "can_edit_storage_pricing": can_edit_pricing,
+        "live_storage_rows": live_rows,
+        "live_storage_count": company_page.paginator.count,
+        "live_storage_page": company_page,
+        "storage_period": period,
     })
 
 
@@ -1286,16 +1361,36 @@ def plan_edit(request, pk):
 
 @panel_admin_required
 def feature_catalog(request):
-    all_features = PlanFeature.objects.all()
-    groups = FeatureGroup.objects.select_related("parent").prefetch_related("features")
+    """List configured paid labels only; do not auto-discover or alter RBAC catalog."""
     return render(request, "control_panel/feature_catalog.html", {
-        "page_title": "Feature Groups", "active": "features",
-        "groups": groups.all(),
-        "group_total": groups.count(),
-        "feature_total": all_features.count(),
-        "enabled_features": all_features.filter(is_active=True).count(),
-        "disabled_features": all_features.filter(is_active=False).count(),
+        "page_title": "Paid Feature Labels", "active": "features",
+        "bundles": FeatureBundle.objects.prefetch_related("features").all(),
     })
+
+
+@panel_admin_required
+def feature_bundle_create(request):
+    return _save_form(request, FeatureBundleForm, title="Create Paid Feature Label",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+def feature_bundle_edit(request, pk):
+    obj = get_object_or_404(FeatureBundle, pk=pk)
+    return _save_form(request, FeatureBundleForm, instance=obj, title="Edit Paid Feature Label",
+                      active="features", cancel_url="panel:features")
+
+
+@panel_admin_required
+@require_POST
+def feature_sync(request):
+    """Backwards-compatible administrator-only sync, intentionally hidden from /features/."""
+    if not panel_permission(request.user, "features", "edit"):
+        return HttpResponseForbidden("Feature catalog edit permission required.")
+    with transaction.atomic():
+        created = sync_existing_modules()
+    messages.success(request, f"Discovered {len(created)} new backend modules. No prices or access grants were changed.")
+    return redirect("panel:features")
 
 
 @panel_admin_required

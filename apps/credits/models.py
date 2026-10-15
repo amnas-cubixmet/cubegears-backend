@@ -27,6 +27,9 @@ class FeatureCreditPrice(models.Model):
     feature = models.OneToOneField("saas.PlanFeature", on_delete=models.PROTECT, related_name="credit_price")
     base_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     per_staff_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    billing_period = models.CharField(max_length=8, choices=[("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "30 days")], default="monthly")
     is_available = models.BooleanField(default=True)
 
 
@@ -67,6 +70,8 @@ class CreditPurchase(models.Model):
     status = models.CharField(max_length=16, default="pending", db_index=True)
     receipt = models.CharField(max_length=40, unique=True)
     order_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    payment_link_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    checkout_url = models.URLField(max_length=500, blank=True)
     payment_id = models.CharField(max_length=80, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     paid_at = models.DateTimeField(null=True, blank=True)
