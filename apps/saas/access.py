@@ -47,13 +47,27 @@ def feature_allowed(user, permission):
     from apps.credits.models import CompanyCreditFeature
     from django.utils import timezone
     if not PlanFeature.objects.filter(key=module, is_active=True).exists():
-        return True
+        # Strict mode is an explicit migration/rollout choice. It prevents
+        # active API routes from accidentally bypassing paid entitlements
+        # just because their catalog entry was never seeded.
+        return not getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)
     individually_enabled = CompanyCreditFeature.objects.filter(
         company=user.company, feature__key=module, feature__is_active=True,
         enabled=True, next_charge_at__gt=timezone.now(),
     ).exists()
     if individually_enabled:
         return True
+
+    # A company-paid postpaid feature is shared by all role-authorized users.
+    # Nonpayment suspension removes access immediately without waiting for a
+    # Celery cycle; the frontend never decides the permission.
+    if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
+        from apps.credits.models import CompanyPostpaidFeature
+        if CompanyPostpaidFeature.objects.filter(
+            company=user.company, feature__key=module,
+            feature__is_active=True, enabled=True, suspended=False,
+        ).exists():
+            return True
 
     # A paid label grants feature entitlement, never role permission.
     # Time-limited access stops at expiry without needing a cron job.

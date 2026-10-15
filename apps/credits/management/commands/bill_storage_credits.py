@@ -3,7 +3,8 @@
 Storage is a prepaid-period snapshot of current stored bytes (not historical
 byte-hours). The ledger reference prevents double charges on repeated runs.
 """
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
+from django.conf import settings
 from apps.companies.models import Company
 from apps.credits.models import StorageCreditPolicy
 from apps.credits.storage_billing import charge_storage_period, storage_quote
@@ -16,6 +17,8 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        if settings.STORAGE_MONTHLY_METERED_ENABLED:
+            raise CommandError("Monthly metered storage is enabled. Do NOT run legacy snapshot billing; use settle_metered_storage.")
         policy = StorageCreditPolicy.objects.filter(is_active=True).order_by("pk").first()
         if not policy:
             self.stdout.write("Storage billing is disabled. Nothing charged.")
