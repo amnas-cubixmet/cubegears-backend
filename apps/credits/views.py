@@ -17,6 +17,7 @@ from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent
 from .service import wallet_for, staff_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from .hosted_checkout import reconcile_hosted_purchase
 
 
 class CreditsOrderThrottle(UserRateThrottle):
@@ -265,6 +266,21 @@ class CreditWebhookView(APIView):
         envelope = data.get("payload") or {}
         if not isinstance(envelope, dict):
             return Response({"message": "Invalid webhook payload."}, status=400)
+        # A signed Payment Link event can confirm payment even when the buyer
+        # closes the browser before returning to CubeGear.
+        if kind == "payment_link.paid":
+            link = ((envelope.get("payment_link") or {}).get("entity") or {})
+            link_id = link.get("id") if isinstance(link, dict) else None
+            purchase = CreditPurchase.objects.filter(payment_link_id=link_id).first() if link_id else None
+            if purchase and purchase.status == "pending":
+                try:
+                    outcome = reconcile_hosted_purchase(purchase)
+                except GatewayError:
+                    return Response({"message": "Provider verification pending."}, status=503)
+                except ValueError:
+                    return Response({"message": "Payment link verification failed."}, status=400)
+                if outcome.status != "credited":
+                    return Response({"message": "Payment capture pending."}, status=503)
         with transaction.atomic():
             if CreditWebhookEvent.objects.filter(event_id=delivery_id).exists():
                 return Response({"received": True, "duplicate": True})
@@ -288,8 +304,8 @@ class CreditWebhookView(APIView):
                     wallet_for(purchase.company)
                     change_balance(
                         purchase.company, -purchase.credits,
-                        kind="refund", reference=f"credit-refund:{purchase.order_id}",
-                        description=f"Fully refunded purchase {purchase.order_id}",
+                        kind="refund", reference=f"credit-refund:{purchase.order_id or purchase.payment_link_id or purchase.pk}",
+                        description=f"Fully refunded purchase {purchase.order_id or purchase.payment_link_id or purchase.pk}",
                         allow_negative=True,
                     )
                     purchase.status = "refunded"
