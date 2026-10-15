@@ -98,9 +98,11 @@ After activation:
 - `/api/v1/saas/credits/features` returns no standalone sale cards.
   `POST .../features/enable` responds 409 rather than charging a module
   that no longer grants access.
-- Legacy prepaid standalone feature renewals are skipped; legacy monthly
-  standalone sampling is disabled in this mode. Already accrued historical
-  liabilities and ledger records are not automatically erased or refunded.
+- Legacy prepaid standalone feature renewals are skipped. Both standalone
+  monthly metering engines stop accruing/repricing, and old standalone monthly
+  settlement skips automatic wallet debits in label-only mode. Existing open
+  sessions and historical liabilities are NOT erased or refunded: operators
+  must close/migrate and reconcile them before production cutover.
 - Purchased labels are checked per company, active status, validity time and
   included published modules. Disabling/expiry revokes access.
 - Test with Company A and Company B plus a staff login, and verify both
