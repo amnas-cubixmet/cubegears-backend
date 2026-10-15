@@ -260,4 +260,7 @@ RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", "")
 CREDIT_FEATURE_ENFORCEMENT_ENABLED = env_bool("CREDIT_FEATURE_ENFORCEMENT_ENABLED", False)
+# When enabled, paid module keys not yet in PlanFeature fail closed rather than
+# silently exposing unpriced operations. Roll out only after catalog reconciliation.
+CREDIT_FEATURE_STRICT_GATE_ENABLED = env_bool("CREDIT_FEATURE_STRICT_GATE_ENABLED", False)
 # Old subscription paywall is retired. Legacy transactions remain for audit history.
