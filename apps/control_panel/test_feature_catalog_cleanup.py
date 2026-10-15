@@ -59,11 +59,15 @@ class PaidFeatureCatalogOnlyTests(TestCase):
         self.assertContains(response, "Stock &amp; Inventory")
         self.assertContains(response, "Edit Package")
 
-    def test_legacy_sync_endpoint_not_available_and_never_repopulates(self):
-        url = "/features/sync/"
-        self.assertEqual(self.client.post(url).status_code, 404)
+    def test_page_view_does_not_automatically_sync_modules(self):
+        response = self.client.get(reverse("panel:features"))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, "Sync Missing Modules")
         self.assertEqual(FeatureGroup.objects.count(), 1)
         self.assertEqual(PlanFeature.objects.count(), 2)
+        # Preserve the existing privileged sync API for historical integrations,
+        # but do not expose it as an action on the feature-pricing page.
+        self.assertEqual(self.client.get(reverse("panel:features-edit")).status_code, 405)
 
     def test_existing_pricing_and_feature_permissions_are_untouched(self):
         self.client.get(reverse("panel:features"))
