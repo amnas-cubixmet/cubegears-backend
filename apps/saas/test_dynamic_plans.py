@@ -1,5 +1,8 @@
 from decimal import Decimal
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
+from datetime import timedelta
+from apps.credits.models import CompanyCreditFeature
 from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.branches.models import Branch
@@ -64,15 +67,15 @@ class DynamicSaasPlanTests(TestCase):
         )
         self.assertEqual(response.status_code, 405, response.data)
 
-    def test_feature_switch_never_overrides_role_permission(self):
-        Subscription.objects.create(
-            company=self.company, branch=self.branch, plan="Professional",
-            status="Active", plan_definition=self.plan, seats=1,
-        )
-        # Declared feature with no enabled plan entitlement: deny despite role '*'.
+    @override_settings(CREDIT_FEATURE_ENFORCEMENT_ENABLED=True)
+    def test_credit_feature_switch_never_overrides_role_permission(self):
+        # A paid module must be active as well as permitted by the user's role.
         self.assertFalse(user_has_permission(self.user, "customers.view"))
         self.assertTrue(user_has_permission(self.user, "invoices.view"))
-        PlanFeatureAccess.objects.create(plan=self.plan, feature=self.feature, enabled=True)
+        CompanyCreditFeature.objects.create(
+            company=self.company, feature=self.feature, enabled=True,
+            next_charge_at=timezone.now() + timedelta(days=30),
+        )
         fresh_user = User.objects.get(pk=self.user.pk)
         self.assertTrue(user_has_permission(fresh_user, "customers.view"))
         fresh_user.role.permissions = ["invoices.view"]
