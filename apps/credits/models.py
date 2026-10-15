@@ -152,3 +152,41 @@ class StorageCreditPolicy(models.Model):
 
     def __str__(self):
         return "Storage wallet billing policy"
+
+
+class StorageMeterCursor(models.Model):
+    """Last real server-side media measurement; one lock per tenant."""
+    company = models.OneToOneField("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_cursor")
+    sampled_at = models.DateTimeField(null=True, blank=True)
+    used_bytes = models.BigIntegerField(default=0)
+    billable_gb = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal("0"))
+    rate_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class StorageMeterPeriod(models.Model):
+    """One month of time-weighted measured usage and a single settlement."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="metered_storage_periods")
+    period = models.CharField(max_length=7)
+    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
+    covered_seconds = models.PositiveBigIntegerField(default=0)
+    settled_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["company", "period"], name="storage_meter_unique_month")]
+
+
+class StorageMeterReading(models.Model):
+    """Immutable reading log for reconciliation and audit."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="storage_meter_readings")
+    sampled_at = models.DateTimeField()
+    used_bytes = models.BigIntegerField(default=0)
+    billable_gb = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal("0"))
+    rate_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    covered_seconds = models.PositiveIntegerField(default=0)
+    accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
+
+    class Meta:
+        ordering = ["-sampled_at", "-pk"]
+        indexes = [models.Index(fields=["company", "sampled_at"], name="storage_read_company_dt")]
