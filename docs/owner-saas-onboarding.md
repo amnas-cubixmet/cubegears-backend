@@ -18,7 +18,7 @@ The catalogue audit registers actual permission modules without inventing prices
 
 ## Existing companies
 
-The migration does not lock existing workshop modules. It identifies an existing owner only when the company's recorded email matches exactly one user with that company's system `SUPER_ADMIN` role. It never guesses another staff member. For other companies, choose the correct active owner in `/companies/<id>/edit/` before enabling billing access. The platform company editor scopes owner choices to that tenant. Enable **Require paid features** there when ready to apply the new module policy to a legacy company.
+The owner-identification migration (0003) preserves the previous module rollout; migration 0004 below enables the paid-module lock for existing companies. It identifies an existing owner only when the company's recorded email matches exactly one user with that company's system `SUPER_ADMIN` role. It never guesses another staff member. For other companies, choose the correct active owner in `/companies/<id>/edit/` before enabling billing access. The platform company editor scopes owner choices to that tenant. Migration 0004 enables **Require paid features** for existing companies. The platform editor still allows an explicit policy override.
 
 Company-facing APIs cannot change ownership, the module enforcement policy or the tenant identifier. Disabling an owner or their company removes SaaS access. Ownership can be repaired by a platform administrator through the company editor.
 
@@ -46,3 +46,10 @@ Each configured module has a managed single-module label with a positive per-act
 Saving or updating a rate never activates a company, charges a wallet or creates company access. In strictly gated companies Dashboard now requires its own active entitlement, like every other paid module; purchasing a different module does not grant Dashboard. Account purchase/recovery controls remain available to the owner. Existing companies still require **Require paid features** to be ON to enforce their paid module policy. Unpublishing a module label revokes the access granted by that label; records remain stored.
 
 Run `python manage.py migrate` to install `credits.0011_modulepricelabel` before using the page. This migration creates only the price mapping table; it sets no monetary amounts and does not alter existing company entitlements.
+
+
+## Existing company access rollout
+
+`companies.0004_lock_existing_company_modules` turns on `require_paid_features` for existing companies that still had the legacy unrestricted policy. It changes no owner assignments, wallet balances, ledger entries or purchased feature access. Existing paid modules remain available; unpurchased modules are denied. Owners retain the SaaS purchase workspace; staff require an active company module plus their role permission. Companies without a recorded owner need the platform administrator to assign the correct tenant owner using the company editor.
+
+Deploy alongside the frontend account-only shell and run `python manage.py migrate`. This rollout applies the requested default lock to existing companies; reversing the migration does not automatically remove that lock. Platform administrators can still explicitly manage a company's policy in the company editor.
