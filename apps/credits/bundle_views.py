@@ -21,6 +21,20 @@ class BundleInput(serializers.Serializer):
 
 
 def _public_bundle(bundle, access=None):
+    active_features = [
+        {"key": feature.key, "label": feature.label}
+        for feature in bundle.features.all() if feature.is_active
+    ]
+    # Expose the platform's real readiness state, not a browser-only toggle.
+    disabled_reason = (
+        "FEATURE_ENTITLEMENTS_NOT_ENABLED"
+        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+        else "METERED_OPERATION_NOT_READY"
+        if bundle.billing_type == "per_use"
+        else "FEATURE_LABEL_EMPTY"
+        if not active_features
+        else None
+    )
     return {
         "id": bundle.pk, "key": bundle.key, "name": bundle.name,
         "description": bundle.description,
@@ -28,15 +42,13 @@ def _public_bundle(bundle, access=None):
         "activationCredits": str(bundle.activation_credits),
         "perUserCredits": str(bundle.per_user_credits),
         "billingType": bundle.billing_type,
-        "features": [
-            {"key": feature.key, "label": feature.label}
-            for feature in bundle.features.all() if feature.is_active
-        ],
+        "features": active_features,
         "active": bundle_is_usable(access) if access else False,
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
         "meteredReady": bundle.billing_type != "per_use",
-        "purchaseEnabled": bundle.billing_type != "per_use" and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED,
+        "purchaseEnabled": disabled_reason is None,
+        "purchaseDisabledReason": disabled_reason,
     }
 
 
