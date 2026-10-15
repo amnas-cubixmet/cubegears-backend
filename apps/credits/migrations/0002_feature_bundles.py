@@ -39,6 +39,11 @@ class Migration(migrations.Migration):
                 ("valid_until", models.DateTimeField(blank=True, null=True)),
                 ("uses_remaining", models.PositiveIntegerField(default=0)),
                 ("last_price_credits", models.DecimalField(decimal_places=2, default=Decimal("0.00"), max_digits=12)),
+                ("billing_type_at_purchase", models.CharField(choices=[
+                    ("permanent", "Permanent"), ("weekly", "Weekly (7 days)"),
+                    ("daily", "Daily (24 hours)"), ("hourly", "Hourly (1 hour)"),
+                    ("per_use", "Per use (one prepaid operation)"),
+                ], default="weekly", max_length=15)),
                 ("purchased_at", models.DateTimeField(default=django.utils.timezone.now)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("bundle", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="company_access", to="credits.featurebundle")),
