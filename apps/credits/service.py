@@ -187,7 +187,7 @@ def bundle_is_usable(access, now=None):
     now = now or timezone.now()
     if not access.enabled or not access.bundle.is_active:
         return False
-    if access.bundle.billing_type == "per_use":
+    if access.billing_type_at_purchase == "per_use":
         return access.uses_remaining > 0
     return access.valid_until is None or access.valid_until > now
 
@@ -211,7 +211,7 @@ def purchase_feature_bundle(company, bundle, actor):
         company=company, bundle=bundle,
         defaults={"enabled": False},
     )
-    if bundle.billing_type == "permanent" and access.enabled and access.valid_until is None and access.uses_remaining == 0:
+    if access.billing_type_at_purchase == "permanent" and access.enabled and access.valid_until is None:
         return access, ZERO
 
     price = bundle.price_credits
@@ -238,10 +238,11 @@ def purchase_feature_bundle(company, bundle, actor):
         access.uses_remaining = 0
     access.enabled = True
     access.last_price_credits = price
+    access.billing_type_at_purchase = bundle.billing_type
     access.purchased_at = now
     access.save(update_fields=[
         "enabled", "valid_until", "uses_remaining", "last_price_credits",
-        "purchased_at", "updated_at",
+        "billing_type_at_purchase", "purchased_at", "updated_at",
     ])
     return access, price
 
@@ -274,7 +275,7 @@ def consume_bundle_use(company, bundle, feature, *, operation_ref, actor=None):
     access = CompanyBundleAccess.objects.select_for_update().select_related("bundle").filter(
         company=company, bundle=bundle,
     ).first()
-    if (not access or access.bundle.billing_type != "per_use"
+    if (not access or access.billing_type_at_purchase != "per_use"
         or not bundle_is_usable(access)
         or not access.bundle.features.filter(pk=feature.pk, is_active=True).exists()):
         raise ValueError("No prepaid use is available for this feature.")
