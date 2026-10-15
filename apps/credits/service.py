@@ -86,6 +86,12 @@ def enable_paid_feature(company, feature, actor):
     ).first()
     if not pricing:
         raise ValueError("This feature is not enabled by CubeGear platform staff.")
+    from django.conf import settings
+    if settings.CREDIT_POSTPAID_BILLING_ENABLED and pricing.billing_period == "monthly":
+        if not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
+            raise ValueError("Strict feature access must be enabled before postpaid activation.")
+        from .postpaid_billing import enable_postpaid_feature
+        return enable_postpaid_feature(company, feature, pricing, actor)
     wallet_for(company)
     state, _ = CompanyCreditFeature.objects.select_for_update().get_or_create(
         company=company, feature=feature,
@@ -110,6 +116,11 @@ def enable_paid_feature(company, feature, actor):
 
 @transaction.atomic
 def disable_paid_feature(company, feature, actor):
+    from django.conf import settings
+    if settings.CREDIT_POSTPAID_BILLING_ENABLED:
+        from .postpaid_billing import disable_postpaid_feature
+        if disable_postpaid_feature(company, feature, actor):
+            return
     state = CompanyCreditFeature.objects.select_for_update().filter(company=company, feature=feature).first()
     if not state or not state.enabled:
         return
