@@ -54,10 +54,11 @@ class PaidFeatureCatalogOnlyTests(TestCase):
             self.assertNotContains(response, excluded)
         self.assertContains(response, "Paid Feature Labels")
         self.assertContains(response, "Workshop Pro")
-        self.assertContains(response, "50.00")
+        self.assertNotContains(response, "base credits")
+        self.assertContains(response, "5.00")
         self.assertContains(response, "Job Cards")
         self.assertContains(response, "Stock &amp; Inventory")
-        self.assertContains(response, "Edit Package")
+        self.assertContains(response, "Edit Label")
 
     def test_page_view_does_not_automatically_sync_modules(self):
         response = self.client.get(reverse("panel:features"))
