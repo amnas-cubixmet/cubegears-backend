@@ -422,6 +422,23 @@ class ModulePriceLabel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class MonthlyBillingPolicy(models.Model):
+    """Legacy monthly collection policy; retained for migration/runtime compatibility."""
+    enabled = models.BooleanField(default=False)
+    due_day = models.PositiveSmallIntegerField(default=5)
+    lock_after_due = models.BooleanField(default=True)
+    feature_meter_interval_seconds = models.PositiveIntegerField(default=300)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class MonthlyBillingCycle(models.Model):
+    """Immutable due date for a legacy monthly collection period."""
+    period = models.CharField(max_length=7, unique=True)
+    due_at = models.DateTimeField()
+    lock_after_due = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class BillingCyclePolicy(models.Model):
     """Single global, opt-in calendar-month postpaid settlement policy."""
     singleton = models.PositiveSmallIntegerField(unique=True, default=1, editable=False)
