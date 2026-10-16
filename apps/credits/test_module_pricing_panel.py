@@ -30,7 +30,8 @@ class ModulePricingPanelTests(TestCase):
         for module in module_inventory():
             if module['billable']:
                 self.assertContains(result, 'id="module-' + module['key'] + '"')
-        self.assertContains(result, 'id="module-dashboard"')
+        for free_key in ('dashboard', 'settings', 'staff', 'billing'):
+            self.assertNotContains(result, 'id="module-' + free_key + '"')
         self.assertFalse(PlanFeature.objects.exists())
         self.assertFalse(FeatureBundle.objects.exists())
         self.assertFalse(ModulePriceLabel.objects.exists())
@@ -94,19 +95,23 @@ class ModulePricingPanelTests(TestCase):
         self.assertEqual(catalog[0]['perUserCredits'], '12.50')
         self.assertEqual(catalog[0]['totalCredits'], '25.00')
         self.assertFalse(user_has_permission(staff, 'jobs.view'))
-        self.assertFalse(user_has_permission(owner, 'dashboard.view'))
+        self.assertTrue(user_has_permission(owner, 'dashboard.view'))
         purchase = api.post('/api/v1/saas/credits/bundles/purchase', {'bundleId':catalog[0]['id']}, format='json')
         self.assertEqual(purchase.status_code, 200, purchase.data)
         self.assertEqual(purchase.data['chargedCredits'], '25.00')
         self.assertTrue(user_has_permission(staff, 'jobs.view'))
-        self.assertFalse(user_has_permission(owner, 'dashboard.view'))
-        # Dashboard is an independently priced module, not a free side effect.
-        self.client.post(self.url, self.payload(module='dashboard', per_user_credits='2'))
-        dashboard = ModulePriceLabel.objects.get(feature__key='dashboard')
-        self.assertEqual(api.post('/api/v1/saas/credits/bundles/purchase', {'bundleId':dashboard.bundle_id}, format='json').status_code, 200)
+        self.assertTrue(user_has_permission(owner, 'dashboard.view'))
+        # Free modules need no price or purchase in strict tenant mode.
+        for free_key in ('dashboard', 'settings', 'staff', 'billing'):
+            self.assertEqual(self.client.post(
+                self.url, self.payload(module=free_key, per_user_credits='2')
+            ).status_code, 400)
+        self.assertFalse(ModulePriceLabel.objects.filter(
+            feature__key__in=['dashboard', 'settings', 'staff', 'billing'],
+        ).exists())
         self.assertTrue(user_has_permission(owner, 'dashboard.view'))
         self.assertTrue(user_has_permission(staff, 'dashboard.view'))
-        self.assertIn('dashboard', api.get('/api/v1/saas/credits/access').data['enabledModules'])
+        self.assertIn('dashboard', api.get('/api/v1/saas/credits/access').data['freeModules'])
         api.force_authenticate(staff)
         self.assertEqual(api.get('/api/v1/saas/credits/overview').status_code, 403)
 
