@@ -6,6 +6,22 @@
   const navigation = root?.querySelector("[data-credit-tab-navigation]");
   if (!root || !navigation) return;
 
+  // Unlimited uses automatic ordering without a numeric limit in the form.
+  // Custom order enables the number field. Django also enforces this choice,
+  // so the behavior remains safe if JavaScript is disabled.
+  const orderMode = root.querySelector("[data-credit-order-mode]");
+  const orderValue = root.querySelector("[data-credit-order-value]");
+  if (orderMode && orderValue) {
+    const syncOrderMode = () => {
+      const manual = orderMode.value === "manual";
+      orderValue.disabled = !manual;
+      orderValue.required = manual;
+      orderValue.setAttribute("aria-disabled", String(!manual));
+    };
+    orderMode.addEventListener("change", syncOrderMode);
+    syncOrderMode();
+  }
+
   const buttons = Array.from(navigation.querySelectorAll("[data-credit-tab]"));
   const panels = Array.from(root.querySelectorAll("[data-credit-panel]"));
   const keys = buttons.map(button => button.dataset.creditTab);

@@ -6,6 +6,14 @@ from .models import CreditPackage, FeatureCreditPrice, StorageCreditPolicy
 
 
 class CreditPackageForm(forms.ModelForm):
+    # "Unlimited" means no administrator-chosen sequence number is required:
+    # new packages are appended using the next valid database sort position.
+    sort_order_mode = forms.ChoiceField(
+        choices=[("unlimited", "Unlimited (automatic)"), ("manual", "Custom order")],
+        initial="unlimited",
+        required=False,
+    )
+
     class Meta:
         model = CreditPackage
         fields = ["name", "credits", "price_inr", "is_active", "sort_order"]
@@ -20,8 +28,11 @@ class CreditPackageForm(forms.ModelForm):
         )
 
     def clean_sort_order(self):
+        mode = self.data.get("sort_order_mode", "").strip()
         value = self.cleaned_data.get("sort_order")
-        if value is not None:
+        if mode == "manual" and value is None:
+            raise forms.ValidationError("Enter a non-negative display order number.")
+        if mode != "unlimited" and value is not None:
             return value
         if self.instance.pk is not None:
             # A blank field during an edit must not reorder the package.
