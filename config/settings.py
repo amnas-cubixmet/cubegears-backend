@@ -302,6 +302,14 @@ if CREDIT_BILLING_CELERY_ENABLED:
         },
     }
 
+# The calendar task is safe when the platform policy is disabled. It runs daily
+# to finalize closed months and retry due credit withdrawals after recharge.
+if CREDIT_BILLING_CELERY_ENABLED:
+    CELERY_BEAT_SCHEDULE["cubegear-settle-calendar-credit-statements"] = {
+        "task": "credits.settle_calendar_cycles",
+        "schedule": crontab(hour=0, minute=10),
+    }
+
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
 RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", "")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", "")
