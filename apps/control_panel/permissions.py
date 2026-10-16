@@ -8,6 +8,8 @@ SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 
 
 
 def route_allowed(user, route):
+    if route in ('calendar-credit-billing', 'credit-cycle'):
+        return panel_permission(user, 'credits', 'view')
     if route == 'feature-pricing':
         return panel_permission(user, 'features', 'view')
     if route == 'payment-settings':
