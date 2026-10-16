@@ -165,6 +165,9 @@ def settle_company_storage(company, period, *, at=None, dry_run=False):
     """Bill only a CLOSED calendar month; retries never duplicate wallet debits."""
     if _policy() is None:
         return "disabled", ZERO
+    from .calendar_billing import active_policy
+    if active_policy():
+        return "calendar_policy", ZERO
     at = at or timezone.now()
     start, end = _month_bounds(period)
     if at < end:
