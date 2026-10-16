@@ -73,7 +73,15 @@ class BundleListView(APIView):
     def get(self, request):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
-        bundles = list(FeatureBundle.objects.filter(is_active=True).prefetch_related("features"))
+        # Old published labels can still reference Dashboard/Settings/Staff.
+        # Exclude free-only labels from the paid marketplace rather than
+        # presenting free core access as an activation or renewal product.
+        bundles = [
+            bundle
+            for bundle in FeatureBundle.objects.filter(is_active=True).prefetch_related("features")
+            if any(feature.is_active and feature.key not in FREE_TENANT_MODULES
+                   for feature in bundle.features.all())
+        ]
         accesses = {
             a.bundle_id: a for a in CompanyBundleAccess.objects.filter(
                 company=request.user.company, bundle_id__in=[b.pk for b in bundles]
