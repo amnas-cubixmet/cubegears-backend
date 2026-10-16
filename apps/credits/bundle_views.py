@@ -32,7 +32,9 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
     ]
     # Expose the platform's real readiness state, not a browser-only toggle.
     disabled_reason = (
-        "FEATURE_ENTITLEMENTS_NOT_ENABLED"
+        "POSTPAID_MONTHLY_ONLY"
+        if effective_policy() and bundle.billing_type != "monthly"
+        else "FEATURE_ENTITLEMENTS_NOT_ENABLED"
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
         else "METERED_OPERATION_NOT_READY"
         if bundle.billing_type == "per_use"
