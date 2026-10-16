@@ -16,11 +16,12 @@ from django.utils.text import slugify
 from apps.accounts.permissions import MODEL_PERMISSION_PREFIX
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
+from apps.saas.access import FREE_TENANT_MODULES
 
 
 CORE_MODULES = frozenset({
     "billing", "company", "roles",
-})
+}) | FREE_TENANT_MODULES
 
 
 def discover_modules():

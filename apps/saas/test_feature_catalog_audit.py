@@ -17,7 +17,8 @@ class CatalogAuditTests(TestCase):
         self.assertIn("staff", discovered)
         self.assertIn("storage", discovered)
         self.assertTrue(discovered["storage"]["priceable"])
-        self.assertFalse(discovered["billing"]["priceable"])
+        for free_key in ("billing", "dashboard", "settings", "staff"):
+            self.assertFalse(discovered[free_key]["priceable"])
         self.assertTrue(discovered["attendance"]["priceable"])
         for key in discovered:
             self.assertTrue(
@@ -40,7 +41,8 @@ class CatalogAuditTests(TestCase):
         self.assertGreater(first, 0)
         self.assertFalse(PlanFeature.objects.filter(is_active=True).exists())
         self.assertTrue(PlanFeature.objects.filter(key="storage").exists())
-        self.assertFalse(PlanFeature.objects.filter(key="billing").exists())
+        for free_key in ("billing", "dashboard", "settings", "staff"):
+            self.assertFalse(PlanFeature.objects.filter(key=free_key).exists())
         call_command("audit_feature_catalog", "--sync", stdout=StringIO())
         self.assertEqual(PlanFeature.objects.count(), first)
         self.assertEqual(FeatureGroup.objects.count(), 1)

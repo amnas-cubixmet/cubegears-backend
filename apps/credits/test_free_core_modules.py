@@ -33,8 +33,9 @@ class FreeCoreModulesTests(TestCase):
         )
         self.role = Role.objects.create(
             company=self.company, name="Owner", code="OWNER",
-            permissions=["dashboard.view", "staff.view", "staff.create", "staff.edit",
-                         "staff.delete", "billing.view", "billing.edit",
+            permissions=["dashboard.view", "settings.view", "settings.manage",
+                         "staff.view", "staff.create", "staff.edit",
+                         "staff.delete", "company.manage", "billing.view", "billing.edit",
                          "jobs.view", "stock.view"],
         )
         self.owner = User.objects.create_user(
@@ -45,7 +46,7 @@ class FreeCoreModulesTests(TestCase):
         self.company.save(update_fields=["owner"])
         self.staff_role = Role.objects.create(
             company=self.company, name="Front Desk", code="FRONT",
-            permissions=["dashboard.view", "staff.view", "staff.create",
+            permissions=["dashboard.view", "settings.view", "staff.view", "staff.create",
                          "jobs.view", "billing.view"],
         )
         self.staff_user = User.objects.create_user(
@@ -54,15 +55,17 @@ class FreeCoreModulesTests(TestCase):
         )
         self.group = FeatureGroup.objects.create(key="free-core-test-group", label="Core")
         self.free_feature = PlanFeature.objects.create(key="staff", label="Staff", group=self.group)
+        self.settings_feature = PlanFeature.objects.create(key="settings", label="Settings", group=self.group)
+        self.roles_feature = PlanFeature.objects.create(key="roles", label="Roles & Permissions", group=self.group)
         self.paid_feature = PlanFeature.objects.create(key="jobs", label="Jobs", group=self.group)
         CreditWallet.objects.create(company=self.company, balance=Decimal("0.00"))
         self.client = APIClient()
         self.client.force_authenticate(self.owner)
 
-    def test_owner_can_open_all_three_free_modules_without_purchase(self):
-        self.assertEqual(FREE_TENANT_MODULES, frozenset({"billing", "dashboard", "staff"}))
-        for code in ("dashboard.view", "staff.view", "staff.create",
-                     "staff.edit", "staff.delete", "billing.view", "billing.edit"):
+    def test_owner_can_open_all_free_modules_without_purchase(self):
+        self.assertEqual(FREE_TENANT_MODULES, frozenset({"billing", "dashboard", "roles", "settings", "staff"}))
+        for code in ("dashboard.view", "settings.view", "settings.manage", "staff.view", "staff.create",
+                     "staff.edit", "staff.delete", "company.manage", "billing.view", "billing.edit"):
             self.assertTrue(user_has_permission(self.owner, code), code)
         self.assertFalse(user_has_permission(self.owner, "jobs.view"))
         self.assertFalse(user_has_permission(self.owner, "stock.view"))
@@ -85,15 +88,91 @@ class FreeCoreModulesTests(TestCase):
     def test_access_reports_free_permissions_separately_from_paid_features(self):
         r = self.client.get("/api/v1/saas/credits/access")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["freeModules"], ["billing", "dashboard", "staff"])
+        self.assertEqual(r.data["freeModules"], ["billing", "dashboard", "roles", "settings", "staff"])
         self.assertEqual(r.data["activeLabelModules"], [])
         self.assertEqual(r.data["enabledModules"], [])
         self.assertIn("dashboard.view", r.data["permissions"])
         self.assertIn("staff.view", r.data["permissions"])
         entitlement = self.client.get("/api/v1/saas/credits/entitlements")
         self.assertEqual(entitlement.status_code, 200)
-        self.assertEqual(entitlement.data["freeModules"], ["billing", "dashboard", "staff"])
+        self.assertEqual(entitlement.data["freeModules"], ["billing", "dashboard", "roles", "settings", "staff"])
         self.assertNotIn("staff", entitlement.data["modules"])
+        self.assertNotIn("settings", entitlement.data["modules"])
+        self.assertNotIn("roles", entitlement.data["modules"])
+
+    def test_settings_is_free_for_role_authorized_users_without_purchased_labels(self):
+        self.assertTrue(user_has_permission(self.owner, "settings.view"))
+        self.assertTrue(user_has_permission(self.owner, "settings.manage"))
+        self.assertTrue(user_has_permission(self.staff_user, "settings.view"))
+        self.assertFalse(user_has_permission(self.staff_user, "settings.manage"))
+        self.client.force_authenticate(self.staff_user)
+        access = self.client.get("/api/v1/saas/credits/access")
+        self.assertEqual(access.status_code, 200)
+        self.assertIn("settings", access.data["freeModules"])
+        self.assertNotIn("settings", access.data["enabledModules"])
+        self.assertEqual(access.data["activeLabelModules"], [])
+
+    def test_roles_and_permissions_are_free_but_still_require_company_admin(self):
+        # Role administration already requires company.manage, independently
+        # of feature billing and without adding any new universal staff access.
+        self.assertTrue(user_has_permission(self.owner, "company.manage"))
+        self.assertFalse(user_has_permission(self.staff_user, "company.manage"))
+        self.assertEqual(self.client.get("/api/v1/roles/").status_code, 200)
+        created = self.client.post(
+            "/api/v1/roles/",
+            {"name": "Read-only Reception", "code": "RECEPTION",
+             "permissions": ["dashboard.view"]},
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
+        self.client.force_authenticate(self.staff_user)
+        self.assertEqual(self.client.get("/api/v1/roles/").status_code, 403)
+        blocked = self.client.post(
+            "/api/v1/roles/", {"name": "Unapproved", "code": "UNAPPROVED",
+                                "permissions": ["dashboard.view"]},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+    def test_old_roles_price_label_is_hidden_and_cannot_charge_wallet(self):
+        old_label = FeatureBundle.objects.create(
+            key="legacy-roles", name="Roles & Permissions", price_credits=Decimal("0.00"),
+            per_user_credits=Decimal("30.00"), billing_type="monthly",
+        )
+        old_label.features.set([self.roles_feature])
+        response = self.client.get("/api/v1/saas/credits/bundles")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(row["id"] == old_label.pk for row in response.data))
+        result = self.client.post(
+            "/api/v1/saas/credits/bundles/purchase",
+            {"bundleId": old_label.pk}, format="json",
+        )
+        self.assertEqual(result.status_code, 409)
+        self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
+
+    def test_old_settings_pricing_is_not_listed_or_charged(self):
+        FeatureCreditPrice.objects.create(
+            feature=self.settings_feature, base_credits=Decimal("30.00"),
+            is_available=True,
+        )
+        legacy = FeatureBundle.objects.create(
+            key="legacy-settings", name="Settings", price_credits=Decimal("0.00"),
+            per_user_credits=Decimal("20.00"), billing_type="monthly",
+        )
+        legacy.features.set([self.settings_feature])
+        response = self.client.get("/api/v1/saas/credits/bundles")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(row["id"] == legacy.pk for row in response.data))
+        # Both old label purchases and standalone purchases must fail closed.
+        purchase = self.client.post(
+            "/api/v1/saas/credits/bundles/purchase",
+            {"bundleId": legacy.pk}, format="json",
+        )
+        self.assertEqual(purchase.status_code, 409)
+        with self.assertRaisesMessage(ValueError, "free"):
+            enable_paid_feature(self.company, self.settings_feature, self.owner)
+        self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
 
     def test_role_removal_blocks_staff_despite_free_tier(self):
         self.staff_role.permissions = ["dashboard.view", "jobs.view"]
@@ -107,7 +186,9 @@ class FreeCoreModulesTests(TestCase):
         discovered = {row["key"]: row for row in module_inventory()}
         self.assertFalse(discovered["staff"]["billable"])
         self.assertFalse(discovered["dashboard"]["billable"])
+        self.assertFalse(discovered["settings"]["billable"])
         self.assertFalse(discovered["billing"]["billable"])
+        self.assertNotIn("roles", discovered)  # Core role APIs use company.manage.
         self.assertTrue(discovered["jobs"]["billable"])
 
         free_bundle = FeatureBundle.objects.create(
@@ -118,13 +199,26 @@ class FreeCoreModulesTests(TestCase):
         free_bundle.features.set([self.free_feature])
         catalog = self.client.get("/api/v1/saas/credits/bundles")
         self.assertEqual(catalog.status_code, 200)
-        offer = next(row for row in catalog.data if row["id"] == free_bundle.pk)
-        self.assertEqual(offer["purchaseDisabledReason"], "FREE_MODULES_ONLY")
-        self.assertFalse(offer["purchaseEnabled"])
+        # Do not advertise old free-only labels as paid products.
+        self.assertFalse(any(row["id"] == free_bundle.pk for row in catalog.data))
+        self.assertFalse(any(row["key"] in FREE_TENANT_MODULES for row in catalog.data))
         result = self.client.post("/api/v1/saas/credits/bundles/purchase",
                                   {"bundleId": free_bundle.pk}, format="json")
         self.assertEqual(result.status_code, 409)
         self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
+
+    @override_settings(CREDIT_LABEL_ONLY_ACCESS_ENABLED=False)
+    def test_standalone_paid_catalog_hides_legacy_settings_rate(self):
+        FeatureCreditPrice.objects.create(
+            feature=self.settings_feature, base_credits=Decimal("12.00"),
+        )
+        FeatureCreditPrice.objects.create(
+            feature=self.paid_feature, base_credits=Decimal("15.00"),
+        )
+        response = self.client.get("/api/v1/saas/credits/features")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("settings", [item["key"] for item in response.data])
+        self.assertIn("jobs", [item["key"] for item in response.data])
 
     def test_old_standalone_free_charges_cannot_restart(self):
         pricing = FeatureCreditPrice.objects.create(

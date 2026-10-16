@@ -17,6 +17,7 @@ from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
 from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
+from apps.saas.access import FREE_TENANT_MODULES
 from .monthly_features import activate_postpaid_feature, deactivate_postpaid_feature
 from .hosted_checkout import reconcile_hosted_purchase
 
@@ -140,7 +141,9 @@ class CreditFeaturesView(APIView):
                     company=request.user.company,
                 )
             }
-        rows = FeatureCreditPrice.objects.filter(feature__is_active=True).select_related("feature").order_by("feature__sort_order", "feature__label")
+        rows = FeatureCreditPrice.objects.filter(feature__is_active=True).exclude(
+            feature__key__in=FREE_TENANT_MODULES
+        ).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
             {
                 "key": rate.feature.key, "label": rate.feature.label,

@@ -37,11 +37,11 @@ class OwnerOnboardingTests(TestCase):
         CreditWallet.objects.create(company=self.company, balance=Decimal('100'))
         self.client.force_authenticate(self.owner)
 
-    def test_new_company_has_free_dashboard_staff_and_billing_only(self):
+    def test_new_company_has_free_dashboard_settings_staff_and_billing(self):
         self.assertTrue(user_has_permission(self.owner, 'billing.edit'))
-        for permission in ['dashboard.view', 'staff.view', 'staff.create', 'billing.view']:
+        for permission in ['dashboard.view', 'settings.view', 'settings.manage', 'staff.view', 'staff.create', 'billing.view']:
             self.assertTrue(user_has_permission(self.owner, permission), permission)
-        for permission in ['attendance.self', 'customers.view', 'settings.view', 'storage.view']:
+        for permission in ['attendance.self', 'customers.view', 'storage.view']:
             self.assertFalse(user_has_permission(self.owner, permission), permission)
         access = self.client.get('/api/v1/saas/credits/access').data
         self.assertTrue(access['enforcementEnabled'])
@@ -119,7 +119,7 @@ class OwnerOnboardingTests(TestCase):
         self.assertEqual(self.company.name, 'Updated Shop')
         self.assertEqual(self.company.city, 'Kochi')
         self.assertTrue(user_has_permission(self.owner, 'dashboard.view'))
-        self.assertFalse(user_has_permission(self.owner, 'settings.view'))
+        self.assertTrue(user_has_permission(self.owner, 'settings.view'))
 
     def test_company_api_cannot_reassign_owner_or_disable_paid_gating(self):
         payload = CompanySerializer(self.company, data={'owner': str(self.staff.pk), 'require_paid_features': False}, partial=True)
@@ -183,6 +183,7 @@ class OwnerOnboardingTests(TestCase):
         self.assertTrue(response.data['user']['isCompanyOwner'])
         self.assertIn('dashboard.view', response.data['user']['effectivePermissions'])
         self.assertIn('staff.view', response.data['user']['effectivePermissions'])
+        self.assertIn('settings.view', response.data['user']['effectivePermissions'])
         self.assertIn('billing.view', response.data['user']['effectivePermissions'])
         self.assertNotIn('customers.view', response.data['user']['effectivePermissions'])
         self.assertNotIn('attendance.self', response.data['user']['effectivePermissions'])
