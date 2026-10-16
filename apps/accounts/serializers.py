@@ -77,6 +77,19 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
+def user_can_sign_in(user):
+    """All login methods must enforce the same active tenant and role checks."""
+    if not user or not user.is_active:
+        return False
+    if not user.company_id:
+        return True
+    role = user.role
+    return bool(
+        user.company and user.company.is_active
+        and role and role.is_active and role.company_id == user.company_id
+    )
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True, trim_whitespace=False)
@@ -91,14 +104,8 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid email or password.")
         if not user.is_active:
             raise serializers.ValidationError("This account is disabled.")
-        # An old password must not be enough to sign in after the workshop,
-        # login role or role's company assignment has been deactivated.
-        if user.company_id:
-            role = user.role
-            if (not user.company or not user.company.is_active
-                    or not role or not role.is_active
-                    or role.company_id != user.company_id):
-                raise serializers.ValidationError("This account cannot sign in. Contact your workshop administrator.")
+        if not user_can_sign_in(user):
+            raise serializers.ValidationError("This account cannot sign in. Contact your workshop administrator.")
         attrs["user"] = user
         return attrs
 
