@@ -15,6 +15,7 @@ class Migration(migrations.Migration):
             name="BillingCyclePolicy",
             fields=[
                 ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("singleton", models.PositiveSmallIntegerField(default=1, editable=False, unique=True)),
                 ("enabled", models.BooleanField(default=False)),
                 ("due_day", models.PositiveSmallIntegerField(default=5)),
                 ("restrict_overdue", models.BooleanField(default=True)),
