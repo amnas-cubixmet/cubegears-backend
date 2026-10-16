@@ -74,8 +74,36 @@ class CreditPackageDisplayOrderTests(TestCase):
         self.assertFalse(invalid.is_valid())
         self.assertIn("sort_order", invalid.errors)
 
+    def test_unlimited_mode_auto_assigns_next_order(self):
+        first = self.post_package(name="Starter", sort_order_mode="unlimited", sort_order="")
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(CreditPackage.objects.get(name="Starter").sort_order, 0)
+
+        next_package = self.post_package(name="Plus", sort_order_mode="unlimited", sort_order="")
+        self.assertEqual(next_package.status_code, 302)
+        self.assertEqual(CreditPackage.objects.get(name="Plus").sort_order, 1)
+
+    def test_unlimited_mode_ignores_submitted_custom_number(self):
+        saved = self.post_package(sort_order_mode="unlimited", sort_order="900")
+        self.assertEqual(saved.status_code, 302)
+        self.assertEqual(CreditPackage.objects.get().sort_order, 0)
+
+    def test_custom_order_mode_requires_a_number(self):
+        missing = self.post_package(sort_order_mode="manual", sort_order="")
+        self.assertEqual(missing.status_code, 200)
+        self.assertFalse(CreditPackage.objects.exists())
+        self.assertContains(missing, "Enter a non-negative display order number.")
+
+    def test_custom_order_mode_accepts_large_number(self):
+        saved = self.post_package(sort_order_mode="manual", sort_order="1000000")
+        self.assertEqual(saved.status_code, 302)
+        self.assertEqual(CreditPackage.objects.get().sort_order, 1000000)
+
     def test_form_and_table_explain_optional_order(self):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Display order (optional)")
         self.assertContains(response, 'placeholder="Automatic"')
+        self.assertContains(response, 'name="sort_order_mode"')
+        self.assertContains(response, "Unlimited (automatic)")
+        self.assertContains(response, "Custom order number")
