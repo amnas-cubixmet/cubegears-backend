@@ -166,7 +166,7 @@ class RemainingModulesUITests(TestCase):
         # Credit packages and audited wallet adjustment stay functional.
         for action in ("package", "adjust"):
             self.assertContains(response, f'name="action" value="{action}"', count=1)
-        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=3)
+        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=4)  # Sidebar + credit forms
         self.assertContains(response, 'name="request_id"', count=1)
         self.assertContains(response, 'name="reason"')
         self.assertContains(response, 'name="delta"')
