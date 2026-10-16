@@ -8,7 +8,8 @@ from django.db.models import Sum
 from .storage_ledger import as_dict, ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission, is_company_owner
+from rest_framework.permissions import BasePermission
 from rest_framework.views import APIView
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Subscription,StorageUsage,DocumentTemplate,CompanySetting,SecurityEvent,MediaFile,StorageEvent
@@ -100,9 +101,26 @@ class SubscriptionSummaryView(APIView):
         })
 
 
+class StorageAccountReadPermission(BasePermission):
+    """Read-only storage usage/audit within the free owner SaaS Account.
+
+    Tenant staff still need their explicit storage.view permission and a
+    paid entitlement. Owner access here does not unlock upload, delete,
+    settings changes, file downloads, or arbitrary storage operations.
+    """
+    message = "Storage usage is visible to the company owner or authorized storage readers."
+
+    def has_permission(self, request, view):
+        if request.method not in ("GET", "HEAD", "OPTIONS"):
+            return False
+        return (
+            user_has_permission(request.user, "storage.view")
+            or (is_company_owner(request.user) and user_has_permission(request.user, "billing.view"))
+        )
+
+
 class StorageSummaryView(APIView):
-    permission_classes=[RolePermission]
-    permission_code="storage.view"
+    permission_classes=[StorageAccountReadPermission]
     def get(self,request):
         company=request.user.company
         files=MediaFile.objects.filter(company=company)
@@ -222,8 +240,7 @@ class StorageSettingsView(APIView):
 
 class StorageEventsView(APIView):
     """Read-only, tenant-scoped storage audit events with bounded pagination."""
-    permission_classes = [RolePermission]
-    permission_code = "storage.view"
+    permission_classes = [StorageAccountReadPermission]
 
     def get(self, request):
         try:
@@ -245,8 +262,7 @@ class StorageEventsView(APIView):
 
 
 class StorageHistoryListView(APIView):
-    permission_classes = [RolePermission]
-    permission_code = "storage.view"
+    permission_classes = [StorageAccountReadPermission]
 
     def get(self, request):
         """Return stored company-scoped snapshots only, never invented daily usage."""
@@ -292,8 +308,7 @@ class StorageHistoryListView(APIView):
 
 
 class StorageHistoryDateView(APIView):
-    permission_classes=[RolePermission]
-    permission_code="storage.view"
+    permission_classes=[StorageAccountReadPermission]
     def get(self,request,date):
         from django.utils.dateparse import parse_date
         parsed=parse_date(date)
