@@ -73,6 +73,14 @@ def feature_allowed(user, permission):
     from apps.credits.calendar_billing import overdue_statements
     if module not in {"billing", "company"} and overdue_statements(user.company):
         return False
+    if module not in FREE_TENANT_MODULES | {"company"}:
+        from apps.credits.calendar_billing import active_policy
+        policy = active_policy()
+        if policy and not policy.allow_zero_balance_usage:
+            from apps.credits.models import CreditWallet
+            balance = CreditWallet.objects.filter(company=user.company).values_list("balance", flat=True).first()
+            if balance is None or balance <= 0:
+                return False
     # Dashboard, Settings, Staff Management, Roles & Permissions and SaaS Account are free in EVERY billing
     # mode, including strict paid-label-only mode. RBAC/tenant checks run first
     # in user_has_permission: this never gives employees owner/billing access.
