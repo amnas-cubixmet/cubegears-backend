@@ -4,7 +4,7 @@ from django.utils.http import urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.accounts.models import User
+from apps.accounts.models import MagicLink, User
 from apps.companies.models import Company
 from apps.roles.models import Role
 
@@ -138,6 +138,83 @@ class PasswordAuthenticationFlowTests(APITestCase):
         self.assertNotIn("refresh", response.data)
         user.refresh_from_db()
         self.assertTrue(user.check_password(self.new_password))
+
+    def test_magic_link_auto_login_is_single_use(self):
+        user = User.objects.create_user(
+            email=self.email, password=self.old_password,
+            name="Owner", is_active=True,
+        )
+        token = MagicLink.issue(user)
+        first = self.client.post(
+            "/api/v1/auth/magic-link/verify", {"token": token}, format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_200_OK, first.data)
+        self.assertTrue(first.data.get("access"))
+        self.assertTrue(first.data.get("refresh"))
+        self.assertEqual(first.data["user"]["email"], user.email)
+
+        replay = self.client.post(
+            "/api/v1/auth/magic-link/verify", {"token": token}, format="json",
+        )
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(replay.data.get("access"))
+
+    def test_magic_link_rejects_disabled_and_cross_company_roles(self):
+        company = Company.objects.create(name="Workshop C", slug="magic-workshop-c")
+        other = Company.objects.create(name="Workshop D", slug="magic-workshop-d")
+        role = Role.objects.create(
+            company=company, name="Technician", code="TECH",
+            permissions=["jobs.view"], is_active=True,
+        )
+        user = User.objects.create_user(
+            email="magic-tech@example.test", name="Technician",
+            password=self.old_password, company=company, role=role,
+        )
+
+        role.is_active = False
+        role.save(update_fields=["is_active"])
+        disabled = self.client.post(
+            "/api/v1/auth/magic-link/verify",
+            {"token": MagicLink.issue(user)}, format="json",
+        )
+        self.assertEqual(disabled.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("access", disabled.data)
+
+        role.is_active = True
+        role.company = other
+        role.save(update_fields=["is_active", "company"])
+        crossed = self.client.post(
+            "/api/v1/auth/magic-link/verify",
+            {"token": MagicLink.issue(user)}, format="json",
+        )
+        self.assertEqual(crossed.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("refresh", crossed.data)
+
+    def test_password_setup_does_not_auto_login_disabled_company(self):
+        company = Company.objects.create(
+            name="Setup Workshop", slug="blocked-setup", is_active=False,
+        )
+        role = Role.objects.create(
+            company=company, name="Admin", code="ADMIN",
+            permissions=["*"], is_active=True,
+        )
+        user = User.objects.create_user(
+            email="blocked-setup@example.test", name="New User",
+            password=None, company=company, role=role,
+        )
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        uid, token = self.make_uid_token(user)
+        response = self.client.post(
+            "/api/v1/auth/setup-password",
+            {"uid": uid, "token": token, "password": self.setup_password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertNotIn("access", response.data)
+        self.assertNotIn("refresh", response.data)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(self.setup_password))
 
     def test_weak_reset_password_returns_password_field_error(self):
         user = User.objects.create_user(
