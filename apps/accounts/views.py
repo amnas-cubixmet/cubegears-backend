@@ -20,6 +20,7 @@ from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
     LoginSerializer,
+    user_can_sign_in,
     MagicLinkRequestSerializer,
     MagicLinkVerifySerializer,
     ResetPasswordSerializer,
@@ -190,6 +191,10 @@ class MagicLinkVerifyView(APIView):
         user = MagicLink.consume(serializer.validated_data["token"])
         if not user:
             return Response({"message": "Invalid or expired magic link."}, status=status.HTTP_400_BAD_REQUEST)
+        if not user_can_sign_in(user):
+            return Response({
+                "message": "This account cannot sign in. Contact your workshop administrator."
+            }, status=status.HTTP_400_BAD_REQUEST)
         user.email_verified = True
         user.save(update_fields=["email_verified"])
         return Response(issue_tokens(user))
@@ -333,6 +338,14 @@ class SetupPasswordView(APIView):
         user.set_password(serializer.validated_data["password"])
         user.email_verified = True
         user.save(update_fields=["password", "email_verified", "is_staff", "is_superuser"])
+
+        if not user_can_sign_in(user):
+            return Response({
+                "message": (
+                    "Password set successfully, but this account cannot sign in. "
+                    "Contact your workshop administrator."
+                ),
+            })
 
         tokens = issue_tokens(user)
         tokens["message"] = "Password set successfully."
