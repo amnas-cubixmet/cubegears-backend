@@ -20,7 +20,7 @@ jobs:
       - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
-      - run: python manage.py test apps.accounts.test_celery_health --noinput
+      - run: python manage.py test apps.accounts.test_celery_health apps.accounts.test_account_email_matrix --noinput
       - name: Real Redis and Celery worker integration
         run: |
           sudo apt-get update -qq

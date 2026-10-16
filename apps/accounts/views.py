@@ -1,6 +1,3 @@
-from urllib.parse import quote
-
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
@@ -16,6 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
 from .email import queue_email
+from .account_links import is_platform_account, password_action_url, magic_action_url
 from .serializers import (
     ChangePasswordSerializer,
     ForgotPasswordSerializer,
@@ -98,7 +96,7 @@ class ForgotPasswordView(APIView):
         if user:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}&email={quote(user.email)}"
+            reset_url = password_action_url(request, user, uid, token)
             queue_email(
                 subject="Reset your CubixGear password",
                 message="A request was received to reset the password for your CubixGear account. This link expires according to the account security policy.",
@@ -125,6 +123,10 @@ class ResetPasswordView(APIView):
 
         if not default_token_generator.check_token(user, serializer.validated_data["token"]):
             return Response({"message": "Invalid or expired reset link."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_platform_account(user):
+            return Response({"message": "Use the SaaS Control Panel reset link sent to your email."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(serializer.validated_data["password"])
         user.email_verified = True
@@ -162,7 +164,7 @@ class MagicLinkRequestView(APIView):
         # Public recovery responses must not reveal whether an account exists.
         if user and user_can_sign_in(user):
             raw_token = MagicLink.issue(user)
-            url = f"{settings.FRONTEND_URL}/magic-link/verify?token={raw_token}"
+            url = magic_action_url(request, user, raw_token)
             queue_email(
                 subject="Your CubixGear magic login link",
                 message="Use the button below to securely sign in without entering a password. This single-use link expires in 15 minutes.",
@@ -277,7 +279,7 @@ class PublicWorkshopSignupView(APIView):
 
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         token = default_token_generator.make_token(user)
-        setup_url = f"{settings.FRONTEND_URL}/setup-password?uid={uid}&token={token}&email={quote(user.email)}"
+        setup_url = password_action_url(request, user, uid, token, setup=True)
         queue_email(
             subject="Set up your CubixGear password",
             message="Welcome to CubixGear. Your workshop account has been created. Set your password before signing in.",
@@ -318,6 +320,10 @@ class SetupPasswordView(APIView):
 
         if user.has_usable_password():
             return Response({"message": "Account is already set up. Use password reset."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_platform_account(user):
+            return Response({"message": "Use the SaaS Control Panel setup link sent to your email."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         user.is_staff = False
         user.is_superuser = False

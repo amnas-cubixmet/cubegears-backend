@@ -1,5 +1,4 @@
 import re
-from urllib.parse import quote
 
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
@@ -8,6 +7,7 @@ from django.utils.http import urlsafe_base64_encode
 
 from django.conf import settings
 from apps.accounts.email import queue_email, email_delivery_mode
+from apps.accounts.account_links import password_action_url, magic_action_url
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
@@ -196,16 +196,13 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             # Previously activated staff can receive one-use login links;
             # never reset an existing password while resending an invite.
             magic_token = MagicLink.issue(user)
-            url = f"{settings.FRONTEND_URL.rstrip('/')}/magic-link/verify?token={quote(magic_token, safe='')}"
+            url = magic_action_url(self.request, user, magic_token)
             subject = "Sign in to your CubixGear workshop"
             instruction = "Use the button below to sign in securely."
         else:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            url = (
-                f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
-                f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}&email={quote(user.email, safe='')}"
-            )
+            url = password_action_url(self.request, user, uid, token, setup=True)
             subject = "Create your CubixGear staff password"
             instruction = "Use the button below to create your account password."
 
