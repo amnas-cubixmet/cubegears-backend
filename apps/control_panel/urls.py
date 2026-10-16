@@ -4,6 +4,7 @@ from . import views
 from . import auth_views
 from apps.credits import panel_views as credits_panel
 from apps.credits.cycle_panel import cycle_policy_control
+from apps.credits.calendar_panel import calendar_policy_control
 from apps.credits.pricing_views import module_pricing
 
 app_name = "panel"
@@ -50,6 +51,7 @@ urlpatterns = [
     path("requests/", views.plan_requests, name="requests"),
     path("credits/", credits_panel.credits_control, name="credits"),
     path("credits/cycle/", cycle_policy_control, name="credit-cycle"),
+    path("credits/calendar/", calendar_policy_control, name="calendar-credit-billing"),
     path("subscriptions/", views.subscriptions, name="subscriptions"),
     path("subscriptions/payments/", views.subscription_payments, name="subscription-payments"),
     path("payment-settings/", RedirectView.as_view(pattern_name="panel:credits", permanent=False), name="payment-settings"),
