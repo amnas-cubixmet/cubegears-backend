@@ -144,25 +144,29 @@ class RemainingModulesUITests(TestCase):
         self.assertContains(response, 'name="action"')
         self.assertContains(response, 'name="csrfmiddlewaretoken"')
 
-    def test_credit_controls_are_split_into_six_functional_accessible_tabs(self):
+    def test_credit_controls_have_five_functional_accessible_tabs_without_old_pricing(self):
         response = self.client.get(reverse("panel:credits"))
         self.assertEqual(response.status_code, 200)
-        for key in ("packages", "pricing", "adjustment", "wallets", "purchases", "ledger"):
+        for key in ("packages", "adjustment", "wallets", "purchases", "ledger"):
             self.assertContains(response, f'data-credit-tab="{key}"', count=1)
             self.assertContains(response, f'data-credit-panel="{key}"', count=1)
             self.assertContains(response, f'aria-controls="credit-panel-{key}"', count=1)
             self.assertContains(response, f'aria-labelledby="credit-tab-{key}"', count=1)
-        self.assertContains(response, 'role="tab"', count=6)
-        self.assertContains(response, 'role="tabpanel"', count=6)
+        self.assertContains(response, 'role="tab"', count=5)
+        self.assertContains(response, 'role="tabpanel"', count=5)
+        self.assertNotContains(response, 'credit-panel-pricing')
+        self.assertNotContains(response, 'name="action" value="price"')
+        self.assertNotContains(response, 'name="action" value="storage"')
+        self.assertNotContains(response, "Storage Credits — separate billing policy")
+        self.assertNotContains(response, "Set per-user prices for all modules")
         self.assertContains(response, 'data-credit-tab-navigation')
         self.assertContains(response, "credits-tabs.js")
         self.assertIsNotNone(finders.find("control_panel/credits-tabs.js"))
 
-        # Keep the server-validated forms, audited adjustment ID, CSRF.
-        for action in ("package", "price", "adjust"):
+        # Credit packages and audited wallet adjustment stay functional.
+        for action in ("package", "adjust"):
             self.assertContains(response, f'name="action" value="{action}"', count=1)
-        # Three credit action forms plus the shared sidebar logout form.
-        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=5)  # Includes separate storage pricing form
+        self.assertContains(response, 'name="csrfmiddlewaretoken"', count=3)
         self.assertContains(response, 'name="request_id"', count=1)
         self.assertContains(response, 'name="reason"')
         self.assertContains(response, 'name="delta"')
