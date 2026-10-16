@@ -1,7 +1,7 @@
 from rest_framework import generics
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from apps.accounts.permissions import IsCompanyAdmin, can_delegate, is_company_owner
+from apps.accounts.permissions import IsCompanyAdmin, can_delegate, is_company_owner, user_has_permission
 from .models import Role
 from .serializers import RoleSerializer
 
@@ -11,7 +11,7 @@ class CanReadRolesOwnerCanWrite(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return IsCompanyAdmin().has_permission(request, view)
-        return is_company_owner(request.user)
+        return is_company_owner(request.user) and user_has_permission(request.user, 'company.manage')
 
 
 class RoleListCreateView(generics.ListCreateAPIView):
