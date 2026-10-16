@@ -19,7 +19,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         from apps.credits.models import BillingCyclePolicy
         if BillingCyclePolicy.objects.filter(enabled=True).exists():
-            raise CommandError("Calendar month billing is active; legacy debit command is disabled.")
+            self.stdout.write("Calendar month billing is active; no legacy debit was made.")
+            return
         from apps.credits.cycle_billing import effective_policy
         if effective_policy():
             raise CommandError("Configurable credit cycles are enabled. Legacy billing is disabled to prevent duplicate charges.")
