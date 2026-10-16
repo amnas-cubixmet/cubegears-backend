@@ -7,9 +7,9 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import user_has_permission
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import PlanFeature
-from apps.saas.access import active_label_modules
+from apps.saas.access import active_label_modules, FREE_TENANT_MODULES
 
-_CORE = frozenset({"billing", "company", "roles"})
+_CORE = frozenset({"billing", "company", "roles", "dashboard", "staff"})
 
 
 class CompanyModuleEntitlementsView(APIView):
@@ -39,6 +39,7 @@ class CompanyModuleEntitlementsView(APIView):
         return Response({
             "enforced": enforced,
             "labelOnly": label_only,
+            "freeModules": sorted(FREE_TENANT_MODULES),
             "activeLabelModules": sorted(active_label_modules(request.user.company)) if label_only else [],
             "modules": available,
             "registeredModules": sorted(registered),
