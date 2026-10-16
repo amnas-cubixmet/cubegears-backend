@@ -12,6 +12,10 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        from apps.credits.models import BillingCyclePolicy
+        if BillingCyclePolicy.objects.filter(enabled=True).exists():
+            self.stdout.write("Calendar month billing is active; no legacy debit was made.")
+            return
         from apps.credits.cycle_billing import effective_policy
         if effective_policy():
             raise CommandError("Configurable credit cycles are enabled. Legacy billing is disabled to prevent duplicate charges.")

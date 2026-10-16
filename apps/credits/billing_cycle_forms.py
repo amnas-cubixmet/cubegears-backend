@@ -14,6 +14,15 @@ class BillingCyclePolicyForm(forms.ModelForm):
     def clean(self):
         result = super().clean()
         if result.get("enabled"):
+            from .models import CreditCyclePolicy, MonthlyBillingPolicy
+            if CreditCyclePolicy.objects.filter(enabled=True).exists():
+                raise forms.ValidationError(
+                    "Disable and reconcile the older 5th-to-5th billing cycle before enabling calendar-month billing."
+                )
+            if MonthlyBillingPolicy.objects.filter(enabled=True).exists():
+                raise forms.ValidationError(
+                    "Disable and reconcile the older monthly collection policy before enabling calendar-month billing."
+                )
             if not (
                 settings.STORAGE_MONTHLY_METERED_ENABLED
                 or (settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
