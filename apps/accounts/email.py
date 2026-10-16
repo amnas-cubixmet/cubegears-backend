@@ -1,89 +1,67 @@
-"""Transactional account emails sent directly by Django (Celery remains optional).
+"""Queue all account emails to the configured Celery broker after commit.
 
-A successful SMTP send means the provider accepted the message, not that the
-recipient opened it. Failed attempts must not turn a committed staff creation
-into a retryable create operation.
+No direct SMTP, console, locmem or other Django email backend is called by
+web requests. Without Celery or Redis, no email is sent. Queued is NOT sent.
 """
+import logging
+
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, send_mail
 from django.db import transaction
-from django.template.loader import render_to_string
+
+LOG = logging.getLogger(__name__)
 
 
 def email_delivery_mode():
-    """Only diagnostic mode info, never disclose SMTP credentials or links."""
-    backend = settings.EMAIL_BACKEND
-    if backend.endswith(".console.EmailBackend"):
-        return "console_only"
-    if backend.endswith(".locmem.EmailBackend") or backend.endswith(".filebased.EmailBackend"):
-        return "local_only"
-    if backend.endswith(".dummy.EmailBackend"):
+    """Describe dispatch readiness without claiming SMTP or worker delivery."""
+    if not getattr(settings, "EMAIL_CELERY_ENABLED", False):
         return "disabled"
-    return "queued"
+    broker = getattr(settings, "CELERY_BROKER_URL", "")
+    if not broker or not broker.startswith(("redis://", "rediss://")):
+        return "disabled"
+    return "pending"
 
 
 def queue_email(subject, message, recipient_list, *, action_url=None,
                 action_label=None, on_delivery=None):
-    """Send on successful DB commit and report outcome to trusted callers.
+    """Enqueue after a committed transaction; never send directly.
 
-    Returns a mutable status dict. on_delivery gets 'submitted' or 'failed'
-    once a send has actually been attempted. Never log security URLs/tokens.
-    An exception is allowed to reach Django's robust=True on_commit logging,
-    without aborting the committed transaction.
+    The mutable status is 'pending' until the commit callback runs. On success
+    it is 'queued' (broker-accepted, not necessarily delivered); failures are
+    'failed' and are never silently retried using Django's SMTP path.
+
+    on_delivery, where used, reports dispatch status only, not real delivery.
+    Signed action URLs are never logged but are carried by the Redis broker;
+    secure Redis accordingly. A durable outbox is needed to guarantee retries
+    across broker outages after a database commit.
     """
     recipients = list(recipient_list)
     state = {"status": email_delivery_mode()}
 
     def deliver():
-        # Optional background delivery for plain notification messages.
-        # Security emails with action URLs or delivery callbacks still use the
-        # existing synchronous path to preserve immediate success reporting.
-        if settings.EMAIL_CELERY_ENABLED and not action_url and on_delivery is None:
-            try:
-                # The default Celery app would otherwise try AMQP (5672),
-                # while our backend uses the configured Redis broker.
-                from config.celery import app as celery_app
-                from .tasks import send_email_task
-                celery_app.send_task(
-                    send_email_task.name,
-                    args=[subject, message, recipients, settings.DEFAULT_FROM_EMAIL],
-                )
-                state["status"] = "queued"
-                return
-            except Exception:
-                # Never drop a committed notification if Redis/Beat is down.
-                # Attempt the original direct SMTP send instead.
-                pass
-        try:
-            if not action_url:
-                count = send_mail(subject, message, settings.DEFAULT_FROM_EMAIL,
-                                  recipients, fail_silently=False)
-            else:
-                context = {
-                    "subject": subject,
-                    "body": message,
-                    "action_url": action_url,
-                    "action_label": action_label or "Open CubixGear",
-                    "brand": "CubixGear",
-                }
-                plain = render_to_string("accounts/email/action.txt", context)
-                html = render_to_string("accounts/email/action.html", context)
-                email = EmailMultiAlternatives(
-                    subject=subject, body=plain,
-                    from_email=settings.DEFAULT_FROM_EMAIL, to=recipients,
-                )
-                email.attach_alternative(html, "text/html")
-                count = email.send(fail_silently=False)
-
-            status = email_delivery_mode()
-            state["status"] = status if status != "queued" else ("submitted" if count else "failed")
+        if email_delivery_mode() == "disabled":
+            state["status"] = "disabled"
             if on_delivery:
-                on_delivery(state["status"])
-        except Exception:
+                on_delivery("disabled")
+            return
+        try:
+            from config.celery import app as celery_app
+            from .tasks import send_email_task
+            celery_app.send_task(
+                send_email_task.name,
+                args=[
+                    subject, message, recipients, settings.DEFAULT_FROM_EMAIL,
+                    action_url, action_label,
+                ],
+            )
+        except Exception as exc:
             state["status"] = "failed"
+            LOG.error("Celery email dispatch failed: %s", type(exc).__name__)
             if on_delivery:
                 on_delivery("failed")
-            raise
+        else:
+            state["status"] = "queued"
+            if on_delivery:
+                on_delivery("queued")
 
     transaction.on_commit(deliver, robust=True)
     return state
