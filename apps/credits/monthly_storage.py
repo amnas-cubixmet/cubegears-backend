@@ -120,9 +120,11 @@ def meter_company_storage(company, *, at=None):
             accrual, _ = StorageMeterPeriod.objects.select_for_update().get_or_create(
                 company=company, period=month,
             )
-            if accrual.settled_at:
-                # A late/reordered task must never modify finalized charges.
-                raise ValueError("Cannot meter storage into a settled month.")
+            from .models import BillingCycleStatement
+            if accrual.settled_at or BillingCycleStatement.objects.filter(
+                company=company, month=month,
+            ).exists():
+                raise ValueError("Cannot meter storage into a finalized month.")
             accrual.accrued_credits += cost
             accrual.covered_seconds += seconds
             accrual.save(update_fields=["accrued_credits", "covered_seconds", "updated_at"])
