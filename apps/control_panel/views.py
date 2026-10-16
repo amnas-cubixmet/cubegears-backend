@@ -32,7 +32,7 @@ from apps.employees.models import Employee
 from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
-from apps.saas.models import Subscription, StorageUsage, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
+from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
 from apps.vehicles.models import Vehicle
 from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger
 from apps.credits.storage_forms import StorageCreditPolicyForm
@@ -454,7 +454,19 @@ def storage(request):
             "estimated_credits": estimated,
             "already_billed": references.get(str(company.pk)) in charged_refs,
         })
+    # Upload/delete events are an immutable audit trail, not usage snapshots.
+    # Restrict platform browsing to 50 at a time and use the same validated
+    # company filter as the live usage/history tables.
+    event_qs = StorageEvent.objects.select_related("company", "actor").order_by(
+        "-occurred_at", "-created_at", "-id",
+    )
+    if company_id:
+        event_qs = event_qs.filter(company_id=company_id)
+    event_page = Paginator(event_qs, 50).get_page(request.GET.get("event_page"))
+
     return render(request, "control_panel/storage.html", {
+        "event_rows": event_page,
+        "event_count": event_page.paginator.count,
         "page_title": "Storage", "active": "storage",
         "rows": _paginate(request, qs),
         "total_bytes": totals["bytes"] or 0,
