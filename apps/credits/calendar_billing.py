@@ -25,6 +25,13 @@ CENT = Decimal("0.01")
 
 
 def active_policy():
+    # The repository includes two retired opt-in billing engines. Never run
+    # two independent debit engines for one tenant, even after a manual DB
+    # edit or an earlier deployment left a legacy switch enabled.
+    from .models import CreditCyclePolicy, MonthlyBillingPolicy
+    if (CreditCyclePolicy.objects.filter(enabled=True).exists()
+            or MonthlyBillingPolicy.objects.filter(enabled=True).exists()):
+        return None
     return BillingCyclePolicy.objects.filter(enabled=True).order_by("pk").first()
 
 
