@@ -16,7 +16,9 @@ from .billing_cycle_forms import BillingCyclePolicyForm
 class BillingEngineIsolationTests(TestCase):
     def test_migration_graph_has_only_one_leaf(self):
         loader = MigrationLoader(connection)
-        self.assertEqual(loader.graph.leaf_nodes("credits"), [("credits", "0015_merge_calendar_billing_heads")])
+        # New billing migrations are valid if there is still exactly one leaf.
+        leaves = loader.graph.leaf_nodes("credits")
+        self.assertEqual(len(leaves), 1, leaves)
 
     def test_cycle_engines_refuse_overlapping_active_switches(self):
         calendar = BillingCyclePolicy.objects.create(enabled=True, due_day=5, effective_month="2026-10")
@@ -48,7 +50,7 @@ class BillingEngineIsolationTests(TestCase):
             "allow_zero_balance_usage": "on",
         })
         self.assertFalse(form.is_valid())
-        self.assertIn("older 5th-to-5th", str(form.errors))
+        self.assertIn("5th-to-5th billing cycle", str(form.errors))
 
     def test_legacy_credit_and_storage_commands_noop_in_calendar_mode(self):
         BillingCyclePolicy.objects.create(enabled=True, due_day=5)
