@@ -6,6 +6,7 @@ from apps.accounts.models import User
 from apps.accounts.permissions import user_has_permission
 from apps.accounts.serializers import UserSerializer
 from apps.companies.models import Company
+from apps.branches.models import Branch
 from apps.companies.serializers import CompanySerializer
 from apps.control_panel.forms import CompanyForm, FeatureBundleForm
 from apps.customers.models import Customer
