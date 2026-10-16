@@ -40,8 +40,14 @@ def queue_email(subject, message, recipient_list, *, action_url=None,
         # existing synchronous path to preserve immediate success reporting.
         if settings.EMAIL_CELERY_ENABLED and not action_url and on_delivery is None:
             try:
+                # The default Celery app would otherwise try AMQP (5672),
+                # while our backend uses the configured Redis broker.
+                from config.celery import app as celery_app
                 from .tasks import send_email_task
-                send_email_task.delay(subject, message, recipients, settings.DEFAULT_FROM_EMAIL)
+                celery_app.send_task(
+                    send_email_task.name,
+                    args=[subject, message, recipients, settings.DEFAULT_FROM_EMAIL],
+                )
                 state["status"] = "queued"
                 return
             except Exception:
