@@ -20,6 +20,8 @@ jobs:
       - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test apps.credits.test_calendar_billing --noinput
       - run: python manage.py test apps.credits.test_retired_credit_panel_pricing apps.control_panel.test_remaining_modules_ui --noinput
       - run: python manage.py test apps.credits.test_free_core_modules --noinput
       - run: python manage.py test apps.credits.test_module_pricing_panel apps.saas.test_feature_catalog_audit --noinput
