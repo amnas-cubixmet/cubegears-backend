@@ -367,7 +367,25 @@ class BillingEmailNotice(models.Model):
 
 class ModulePriceLabel(models.Model):
     """A platform-managed single-module price uses the existing paid-label engine."""
+    monthly_postpaid = models.BooleanField(default=False)
     feature = models.OneToOneField("saas.PlanFeature", on_delete=models.PROTECT, related_name="module_price_label")
     bundle = models.OneToOneField(FeatureBundle, on_delete=models.PROTECT, related_name="module_price")
     updated_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class MonthlyBillingPolicy(models.Model):
+    """Single platform policy. Existing installations opt in after reviewing meters."""
+    enabled = models.BooleanField(default=False)
+    due_day = models.PositiveSmallIntegerField(default=5)
+    feature_meter_interval_seconds = models.PositiveIntegerField(default=300)
+    lock_after_due = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class MonthlyBillingCycle(models.Model):
+    """Freeze an issued month's deadline when collection first runs."""
+    period = models.CharField(max_length=7, unique=True)
+    due_at = models.DateTimeField()
+    lock_after_due = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)

@@ -129,7 +129,20 @@ class StorageSummaryView(APIView):
         storage_settings={**DEFAULTS["storage"],**(setting.data if setting else {})}
         active_sub = (Subscription.objects.filter(company=company, status__iexact="Active")
                       .select_related("plan_definition").order_by("-created_at").first())
+        from apps.credits.models import StorageCreditPolicy
+        from apps.credits.monthly_policy import policy as collection_policy
+        from django.conf import settings
+        policy = StorageCreditPolicy.objects.filter(is_active=True).order_by('pk').first()
+        if policy is None:
+            policy = StorageCreditPolicy.objects.order_by('pk').first()
         return response.Response({
+            'billing': {
+                'creditsPerGb': str(policy.credits_per_gb) if policy else '0.00',
+                'includedGb': str(policy.included_gb) if policy else '0',
+                'period': policy.billing_period if policy else 'monthly',
+                'meterIntervalSeconds': (settings.STORAGE_METER_INTERVAL_SECONDS if settings.STORAGE_MONTHLY_METERED_ENABLED and not collection_policy() else policy.meter_interval_seconds) if policy else None,
+                'active': bool(policy and policy.is_active),
+            },
             "quotaGb": active_sub.plan_definition.included_storage_gb if active_sub and active_sub.plan_definition_id else None,
             "usedGb":round(used/(1024**3),3),
             "settings":storage_settings,
@@ -160,6 +173,9 @@ class StorageFilesView(APIView):
                 used=MediaFile.objects.filter(company=request.user.company).aggregate(v=Sum('size_bytes'))['v'] or 0
                 if sub and sub.plan_definition_id and used + sum(f.size for f in uploads) > sub.plan_definition.included_storage_gb * (1024**3):
                     return response.Response({'message':'Storage quota exceeded.'},status=413)
+                from apps.credits.storage_observation import observe_storage
+                observed_at = timezone.now()
+                observe_storage(request.user.company, observed_at)
                 ensure_baseline(request.user.company)
                 for upload in uploads:
                     obj=MediaFile.objects.create(
@@ -169,6 +185,7 @@ class StorageFilesView(APIView):
                     )
                     created.append(obj)
                     record_event(obj,"UPLOAD",request.user)
+                observe_storage(request.user.company, observed_at)
         except Exception:
             for obj in created:
                 if obj.file: obj.file.delete(save=False)
@@ -191,6 +208,9 @@ class StorageFilesDeleteView(APIView):
         deleted=0
         with transaction.atomic():
             Company.objects.select_for_update().get(pk=request.user.company_id)
+            from apps.credits.storage_observation import observe_storage
+            observed_at = timezone.now()
+            observe_storage(request.user.company, observed_at)
             ensure_baseline(request.user.company)
             for obj in qs:
                 name=obj.file.name if obj.file else None
@@ -202,6 +222,7 @@ class StorageFilesDeleteView(APIView):
                 if name:
                     transaction.on_commit(lambda storage=storage,name=name: safe_delete_storage(storage,name))
                 deleted+=1
+            observe_storage(request.user.company, observed_at)
         return response.Response({"deleted":deleted})
 
 class StorageFileDownloadView(APIView):

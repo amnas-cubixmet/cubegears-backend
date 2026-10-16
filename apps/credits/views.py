@@ -229,6 +229,9 @@ class EnableCreditFeatureView(APIView):
                 "code": "FEATURE_ENTITLEMENTS_NOT_ENABLED",
                 "message": "Paid feature access must be enabled by the platform administrator before activating paid features.",
             }, status=409)
+        from .monthly_policy import billing_status
+        if billing_status(request.user.company)['blocked']:
+            return Response({'code': 'MONTHLY_PAYMENT_OVERDUE', 'message': 'Settle outstanding usage before activating another module.'}, status=409)
         payload = FeatureInput(data=request.data)
         payload.is_valid(raise_exception=True)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)

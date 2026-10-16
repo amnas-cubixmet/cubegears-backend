@@ -136,3 +136,16 @@ def send_monthly_billing_notices():
         return {"disabled": 1}
     from .billing_notices import dispatch_pending_billing_notices
     return dispatch_pending_billing_notices()
+
+
+@shared_task(ignore_result=True, name="credits.collect_due_monthly_bills")
+def collect_due_monthly_bills():
+    if not settings.CREDIT_BILLING_CELERY_ENABLED:
+        return 'disabled'
+    from .monthly_policy import policy, retry_after_topup
+    if not policy():
+        return 'disabled'
+    from apps.companies.models import Company
+    for company in Company.objects.filter(is_active=True).iterator():
+        retry_after_topup(company)
+    return 'completed'

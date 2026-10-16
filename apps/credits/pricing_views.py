@@ -34,7 +34,7 @@ def module_pricing(request):
         mapping = configured.get(module['key'])
         bundle = mapping.bundle if mapping else None
         form = submitted if submitted is not None and request.POST.get('module') == module['key'] else ModulePriceForm(initial={
-            'module':module['key'], 'per_user_credits':bundle.per_user_credits if bundle else 0,
+            'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 0,
             'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else False,
         }, auto_id='id_' + module['key'] + '_%s')
         rows.append({'module':module, 'form':form, 'mapping':mapping, 'bundle':bundle})

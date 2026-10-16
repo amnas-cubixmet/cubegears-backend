@@ -18,6 +18,7 @@
     <fieldset class="module-price-fields" {% if not can_edit %}disabled{% endif %}>
       <p><label for="{{ row.form.per_user_credits.id_for_label }}">Credits per active login user</label>{{ row.form.per_user_credits }}</p>
       <p><label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>{{ row.form.billing_type }}</p>
+      <p><label>{{ row.form.monthly_postpaid }} Use now, pay next month</label><small>Monthly only. Requires monthly postpaid metering and due-date collection to be enabled. No upfront wallet balance is required; usage is payable next month.</small></p>
       <p><label class="module-price-publish">{{ row.form.published }} Published for activation</label></p>
       {% if row.mapping and not row.mapping.feature.is_active %}<p>This module is disabled in the feature catalogue. Its prices do not grant access until the module is published.</p>{% endif %}
       <button type="submit" class="btn btn-primary">Save {{ row.module.label }} Price</button>

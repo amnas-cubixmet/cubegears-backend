@@ -5,13 +5,14 @@ from django import forms
 from django.db import transaction
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.models import FeatureGroup, PlanFeature
-from .models import FeatureBundle, ModulePriceLabel
+from .models import FeatureBundle, ModulePriceLabel, FeatureCreditPrice, CompanyPostpaidFeature
 
 
 class ModulePriceForm(forms.Form):
     module = forms.ChoiceField(widget=forms.HiddenInput)
     per_user_credits = forms.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'), max_value=Decimal('1000000'), label='Credits per active login user')
     billing_type = forms.ChoiceField(choices=[p for p in FeatureBundle.PERIODS if p[0] != 'per_use'])
+    monthly_postpaid = forms.BooleanField(required=False, label='Use now, pay next month (monthly postpaid)')
     published = forms.BooleanField(required=False, label='Published for activation')
 
     def __init__(self, *args, **kwargs):
@@ -23,6 +24,11 @@ class ModulePriceForm(forms.Form):
         existing = ModulePriceLabel.objects.select_related('bundle').filter(feature__key=data.get('module')).first()
         if (existing and existing.bundle.company_access.exists() and data.get('billing_type') != existing.bundle.billing_type):
             self.add_error('billing_type', 'A purchased module must keep its billing period. Create a separate feature label for a new period.')
+        if data.get('monthly_postpaid') and data.get('billing_type') != 'monthly':
+            self.add_error('billing_type', 'Postpaid usage requires Monthly billing.')
+        if existing and data.get('monthly_postpaid', False) != existing.monthly_postpaid:
+            if existing.bundle.company_access.exists() or CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
+                self.add_error('monthly_postpaid', 'A module with purchased or metered access must retain its billing model.')
         return data
 
 
@@ -40,7 +46,11 @@ def save_module_price(data, actor):
         feature.is_active = True
         feature.save(update_fields=['is_active'])
     mapping = ModulePriceLabel.objects.select_related('bundle').filter(feature=feature).first()
+    if data.get('monthly_postpaid') and data['billing_type'] != 'monthly':
+        raise ValueError('Postpaid usage requires Monthly billing.')
     if mapping:
+        if data.get('monthly_postpaid', False) != mapping.monthly_postpaid and (mapping.bundle.company_access.exists() or CompanyPostpaidFeature.objects.filter(feature=feature).exists()):
+            raise ValueError('A purchased or metered module must keep its billing model.')
         bundle = FeatureBundle.objects.select_for_update().get(pk=mapping.bundle_id)
         if bundle.company_access.exists() and data['billing_type'] != bundle.billing_type:
             raise ValueError('Cannot change the billing period of a purchased module.')
@@ -55,6 +65,13 @@ def save_module_price(data, actor):
     bundle.save()
     bundle.features.set([feature])
     mapping, _ = ModulePriceLabel.objects.get_or_create(feature=feature, defaults={'bundle':bundle})
+    mapping.monthly_postpaid = data.get('monthly_postpaid', False)
+    if mapping.monthly_postpaid:
+        FeatureCreditPrice.objects.update_or_create(feature=feature, defaults={
+            'base_credits': Decimal('0'), 'activation_credits': Decimal('0'),
+            'per_staff_credits': Decimal('0'), 'per_user_credits': data['per_user_credits'],
+            'billing_period': 'monthly', 'is_available': data['published'],
+        })
     mapping.updated_by = actor
-    mapping.save(update_fields=['updated_by', 'updated_at'])
+    mapping.save(update_fields=['monthly_postpaid', 'updated_by', 'updated_at'])
     return bundle

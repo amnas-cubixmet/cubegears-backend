@@ -80,6 +80,9 @@ def adjust_company_balance(company, delta, *, reason, actor, reference):
         company, delta, kind="adjustment", reference=reference,
         description=reason, actor=actor,
     )
+    if delta > 0:
+        from .monthly_policy import retry_after_topup
+        retry_after_topup(company)
     return event
 
 
@@ -236,6 +239,8 @@ def confirm_purchase(purchase_id, payment):
     purchase.status = "credited"
     purchase.paid_at = timezone.now()
     purchase.save(update_fields=["payment_id", "status", "paid_at"])
+    from .monthly_policy import retry_after_topup
+    retry_after_topup(purchase.company)
     return purchase
 
 
