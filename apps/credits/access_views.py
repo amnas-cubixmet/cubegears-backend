@@ -16,7 +16,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
 CORE_MODULES = frozenset({
-    "billing", "company", "roles", "dashboard", "staff",
+    "billing", "company", "roles", "dashboard", "staff", "settings",
 })
 
 
