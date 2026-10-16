@@ -163,13 +163,19 @@ class OwnerOnboardingTests(TestCase):
         self.client.force_authenticate(None)
         response = self.client.post('/api/v1/auth/signup', {
             'workshop_name':'Signup Workshop', 'owner_name':'Signup Owner', 'mobile':'9876543210',
-            'email':'new@example.test', 'state':'Kerala', 'city':'Malappuram',
+            'email':'new@example.test',
         }, format='json')
         self.assertEqual(response.status_code, 201, response.data)
         company = Company.objects.get(slug='signup-workshop')
         self.assertTrue(company.require_paid_features)
         self.assertEqual(company.owner.email, 'new@example.test')
         self.assertEqual(company.plan, 'credits')
+        self.assertEqual(company.country, 'India')
+        self.assertEqual(company.state, '')
+        self.assertEqual(company.city, '')
+        branch = Branch.objects.get(company=company, code='HO')
+        self.assertEqual(branch.state, '')
+        self.assertEqual(branch.city, '')
         self.assertTrue(response.data['user']['isCompanyOwner'])
         self.assertNotIn('dashboard.view', response.data['user']['effectivePermissions'])
         self.assertNotIn('attendance.self', response.data['user']['effectivePermissions'])
