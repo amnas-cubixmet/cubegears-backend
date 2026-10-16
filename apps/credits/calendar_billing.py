@@ -135,6 +135,8 @@ def settle_statement(statement, *, at=None):
                 description=f"Calendar usage {statement.month}: feature + storage",
             )
         except ValueError:
+            statement.status = "insufficient"
+            statement.save(update_fields=["status"])
             return "insufficient", statement
     else:
         # Zero-usage periods are paid without creating a 0-credit ledger debit.
@@ -166,7 +168,7 @@ def run_calendar_cycles(*, at=None, dry_run=False):
         months.update(StorageMeterPeriod.objects.filter(period__lt=current).values_list("period", flat=True))
     if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
         months.update(FeatureMeterPeriod.objects.filter(period__lt=current).values_list("period", flat=True))
-    months.update(BillingCycleStatement.objects.filter(status="pending").values_list("month", flat=True))
+    months.update(BillingCycleStatement.objects.exclude(status="paid").values_list("month", flat=True))
     report = {}
     for month in sorted(months):
         if policy.effective_month and month < policy.effective_month:
@@ -193,7 +195,7 @@ def overdue_statements(company, *, at=None):
     # Grace extends to end-of-day on the configured due day (local time).
     today = timezone.localtime(at, timezone.get_default_timezone()).date()
     result = []
-    for row in BillingCycleStatement.objects.filter(company=company, status="pending").order_by("month"):
+    for row in BillingCycleStatement.objects.filter(company=company).exclude(status="paid").order_by("month"):
         if today > timezone.localtime(row.due_at, timezone.get_default_timezone()).date():
             if row.total_credits > ZERO:
                 result.append(row)
@@ -211,7 +213,10 @@ def billing_status(company, *, at=None):
         "enabled": bool(policy), "dueDay": policy.due_day if policy else 5,
         "dayOfMonth": 1,
         "cycleStart": start.isoformat(),
-        "nextDueAt": deadline_for(_period_for(at), policy.due_day if policy else 5).isoformat(),
+        "nextDueAt": min(
+            (s.due_at for s in rows if s.status != "paid"),
+            default=deadline_for(_period_for(at), policy.due_day if policy else 5),
+        ).isoformat(),
         "amountDue": str(pending_total),
         "overdue": bool(overdue),
         "invoices": [{
