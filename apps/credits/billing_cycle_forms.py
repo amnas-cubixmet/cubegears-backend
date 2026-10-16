@@ -14,7 +14,12 @@ class BillingCyclePolicyForm(forms.ModelForm):
     def clean(self):
         result = super().clean()
         if result.get("enabled"):
-            if not (settings.STORAGE_MONTHLY_METERED_ENABLED or settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED):
+            if not (
+                settings.STORAGE_MONTHLY_METERED_ENABLED
+                or (settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
+                    and settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED
+                    and not settings.CREDIT_LABEL_ONLY_ACCESS_ENABLED)
+            ):
                 raise forms.ValidationError(
                     "Enable the time-weighted monthly storage and/or feature meter in backend settings first."
                 )
