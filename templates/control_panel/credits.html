@@ -3,21 +3,18 @@
 {% block content %}
 <div class="credit-panel-wrap">
   <div class="credit-summary-title directory-heading">
-    <div><p class="eyebrow">Platform / Usage credits</p><h2>Credit Wallet Control</h2><p>Set feature activation, monthly/daily user and staff rates, storage pricing and auditable wallet charges.</p></div>
-    <a class="btn" href="{% url 'panel:feature-pricing' %}">Edit module prices</a>
+    <div><p class="eyebrow">Platform / Usage credits</p><h2>Credit Wallet Control</h2><p>Manage Razorpay credit packages, company wallet adjustments and auditable transactions. Paid Feature Labels and storage usage have separate dedicated controls.</p></div>
   </div>
 
   <section class="directory-stats remaining-stats" aria-label="Credit wallet overview">
     <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true">P</span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
     <article class="user-stat-card"><div class="user-stat-top"><span>Published Packages</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ published_packages }}</strong><small class="user-stat-meta">Packages available to purchase</small></article>
-    <article class="user-stat-card"><div class="user-stat-top"><span>Feature Prices</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ configured_features }}</strong><small class="user-stat-meta">Configured feature rates</small></article>
     <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true">W</span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
   </section>
 
   <nav class="credit-tab-navigation" aria-label="Credit management navigation" data-credit-tab-navigation hidden>
     <div class="credit-tab-list" role="tablist" aria-label="Credit management sections">
       <button type="button" role="tab" id="credit-tab-packages" aria-controls="credit-panel-packages" aria-selected="true" data-credit-tab="packages"><span>Credit Packages</span><span class="credit-tab-count">{{ package_total }}</span></button>
-      <button type="button" role="tab" id="credit-tab-pricing" aria-controls="credit-panel-pricing" aria-selected="false" tabindex="-1" data-credit-tab="pricing"><span>Feature Pricing</span><span class="credit-tab-count">{{ configured_features }}</span></button>
       <button type="button" role="tab" id="credit-tab-adjustment" aria-controls="credit-panel-adjustment" aria-selected="false" tabindex="-1" data-credit-tab="adjustment"><span>Manual Adjustment</span></button>
       <button type="button" role="tab" id="credit-tab-wallets" aria-controls="credit-panel-wallets" aria-selected="false" tabindex="-1" data-credit-tab="wallets"><span>Wallet Balances</span><span class="credit-tab-count">{{ wallet_total }}</span></button>
       <button type="button" role="tab" id="credit-tab-purchases" aria-controls="credit-panel-purchases" aria-selected="false" tabindex="-1" data-credit-tab="purchases"><span>Verified Purchases</span></button>
@@ -49,42 +46,6 @@
       {% for item in packages %}<tr><td>{{ item.name }}</td><td>{{ item.credits }}</td><td>₹{{ item.price_inr }}</td><td>{{ item.sort_order }}</td><td>{{ item.is_active|yesno:"Published,Hidden" }}</td></tr>
       {% empty %}<tr><td colspan="5">No packages published yet.</td></tr>{% endfor %}
       </tbody></table></div>
-    </section>
-
-  <section class="panel-card credit-tab-panel" id="credit-panel-pricing" role="tabpanel" aria-labelledby="credit-tab-pricing" data-credit-panel="pricing" tabindex="0">
-    <h3>Feature pricing</h3><p><a class="btn btn-primary" href="{% url 'panel:feature-pricing' %}">Set per-user prices for all modules</a></p><p><strong>One-time activation + recurring base + per-active-user × login users + per-employee × active staff</strong>. Choose daily, weekly or every 30 days. Prices are always set by platform staff.</p>
-      <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="price">
-        <label>Feature <select name="feature" required>
-          <option value="">Select module</option>
-          {% for feature in features %}<option value="{{ feature.pk }}">{{ feature.label }} ({{ feature.key }})</option>{% endfor %}
-        </select></label>
-        <label>Billing period <select name="billing_period" required><option value="monthly">Every 30 days</option><option value="weekly">Weekly</option><option value="daily">Daily</option></select></label>
-        <label>Recurring base credits <input type="number" name="base_credits" min="0" step="0.01" required value="0"></label>
-        <label>One-time activation credits <input type="number" name="activation_credits" min="0" step="0.01" value="0"></label>
-        <label>Credits per active login user / period <input type="number" name="per_user_credits" min="0" step="0.01" value="0"></label>
-        <label>Credits per active employee / period (legacy staff charge) <input type="number" name="per_staff_credits" min="0" step="0.01" required value="0"></label>
-        <label class="credit-panel-check"><input type="checkbox" name="is_available" checked> Available for activation</label>
-        <button type="submit" class="btn btn-primary">Save feature price</button>
-      </form>
-      <div class="responsive-table"><table><thead><tr><th>Feature</th><th>Period</th><th>Activation</th><th>Base</th><th>Per login user</th><th>Per employee</th><th>Status</th></tr></thead><tbody>
-      {% for rate in prices %}<tr><td>{{ rate.feature.label }} <small class="table-sub">{{ rate.feature.key }}</small></td><td>{{ rate.get_billing_period_display }}</td><td>{{ rate.activation_credits }}</td><td>{{ rate.base_credits }}</td><td>{{ rate.per_user_credits }}</td><td>{{ rate.per_staff_credits }}</td><td>{{ rate.is_available|yesno:"Available,Off" }}</td></tr>
-      {% empty %}<tr><td colspan="7">No feature rates set. Features cannot be purchased.</td></tr>{% endfor %}
-      </tbody></table></div>
-      <div class="cg-storage-credit-policy" style="margin-top:24px;padding-top:18px;border-top:1px solid #dce4ee">
-        <h3>Storage Credits — separate billing policy</h3>
-        <p>Charge credits based on real company MediaFile bytes. Disabled by default. One ledger charge per day/month when a backend scheduler runs; no card payment occurs here.</p>
-        <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="storage">
-          <label>Included storage (GB) <input name="included_gb" type="number" min="0" step="0.001" required value="{{ storage_policy.included_gb|default:'0' }}"></label>
-          <label>Credits per extra GB / billing period <input name="credits_per_gb" type="number" min="0" step="0.01" required value="{{ storage_policy.credits_per_gb|default:'0' }}"></label>
-          <label>Storage billing period <select name="billing_period">
-            <option value="monthly" {% if storage_policy.billing_period == 'monthly' %}selected{% endif %}>Monthly</option>
-            <option value="daily" {% if storage_policy.billing_period == 'daily' %}selected{% endif %}>Daily</option>
-          </select></label>
-          <label class="credit-panel-check"><input type="checkbox" name="is_active" {% if storage_policy.is_active %}checked{% endif %}> Enable scheduled storage charges</label>
-          <button class="btn btn-primary" type="submit">Save Storage Pricing</button>
-        </form>
-        <p class="remaining-note">Run <code>python manage.py bill_storage_credits --dry-run</code> to preview. Then schedule <code>python manage.py bill_storage_credits</code> once daily on one instance. Storage charges are wallet credits, not INR.</p>
-      </div>
     </section>
 
   <section class="panel-card credit-tab-panel" id="credit-panel-adjustment" role="tabpanel" aria-labelledby="credit-tab-adjustment" data-credit-panel="adjustment" tabindex="0">
