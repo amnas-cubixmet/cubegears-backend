@@ -35,6 +35,9 @@ CENT = Decimal("0.01")
 
 
 def effective_policy():
+    from .models import BillingCyclePolicy
+    if BillingCyclePolicy.objects.filter(enabled=True).exists():
+        return None
     return CreditCyclePolicy.objects.filter(enabled=True).order_by("pk").first()
 
 
