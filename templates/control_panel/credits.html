@@ -32,7 +32,16 @@
         <label>Package name <input name="name" type="text" maxlength="120" placeholder="Starter Credits" required></label>
         <label>Credits <input name="credits" type="number" min="0.01" step="0.01" required placeholder="500"></label>
         <label>Price (INR) <input name="price_inr" type="number" min="1" step="0.01" required placeholder="500"><small class="table-sub">Razorpay minimum ₹1; free packages cannot be purchased through Razorpay.</small></label>
-        <label>Display order (optional) <input name="sort_order" type="number" min="0" step="1" placeholder="Automatic"><small class="table-sub">Leave blank for automatic ordering. Any non-negative supported integer may be entered.</small></label>
+        <label>Display order mode
+          <select name="sort_order_mode" data-credit-order-mode>
+            <option value="unlimited" selected>Unlimited (automatic)</option>
+            <option value="manual">Custom order number</option>
+          </select>
+        </label>
+        <label>Display order (optional)
+          <input name="sort_order" type="number" min="0" step="1" placeholder="Automatic" data-credit-order-value>
+          <small class="table-sub">Unlimited adds new packages in order automatically. Choose Custom order to enter any non-negative supported integer. This controls position only, not package credits or purchase limits.</small>
+        </label>
         <label class="credit-panel-check"><input type="checkbox" name="is_active" checked> Published for purchase</label>
         <button class="btn btn-primary" type="submit">Create credit package</button>
       </form>
