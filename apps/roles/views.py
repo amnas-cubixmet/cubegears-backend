@@ -1,7 +1,7 @@
 from rest_framework import generics
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from apps.accounts.permissions import IsCompanyAdmin, can_delegate, is_company_owner, user_has_permission
+from apps.accounts.permissions import IsCompanyAdmin, is_company_owner, user_has_permission
 from .models import Role
 from .serializers import RoleSerializer
 
@@ -26,12 +26,10 @@ class RoleListCreateView(generics.ListCreateAPIView):
         serializer.save(company=self.request.user.company, is_system=False)
 
 class RoleDetailView(generics.RetrieveUpdateDestroyAPIView):
-    def get_object(self):
-        role = super().get_object()
-        if self.request.method not in {"GET", "HEAD", "OPTIONS"} and not can_delegate(self.request.user, role.permissions):
-            raise PermissionDenied("You cannot modify a role with greater permissions.")
-        return role
-
+    # The permission class already restricts writes to the verified owner.
+    # Do not compare historic role permissions with the owner's *current*
+    # paid entitlements: that blocks deleting roles containing expired modules.
+    # Protected system roles remain excluded by get_queryset().
     serializer_class = RoleSerializer
     permission_classes = [CanReadRolesOwnerCanWrite]
 

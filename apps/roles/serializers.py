@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from .models import Role
-from apps.accounts.permissions import can_delegate
+from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -21,7 +21,6 @@ class RoleSerializer(serializers.ModelSerializer):
         return code
 
     def validate_permissions(self, value):
-        user = self.context['request'].user
         if not isinstance(value, list) or any(not isinstance(code, str) for code in value):
             raise serializers.ValidationError("Permissions must be a list of strings.")
         if "*" in value or any(
@@ -29,6 +28,10 @@ class RoleSerializer(serializers.ModelSerializer):
             for code in value
         ):
             raise serializers.ValidationError("Staff roles cannot receive owner or platform authority.")
-        if not can_delegate(user, value):
-            raise serializers.ValidationError("You cannot grant permissions beyond your own role.")
+        # Owner controls role definitions, while feature entitlements control
+        # actual API use. An expired or unpurchased feature may still be
+        # configured in a role without granting access to that feature.
+        invalid = sorted(set(value) - set(TENANT_PERMISSIONS))
+        if invalid:
+            raise serializers.ValidationError("Unknown or unsupported permissions.")
         return list(dict.fromkeys(value))
