@@ -220,6 +220,9 @@ def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False)
         return "free_module", ZERO
     if not _enabled():
         return "disabled", ZERO
+    from .calendar_billing import active_policy
+    if active_policy():
+        return "calendar_policy", ZERO
     at = at or timezone.now()
     _, end = _month_bounds(period)
     if at < end:
