@@ -22,9 +22,6 @@ from apps.saas.access import FREE_TENANT_MODULES
 CORE_MODULES = frozenset({
     "billing", "company", "roles",
 }) | FREE_TENANT_MODULES
-# original closing brace removed below
-_UNUSED_FREE_SET = frozenset({
-})
 
 
 def discover_modules():
