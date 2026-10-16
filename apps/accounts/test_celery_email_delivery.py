@@ -7,16 +7,18 @@ from apps.accounts.email import queue_email
 @override_settings(EMAIL_CELERY_ENABLED=True,
                    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class CeleryMailCompatibilityTests(TestCase):
-    @patch("apps.accounts.tasks.send_email_task.delay")
+    @patch("config.celery.app.send_task")
     def test_plain_notification_queues_only_after_commit(self, deferred):
         with self.captureOnCommitCallbacks(execute=True):
             state = queue_email("Monthly statement", "Statement available", ["x@example.test"])
             deferred.assert_not_called()
         deferred.assert_called_once()
+        self.assertEqual(deferred.call_args.args[0], "apps.accounts.tasks.send_email_task")
+        self.assertEqual(deferred.call_args.kwargs["args"][2], ["x@example.test"])
         self.assertEqual(state["status"], "queued")
 
     @patch("apps.accounts.email.send_mail", return_value=1)
-    @patch("apps.accounts.tasks.send_email_task.delay", side_effect=OSError("redis offline"))
+    @patch("config.celery.app.send_task", side_effect=OSError("redis offline"))
     def test_broker_failure_falls_back_to_existing_direct_delivery(self, deferred, send):
         with self.captureOnCommitCallbacks(execute=True):
             state = queue_email("Notification", "Safe message", ["x@example.test"])
@@ -25,7 +27,7 @@ class CeleryMailCompatibilityTests(TestCase):
         self.assertEqual(state["status"], "local_only")
 
     @patch("apps.accounts.email.send_mail", return_value=1)
-    @patch("apps.accounts.tasks.send_email_task.delay")
+    @patch("config.celery.app.send_task")
     def test_delivery_callbacks_never_depend_on_broker(self, deferred, send):
         notified = []
         with self.captureOnCommitCallbacks(execute=True):
