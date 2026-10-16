@@ -16,6 +16,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from apps.companies.models import Company
+from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     CreditLedger, FeatureUsageSession, MonthlyUsageInvoice,
     StorageCreditPolicy, StorageUsageInterval,
@@ -64,6 +65,10 @@ def feature_month_quote(company, month):
     due = ZERO
     rows = []
     for session in sessions.select_related("feature"):
+        # Retired paid sessions for now-free modules remain as audit records,
+        # but may never create a new debit after the free policy is deployed.
+        if session.feature.key in FREE_TENANT_MODULES:
+            continue
         opened = max(start, session.started_at)
         closed = min(end, session.ended_at or end)
         seconds = Decimal(str(max(0, (closed-opened).total_seconds())))
@@ -160,6 +165,8 @@ def refresh_postpaid_feature_rates(company, *, now=None):
     for state in CompanyCreditFeature.objects.filter(
         company=company, enabled=True,
     ).select_related("feature").select_for_update():
+        if state.feature.key in FREE_TENANT_MODULES:
+            continue
         open_session = FeatureUsageSession.objects.filter(
             company=company, feature=state.feature, ended_at__isnull=True,
         ).first()
