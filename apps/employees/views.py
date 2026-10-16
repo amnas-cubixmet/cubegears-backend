@@ -219,8 +219,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         # No setup token or SMTP secrets are returned to the browser.
         employee._invite_email_delivery = delivery
         _record_activity(
-            employee, "Staff Access Invite Queued",
-            f"Staff access email queued for {user.email}.",
+            employee, "Staff Access Invite Requested",
+            "A Celery email notification was requested for the staff account.",
             self.request.user,
         )
 
@@ -422,8 +422,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         if not user_has_permission(request.user, "company.manage"):
             raise PermissionDenied("Only a company admin can invite staff login accounts.")
 
-        # Commit account/link changes before synchronously attempting direct mail.
-        # A mail outage does not roll back an otherwise valid staff profile.
+        # Commit staff account changes before attempting to queue the email.
+        # A broker outage cannot send mail, and does not roll back staff data.
         with transaction.atomic():
             obj = self.get_object()
             if obj.status != "Active":
@@ -441,10 +441,10 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         status_value = delivery["status"]
         return response.Response({
             "message": (
-                "Staff access submitted to email provider." if status_value == "submitted"
-                else "Email did not send. Check Django SMTP settings and server logs." if status_value == "failed"
-                else "Email is printed in the Django terminal; configure SMTP for inbox delivery." if status_value == "console_only"
-                else "Staff access invitation queued for email delivery."
+                "Staff access invitation accepted by Celery queue." if status_value == "queued"
+                else "Email service disabled. Start Redis and Celery Worker and enable email." if status_value == "disabled"
+                else "Celery broker unavailable. Invitation was not queued or sent." if status_value == "failed"
+                else "Staff access invitation pending transaction commit."
             ),
             "emailDeliveryStatus": status_value,
             "loginStatus": "Password Setup Pending" if not user.has_usable_password() else "Active",
