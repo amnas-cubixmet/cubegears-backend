@@ -1,15 +1,14 @@
-"""Platform staff credit controls: prices, packages, company grants and logs."""
+"""Platform credit package and wallet controls; legacy feature/storage price forms retired."""
 import uuid
 from django.contrib import messages
-from django.http import HttpResponseForbidden
+from django.http import HttpResponseForbidden, HttpResponseGone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.companies.models import Company
-from apps.saas.models import PlanFeature
-from .forms import CreditPackageForm, FeatureCreditPriceForm, CreditAdjustmentForm, StorageCreditPolicyForm
-from .models import CreditPackage, FeatureCreditPrice, CreditWallet, CreditLedger, CreditPurchase, StorageCreditPolicy
+from .forms import CreditPackageForm, CreditAdjustmentForm
+from .models import CreditPackage, CreditWallet, CreditLedger, CreditPurchase
 from .service import adjust_company_balance
 
 
@@ -34,24 +33,12 @@ def credits_control(request):
                 for name, messages_ in form.errors.items()
             )
             messages.error(request, "Invalid package. " + errors)
-        elif action == "price":
-            key = request.POST.get("feature")
-            feature = get_object_or_404(PlanFeature, pk=key)
-            row = FeatureCreditPrice.objects.filter(feature=feature).first()
-            form = FeatureCreditPriceForm(request.POST, instance=row)
-            if form.is_valid() and form.cleaned_data["feature"].id == feature.id:
-                form.save()
-                messages.success(request, "Feature credit price saved.")
-                return redirect("panel:credits")
-            messages.error(request, "Invalid feature price. " + str(form.errors))
-        elif action == "storage":
-            policy = StorageCreditPolicy.objects.order_by("pk").first()
-            form = StorageCreditPolicyForm(request.POST, instance=policy)
-            if form.is_valid():
-                form.save()
-                messages.success(request, "Storage policy saved. Charges begin only when the scheduled billing command runs.")
-                return redirect("panel:credits")
-            messages.error(request, "Invalid storage credit policy. " + str(form.errors))
+        elif action in {"price", "storage"}:
+            # Old HTML forms are permanently retired. Reject even manually
+            # crafted POSTs so they cannot mutate legacy billing rules.
+            return HttpResponseGone(
+                "Legacy pricing controls have been removed from Credit Wallet Control."
+            )
         elif action == "adjust":
             form = CreditAdjustmentForm(request.POST)
             if form.is_valid():
@@ -83,15 +70,11 @@ def credits_control(request):
             records = records.filter(company_id=company_id)
     wallets = CreditWallet.objects.select_related("company").order_by("company__name")
     packages = CreditPackage.objects.all().order_by("sort_order", "id")
-    prices = FeatureCreditPrice.objects.select_related("feature").order_by("feature__label")
     purchases = CreditPurchase.objects.select_related("company", "package").order_by("-created_at")[:25]
     return render(request, "control_panel/credits.html", {
         "page_title": "Credit Wallet Control",
         "active": "credits",
         "packages": packages,
-        "storage_policy": StorageCreditPolicy.objects.order_by("pk").first(),
-        "prices": prices,
-        "features": PlanFeature.objects.filter(is_active=True).order_by("label"),
         "wallets": wallets[:100],
         "companies": Company.objects.filter(is_active=True).order_by("name"),
         "logs": records[:100],
@@ -100,6 +83,5 @@ def credits_control(request):
         "adjustment_request_id": str(uuid.uuid4()),
         "package_total": CreditPackage.objects.count(),
         "published_packages": CreditPackage.objects.filter(is_active=True).count(),
-        "configured_features": FeatureCreditPrice.objects.count(),
         "wallet_total": CreditWallet.objects.count(),
     })
