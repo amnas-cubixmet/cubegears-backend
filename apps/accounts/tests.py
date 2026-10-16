@@ -5,6 +5,8 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
+from apps.companies.models import Company
+from apps.roles.models import Role
 
 
 class PasswordAuthenticationFlowTests(APITestCase):
@@ -78,6 +80,18 @@ class PasswordAuthenticationFlowTests(APITestCase):
         )
 
         self.assertEqual(reset_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(reset_response.data.get("access"))
+        self.assertTrue(reset_response.data.get("refresh"))
+        self.assertEqual(reset_response.data["user"]["email"], self.email)
+
+        # The reset link cannot create another session after the password change.
+        replay = self.client.post(
+            "/api/v1/auth/reset-password",
+            {"uid": uid, "token": token, "password": "ReplayPassword482!"},
+            format="json",
+        )
+        self.assertEqual(replay.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(replay.data.get("access"))
 
         old_login = self.client.post(
             "/api/v1/auth/login",
@@ -99,6 +113,31 @@ class PasswordAuthenticationFlowTests(APITestCase):
         )
         self.assertEqual(new_login.status_code, status.HTTP_200_OK)
         self.assertTrue(new_login.data.get("access"))
+
+    def test_reset_does_not_issue_tokens_to_disabled_company_role(self):
+        company = Company.objects.create(
+            name="Disabled Workshop", slug="disabled-reset-workshop", is_active=False,
+        )
+        role = Role.objects.create(
+            company=company, name="Disabled Owner", code="OWNER",
+            permissions=["*"], is_active=True,
+        )
+        user = User.objects.create_user(
+            email="disabled-reset@example.test",
+            password=self.old_password, name="Disabled Owner",
+            company=company, role=role, is_active=True,
+        )
+        uid, token = self.make_uid_token(user)
+        response = self.client.post(
+            "/api/v1/auth/reset-password",
+            {"uid": uid, "token": token, "password": self.new_password},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertNotIn("access", response.data)
+        self.assertNotIn("refresh", response.data)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(self.new_password))
 
     def test_weak_reset_password_returns_password_field_error(self):
         user = User.objects.create_user(
