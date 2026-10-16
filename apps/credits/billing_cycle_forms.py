@@ -14,6 +14,12 @@ class BillingCyclePolicyForm(forms.ModelForm):
     def clean(self):
         result = super().clean()
         if result.get("enabled"):
+            # The 5th-to-5th engine must never run alongside calendar billing.
+            from .cycle_billing import effective_policy
+            if effective_policy():
+                raise forms.ValidationError(
+                    "Disable the old 5th-to-5th billing cycle before enabling calendar-month billing."
+                )
             if not (
                 settings.STORAGE_MONTHLY_METERED_ENABLED
                 or (settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED
