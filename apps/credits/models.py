@@ -375,6 +375,7 @@ class ModulePriceLabel(models.Model):
 
 class BillingCyclePolicy(models.Model):
     """Single global, opt-in calendar-month postpaid settlement policy."""
+    singleton = models.PositiveSmallIntegerField(unique=True, default=1, editable=False)
     enabled = models.BooleanField(default=False)
     due_day = models.PositiveSmallIntegerField(default=5)
     restrict_overdue = models.BooleanField(default=True)
