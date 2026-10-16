@@ -36,6 +36,8 @@ def billable_user_count(company):
 
 def price_for(feature_price, staff, users=0):
     """Recurring charge is separate from the one-time activation fee."""
+    if feature_price.feature.key in FREE_TENANT_MODULES:
+        return ZERO
     return (
         feature_price.base_credits
         + feature_price.per_staff_credits * staff
