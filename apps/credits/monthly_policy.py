@@ -14,6 +14,9 @@ from .models import (MonthlyBillingPolicy, MonthlyBillingCycle, MonthlyUsageInvo
 request_billing_cache = ContextVar('monthly_billing_cache', default=None)
 
 def policy():
+    from .models import BillingCyclePolicy
+    if BillingCyclePolicy.objects.filter(enabled=True).exists():
+        return None
     return MonthlyBillingPolicy.objects.filter(pk=1, enabled=True).first()
 
 

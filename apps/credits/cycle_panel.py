@@ -48,6 +48,11 @@ class CreditCyclePolicyForm(forms.ModelForm):
             return values
         if self.instance.pk and self.instance.enabled and self.instance.day_of_month != values.get("day_of_month"):
             raise forms.ValidationError("Cycle date cannot change while billing is active. Settle bills, disable and re-enable with a new date.")
+        from .models import BillingCyclePolicy, MonthlyBillingPolicy
+        if BillingCyclePolicy.objects.filter(enabled=True).exists() or MonthlyBillingPolicy.objects.filter(enabled=True).exists():
+            raise forms.ValidationError(
+                "Disable and reconcile the calendar-month and older monthly collection policies before enabling this cycle."
+            )
         # Fail closed instead of allowing two independent metering/debit engines
         # to charge the same tenant storage or features for overlapping dates.
         if any((
