@@ -206,4 +206,36 @@
   </table></div>
   <p class="remaining-note">Snapshot totals may count the same files across reporting dates. This page does not claim the summed values are unique files or current disk usage.</p>
 </section>
+<section class="panel-card remaining-directory cg-storage-events" aria-labelledby="storage-events-title">
+  <header class="section-head directory-section-heading">
+    <div><p class="eyebrow">Actual file operations</p><h2 id="storage-events-title">Storage Activity Log</h2>
+      <p>Recorded upload, deletion and baseline events. Deleted-file details are preserved for auditing.</p></div>
+    <span class="directory-result-count">{{ event_count }} event{{ event_count|pluralize }}</span>
+  </header>
+  <div class="responsive-table remaining-table"><table>
+    <thead><tr><th>Date &amp; time</th><th>Company</th><th>Action</th><th>File</th><th>Size change</th><th>Storage after</th><th>Actor</th></tr></thead>
+    <tbody>
+    {% for item in event_rows %}
+      <tr>
+        <td data-label="Time">{{ item.occurred_at|date:"d M Y H:i:s" }}</td>
+        <td data-label="Company"><strong>{{ item.company.name }}</strong></td>
+        <td data-label="Action"><span class="remaining-chip">{{ item.get_event_type_display }}</span></td>
+        <td data-label="File">{{ item.name_snapshot }}</td>
+        <td data-label="Change">{{ item.delta_bytes|filesizeformat }} {% if item.delta_bytes < 0 %}(removed){% endif %}</td>
+        <td data-label="After">{{ item.storage_after_bytes|filesizeformat }}</td>
+        <td data-label="Actor">{{ item.actor.name|default:"System" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="empty-cell">No recorded storage upload/delete events for this company. Older storage files may predate the audit log.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if event_rows.has_other_pages %}
+    <nav class="cg-storage-pagination" aria-label="Storage activity pages">
+      {% if event_rows.has_previous %}<a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}event_page={{ event_rows.previous_page_number }}">Previous</a>{% endif %}
+      <span>Page {{ event_rows.number }} of {{ event_rows.paginator.num_pages }}</span>
+      {% if event_rows.has_next %}<a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}event_page={{ event_rows.next_page_number }}">Next</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>
 {% endblock %}
