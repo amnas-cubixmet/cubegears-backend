@@ -68,6 +68,11 @@ def feature_allowed(user, permission):
     from django.conf import settings
     module = permission.split(".")[0]
     strict_company = user.company.require_paid_features
+    # Past-due companies keep only owner recovery, balance and read-only audit.
+    # Check BEFORE free modules and paid labels so Dashboard itself is denied.
+    from apps.credits.calendar_billing import overdue_statements
+    if module not in {"billing", "company"} and overdue_statements(user.company):
+        return False
     # Dashboard, Settings, Staff Management, Roles & Permissions and SaaS Account are free in EVERY billing
     # mode, including strict paid-label-only mode. RBAC/tenant checks run first
     # in user_has_permission: this never gives employees owner/billing access.
