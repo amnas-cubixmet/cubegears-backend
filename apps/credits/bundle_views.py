@@ -79,8 +79,10 @@ class BundleListView(APIView):
         bundles = [
             bundle
             for bundle in FeatureBundle.objects.filter(is_active=True).prefetch_related("features")
-            if any(feature.is_active and feature.key not in FREE_TENANT_MODULES
-                   for feature in bundle.features.all())
+            if not bundle.features.all() or any(
+                feature.key not in FREE_TENANT_MODULES
+                for feature in bundle.features.all()
+            )
         ]
         accesses = {
             a.bundle_id: a for a in CompanyBundleAccess.objects.filter(
