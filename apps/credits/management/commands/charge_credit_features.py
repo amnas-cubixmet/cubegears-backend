@@ -1,5 +1,5 @@
 """Run daily from ONE scheduled instance. Charges enabled features every 30 days."""
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 from apps.credits.models import CompanyCreditFeature
 from apps.credits.service import renew_feature
@@ -12,6 +12,9 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        from apps.credits.cycle_billing import effective_policy
+        if effective_policy():
+            raise CommandError("Configurable credit cycles are enabled. Legacy billing is disabled to prevent duplicate charges.")
         qs = CompanyCreditFeature.objects.filter(
             enabled=True, next_charge_at__lte=timezone.now(),
         ).select_related("company", "feature")

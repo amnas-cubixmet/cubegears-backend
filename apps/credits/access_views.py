@@ -33,14 +33,20 @@ class TenantFeatureAccessView(APIView):
         if not is_company_owner(user):
             billing = {key: billing[key] for key in ('enabled', 'blocked', 'dueDay')}
         permissions = sorted(
-            code for code in TENANT_PERMISSIONS
-            if user_has_permission(user, code)
+            set(code for code in TENANT_PERMISSIONS if user_has_permission(user, code))
+            # Owner's read-only SaaS storage audit is authorized by the
+            # server's StorageAccountReadPermission even without a paid label.
+            | ({"storage.view"} if is_company_owner(user) else set())
         )
-        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
+        core = (CORE_MODULES | {"storage"} if is_company_owner(user) else CORE_MODULES)
+        if not user.company.require_paid_features:
+            core |= {"settings", "storage", "notifications"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core
         })
+        from .cycle_billing import cycle_status
+        cycle = cycle_status(user.company)
         label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
         label_modules = sorted(active_label_modules(user.company)) if label_only else []
         next_expiry = None
@@ -67,4 +73,6 @@ class TenantFeatureAccessView(APIView):
             ),
             "strictModulesEnabled": bool(getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)),
             "canManageFeatures": "billing.edit" in permissions,
+            "billingCycle": {key: value for key, value in cycle.items() if key != "invoices"},
+            "billingHold": cycle["overdue"],
         })

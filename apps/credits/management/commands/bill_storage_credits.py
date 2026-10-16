@@ -17,6 +17,9 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
 
     def handle(self, *args, **options):
+        from apps.credits.cycle_billing import effective_policy
+        if effective_policy():
+            raise CommandError("Configurable credit cycles are enabled. Legacy billing is disabled to prevent duplicate charges.")
         if settings.STORAGE_MONTHLY_METERED_ENABLED:
             raise CommandError("Monthly metered storage is enabled. Do NOT run legacy snapshot billing; use settle_metered_storage.")
         policy = StorageCreditPolicy.objects.filter(is_active=True).order_by("pk").first()
