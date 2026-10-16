@@ -3,6 +3,8 @@ from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
+from apps.accounts.test_email_helpers import simulate_celery_worker
+
 from apps.accounts.models import User
 from apps.accounts.permissions import user_has_permission
 from apps.companies.models import Company
@@ -12,10 +14,13 @@ from apps.roles.models import Role
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    EMAIL_CELERY_ENABLED=True,
+    CELERY_BROKER_URL="redis://127.0.0.1:6379/0",
     FRONTEND_URL="https://workshop.example.com",
 )
 class PlatformStaffInvitationTests(TestCase):
     def setUp(self):
+        simulate_celery_worker(self)
         self.owner = User.objects.create_superuser(
             email="owner-platform@example.com", name="Owner",
             password="PlatformOwnerSecure2026!",
