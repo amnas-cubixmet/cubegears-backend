@@ -371,3 +371,40 @@ class ModulePriceLabel(models.Model):
     bundle = models.OneToOneField(FeatureBundle, on_delete=models.PROTECT, related_name="module_price")
     updated_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class BillingCyclePolicy(models.Model):
+    """Single global, opt-in calendar-month postpaid settlement policy."""
+    enabled = models.BooleanField(default=False)
+    due_day = models.PositiveSmallIntegerField(default=5)
+    restrict_overdue = models.BooleanField(default=True)
+    allow_zero_balance_usage = models.BooleanField(default=True)
+    # Prevent charging periods that closed before policy activation.
+    effective_month = models.CharField(max_length=7, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class BillingCycleStatement(models.Model):
+    """Immutable invoice snapshot once a period has been finalized."""
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE,
+        related_name="calendar_billing_statements",
+    )
+    month = models.CharField(max_length=7)
+    due_at = models.DateTimeField()
+    feature_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    storage_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    total_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    details = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=12, choices=[("pending", "Pending"), ("paid", "Paid")],
+        default="pending",
+    )
+    finalized_at = models.DateTimeField(default=timezone.now)
+    settled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["company", "month"], name="credits_one_calendar_statement_per_month",
+        )]
+        ordering = ["-month"]
