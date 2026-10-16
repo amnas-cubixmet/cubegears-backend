@@ -243,6 +243,7 @@ class StorageEventsView(APIView):
     permission_classes = [StorageAccountReadPermission]
 
     def get(self, request):
+        from django.utils.dateparse import parse_date
         try:
             limit = int(request.query_params.get("limit", "50"))
             offset = int(request.query_params.get("offset", "0"))
@@ -250,10 +251,19 @@ class StorageEventsView(APIView):
             return response.Response({"message": "Invalid pagination."}, status=400)
         if limit < 1 or limit > 100 or offset < 0:
             return response.Response({"message": "Use limit 1-100 and offset >= 0."}, status=400)
+        from_day, to_day = request.query_params.get("from", ""), request.query_params.get("to", "")
+        if (from_day and not parse_date(from_day)) or (to_day and not parse_date(to_day)):
+            return response.Response({"message": "Dates must use YYYY-MM-DD."}, status=400)
+        if from_day and to_day and from_day > to_day:
+            return response.Response({"message": "Invalid date range."}, status=400)
 
         events = StorageEvent.objects.filter(
             company_id=request.user.company_id,
         ).select_related("actor").order_by("-occurred_at", "-created_at", "-id")
+        if from_day:
+            events = events.filter(occurred_at__date__gte=from_day)
+        if to_day:
+            events = events.filter(occurred_at__date__lte=to_day)
         count = events.count()
         return response.Response({
             "count": count,
