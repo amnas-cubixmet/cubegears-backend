@@ -49,16 +49,7 @@ class RecoveryRateThrottle(AnonRateThrottle):
 
 
 
-def ensure_tenant_super_admin_role(user):
-    # Compatibility shim for existing code paths. Never rewrite an existing
-    # role during login or /auth/me: doing so can collide with another tenant
-    # SUPER_ADMIN role and unexpectedly mutate all users sharing that role.
-    # New public signups already create their own protected SUPER_ADMIN.
-    return user
-
-
 def issue_tokens(user):
-    user = ensure_tenant_super_admin_role(user)
     refresh = RefreshToken.for_user(user)
     return {
         "token": str(refresh.access_token),
@@ -92,7 +83,7 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        user = ensure_tenant_super_admin_role(request.user)
+        user = request.user
         return Response(UserSerializer(user).data)
 
 class ForgotPasswordView(APIView):
@@ -327,8 +318,6 @@ class SetupPasswordView(APIView):
 
         if user.has_usable_password():
             return Response({"message": "Account is already set up. Use password reset."}, status=status.HTTP_400_BAD_REQUEST)
-
-        ensure_tenant_super_admin_role(user)
 
         user.is_staff = False
         user.is_superuser = False

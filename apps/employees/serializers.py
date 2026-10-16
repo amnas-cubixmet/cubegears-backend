@@ -104,6 +104,8 @@ class EmployeeSerializer(serializers.ModelSerializer):
     shiftId=serializers.PrimaryKeyRelatedField(source="shift",queryset=Shift.objects.all(),required=False,allow_null=True,write_only=True)
     shiftDetails=ShiftSerializer(source="shift",read_only=True)
     shiftName=serializers.CharField(source="shift.name",read_only=True)
+    roleId=serializers.UUIDField(write_only=True, required=False)
+    assignedRoleId=serializers.SerializerMethodField()
     accountStatus=serializers.SerializerMethodField()
     loginStatus=serializers.SerializerMethodField()
     emailDeliveryStatus=serializers.SerializerMethodField()
@@ -113,6 +115,15 @@ class EmployeeSerializer(serializers.ModelSerializer):
         exclude=("company","branch","employee_code","role_name","department_name","shift_label","joining_date","status","emergency_contact","payment_type")
         # Never allow an employee payload to bind a different user's login.
         read_only_fields=("user",)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.user_id and instance.user.role_id:
+            data['role'] = instance.user.role.name
+        return data
+
+    def get_assignedRoleId(self,obj):
+        return str(obj.user.role_id) if obj.user_id and obj.user.role_id else None
 
     def get_emailDeliveryStatus(self,obj):
         # Only present in the response that scheduled the invitation.
@@ -130,18 +141,36 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not company:
             return attrs
 
+        forbidden = {'permissions', 'permissionOverrides', 'permission_overrides', 'customPermissions', 'user_permissions', 'user', 'company', 'company_id', 'is_staff', 'is_superuser'} & set(self.initial_data)
+        if forbidden:
+            raise serializers.ValidationError({key: 'Staff access comes only from an assigned company role.' for key in forbidden})
         actor = request.user
+        selected_id = attrs.get('roleId')
+        if selected_id:
+            from apps.roles.assignment import assignable_role
+            selected = Role.objects.filter(pk=selected_id, company=company).first()
+            if not selected or not assignable_role(selected, actor):
+                raise serializers.ValidationError({'roleId': 'Select an assignable role created in this company.'})
+            if attrs.get('role_name') and attrs['role_name'].casefold() != selected.name.casefold():
+                raise serializers.ValidationError({'roleId': 'Role name and selected role do not match.'})
+            attrs['role_name'] = selected.name
         linked = attrs.get("user", getattr(self.instance, "user", None))
         if linked and (linked.company_id != company.id or linked.is_staff or linked.is_superuser):
             raise serializers.ValidationError({"user": "Select a workshop account in this company."})
         if linked and linked.role and not can_delegate(actor, linked.role.permissions):
             raise serializers.ValidationError({"user": "You cannot manage an account with greater permissions."})
+        if linked and "role_name" in attrs and not attrs["role_name"].strip():
+            raise serializers.ValidationError({"role": "An existing login must keep an assigned staff role."})
         role_name = attrs.get("role_name")
         if role_name:
-            role = Role.objects.filter(company=company, name__iexact=role_name, is_active=True).first()
+            roles = Role.objects.filter(company=company, name__iexact=role_name, is_active=True, is_system=False)
+            if not selected_id and roles.count() > 1:
+                raise serializers.ValidationError({"roleId": "Select the company role by ID; multiple roles have this name."})
+            role = roles.filter(pk=selected_id).first() if selected_id else roles.first()
             if not role:
                 raise serializers.ValidationError({"role": "Select an active role belonging to this company."})
-            if not can_delegate(actor, role.permissions):
+            from apps.roles.assignment import assignable_role
+            if not assignable_role(role, actor):
                 raise serializers.ValidationError({"role": "You cannot assign this role."})
         branch=attrs.get("branch")
         team=attrs.get("team")
