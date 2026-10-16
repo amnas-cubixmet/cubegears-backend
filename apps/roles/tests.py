@@ -4,6 +4,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import User
 from apps.companies.models import Company
+from apps.employees.models import Employee
 from apps.roles.models import Role
 
 
@@ -93,6 +94,17 @@ class OwnerManagedRolesTests(APITestCase):
         removed = self.client.delete(f"/api/v1/roles/{role_id}")
         self.assertEqual(removed.status_code, 204)
         self.assertFalse(Role.objects.filter(pk=role_id).exists())
+
+    def test_employee_profile_role_cannot_be_deleted_even_without_login(self):
+        saved = self._create(name="Body Technician", code="BODY_TECH")
+        self.assertEqual(saved.status_code, 201)
+        Employee.objects.create(
+            company=self.company, employee_code="EMP-0002",
+            name="Profile-only Worker", role_name="Body Technician",
+        )
+        delete_response = self.client.delete(f'/api/v1/roles/{saved.data["id"]}')
+        self.assertEqual(delete_response.status_code, 400)
+        self.assertTrue(Role.objects.filter(pk=saved.data["id"]).exists())
 
     def test_owner_cannot_create_wildcard_platform_billing_or_owner_role(self):
         for permissions in [["*"], ["panel.users.view"], ["billing.edit"]]:
