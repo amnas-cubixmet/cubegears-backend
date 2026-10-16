@@ -41,8 +41,9 @@ class OwnerOnboardingTests(TestCase):
         self.assertTrue(user_has_permission(self.owner, 'billing.edit'))
         for permission in ['dashboard.view', 'settings.view', 'settings.manage', 'staff.view', 'staff.create', 'billing.view']:
             self.assertTrue(user_has_permission(self.owner, permission), permission)
-        for permission in ['attendance.self', 'customers.view', 'storage.view']:
+        for permission in ['attendance.self', 'customers.view', 'storage.manage']:
             self.assertFalse(user_has_permission(self.owner, permission), permission)
+        self.assertTrue(user_has_permission(self.owner, 'storage.view'))
         access = self.client.get('/api/v1/saas/credits/access').data
         self.assertTrue(access['enforcementEnabled'])
         self.assertTrue(access['isCompanyOwner'])

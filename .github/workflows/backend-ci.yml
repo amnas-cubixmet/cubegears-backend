@@ -20,6 +20,12 @@ jobs:
       - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
+      - run: python manage.py test apps.accounts.test_celery_health apps.accounts.test_account_email_matrix --noinput
+      - name: Real Redis and Celery worker integration
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y redis-server
+          python scripts/smoke_celery_worker.py
       - run: python manage.py test apps.roles.tests --noinput
       - run: python manage.py test apps.credits.test_calendar_admin_settings apps.credits.test_calendar_billing --noinput
       - run: python manage.py makemigrations --check --dry-run
@@ -48,7 +54,7 @@ jobs:
       - run: python manage.py test apps.control_panel.test_staff_invite_creation apps.control_panel.test_platform_staff_invite --noinput
       # Guard production secrets setup: idempotent, private, no accidental rotation.
       - run: python -m unittest discover -s tests -p 'test_pythonanywhere_setup.py' -v
-      # Verify direct email delivery works without installing Celery.
+      # Verify account delivery stays on the Celery worker path.
       - run: python manage.py test apps.accounts.test_rbac_email.DirectEmailTests apps.employees.test_staff_password_onboarding --noinput
       # Exercise the full migration graph on a fresh SQLite database.
       # Runtime model changes must not ship without their database tables.

@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 from datetime import timedelta
 from django.test import TestCase, override_settings
+from django.conf import settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 from apps.accounts.models import User
@@ -27,6 +28,7 @@ class RazorpaySubscriptionTests(TestCase):
         self.client=APIClient()
         self.client.force_authenticate(self.owner)
 
+    @override_settings(MIDDLEWARE=[*settings.MIDDLEWARE, "apps.saas.payment_gate.SaaSPaymentGateMiddleware"])
     def test_unpaid_account_is_blocked_when_enforced(self):
         policy=PaymentPolicy.current()
         policy.enforce_paywall=True

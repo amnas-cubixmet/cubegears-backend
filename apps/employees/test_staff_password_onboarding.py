@@ -147,42 +147,33 @@ class StaffPasswordOnboardingTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("/setup-password?", mail.outbox[0].body)
 
-    def test_new_workshop_signup_seeds_company_staff_roles(self):
+    def test_new_workshop_signup_has_no_automatic_staff_roles(self):
         self.client.force_authenticate(user=None)
         with self.captureOnCommitCallbacks(execute=True):
             result = self.client.post("/api/v1/auth/signup", {
-                "workshop_name": "New Auto Workshop",
-                "owner_name": "Workshop Owner",
-                "mobile": "9876543210",
-                "email": "new-owner@example.com",
-                "country": "India",
-                "state": "Kerala",
-                "city": "Malappuram",
+                "workshop_name": "New Auto Workshop", "owner_name": "Workshop Owner",
+                "mobile": "9876543210", "email": "new-owner@example.com",
+                "country": "India", "state": "Kerala", "city": "Malappuram",
             }, format="json")
         self.assertEqual(result.status_code, 201, result.data)
         company = Company.objects.get(pk=result.data["workshop"]["id"])
-        roles = Role.objects.filter(company=company)
-        self.assertTrue(roles.filter(code="SUPER_ADMIN", is_system=True).exists())
-        for code in ["MECHANIC", "QC_INSPECTOR", "SERVICE_ADVISOR", "PARTS_MANAGER", "ACCOUNTANT"]:
-            role = roles.get(code=code)
-            self.assertFalse(role.is_system)
-            self.assertNotIn("*", role.permissions)
-            self.assertFalse(any(code.startswith("panel.") for code in role.permissions))
+        self.assertTrue(Role.objects.filter(company=company, code="SUPER_ADMIN", is_system=True).exists())
+        self.assertFalse(Role.objects.filter(company=company, is_system=False).exists())
 
-    def test_staff_role_backfill_is_idempotent_and_preserves_custom_roles(self):
-        from django.core.management import call_command
-        from io import StringIO
-
+    def test_authentication_never_seeds_or_overwrites_custom_roles(self):
         legacy = Company.objects.create(name="Legacy Workshop", slug="legacy-workshop")
-        custom = Role.objects.create(
-            company=legacy, name="Custom Mechanic", code="MECHANIC",
-            permissions=["attendance.self"],
-        )
-        call_command("seed_staff_roles", "--company-id", str(legacy.id), stdout=StringIO())
-        self.assertEqual(Role.objects.get(pk=custom.pk).permissions, ["attendance.self"])
-        self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
-        call_command("seed_staff_roles", "--company-id", str(legacy.id), stdout=StringIO())
-        self.assertEqual(Role.objects.filter(company=legacy).count(), 5)
+        custom = Role.objects.create(company=legacy, name="Custom Mechanic", code="MECHANIC", permissions=["attendance.self"])
+        staff = User.objects.create_user(email='custom-staff@example.test', company=legacy, role=custom, password='CustomStaffSecure123!')
+        self.client.force_authenticate(staff)
+        for _ in range(2):
+            self.assertEqual(self.client.get('/api/v1/auth/me').status_code, 200)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.post('/api/v1/auth/login', {'email':staff.email,'password':'CustomStaffSecure123!'}, format='json').status_code, 200)
+        custom.refresh_from_db()
+        staff.refresh_from_db()
+        self.assertEqual(custom.permissions, ['attendance.self'])
+        self.assertEqual(staff.role_id, custom.pk)
+        self.assertEqual(Role.objects.filter(company=legacy).count(), 1)
 
     def test_staff_login_rejects_inactive_or_cross_company_role(self):
         with self.captureOnCommitCallbacks(execute=True):

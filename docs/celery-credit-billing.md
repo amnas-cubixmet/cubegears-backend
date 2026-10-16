@@ -1,5 +1,9 @@
 # CubeGear optional Celery billing deployment
 
+For the current worker bootstrap, health checks and all billing modes, see
+[Celery worker setup](celery-worker-setup.md). The prepaid/snapshot discussion
+below describes the legacy command adapters only.
+
 **This is a safe scheduler for the existing PREPAID feature renewal and storage
 period-snapshot billing paths, not a new postpaid usage-cycle billing engine.**
 No new debit path activates unless `CREDIT_BILLING_CELERY_ENABLED=True`.
@@ -51,7 +55,7 @@ postpaid monthly cycles. The old feature operation debits on activation
 and renews at the feature-specific due date, not at calendar month-end.
 Storage billing is a current-byte snapshot, not GB-hour averaging.
 
-Email delivery is a separate Django SMTP setting (`EMAIL_HOST`,
-`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`) and is not automatically
-processed by this worker. Missing broker, failed retries and insufficient
+Account email delivery is processed by this worker when `EMAIL_CELERY_ENABLED=True`.
+SMTP still requires Django provider settings (`EMAIL_HOST`,
+`EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`) in the worker environment. Missing broker, failed retries and insufficient
 wallet balance must be monitored operationally.

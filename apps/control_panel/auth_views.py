@@ -133,6 +133,8 @@ def panel_magic_verify(request, token):
     if request.method == "POST":
         user = MagicLink.consume(token)
         if user and landing_route(user):
+            user.email_verified = True
+            user.save(update_fields=["email_verified"])
             login(request, user, backend="django.contrib.auth.backends.ModelBackend")
             return redirect("panel:" + landing_route(user))
         return _auth_page(request, "Link unavailable",

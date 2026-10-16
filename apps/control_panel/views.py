@@ -1,13 +1,12 @@
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
-from urllib.parse import quote
 
-from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from apps.accounts.email import queue_email
+from apps.accounts.account_links import password_action_url
 from uuid import UUID
 
 from django.contrib import messages
@@ -823,20 +822,12 @@ def _send_new_user_invite(request, user):
     is_reset = user.has_usable_password()
 
     if landing_route(user):
-        page = "password-reset" if is_reset else "password-setup"
-        url = request.build_absolute_uri(reverse(
-            f"panel:{page}", kwargs={"uid": uid, "token": token},
-        ))
+        url = password_action_url(request, user, uid, token, setup=not is_reset)
         purpose = "SaaS Control Panel"
     elif (user.company_id and user.role_id and user.company.is_active
           and user.role.is_active and user.role.company_id == user.company_id
           and not user.is_staff and not user.is_superuser):
-        page = "reset-password" if is_reset else "setup-password"
-        url = (
-            f"{settings.FRONTEND_URL.rstrip('/')}/{page}"
-            f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}"
-            f"&email={quote(user.email, safe='')}"
-        )
+        url = password_action_url(request, user, uid, token, setup=not is_reset)
         purpose = "Workshop Company Panel"
     else:
         return False

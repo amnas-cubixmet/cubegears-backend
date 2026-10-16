@@ -235,34 +235,9 @@ LOGIN_REDIRECT_URL = "panel:dashboard"
 LOGOUT_REDIRECT_URL = "panel:login"
 
 
-# Celery / Redis configuration is disabled for PythonAnywhere WSGI.
-# Do not remove it: these settings can be restored when a worker + Redis
-# broker are available. The attendance auto-close beat task will NOT run
-# automatically while Celery is disabled.
-# CELERY_BROKER_URL = env("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-# CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1")
-# CELERY_ACCEPT_CONTENT = ["json"]
-# CELERY_TASK_SERIALIZER = "json"
-# CELERY_RESULT_SERIALIZER = "json"
-# CELERY_TIMEZONE = TIME_ZONE
-# CELERY_TASK_TRACK_STARTED = True
-# CELERY_TASK_TIME_LIMIT = int(env("CELERY_TASK_TIME_LIMIT", 120))
-# CELERY_TASK_SOFT_TIME_LIMIT = int(env("CELERY_TASK_SOFT_TIME_LIMIT", 90))
-# CELERY_TASK_ALWAYS_EAGER = env_bool("CELERY_TASK_ALWAYS_EAGER", False)
-# CELERY_TASK_EAGER_PROPAGATES = env_bool("CELERY_TASK_EAGER_PROPAGATES", True)
-
-
-# CELERY_BEAT_SCHEDULE = {
-#     "auto-close-attendance-sessions": {
-#         "task": "apps.attendance.tasks.auto_close_attendance_sessions",
-#         "schedule": 300.0,
-#     },
-# }
-
-# Optional Redis/Celery scheduler: completely opt-in on deployments where a
-# dedicated Redis broker, single Beat instance and worker have been provisioned.
-# The jobs below run the EXISTING prepaid-renewal and storage-snapshot policies.
-# They are NOT usage-accrual/month-end billing (that requires a separate ledger).
+# The configured app is exposed through config.celery_app for Django and CLI.
+# Redis, worker processes and optional Beat run separately from WSGI/ASGI.
+# Email and billing flags remain explicit opt-ins; importing Celery starts no jobs.
 CREDIT_BILLING_CELERY_ENABLED = env_bool("CREDIT_BILLING_CELERY_ENABLED", False)
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
