@@ -1,0 +1,33 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="remaining-page">
+  <div class="directory-heading">
+    <div><p class="eyebrow">Platform / Credits / Policy</p><h2>Calendar-month billing</h2>
+      <p>Usage runs from the 1st to the last day of each month. Statements close only after verified meters finish. Wallet deduction starts on the configured due day of the following month, and overdue restriction starts the day after.</p>
+    </div>
+    <a class="btn" href="{% url 'panel:credits' %}">Credit Wallet</a>
+  </div>
+  <section class="panel-card">
+    <h3>Billing policy</h3>
+    <p>New companies may accrue verified postpaid usage with zero wallet credits during the grace period when enabled. No negative balances or partial charges are created. Prior months are not charged retroactively when this policy is first enabled.</p>
+    {% if form.non_field_errors %}<div role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <form method="post">{% csrf_token %}
+      <div class="remaining-editor-grid">
+        {% for field in form %}
+        <label><strong>{{ field.label }}</strong>{{ field }}{% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}{% if field.errors %}<span role="alert">{{ field.errors }}</span>{% endif %}</label>
+        {% endfor %}
+      </div>
+      {% if can_edit %}<button type="submit" class="btn btn-primary">Save calendar billing policy</button>{% endif %}
+    </form>
+    <p><strong>Current policy:</strong> {% if policy.enabled %}Enabled{% else %}Disabled{% endif %} · Deduct on next month's day {{ policy.due_day|default:5 }} · {% if policy.restrict_overdue %}Restrict overdue workshop operations{% else %}No overdue restriction{% endif %}</p>
+    <p><strong>Deployment:</strong> Select one monthly feature/storage metering engine and configure Celery. Disable old 5th-to-5th cycle and legacy overlapping settlement tasks. Start with <code>python manage.py settle_calendar_credits --dry-run</code>.</p>
+  </section>
+  <section class="panel-card">
+    <h3>Closed monthly statements</h3>
+    <div class="responsive-table"><table><thead><tr><th>Company</th><th>Month</th><th>Features</th><th>Storage</th><th>Total credits</th><th>Due</th><th>Status</th></tr></thead>
+      <tbody>{% for item in invoices %}<tr><td>{{ item.company.name }}</td><td>{{ item.month }}</td><td>{{ item.feature_credits }}</td><td>{{ item.storage_credits }}</td><td>{{ item.total_credits }}</td><td>{{ item.due_at|date:"d M Y H:i" }}</td><td>{{ item.status }}</td></tr>
+      {% empty %}<tr><td colspan="7">No closed calendar statements yet.</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </section>
+</div>
+{% endblock %}

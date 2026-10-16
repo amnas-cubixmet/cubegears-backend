@@ -422,21 +422,21 @@ class ModulePriceLabel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
+class MonthlyBillingPolicy(models.Model):
+    """Legacy monthly collection policy; retained for migration/runtime compatibility."""
+    enabled = models.BooleanField(default=False)
+    due_day = models.PositiveSmallIntegerField(default=5)
+    lock_after_due = models.BooleanField(default=True)
+    feature_meter_interval_seconds = models.PositiveIntegerField(default=300)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class MonthlyBillingCycle(models.Model):
-    """Persisted frozen due dates for the earlier monthly collection engine."""
+    """Immutable due date for a legacy monthly collection period."""
     period = models.CharField(max_length=7, unique=True)
     due_at = models.DateTimeField()
     lock_after_due = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-
-class MonthlyBillingPolicy(models.Model):
-    """Legacy monthly collection configuration, retained for data compatibility."""
-    enabled = models.BooleanField(default=False)
-    due_day = models.PositiveSmallIntegerField(default=5)
-    feature_meter_interval_seconds = models.PositiveIntegerField(default=300)
-    lock_after_due = models.BooleanField(default=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
 
 class BillingCyclePolicy(models.Model):

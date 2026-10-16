@@ -14,14 +14,16 @@ class BillingCyclePolicyForm(forms.ModelForm):
     def clean(self):
         result = super().clean()
         if result.get("enabled"):
-            from .models import CreditCyclePolicy, MonthlyBillingPolicy
-            if CreditCyclePolicy.objects.filter(enabled=True).exists():
+            # The 5th-to-5th engine must never run alongside calendar billing.
+            from .cycle_billing import effective_policy
+            from .models import MonthlyBillingPolicy
+            if effective_policy():
                 raise forms.ValidationError(
-                    "Disable and reconcile the older 5th-to-5th billing cycle before enabling calendar-month billing."
+                    "Disable the old 5th-to-5th billing cycle before enabling calendar-month billing."
                 )
             if MonthlyBillingPolicy.objects.filter(enabled=True).exists():
                 raise forms.ValidationError(
-                    "Disable and reconcile the older monthly collection policy before enabling calendar-month billing."
+                    "Disable legacy monthly collection policy before enabling calendar-month billing."
                 )
             if not (
                 settings.STORAGE_MONTHLY_METERED_ENABLED
