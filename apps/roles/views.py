@@ -10,6 +10,8 @@ class CanReadRolesOwnerCanWrite(BasePermission):
     message = "Only the company owner can create, edit or delete roles."
 
     def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated or not request.user.company_id:
+            return False
         if request.method in SAFE_METHODS:
             if request.query_params.get('assignable') == '1':
                 return user_has_permission(request.user, 'staff.create') or user_has_permission(request.user, 'staff.edit') or IsCompanyAdmin().has_permission(request, view)
