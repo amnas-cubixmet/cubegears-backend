@@ -165,6 +165,19 @@ class FreeCoreModulesTests(TestCase):
         self.assertEqual(result.status_code, 409)
         self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
 
+    @override_settings(CREDIT_LABEL_ONLY_ACCESS_ENABLED=False)
+    def test_standalone_paid_catalog_hides_legacy_settings_rate(self):
+        FeatureCreditPrice.objects.create(
+            feature=self.settings_feature, base_credits=Decimal("12.00"),
+        )
+        FeatureCreditPrice.objects.create(
+            feature=self.paid_feature, base_credits=Decimal("15.00"),
+        )
+        response = self.client.get("/api/v1/saas/credits/features")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("settings", [item["key"] for item in response.data])
+        self.assertIn("jobs", [item["key"] for item in response.data])
+
     def test_old_standalone_free_charges_cannot_restart(self):
         pricing = FeatureCreditPrice.objects.create(
             feature=self.free_feature, base_credits=Decimal("8.00"),
