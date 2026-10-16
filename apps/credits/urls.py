@@ -14,10 +14,12 @@ from .views import (
 )
 
 from .account_views import CompanyAccountView, FeatureActivityView, MonthlyStatementsView
+from .billing_cycle_views import CalendarBillingStatusView
 
 urlpatterns = [
     path("cycle", CreditCycleStatusView.as_view(), name="credit-cycle"),
     path("account", CompanyAccountView.as_view(), name="credit-account"),
+    path("billing-cycle", CalendarBillingStatusView.as_view(), name="credit-billing-cycle"),
     path("feature-activity", FeatureActivityView.as_view(), name="credit-feature-activity"),
     path("monthly-statements", MonthlyStatementsView.as_view(), name="credit-monthly-statements"),
     path("overview", CompanyCreditsView.as_view(), name="credit-overview"),

@@ -34,7 +34,8 @@ from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
 from apps.vehicles.models import Vehicle
-from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger
+from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, BillingCyclePolicy
+from apps.credits.billing_cycle_forms import BillingCyclePolicyForm
 from apps.credits.storage_forms import StorageCreditPolicyForm
 from apps.saas.feature_discovery import sync_existing_modules
 from .permissions import route_allowed, landing_route
@@ -387,14 +388,24 @@ def subscription_payments(request):
 def storage(request):
     """Storage rate controls and live previews; page views never debit a wallet."""
     policy = StorageCreditPolicy.objects.order_by("pk").first()
+    cycle_policy = BillingCyclePolicy.objects.order_by("pk").first()
     can_edit_pricing = panel_permission(request.user, "storage", "edit")
+    cycle_action = request.method == "POST" and request.POST.get("action") == "billing_cycle"
+    cycle_form = BillingCyclePolicyForm(
+        request.POST if cycle_action else None, instance=cycle_policy,
+    )
     if request.method == "POST" and not can_edit_pricing:
         return HttpResponseForbidden("Platform storage pricing edit permission required.")
 
+    if cycle_action:
+        if cycle_form.is_valid():
+            cycle_form.save()
+            messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original due date.")
+            return redirect("panel:storage")
     policy_form = StorageCreditPolicyForm(
-        request.POST if request.method == "POST" else None, instance=policy,
+        request.POST if request.method == "POST" and not cycle_action else None, instance=policy,
     )
-    if request.method == "POST" and policy_form.is_valid():
+    if request.method == "POST" and not cycle_action and policy_form.is_valid():
         with transaction.atomic():
             saved = policy_form.save()
             # Keep a single effective published rule, including for older databases
@@ -476,6 +487,8 @@ def storage(request):
         "company_id": company_id, "companies": _company_choices(),
         "storage_policy_form": policy_form,
         "storage_policy": policy,
+        "billing_cycle_policy": cycle_policy,
+        "billing_cycle_form": cycle_form,
         "can_edit_storage_pricing": can_edit_pricing,
         "live_storage_rows": live_rows,
         "live_storage_count": company_page.paginator.count,

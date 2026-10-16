@@ -124,6 +124,54 @@
   </p>
 </section>
 
+<section class="panel-card cg-storage-settings" aria-labelledby="calendar-billing-title">
+  <header class="cg-storage-settings-header">
+    <div class="cg-storage-settings-heading">
+      <p class="eyebrow">PLATFORM / BILLING CYCLE</p>
+      <h2 id="calendar-billing-title">Calendar-month credit billing</h2>
+      <p>Usage: 1st through last day of the month. Finalize when meter data is complete; collect credits on the configured day of the next month. Never debit from this page.</p>
+    </div>
+    <span class="cg-storage-settings-status {% if billing_cycle_policy.enabled %}is-active{% else %}is-inactive{% endif %}">
+      {% if billing_cycle_policy.enabled %}Calendar billing enabled{% else %}Opt-in disabled{% endif %}
+    </span>
+  </header>
+  <div class="cg-storage-settings-content">
+    <div class="cg-storage-settings-editor">
+      {% if can_edit_storage_pricing %}
+        <form method="post" class="cg-storage-pricing-form" aria-label="Calendar billing configuration">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="billing_cycle">
+          {% if billing_cycle_form.non_field_errors %}<div class="cg-storage-errors" role="alert">{{ billing_cycle_form.non_field_errors }}</div>{% endif %}
+          <div class="cg-storage-fields">
+            <label class="cg-storage-field">Payment due day (next month, 1–28)
+              {{ billing_cycle_form.due_day }}
+              {% for error in billing_cycle_form.due_day.errors %}<small role="alert">{{ error }}</small>{% endfor %}
+            </label>
+          </div>
+          <div class="cg-storage-settings-actions">
+            <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>Enable calendar credit settlement</strong><small>Only the selected time-metered engine(s); older billing paths stop.</small></span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>Allow usage at zero credits until due</strong><small>Records liability; never creates negative wallet balances.</small></span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>Restrict overdue workshop modules</strong><small>After the configured due date: account, recharge, history and billing remain available.</small></span></label>
+            <button class="btn btn-primary" type="submit">Save Calendar Billing Policy</button>
+          </div>
+        </form>
+      {% else %}
+        <p>Billing cycle: calendar month · Due day: {{ billing_cycle_policy.due_day|default:5 }} · Overdue restriction: {{ billing_cycle_policy.restrict_overdue|yesno:"On,Off" }}. Editing requires Storage Edit permission.</p>
+      {% endif %}
+    </div>
+    <aside class="cg-storage-settings-guide">
+      <h3>Settlement timeline</h3>
+      <ol class="cg-storage-steps">
+        <li>Month end: freeze recorded feature seconds and storage GB-time.</li>
+        <li>Next month {{ billing_cycle_policy.due_day|default:5 }}: automatically deduct credits if balance covers the entire statement.</li>
+        <li>After due day: unpaid companies retain sign-in, account, recharge and storage audit; workshop pages are denied if restriction is enabled.</li>
+      </ol>
+      <p>Activation month: {{ billing_cycle_policy.effective_month|default:"Set on first enable" }}. No pre-activation period is automatically charged.</p>
+      <p>Run <code>python manage.py settle_calendar_credits --dry-run</code> for a read-only preview. The regular Celery schedule settles exactly once by ledger reference.</p>
+    </aside>
+  </div>
+</section>
+
 <section class="directory-stats remaining-stats" aria-label="Storage overview">
   <article class="user-stat-card"><div class="user-stat-top"><span>Usage Records</span><span class="user-stat-icon" aria-hidden="true">R</span></div><strong class="user-stat-value">{{ snapshot_count }}</strong><small class="user-stat-meta">Snapshots for selected company filter</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Recorded Files</span><span class="user-stat-icon" aria-hidden="true">F</span></div><strong class="user-stat-value">{{ total_files }}</strong><small class="user-stat-meta">Sum across selected snapshots</small></article>

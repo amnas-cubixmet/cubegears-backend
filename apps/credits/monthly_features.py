@@ -171,8 +171,11 @@ def meter_postpaid_feature(item, *, at=None, force=False):
             month_row, _ = FeatureMeterPeriod.objects.select_for_update().get_or_create(
                 company=state.company, feature=state.feature, period=period_name,
             )
-            if month_row.settled_at:
-                raise ValueError("Cannot accrue in a settled feature billing month.")
+            from .models import BillingCycleStatement
+            if month_row.settled_at or BillingCycleStatement.objects.filter(
+                company=state.company, month=period_name,
+            ).exists():
+                raise ValueError("Cannot accrue in a finalized feature billing month.")
             month_row.accrued_credits += amount
             month_row.covered_seconds += seconds
             month_row.save(update_fields=["accrued_credits", "covered_seconds", "updated_at"])
@@ -231,6 +234,9 @@ def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False)
         return "free_module", ZERO
     if not _enabled():
         return "disabled", ZERO
+    from .calendar_billing import active_policy
+    if active_policy():
+        return "calendar_policy", ZERO
     at = at or timezone.now()
     _, end = _month_bounds(period)
     if at < end:

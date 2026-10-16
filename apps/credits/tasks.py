@@ -72,6 +72,15 @@ def meter_postpaid_storage(self):
     return results
 
 
+@shared_task(bind=True, ignore_result=True, name="credits.settle_calendar_cycles")
+def settle_calendar_cycles(self):
+    """Finalize previous months and settle on the platform configured due day."""
+    if not settings.CREDIT_BILLING_CELERY_ENABLED:
+        return "disabled"
+    from .calendar_billing import run_calendar_cycles
+    return run_calendar_cycles()
+
+
 @shared_task(bind=True, ignore_result=True, name="credits.settle_previous_month")
 def settle_previous_month(self):
     """Month closes on the first day, 00:20 in configured local timezone."""

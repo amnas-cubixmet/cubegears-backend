@@ -422,18 +422,39 @@ class ModulePriceLabel(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
 
-class MonthlyBillingPolicy(models.Model):
-    """Single platform policy. Existing installations opt in after reviewing meters."""
+class BillingCyclePolicy(models.Model):
+    """Single global, opt-in calendar-month postpaid settlement policy."""
+    singleton = models.PositiveSmallIntegerField(unique=True, default=1, editable=False)
     enabled = models.BooleanField(default=False)
     due_day = models.PositiveSmallIntegerField(default=5)
-    feature_meter_interval_seconds = models.PositiveIntegerField(default=300)
-    lock_after_due = models.BooleanField(default=True)
+    restrict_overdue = models.BooleanField(default=True)
+    allow_zero_balance_usage = models.BooleanField(default=True)
+    # Prevent charging periods that closed before policy activation.
+    effective_month = models.CharField(max_length=7, blank=True, default="")
     updated_at = models.DateTimeField(auto_now=True)
 
 
-class MonthlyBillingCycle(models.Model):
-    """Freeze an issued month's deadline when collection first runs."""
-    period = models.CharField(max_length=7, unique=True)
+class BillingCycleStatement(models.Model):
+    """Immutable invoice snapshot once a period has been finalized."""
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE,
+        related_name="calendar_billing_statements",
+    )
+    month = models.CharField(max_length=7)
     due_at = models.DateTimeField()
-    lock_after_due = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    feature_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    storage_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    total_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    details = models.JSONField(default=dict, blank=True)
+    status = models.CharField(
+        max_length=12, choices=[("pending", "Pending"), ("insufficient", "Insufficient credits"), ("paid", "Paid")],
+        default="pending",
+    )
+    finalized_at = models.DateTimeField(default=timezone.now)
+    settled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["company", "month"], name="credits_one_calendar_statement_per_month",
+        )]
+        ordering = ["-month"]
