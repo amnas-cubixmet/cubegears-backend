@@ -5,6 +5,7 @@ from .access_views import TenantFeatureAccessView
 from .entitlement_views import CompanyModuleEntitlementsView
 from .access_views import TenantFeatureAccessView
 from .usage_views import CompanyUsageInvoicesView
+from .cycle_views import CreditCycleStatusView
 from .gateway_diagnostics import GatewayStatusView, GatewayTestView
 from .views import (
     CompanyCreditsView, CreditPackagesView, CreditFeaturesView,
@@ -15,6 +16,7 @@ from .views import (
 from .account_views import CompanyAccountView, FeatureActivityView, MonthlyStatementsView
 
 urlpatterns = [
+    path("cycle", CreditCycleStatusView.as_view(), name="credit-cycle"),
     path("account", CompanyAccountView.as_view(), name="credit-account"),
     path("feature-activity", FeatureActivityView.as_view(), name="credit-feature-activity"),
     path("monthly-statements", MonthlyStatementsView.as_view(), name="credit-monthly-statements"),

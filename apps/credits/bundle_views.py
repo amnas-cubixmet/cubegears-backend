@@ -14,6 +14,7 @@ from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess
 from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
+from .cycle_billing import effective_policy, activate_cycle_label
 
 
 class BundlePurchaseThrottle(UserRateThrottle):
@@ -31,7 +32,9 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
     ]
     # Expose the platform's real readiness state, not a browser-only toggle.
     disabled_reason = (
-        "FEATURE_ENTITLEMENTS_NOT_ENABLED"
+        "POSTPAID_MONTHLY_ONLY"
+        if effective_policy() and bundle.billing_type != "monthly"
+        else "FEATURE_ENTITLEMENTS_NOT_ENABLED"
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
         else "METERED_OPERATION_NOT_READY"
         if bundle.billing_type == "per_use"
@@ -64,6 +67,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "meteredReady": bundle.billing_type != "per_use",
         "purchaseEnabled": disabled_reason is None,
         "purchaseDisabledReason": disabled_reason,
+        "cyclePostpaid": bool(company and effective_policy() and
+            bundle.billing_type == "monthly"),
     }
 
 
@@ -133,7 +138,10 @@ class BundlePurchaseView(APIView):
                 "code": "METERED_OPERATION_NOT_READY",
             }, status=409)
         try:
-            access, charged = purchase_feature_bundle(request.user.company, bundle, request.user)
+            if effective_policy():
+                access, charged = activate_cycle_label(request.user.company, bundle, request.user)
+            else:
+                access, charged = purchase_feature_bundle(request.user.company, bundle, request.user)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
         return Response({

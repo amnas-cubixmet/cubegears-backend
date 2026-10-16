@@ -263,6 +263,9 @@ def purchase_feature_bundle(company, bundle, actor):
     purchases are not charged twice. Per-use purchases prepay exactly one
     usage token; only trusted server operations may consume that token.
     """
+    from .cycle_billing import effective_policy
+    if effective_policy():
+        raise ValueError("Postpaid cycle enabled: use the cycle label activation API.")
     bundle = FeatureBundle.objects.get(pk=bundle.pk, is_active=True)
     from django.conf import settings
     if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
@@ -349,6 +352,10 @@ def disable_feature_bundle(company, bundle, actor=None):
         company=company, bundle=bundle,
     ).first()
     if access and access.enabled:
+        # Close postpaid usage at the precise disable timestamp. Deleting the
+        # entitlement or deleting files never erases already-accrued time.
+        from .cycle_billing import stop_cycle_label
+        stop_cycle_label(company, bundle)
         access.enabled = False
         access.save(update_fields=["enabled", "updated_at"])
         from apps.saas.models import SecurityEvent

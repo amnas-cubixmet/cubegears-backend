@@ -365,6 +365,15 @@ if CREDIT_BILLING_CELERY_ENABLED:
         })
 
 
+# The new opt-in billing policy is database-configured by platform staff, so
+# one recurring (hourly) task retries due invoices after verified top-ups.
+# The task is a no-op unless the admin has explicitly enabled the policy.
+if CREDIT_BILLING_CELERY_ENABLED:
+    CELERY_BEAT_SCHEDULE["cubegear-settle-configurable-credit-cycles"] = {
+        "task": "credits.settle_due_cycles",
+        "schedule": crontab(minute=15),
+    }
+
 # Email notices use a persisted outbox; billing charges never depend on SMTP.
 # Switch both flags on only after Redis, a single Celery Beat and SMTP are ready.
 BILLING_EMAIL_ALERTS_ENABLED = env_bool("BILLING_EMAIL_ALERTS_ENABLED", False)

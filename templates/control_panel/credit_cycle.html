@@ -1,0 +1,40 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="remaining-page">
+  <div class="directory-heading">
+    <div>
+      <p class="eyebrow">Platform / Credit Wallet</p>
+      <h2>Monthly Credit Billing Cycle</h2>
+      <p>Configure a fixed company-wide postpaid period. Example: the 5th at 00:00 through the next month's 5th at 00:00 (Asia/Kolkata). Wallet debits happen at period close, not when a file is uploaded.</p>
+    </div>
+    <a class="btn" href="{% url 'panel:credits' %}">Back to Credit Wallet</a>
+  </div>
+  <section class="panel-card">
+    <h3>Billing cycle settings</h3>
+    <p>By default this optional engine is OFF. Enable only after checking legacy prepaid labels and retiring overlapping scheduled metering. Previously captured bills and history are never deleted.</p>
+    {% if cycle_form.non_field_errors %}<div role="alert">{{ cycle_form.non_field_errors }}</div>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <div class="remaining-editor-grid">
+        {% for field in cycle_form %}
+          <label><strong>{{ field.label }}</strong>{{ field }}{% if field.errors %}<span role="alert">{{ field.errors }}</span>{% endif %}</label>
+        {% endfor %}
+      </div>
+      {% if can_edit %}<button type="submit" class="btn btn-primary">Save monthly billing cycle</button>{% endif %}
+    </form>
+    <p><strong>Policy status:</strong> {% if policy.enabled %}Enabled{% else %}Disabled{% endif %}
+      {% if policy.activated_at %} · Usage monitored since {{ policy.activated_at|date:"d M Y H:i" }}{% endif %}</p>
+    <p><strong>Zero credits:</strong> Using a monthly postpaid label does not deduct credits until the cycle ends. An unpaid invoice stays due. If overdue restriction is enabled, workshop pages are locked after that due date, but the owner's SaaS Account, buying credits and storage history remain available.</p>
+    <p><strong>Storage:</strong> Proportional credit cost uses recorded bytes × observed time in the cycle. Files deleted before the next period stop accruing time, but the previous cycle's recorded use remains billable.</p>
+    <p><strong>Production:</strong> Run one Celery Beat + worker with CREDIT_BILLING_CELERY_ENABLED. Use <code>python manage.py settle_credit_cycles --dry-run</code> before enabling automatic settlement. Do not run legacy storage snapshot or postpaid month-end commands in parallel.</p>
+  </section>
+  <section class="panel-card">
+    <h3>Recent cycle invoices</h3>
+    <div class="responsive-table"><table><thead><tr><th>Company</th><th>Cycle starts</th><th>Due date</th><th>Category</th><th>Credits</th><th>Status</th></tr></thead><tbody>
+      {% for bill in invoices %}
+      <tr><td>{{ bill.company.name }}</td><td>{{ bill.starts_on }}</td><td>{{ bill.due_at|date:"d M Y H:i" }}</td><td>{{ bill.category|title }}</td><td>{{ bill.credits_due }}</td><td>{{ bill.status }}</td></tr>
+      {% empty %}<tr><td colspan="6">No completed cycle invoices yet. Billing starts after the configured activation date.</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+{% endblock %}
