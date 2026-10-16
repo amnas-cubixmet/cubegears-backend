@@ -27,7 +27,7 @@
   const keys = buttons.map(button => button.dataset.creditTab);
   const resumeKey = "cubegears-credit-return-tab";
 
-  if (buttons.length !== 6 || panels.length !== buttons.length) return;
+  if (buttons.length !== 5 || panels.length !== buttons.length) return;
   if (!buttons.every(button => panels.some(panel =>
     panel.id === button.getAttribute("aria-controls") &&
     panel.dataset.creditPanel === button.dataset.creditTab
@@ -70,6 +70,13 @@
       window.history.pushState(null, "", url);
     }
   };
+
+  // #credit-panel-pricing was retired. Old saved bookmarks should open a
+  // real tab rather than leave the address pointing to an invisible panel.
+  if (window.location.hash === "#credit-panel-pricing") {
+    window.history.replaceState(null, "", window.location.pathname +
+      window.location.search + "#credit-panel-packages");
+  }
 
   const queryHasCompany = new URLSearchParams(window.location.search).has("company");
   const initialTab = tabFromLocation() ||
