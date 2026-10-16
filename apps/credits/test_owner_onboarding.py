@@ -37,15 +37,18 @@ class OwnerOnboardingTests(TestCase):
         CreditWallet.objects.create(company=self.company, balance=Decimal('100'))
         self.client.force_authenticate(self.owner)
 
-    def test_new_company_has_no_free_modules_even_when_legacy_enforcement_off(self):
+    def test_new_company_has_free_dashboard_staff_and_billing_only(self):
         self.assertTrue(user_has_permission(self.owner, 'billing.edit'))
-        for permission in ['dashboard.view', 'attendance.self', 'customers.view', 'settings.view', 'storage.view']:
+        for permission in ['dashboard.view', 'staff.view', 'staff.create', 'billing.view']:
+            self.assertTrue(user_has_permission(self.owner, permission), permission)
+        for permission in ['attendance.self', 'customers.view', 'settings.view', 'storage.view']:
             self.assertFalse(user_has_permission(self.owner, permission), permission)
         access = self.client.get('/api/v1/saas/credits/access').data
         self.assertTrue(access['enforcementEnabled'])
         self.assertTrue(access['isCompanyOwner'])
         self.assertEqual(access['enabledModules'], [])
-        self.assertEqual(self.client.get('/api/v1/dashboard').status_code, 403)
+        self.assertEqual(self.client.get('/api/v1/dashboard').status_code, 200)
+        self.assertEqual(self.client.get('/api/v1/employees').status_code, 200)
         self.assertEqual(self.client.get('/api/v1/customers').status_code, 403)
 
     def test_wildcard_staff_cannot_see_or_mutate_any_saas_billing_data(self):
@@ -62,7 +65,7 @@ class OwnerOnboardingTests(TestCase):
         result = self.client.post('/api/v1/saas/credits/bundles/purchase', {'bundleId': self.bundle.pk}, format='json')
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data['chargedCredits'], '20.00')
-        self.assertFalse(user_has_permission(self.owner, 'dashboard.view'))
+        self.assertTrue(user_has_permission(self.owner, 'dashboard.view'))
         self.assertTrue(user_has_permission(self.staff, 'customers.view'))
         row = Customer.objects.create(company=self.company, name='Retained Customer', phone='12345')
         self.assertEqual(self.client.post('/api/v1/saas/credits/bundles/disable', {'bundleId': self.bundle.pk}, format='json').status_code, 200)
@@ -115,7 +118,7 @@ class OwnerOnboardingTests(TestCase):
         self.company.refresh_from_db()
         self.assertEqual(self.company.name, 'Updated Shop')
         self.assertEqual(self.company.city, 'Kochi')
-        self.assertFalse(user_has_permission(self.owner, 'dashboard.view'))
+        self.assertTrue(user_has_permission(self.owner, 'dashboard.view'))
         self.assertFalse(user_has_permission(self.owner, 'settings.view'))
 
     def test_company_api_cannot_reassign_owner_or_disable_paid_gating(self):
@@ -160,7 +163,7 @@ class OwnerOnboardingTests(TestCase):
         self.assertTrue(bundle.is_valid(), bundle.errors)
 
     @patch('apps.accounts.views.queue_email')
-    def test_public_signup_records_owner_without_free_features(self, email):
+    def test_public_signup_records_owner_with_free_core_features(self, email):
         self.client.force_authenticate(None)
         response = self.client.post('/api/v1/auth/signup', {
             'workshop_name':'Signup Workshop', 'owner_name':'Signup Owner', 'mobile':'9876543210',
@@ -178,7 +181,10 @@ class OwnerOnboardingTests(TestCase):
         self.assertEqual(branch.state, '')
         self.assertEqual(branch.city, '')
         self.assertTrue(response.data['user']['isCompanyOwner'])
-        self.assertNotIn('dashboard.view', response.data['user']['effectivePermissions'])
+        self.assertIn('dashboard.view', response.data['user']['effectivePermissions'])
+        self.assertIn('staff.view', response.data['user']['effectivePermissions'])
+        self.assertIn('billing.view', response.data['user']['effectivePermissions'])
+        self.assertNotIn('customers.view', response.data['user']['effectivePermissions'])
         self.assertNotIn('attendance.self', response.data['user']['effectivePermissions'])
 
     @override_settings(CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED=True, STORAGE_MONTHLY_METERED_ENABLED=True)
