@@ -170,7 +170,7 @@ class MagicLinkRequestView(APIView):
         serializer.is_valid(raise_exception=True)
         user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
         # Public recovery responses must not reveal whether an account exists.
-        if user:
+        if user and user_can_sign_in(user):
             raw_token = MagicLink.issue(user)
             url = f"{settings.FRONTEND_URL}/magic-link/verify?token={raw_token}"
             queue_email(
