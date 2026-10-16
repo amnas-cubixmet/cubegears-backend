@@ -55,6 +55,7 @@ class FreeCoreModulesTests(TestCase):
         )
         self.group = FeatureGroup.objects.create(key="free-core-test-group", label="Core")
         self.free_feature = PlanFeature.objects.create(key="staff", label="Staff", group=self.group)
+        self.settings_feature = PlanFeature.objects.create(key="settings", label="Settings", group=self.group)
         self.paid_feature = PlanFeature.objects.create(key="jobs", label="Jobs", group=self.group)
         CreditWallet.objects.create(company=self.company, balance=Decimal("0.00"))
         self.client = APIClient()
@@ -96,6 +97,41 @@ class FreeCoreModulesTests(TestCase):
         self.assertEqual(entitlement.data["freeModules"], ["billing", "dashboard", "settings", "staff"])
         self.assertNotIn("staff", entitlement.data["modules"])
         self.assertNotIn("settings", entitlement.data["modules"])
+
+    def test_settings_is_free_for_role_authorized_users_without_purchased_labels(self):
+        self.assertTrue(user_has_permission(self.owner, "settings.view"))
+        self.assertTrue(user_has_permission(self.owner, "settings.manage"))
+        self.assertTrue(user_has_permission(self.staff_user, "settings.view"))
+        self.assertFalse(user_has_permission(self.staff_user, "settings.manage"))
+        self.client.force_authenticate(self.staff_user)
+        access = self.client.get("/api/v1/saas/credits/access")
+        self.assertEqual(access.status_code, 200)
+        self.assertIn("settings", access.data["freeModules"])
+        self.assertNotIn("settings", access.data["enabledModules"])
+        self.assertEqual(access.data["activeLabelModules"], [])
+
+    def test_old_settings_pricing_is_not_listed_or_charged(self):
+        FeatureCreditPrice.objects.create(
+            feature=self.settings_feature, base_credits=Decimal("30.00"),
+            is_available=True,
+        )
+        legacy = FeatureBundle.objects.create(
+            key="legacy-settings", name="Settings", price_credits=Decimal("0.00"),
+            per_user_credits=Decimal("20.00"), billing_type="monthly",
+        )
+        legacy.features.set([self.settings_feature])
+        response = self.client.get("/api/v1/saas/credits/bundles")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(row["id"] == legacy.pk for row in response.data))
+        # Both old label purchases and standalone purchases must fail closed.
+        purchase = self.client.post(
+            "/api/v1/saas/credits/bundles/purchase",
+            {"bundleId": legacy.pk}, format="json",
+        )
+        self.assertEqual(purchase.status_code, 409)
+        with self.assertRaisesMessage(ValueError, "free"):
+            enable_paid_feature(self.company, self.settings_feature, self.owner)
+        self.assertFalse(CreditLedger.objects.filter(company=self.company).exists())
 
     def test_role_removal_blocks_staff_despite_free_tier(self):
         self.staff_role.permissions = ["dashboard.view", "jobs.view"]
