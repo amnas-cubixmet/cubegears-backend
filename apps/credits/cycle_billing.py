@@ -273,6 +273,12 @@ def run_due_cycles(*, at=None, dry_run=False):
         y, m = _advance_month(start.year, start.month)
         end = datetime(y, m, policy.day_of_month, tzinfo=_zone())
     for company in Company.objects.filter(is_active=True).iterator():
+        if not dry_run:
+            try:
+                reconcile_cycle_label_seats(company, at=at)
+            except Exception:
+                LOG.exception("Cycle seat reconciliation failed company=%s", company.pk)
+                result["seat_errors"] = result.get("seat_errors", 0) + 1
         # Preserve lock order: storage and features debit the *same* wallet.
         for cycle_start, cycle_end in cycles:
             for category in ("feature", "storage"):
@@ -287,6 +293,44 @@ def run_due_cycles(*, at=None, dry_run=False):
                                   company.pk, cycle_start.date(), category)
                 result[outcome] = result.get(outcome, 0) + 1
     return result
+
+
+@transaction.atomic
+def reconcile_cycle_label_seats(company, *, at=None):
+    """Close/open exact timestamped rate snapshots when login seat count changes.
+
+    Samples run hourly with the cycle worker. We never rewrite past usage
+    rows or charge a seat rate that was not recorded by the server.
+    """
+    policy = effective_policy()
+    if not policy:
+        return 0
+    at = at or timezone.now()
+    users = billable_user_count(company)
+    changed = 0
+    active = CycleLabelSession.objects.select_for_update().filter(
+        company=company, ended_at__isnull=True,
+    ).select_related("bundle")
+    for session in active:
+        entitlement = CompanyBundleAccess.objects.filter(
+            company=company, bundle_id=session.bundle_id, enabled=True,
+        ).exists()
+        if not entitlement or not session.bundle.is_active:
+            session.ended_at = at
+            session.save(update_fields=["ended_at"])
+            changed += 1
+            continue
+        new_rate = (session.bundle.per_user_credits * users).quantize(CENT)
+        if new_rate == session.monthly_credits and users == session.user_seats:
+            continue
+        session.ended_at = at
+        session.save(update_fields=["ended_at"])
+        CycleLabelSession.objects.create(
+            company=company, bundle=session.bundle, started_at=at,
+            monthly_credits=new_rate, user_seats=users,
+        )
+        changed += 1
+    return changed
 
 
 @transaction.atomic
