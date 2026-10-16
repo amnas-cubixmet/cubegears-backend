@@ -121,16 +121,26 @@ class PermissionBoundaryTests(TestCase):
         self.assertFalse(user_has_permission(self.user, 'panel.users.delete'))
 
 
-@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+@override_settings(
+    EMAIL_CELERY_ENABLED=True,
+    CELERY_BROKER_URL='redis://127.0.0.1:6379/0',
+    EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
+)
 class DirectEmailTests(TestCase):
-    def test_delivery_after_commit_without_celery(self):
-        # This succeeds even when the Celery package is not installed.
+    """Historical class name retained for CI; email now uses simulated worker."""
+    def setUp(self):
+        from apps.accounts.test_email_helpers import simulate_celery_worker
+        simulate_celery_worker(self)
+
+    def test_delivery_after_commit_via_celery_worker_only(self):
         with self.captureOnCommitCallbacks(execute=True):
-            queue_email('Subject', 'Message', ['recipient@example.com'])
+            state = queue_email('Subject', 'Message', ['recipient@example.com'])
+            self.assertEqual(state['status'], 'pending')
+        self.assertEqual(state['status'], 'queued')
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ['recipient@example.com'])
 
-    def test_rollback_does_not_send(self):
+    def test_rollback_does_not_queue_email(self):
         with self.captureOnCommitCallbacks(execute=True):
             try:
                 with transaction.atomic():
@@ -140,7 +150,7 @@ class DirectEmailTests(TestCase):
                 pass
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_reset_endpoint_sends_without_worker(self):
+    def test_reset_endpoint_queues_worker_email(self):
         User.objects.create_user(email='reset@example.com', name='Reset', password='Secure-924!')
         with self.captureOnCommitCallbacks(execute=True):
             result = self.client.post('/api/v1/auth/forgot-password', {'email': 'reset@example.com'})
@@ -172,16 +182,19 @@ class DirectEmailTests(TestCase):
         self.assertEqual(unknown.data['message'], 'If the account exists, a magic link has been sent.')
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_delivery_tracking_is_diagnostic_only(self):
+    def test_delivery_tracking_reports_broker_dispatch_not_inbox_delivery(self):
         from apps.accounts.email import email_delivery_mode
-        self.assertEqual(email_delivery_mode(), 'local_only')
+        self.assertEqual(email_delivery_mode(), 'pending')
         with self.captureOnCommitCallbacks(execute=True):
             state = queue_email('Check', 'Hello', ['someone@example.com'])
-            self.assertEqual(state['status'], 'local_only')
-        self.assertEqual(state['status'], 'local_only')
+            self.assertEqual(state['status'], 'pending')
+        self.assertEqual(state['status'], 'queued')
 
-    def test_smtp_error_is_logged_without_public_account_disclosure(self):
-        with patch('apps.accounts.email.send_mail', side_effect=OSError('SMTP unavailable')):
-            with self.assertLogs('django.test', level='ERROR'):
+    def test_broker_error_prevents_smtp_and_logs_without_secret_leak(self):
+        # Override the simulated worker to emulate a Redis failure.
+        with patch('config.celery.app.send_task', side_effect=OSError('Broker unavailable')):
+            with self.assertLogs('apps.accounts.email', level='ERROR'):
                 with self.captureOnCommitCallbacks(execute=True):
-                    queue_email('Subject', 'Message', ['recipient@example.com'])
+                    state = queue_email('Subject', 'Message', ['recipient@example.com'])
+        self.assertEqual(state['status'], 'failed')
+        self.assertEqual(len(mail.outbox), 0)

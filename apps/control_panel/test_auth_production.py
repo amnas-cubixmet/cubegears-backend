@@ -8,16 +8,21 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
+from apps.accounts.test_email_helpers import simulate_celery_worker
+
 from apps.accounts.models import MagicLink, User
 from apps.roles.models import Role
 
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    EMAIL_CELERY_ENABLED=True,
+    CELERY_BROKER_URL="redis://127.0.0.1:6379/0",
     PASSWORD_RESET_TIMEOUT=3600,
 )
 class PanelAccountRecoveryTests(TestCase):
     def setUp(self):
+        simulate_celery_worker(self)
         self.role = Role.objects.create(
             name="Platform administrator", code="PLATFORM_ADMIN",
             permissions=["panel.dashboard.view", "panel.users.view"],

@@ -201,8 +201,8 @@ EMAIL_TIMEOUT = int(env("EMAIL_TIMEOUT", 15))
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
 EMAIL_USE_SSL = env_bool("EMAIL_USE_SSL", False)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.com>")
-# Optional brokered notifications; security flows needing immediate on_delivery
-# confirmation remain synchronous until a durable outbox is introduced.
+# All application email is Celery-only. When disabled or broker is missing,
+# account links and notifications cannot be sent; there is no SMTP fallback.
 EMAIL_CELERY_ENABLED = env_bool("EMAIL_CELERY_ENABLED", False)
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")

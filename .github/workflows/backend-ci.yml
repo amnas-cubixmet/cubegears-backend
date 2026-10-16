@@ -20,6 +20,8 @@ jobs:
       - run: pip install 'celery[redis]>=5.6,<5.8'
       - run: python -m compileall -q .
       - run: python manage.py check
+      # Verify strict Celery-only dispatch before the longer backend integration suite.
+      - run: python manage.py test apps.accounts.test_celery_email_delivery apps.accounts.test_rbac_email.DirectEmailTests apps.control_panel.test_auth_production apps.control_panel.test_staff_invite_creation apps.control_panel.test_platform_staff_invite apps.employees.test_staff_password_onboarding --noinput
       # Verify label-only backend access and direct-API permission before other suites.
       - run: python manage.py test apps.credits.test_label_only_access --noinput
       - run: python manage.py test apps.credits.test_owner_onboarding --noinput

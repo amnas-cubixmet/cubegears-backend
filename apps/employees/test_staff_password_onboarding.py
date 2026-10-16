@@ -5,6 +5,8 @@ from django.core.cache import cache
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
+from apps.accounts.test_email_helpers import simulate_celery_worker
+
 from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.employees.models import Employee
@@ -13,10 +15,13 @@ from apps.roles.models import Role
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    EMAIL_CELERY_ENABLED=True,
+    CELERY_BROKER_URL="redis://127.0.0.1:6379/0",
     FRONTEND_URL="https://workshop.example",
 )
 class StaffPasswordOnboardingTests(APITestCase):
     def setUp(self):
+        simulate_celery_worker(self)
         # DRF throttles use the shared cache; keep isolated signup/login test runs
         # independent of previous authentication test requests.
         cache.clear()
@@ -97,7 +102,7 @@ class StaffPasswordOnboardingTests(APITestCase):
             with self.captureOnCommitCallbacks(execute=True):
                 created = self.create_employee()
         self.assertEqual(created.status_code, 201, created.data)
-        self.assertEqual(created.data["emailDeliveryStatus"], "console_only")
+        self.assertEqual(created.data["emailDeliveryStatus"], "pending")
         self.assertTrue(Employee.objects.filter(pk=created.data["id"]).exists())
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend")
@@ -110,8 +115,8 @@ class StaffPasswordOnboardingTests(APITestCase):
             with self.captureOnCommitCallbacks(execute=True):
                 invited = self.client.post(f"/api/v1/employees/{created.data['id']}/invite")
         self.assertEqual(invited.status_code, 200, invited.data)
-        self.assertEqual(invited.data["emailDeliveryStatus"], "console_only")
-        self.assertIn("terminal", invited.data["message"].lower())
+        self.assertEqual(invited.data["emailDeliveryStatus"], "pending")
+        self.assertIn("pending transaction commit", invited.data["message"].lower())
 
     def test_without_email_creates_profile_but_no_account_or_email(self):
         with self.captureOnCommitCallbacks(execute=True):
