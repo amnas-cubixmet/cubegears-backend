@@ -140,7 +140,25 @@ class ResetPasswordView(APIView):
         user.save(update_fields=["password", "email_verified"])
         from django.utils import timezone
         MagicLink.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
-        return Response({"message": "Password reset successfully."})
+
+        # Verify the same account/role eligibility as a normal email/password
+        # login before returning a new session. A valid reset link alone must
+        # never bypass a disabled company, role, or user login restriction.
+        login = LoginSerializer(
+            data={"email": user.email, "password": serializer.validated_data["password"]},
+            context={"request": request},
+        )
+        if not login.is_valid():
+            return Response({
+                "message": (
+                    "Password reset successfully, but this account cannot sign in. "
+                    "Contact your workshop administrator."
+                ),
+            })
+
+        tokens = issue_tokens(login.validated_data["user"])
+        tokens["message"] = "Password reset successfully. Signed in securely."
+        return Response(tokens)
 
 class MagicLinkRequestView(APIView):
     permission_classes = [AllowAny]
