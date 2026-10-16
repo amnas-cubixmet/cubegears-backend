@@ -162,6 +162,54 @@ class StorageCreditPolicy(models.Model):
         return "Storage wallet billing policy"
 
 
+class CreditCyclePolicy(models.Model):
+    """Opt-in global day-of-month wallet billing, independent of old plans.
+
+    Activation is forward-only: existing bytes/time cannot be back-billed
+    unless auditable events/sessions actually prove the observed interval.
+    """
+    day_of_month = models.PositiveSmallIntegerField(default=5)
+    enabled = models.BooleanField(default=False)
+    block_overdue = models.BooleanField(default=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class CreditCycleInvoice(models.Model):
+    """One immutable-amount invoice per company/category/fixed monthly cycle."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="cycle_invoices")
+    category = models.CharField(max_length=12, choices=[("feature", "Feature"), ("storage", "Storage")])
+    starts_on = models.DateField()
+    ends_at = models.DateTimeField()
+    due_at = models.DateTimeField()
+    credits_due = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
+    status = models.CharField(max_length=14, choices=[("pending", "Pending"), ("paid", "Paid"), ("insufficient", "Insufficient credits")], default="pending")
+    details = models.JSONField(default=dict, blank=True)
+    settled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["company", "category", "starts_on"], name="unique_company_cycle_usage")]
+
+
+class CycleLabelSession(models.Model):
+    """Tenant activation, per-user rate and duration snapshot for postpaid labels."""
+    company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="cycle_label_sessions")
+    bundle = models.ForeignKey("credits.FeatureBundle", on_delete=models.PROTECT, related_name="cycle_sessions")
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    monthly_credits = models.DecimalField(max_digits=16, decimal_places=2)
+    user_seats = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "bundle"], condition=models.Q(ended_at__isnull=True),
+                name="unique_open_cycle_label",
+            ),
+        ]
+
+
 class FeatureUsageSession(models.Model):
     """Immutable price snapshot for a postpaid feature's enabled interval."""
     company = models.ForeignKey("companies.Company", on_delete=models.CASCADE, related_name="feature_usage_sessions")
