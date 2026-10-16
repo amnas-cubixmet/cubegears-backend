@@ -31,14 +31,14 @@
       <form method="post" class="credit-panel-form">{% csrf_token %}<input type="hidden" name="action" value="package">
         <label>Package name <input name="name" type="text" maxlength="120" placeholder="Starter Credits" required></label>
         <label>Credits <input name="credits" type="number" min="0.01" step="0.01" required placeholder="500"></label>
-        <label>Price (INR) <input name="price_inr" type="number" min="1" step="0.01" required placeholder="500"></label>
-        <label>Display order <input name="sort_order" type="number" min="0" value="0"></label>
+        <label>Price (INR) <input name="price_inr" type="number" min="1" step="0.01" required placeholder="500"><small class="table-sub">Razorpay minimum ₹1; free packages cannot be purchased through Razorpay.</small></label>
+        <label>Display order (optional) <input name="sort_order" type="number" min="0" step="1" placeholder="Automatic"><small class="table-sub">Leave blank for automatic ordering. Any non-negative supported integer may be entered.</small></label>
         <label class="credit-panel-check"><input type="checkbox" name="is_active" checked> Published for purchase</label>
         <button class="btn btn-primary" type="submit">Create credit package</button>
       </form>
-      <div class="responsive-table"><table><thead><tr><th>Package</th><th>Credits</th><th>Price</th><th>Status</th></tr></thead><tbody>
-      {% for item in packages %}<tr><td>{{ item.name }}</td><td>{{ item.credits }}</td><td>₹{{ item.price_inr }}</td><td>{{ item.is_active|yesno:"Published,Hidden" }}</td></tr>
-      {% empty %}<tr><td colspan="4">No packages published yet.</td></tr>{% endfor %}
+      <div class="responsive-table"><table><thead><tr><th>Package</th><th>Credits</th><th>Price</th><th>Display order</th><th>Status</th></tr></thead><tbody>
+      {% for item in packages %}<tr><td>{{ item.name }}</td><td>{{ item.credits }}</td><td>₹{{ item.price_inr }}</td><td>{{ item.sort_order }}</td><td>{{ item.is_active|yesno:"Published,Hidden" }}</td></tr>
+      {% empty %}<tr><td colspan="5">No packages published yet.</td></tr>{% endfor %}
       </tbody></table></div>
     </section>
 
