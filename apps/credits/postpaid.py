@@ -211,6 +211,9 @@ def storage_month_quote(company, month):
 def settle_monthly_usage(company, category, month, *, now=None):
     """Atomic wallet debit, one category/company/month; retry insufficient funds."""
     now = now or timezone.now()
+    from .calendar_billing import active_policy
+    if active_policy():
+        return "calendar_policy", None
     if category not in {"feature", "storage"}:
         raise ValueError("Unknown monthly billing category.")
     _, end = month_bounds(month)
