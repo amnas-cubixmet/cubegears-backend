@@ -24,7 +24,10 @@ class RoleSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         if not isinstance(value, list) or any(not isinstance(code, str) for code in value):
             raise serializers.ValidationError("Permissions must be a list of strings.")
-        if "*" in value or any(code.startswith("panel.") or code.startswith("billing.") for code in value):
+        if "*" in value or any(
+            code.startswith("panel.") or code.startswith("billing.") or code == "company.manage"
+            for code in value
+        ):
             raise serializers.ValidationError("Staff roles cannot receive owner or platform authority.")
         if not can_delegate(user, value):
             raise serializers.ValidationError("You cannot grant permissions beyond your own role.")
