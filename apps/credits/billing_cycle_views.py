@@ -28,8 +28,8 @@ class CalendarBillingStatusView(APIView):
             company=company, period__lt=current,
         ).values_list("period", flat=True))
         months.update(BillingCycleStatement.objects.filter(
-            company=company, status="pending",
-        ).values_list("month", flat=True))
+            company=company,
+        ).exclude(status="paid").values_list("month", flat=True))
         for month in sorted(months):
             _, statement = finalize_month(company, month)
             if statement:
