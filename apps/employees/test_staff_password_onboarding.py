@@ -116,7 +116,7 @@ class StaffPasswordOnboardingTests(APITestCase):
                 invited = self.client.post(f"/api/v1/employees/{created.data['id']}/invite")
         self.assertEqual(invited.status_code, 200, invited.data)
         self.assertEqual(invited.data["emailDeliveryStatus"], "pending")
-        self.assertIn("queued", invited.data["message"].lower())
+        self.assertIn("pending transaction commit", invited.data["message"].lower())
 
     def test_without_email_creates_profile_but_no_account_or_email(self):
         with self.captureOnCommitCallbacks(execute=True):
