@@ -34,6 +34,12 @@ class CreditCyclePolicyForm(forms.ModelForm):
 
     def clean(self):
         values = super().clean()
+        if values.get("enabled"):
+            from .calendar_billing import active_policy
+            if active_policy():
+                raise forms.ValidationError(
+                    "Calendar-month billing is active. Disable it before enabling the old 5th-to-5th cycle."
+                )
         if not values.get("enabled"):
             if self.instance.pk and self.instance.enabled and CreditCycleInvoice.objects.filter(
                 status__in=("pending", "insufficient"), credits_due__gt=0,
