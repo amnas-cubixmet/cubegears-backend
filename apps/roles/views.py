@@ -36,7 +36,11 @@ class RoleDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [CanReadRolesOwnerCanWrite]
 
     def perform_destroy(self, instance):
-        if instance.users.exists():
+        from apps.employees.models import Employee
+        has_staff_profile = Employee.objects.filter(
+            company=instance.company, role_name__iexact=instance.name,
+        ).exists()
+        if instance.users.exists() or has_staff_profile:
             raise ValidationError({
                 "role": "Reassign staff using this role before deleting it."
             })
