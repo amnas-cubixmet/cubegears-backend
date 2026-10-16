@@ -33,7 +33,8 @@ class FreeCoreModulesTests(TestCase):
         )
         self.role = Role.objects.create(
             company=self.company, name="Owner", code="OWNER",
-            permissions=["dashboard.view", "staff.view", "staff.create", "staff.edit",
+            permissions=["dashboard.view", "settings.view", "settings.manage",
+                         "staff.view", "staff.create", "staff.edit",
                          "staff.delete", "billing.view", "billing.edit",
                          "jobs.view", "stock.view"],
         )
@@ -45,7 +46,7 @@ class FreeCoreModulesTests(TestCase):
         self.company.save(update_fields=["owner"])
         self.staff_role = Role.objects.create(
             company=self.company, name="Front Desk", code="FRONT",
-            permissions=["dashboard.view", "staff.view", "staff.create",
+            permissions=["dashboard.view", "settings.view", "staff.view", "staff.create",
                          "jobs.view", "billing.view"],
         )
         self.staff_user = User.objects.create_user(
@@ -59,9 +60,9 @@ class FreeCoreModulesTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(self.owner)
 
-    def test_owner_can_open_all_three_free_modules_without_purchase(self):
-        self.assertEqual(FREE_TENANT_MODULES, frozenset({"billing", "dashboard", "staff"}))
-        for code in ("dashboard.view", "staff.view", "staff.create",
+    def test_owner_can_open_all_free_modules_without_purchase(self):
+        self.assertEqual(FREE_TENANT_MODULES, frozenset({"billing", "dashboard", "settings", "staff"}))
+        for code in ("dashboard.view", "settings.view", "settings.manage", "staff.view", "staff.create",
                      "staff.edit", "staff.delete", "billing.view", "billing.edit"):
             self.assertTrue(user_has_permission(self.owner, code), code)
         self.assertFalse(user_has_permission(self.owner, "jobs.view"))
@@ -85,15 +86,16 @@ class FreeCoreModulesTests(TestCase):
     def test_access_reports_free_permissions_separately_from_paid_features(self):
         r = self.client.get("/api/v1/saas/credits/access")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["freeModules"], ["billing", "dashboard", "staff"])
+        self.assertEqual(r.data["freeModules"], ["billing", "dashboard", "settings", "staff"])
         self.assertEqual(r.data["activeLabelModules"], [])
         self.assertEqual(r.data["enabledModules"], [])
         self.assertIn("dashboard.view", r.data["permissions"])
         self.assertIn("staff.view", r.data["permissions"])
         entitlement = self.client.get("/api/v1/saas/credits/entitlements")
         self.assertEqual(entitlement.status_code, 200)
-        self.assertEqual(entitlement.data["freeModules"], ["billing", "dashboard", "staff"])
+        self.assertEqual(entitlement.data["freeModules"], ["billing", "dashboard", "settings", "staff"])
         self.assertNotIn("staff", entitlement.data["modules"])
+        self.assertNotIn("settings", entitlement.data["modules"])
 
     def test_role_removal_blocks_staff_despite_free_tier(self):
         self.staff_role.permissions = ["dashboard.view", "jobs.view"]
@@ -107,6 +109,7 @@ class FreeCoreModulesTests(TestCase):
         discovered = {row["key"]: row for row in module_inventory()}
         self.assertFalse(discovered["staff"]["billable"])
         self.assertFalse(discovered["dashboard"]["billable"])
+        self.assertFalse(discovered["settings"]["billable"])
         self.assertFalse(discovered["billing"]["billable"])
         self.assertTrue(discovered["jobs"]["billable"])
 
@@ -118,9 +121,9 @@ class FreeCoreModulesTests(TestCase):
         free_bundle.features.set([self.free_feature])
         catalog = self.client.get("/api/v1/saas/credits/bundles")
         self.assertEqual(catalog.status_code, 200)
-        offer = next(row for row in catalog.data if row["id"] == free_bundle.pk)
-        self.assertEqual(offer["purchaseDisabledReason"], "FREE_MODULES_ONLY")
-        self.assertFalse(offer["purchaseEnabled"])
+        # Do not advertise old free-only labels as paid products.
+        self.assertFalse(any(row["id"] == free_bundle.pk for row in catalog.data))
+        self.assertFalse(any(row["key"] in FREE_TENANT_MODULES for row in catalog.data))
         result = self.client.post("/api/v1/saas/credits/bundles/purchase",
                                   {"bundleId": free_bundle.pk}, format="json")
         self.assertEqual(result.status_code, 409)
