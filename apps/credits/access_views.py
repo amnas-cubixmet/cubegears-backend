@@ -37,6 +37,8 @@ class TenantFeatureAccessView(APIView):
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core
         })
+        from .cycle_billing import cycle_status
+        cycle = cycle_status(user.company)
         label_only = bool(getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False))
         label_modules = sorted(active_label_modules(user.company)) if label_only else []
         next_expiry = None
@@ -62,4 +64,6 @@ class TenantFeatureAccessView(APIView):
             ),
             "strictModulesEnabled": bool(getattr(settings, "CREDIT_FEATURE_STRICT_GATE_ENABLED", False)),
             "canManageFeatures": "billing.edit" in permissions,
+            "billingCycle": {key: value for key, value in cycle.items() if key != "invoices"},
+            "billingHold": cycle["overdue"],
         })
