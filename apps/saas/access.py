@@ -59,7 +59,7 @@ def active_label_modules(company):
         Q(billing_type_at_purchase="permanent", valid_until__isnull=True)
         | Q(billing_type_at_purchase__in=("hourly", "daily", "weekly", "monthly"),
             valid_until__gt=now)
-    ).values_list("bundle__features__key", flat=True).distinct())
+    ).values_list("bundle__features__key", flat=True).distinct()) - FREE_TENANT_MODULES
 
 
 
