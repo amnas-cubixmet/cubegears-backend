@@ -22,6 +22,7 @@ jobs:
       - run: python manage.py check
       # Verify label-only backend access and direct-API permission before other suites.
       - run: python manage.py test apps.credits.test_label_only_access --noinput
+      - run: python manage.py test apps.credits.test_owner_onboarding --noinput
       # Validate Feature Label form, per-user pricing and activation first.
       - run: python manage.py test apps.credits.test_feature_bundles apps.credits.test_activation_readiness apps.control_panel.test_feature_catalog_cleanup --noinput
       - run: python manage.py test apps.control_panel.test_role_permission_editor --noinput

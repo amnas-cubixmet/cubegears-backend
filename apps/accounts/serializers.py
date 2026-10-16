@@ -153,9 +153,6 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
     owner_name = serializers.CharField(max_length=150)
     mobile = serializers.CharField(max_length=30)
     email = serializers.EmailField()
-    country = serializers.CharField(max_length=100, default="India")
-    state = serializers.CharField(max_length=100)
-    city = serializers.CharField(max_length=100)
 
     def validate_email(self, value):
         value = value.lower().strip()
