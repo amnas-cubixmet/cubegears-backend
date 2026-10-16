@@ -49,8 +49,8 @@ def _rate(company, feature):
     users = billable_user_count(company)
     staff = staff_count(company)
     amount = price_for(price, staff, users)
-    if amount < ZERO or price.activation_credits < ZERO:
-        raise ValueError("Negative feature prices are not allowed.")
+    if amount <= ZERO or price.activation_credits < ZERO:
+        raise ValueError("A positive monthly feature price is required.")
     return price, amount, users, staff
 
 
@@ -119,7 +119,7 @@ def activate_postpaid_feature(company, feature, *, at=None):
 
 
 @transaction.atomic
-def meter_postpaid_feature(item, *, at=None):
+def meter_postpaid_feature(item, *, at=None, force=False):
     if item.feature.key in FREE_TENANT_MODULES:
         return "free_module", None
     if not _enabled():
@@ -130,15 +130,26 @@ def meter_postpaid_feature(item, *, at=None):
     state = CompanyPostpaidFeature.objects.select_for_update().get(pk=item.pk)
     if not state.enabled or state.suspended:
         return "inactive", None
+    from .monthly_policy import billing_status
+    if billing_status(state.company, at=at)['blocked']:
+        # No new feature accrual while another unpaid category locks the company.
+        state.suspended = True
+        state.sampled_at = at
+        state.save(update_fields=['suspended', 'sampled_at', 'updated_at'])
+        return 'payment_blocked', None
     if state.sampled_at and at <= state.sampled_at:
         return "already_metered", None
 
+    from .monthly_policy import policy as collection_policy
+    cycle_policy = collection_policy()
+    if cycle_policy and state.sampled_at and not force and (at - state.sampled_at).total_seconds() < cycle_policy.feature_meter_interval_seconds:
+        return 'not_due', None
     old = state.sampled_at
     month_cost = ZERO
     covered = 0
     if old:
         elapsed = int((at - old).total_seconds())
-        max_gap = settings.STORAGE_METER_INTERVAL_SECONDS * 2
+        max_gap = (cycle_policy.feature_meter_interval_seconds if cycle_policy else settings.STORAGE_METER_INTERVAL_SECONDS) * 2
         start = old if elapsed <= max_gap else at
         if elapsed > max_gap:
             LOG.warning(
@@ -193,7 +204,7 @@ def deactivate_postpaid_feature(company, feature, *, at=None):
     if not state:
         return None
     if state.enabled and not state.suspended:
-        meter_postpaid_feature(state, at=at)
+        meter_postpaid_feature(state, at=at, force=True)
     state.enabled = False
     state.save(update_fields=["enabled", "updated_at"])
     return state
@@ -224,6 +235,10 @@ def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False)
     _, end = _month_bounds(period)
     if at < end:
         return "period_open", ZERO
+    from .monthly_policy import collection_waiting
+    if collection_waiting(period, at, dry_run=dry_run):
+        return "not_due", ZERO
+
     item = CompanyPostpaidFeature.objects.select_for_update().filter(
         company=company, feature=feature,
     ).first()
@@ -251,8 +266,11 @@ def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False)
             description=f"Postpaid feature {feature.key} {period}: {row.covered_seconds} seconds + activation fee",
         )
     except ValueError:
-        item.suspended = True
-        item.save(update_fields=["suspended", "updated_at"])
+        from .monthly_policy import deadline, overdue
+        cycle = deadline(period)
+        if cycle is None or (cycle.lock_after_due and overdue(cycle, at)):
+            item.suspended = True
+            item.save(update_fields=["suspended", "updated_at"])
         from .billing_notices import record_billing_notice
         record_billing_notice(company, "feature", period, "insufficient", credits, feature=feature.key)
         return "insufficient_credits", credits

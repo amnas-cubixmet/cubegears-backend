@@ -99,6 +99,11 @@ def user_has_permission(user, permission_code):
     if permission_code.startswith("billing."):
         return is_company_owner(user)
 
+    if user.company_id:
+        from apps.credits.monthly_policy import billing_status
+        if billing_status(user.company)['blocked']:
+            return False
+
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False

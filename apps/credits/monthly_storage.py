@@ -70,7 +70,7 @@ def _policy():
 
 
 @transaction.atomic
-def meter_company_storage(company, *, at=None):
+def meter_company_storage(company, *, at=None, mutation=False):
     """Persist a real server-side measurement and accrue observed time once."""
     policy = _policy()
     if policy is None:
@@ -83,9 +83,14 @@ def meter_company_storage(company, *, at=None):
 
     cursor, _ = StorageMeterCursor.objects.get_or_create(company=company)
     cursor = StorageMeterCursor.objects.select_for_update().get(pk=cursor.pk)
-    if cursor.sampled_at and at <= cursor.sampled_at:
+    if cursor.sampled_at and at < cursor.sampled_at:
+        return "already_metered", None
+    if cursor.sampled_at and at == cursor.sampled_at and not mutation:
         return "already_metered", None
 
+    from .monthly_policy import policy as collection_policy
+    if collection_policy() and cursor.sampled_at and not mutation and (at - cursor.sampled_at).total_seconds() < policy.meter_interval_seconds:
+        return 'not_due', None
     # No MediaFile bytes can be invented or submitted by a browser.
     bytes_used = storage_usage(company)
     billable = max(ZERO, Decimal(bytes_used) / GB - policy.included_gb).quantize(
@@ -95,7 +100,9 @@ def meter_company_storage(company, *, at=None):
     covered = 0
     if cursor.sampled_at:
         elapsed = int((at - cursor.sampled_at).total_seconds())
-        max_gap = int(settings.STORAGE_METER_INTERVAL_SECONDS) * 2
+        from .monthly_policy import policy as collection_policy
+        interval = policy.meter_interval_seconds if collection_policy() else settings.STORAGE_METER_INTERVAL_SECONDS
+        max_gap = int(interval) * 2
         # Never back-bill intervals during which the worker was down and file
         # changes could have gone unobserved.
         start = cursor.sampled_at if elapsed <= max_gap else at
@@ -163,16 +170,21 @@ def meter_all_company_storage(*, at=None):
 @transaction.atomic
 def settle_company_storage(company, period, *, at=None, dry_run=False):
     """Bill only a CLOSED calendar month; retries never duplicate wallet debits."""
-    if _policy() is None:
+    if not settings.STORAGE_MONTHLY_METERED_ENABLED:
         return "disabled", ZERO
+    live_policy = _policy()
     at = at or timezone.now()
     start, end = _month_bounds(period)
     if at < end:
         return "period_open", ZERO
 
+    from .monthly_policy import collection_waiting
+    if collection_waiting(period, at, dry_run=dry_run):
+        return "not_due", ZERO
+
     cursor = StorageMeterCursor.objects.select_for_update().filter(company=company).first()
     # Must observe the month-end boundary before finalizing its amount.
-    if cursor is None or cursor.sampled_at is None or cursor.sampled_at < end:
+    if live_policy is not None and (cursor is None or cursor.sampled_at is None or cursor.sampled_at < end):
         return "awaiting_meter", ZERO
     row = StorageMeterPeriod.objects.select_for_update().filter(
         company=company, period=period,
@@ -185,6 +197,9 @@ def settle_company_storage(company, period, *, at=None, dry_run=False):
 
     legacy_ref = f"storage:{company.pk}:monthly:{period}"
     if CreditLedger.objects.filter(company=company, reference=legacy_ref).exists():
+        if not dry_run:
+            row.settled_at = at
+            row.save(update_fields=["settled_at", "updated_at"])
         return "legacy_billed", credits
     ref = f"storage-metered:{company.pk}:{period}"
     if dry_run:

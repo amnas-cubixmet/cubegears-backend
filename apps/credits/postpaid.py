@@ -88,7 +88,7 @@ def feature_month_quote(company, month):
 
 
 @transaction.atomic
-def record_storage_interval(company, *, now=None, policy=None):
+def record_storage_interval(company, *, now=None, policy=None, mutation=False):
     """Record at most one interval due per call and never extrapolate downtime."""
     now = now or timezone.now()
     policy = policy or StorageCreditPolicy.objects.filter(is_active=True, billing_mode="metered_monthly").first()
@@ -104,7 +104,7 @@ def record_storage_interval(company, *, now=None, policy=None):
     from .models import CreditWallet
     CreditWallet.objects.select_for_update().get(company=company)
     last = StorageUsageInterval.objects.filter(company=company).order_by("-ends_at").first()
-    if last and now < last.ends_at + timedelta(seconds=interval):
+    if last and not mutation and now < last.ends_at + timedelta(seconds=interval):
         return "not_due", last
     month = timezone.localtime(now, _timezone()).strftime("%Y-%m")
     month_start, month_end = month_bounds(month)
@@ -253,6 +253,11 @@ def settle_monthly_usage(company, category, month, *, now=None):
         return "already_paid", invoice
     invoice.credits_due = amount
     invoice.details = metadata
+    from .monthly_policy import collection_waiting
+    if collection_waiting(month, now):
+        invoice.status = 'pending'
+        invoice.save(update_fields=['credits_due', 'details', 'status'])
+        return 'not_due', invoice
     reference = f"usage:{category}:{company.pk}:{month}"
     try:
         change_balance(

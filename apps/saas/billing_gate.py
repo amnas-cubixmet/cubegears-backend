@@ -32,6 +32,10 @@ class SaaSPaymentGateMiddleware:
         if path == "/api/v1/saas/billing" and request.method in ("GET", "HEAD"):
             return self.get_response(request)
 
+        from apps.credits.payment_gate import recovery_request
+        if recovery_request(path, request.method):
+            return self.get_response(request)
+
         # Authentication remains DRF's responsibility. Here JWT is used only to
         # identify a real authenticated company before enforcing entitlement.
         try:

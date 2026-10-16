@@ -126,7 +126,9 @@ def feature_allowed(user, permission):
     # Nonpayment suspension removes access immediately without waiting for a
     # Celery cycle; the frontend never decides the permission.
     if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
-        from apps.credits.models import CompanyPostpaidFeature
+        from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
+        if ModulePriceLabel.objects.filter(feature__key=module, monthly_postpaid=True, bundle__is_active=False).exists():
+            return False
         if CompanyPostpaidFeature.objects.filter(
             company=user.company, feature__key=module,
             feature__is_active=True, enabled=True, suspended=False,

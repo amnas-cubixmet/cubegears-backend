@@ -28,6 +28,10 @@ class TenantFeatureAccessView(APIView):
         if not user.company_id or not user.company or not user.company.is_active:
             return Response({"message": "An active company account is required."}, status=403)
 
+        from .monthly_policy import billing_status
+        billing = billing_status(user.company)
+        if not is_company_owner(user):
+            billing = {key: billing[key] for key in ('enabled', 'blocked', 'dueDay')}
         permissions = sorted(
             set(code for code in TENANT_PERMISSIONS if user_has_permission(user, code))
             # Owner's read-only SaaS storage audit is authorized by the
@@ -54,6 +58,7 @@ class TenantFeatureAccessView(APIView):
                 "valid_until"
             ).values_list("valid_until", flat=True).first()
         return Response({
+            "billingStatus": billing,
             "companyId": str(user.company_id),
             "isCompanyOwner": is_company_owner(user),
             "paidAccessRequired": user.company.require_paid_features,

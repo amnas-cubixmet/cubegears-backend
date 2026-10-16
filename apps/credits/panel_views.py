@@ -7,19 +7,31 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.companies.models import Company
-from .forms import CreditPackageForm, CreditAdjustmentForm
-from .models import CreditPackage, CreditWallet, CreditLedger, CreditPurchase
+from .forms import CreditPackageForm, CreditAdjustmentForm, MonthlyBillingPolicyForm
+from .models import CreditPackage, CreditWallet, CreditLedger, CreditPurchase, MonthlyBillingPolicy
 from .service import adjust_company_balance
 
 
 @panel_admin_required
 @require_http_methods(["GET", "POST"])
 def credits_control(request):
+    billing_config = MonthlyBillingPolicy.objects.filter(pk=1).first()
+    billing_form = MonthlyBillingPolicyForm(
+        request.POST if request.method == 'POST' and request.POST.get('action') == 'monthly_policy' else None,
+        instance=billing_config,
+    )
     if request.method == "POST":
         if not panel_permission(request.user, "credits", "edit"):
             return HttpResponseForbidden("Credit management permission is required.")
         action = request.POST.get("action")
-        if action == "package":
+        if action == 'monthly_policy':
+            if billing_form.is_valid():
+                saved = billing_form.save(commit=False)
+                saved.pk = 1
+                saved.save()
+                messages.success(request, 'Monthly collection policy saved. Issued deadlines are preserved.')
+                return redirect('panel:credits')
+        elif action == "package":
             pk = request.POST.get("package_id") or None
             instance = get_object_or_404(CreditPackage, pk=pk) if pk else None
             form = CreditPackageForm(request.POST, instance=instance)
@@ -72,6 +84,7 @@ def credits_control(request):
     packages = CreditPackage.objects.all().order_by("sort_order", "id")
     purchases = CreditPurchase.objects.select_related("company", "package").order_by("-created_at")[:25]
     return render(request, "control_panel/credits.html", {
+        "monthly_billing_form": billing_form,
         "page_title": "Credit Wallet Control",
         "active": "credits",
         "packages": packages,

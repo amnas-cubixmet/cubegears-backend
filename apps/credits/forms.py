@@ -69,3 +69,26 @@ class CreditAdjustmentForm(forms.Form):
         if value == Decimal("0") or abs(value) > Decimal("1000000"):
             raise forms.ValidationError("Change must be nonzero and within 1,000,000 credits.")
         return value
+
+
+class MonthlyBillingPolicyForm(forms.ModelForm):
+    class Meta:
+        from .models import MonthlyBillingPolicy
+        model = MonthlyBillingPolicy
+        fields = ['enabled', 'due_day', 'feature_meter_interval_seconds', 'lock_after_due']
+        labels = {'enabled': 'Enable monthly due-date collection',
+                  'due_day': 'Collection day in the following month (1–31)',
+                  'feature_meter_interval_seconds': 'Feature observation cycle (seconds, 300–86400)',
+                  'lock_after_due': 'Restrict workspace after the due day if unpaid'}
+
+    def clean_due_day(self):
+        day = self.cleaned_data['due_day']
+        if not 1 <= day <= 31:
+            raise forms.ValidationError('Choose a day from 1 to 31. Short months use their last day.')
+        return day
+
+    def clean_feature_meter_interval_seconds(self):
+        seconds = self.cleaned_data['feature_meter_interval_seconds']
+        if not 300 <= seconds <= 86400:
+            raise forms.ValidationError('Choose 300 to 86400 seconds; feature workers poll every five minutes.')
+        return seconds
