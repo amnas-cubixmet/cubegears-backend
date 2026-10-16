@@ -205,8 +205,21 @@ def billing_status(company, *, at=None):
     policy = active_policy()
     rows = BillingCycleStatement.objects.filter(company=company).order_by("-month")[:24]
     overdue = overdue_statements(company, at=at)
+    start, _ = _month_bounds(_period_for(at))
+    pending_total = sum((s.total_credits for s in rows if s.status != "paid"), ZERO)
     return {
         "enabled": bool(policy), "dueDay": policy.due_day if policy else 5,
+        "dayOfMonth": 1,
+        "cycleStart": start.isoformat(),
+        "nextDueAt": deadline_for(_period_for(at), policy.due_day if policy else 5).isoformat(),
+        "amountDue": str(pending_total),
+        "overdue": bool(overdue),
+        "invoices": [{
+            "id": s.pk, "startsOn": s.month + "-01",
+            "dueAt": s.due_at.isoformat(), "category": "combined",
+            "creditsDue": str(s.total_credits), "status": s.status,
+            "details": s.details,
+        } for s in rows],
         "allowZeroBalanceUsage": policy.allow_zero_balance_usage if policy else False,
         "restrictOverdue": policy.restrict_overdue if policy else False,
         "restricted": bool(overdue),
