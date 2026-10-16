@@ -21,6 +21,7 @@ jobs:
       - run: python -m compileall -q .
       - run: python manage.py check
       - run: python manage.py test apps.credits.test_free_core_modules --noinput
+      - run: python manage.py test apps.credits.test_module_pricing_panel apps.saas.test_feature_catalog_audit --noinput
       - run: python manage.py test apps.credits.test_package_display_order --noinput
       - run: python manage.py test apps.accounts.tests.PasswordAuthenticationFlowTests --noinput
       # Verify strict Celery-only dispatch before the longer backend integration suite.
