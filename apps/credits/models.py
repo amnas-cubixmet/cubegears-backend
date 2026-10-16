@@ -398,7 +398,7 @@ class BillingCycleStatement(models.Model):
     total_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     details = models.JSONField(default=dict, blank=True)
     status = models.CharField(
-        max_length=12, choices=[("pending", "Pending"), ("paid", "Paid")],
+        max_length=12, choices=[("pending", "Pending"), ("insufficient", "Insufficient credits"), ("paid", "Paid")],
         default="pending",
     )
     finalized_at = models.DateTimeField(default=timezone.now)
