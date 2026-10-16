@@ -1,9 +1,9 @@
 # CubeGears: Local Celery email smoke test (Windows / PowerShell)
 
-This test separates queue delivery from real SMTP delivery. Start with the
-console email backend: **no real email will be sent**. Celery Beat is not
-needed for individual outbound email tasks, and credit billing must remain
-disabled for this test.
+This test validates STRICT CELERY-ONLY email delivery. The Django web process
+never sends email directly and has no SMTP fallback. Console mode does NOT send
+real inbox mail: only the Celery worker prints the message. Celery Beat is not
+needed for individual outbound emails; leave credit billing disabled.
 
 ## 1. Install optional dependencies
 
@@ -42,8 +42,11 @@ EMAIL_BACKEND=django.core.mail.backends.console.EmailBackend
 DEFAULT_FROM_EMAIL=CubeGears <no-reply@example.test>
 ```
 
-Use only backend .env. Do not put SMTP passwords into React/Vite variables or
-commit any secrets. Fix existing malformed .env statements before proceeding.
+Use only backend .env. All account emails, including password reset, magic
+links, and invitations, require a live Redis broker and running Celery worker.
+Without a worker, tasks may queue but never send. Without Redis, queue requests
+fail or return disabled, with NO direct SMTP fallback. Do not put SMTP
+passwords in React/Vite variables or commit secrets.
 
 ## 4. Worker (separate terminal)
 
@@ -93,11 +96,15 @@ accepting a message is not proof that it reached an inbox.
 
 ## Caveats
 
-- Password reset, setup-password, verification and magic-link emails that
-  include `action_url` intentionally stay synchronous in the current app.
-- If Redis is unavailable, `queue_email` attempts direct delivery. With
-  the console backend this prints locally, so verify the worker log before
-  declaring Celery healthy.
+- Password reset, setup-password, verification and magic-link emails use
+  Celery and their signed action URLs are rendered inside the worker.
+  Protect Redis with network isolation and authentication: signed action URLs
+  reside temporarily inside broker task messages.
+- If Redis is unavailable, `queue_email` NEVER sends directly. It returns a
+  failed/disabled dispatch state after commit. An accepted queue operation
+  does not prove a worker is running or an inbox message was delivered.
+  There is no automatic persisted email outbox for general account emails
+  when broker dispatch fails. Retry the action after restoring Redis/worker.
 - Do not enable `CREDIT_BILLING_CELERY_ENABLED` merely to test email: it can
   schedule actual billing tasks. You do not need Celery Beat for one email.
 - Confirm a worker is running before trusting queued results.
