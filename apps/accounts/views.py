@@ -214,9 +214,6 @@ class PublicWorkshopSignupView(APIView):
             slug=slug,
             email=data["email"],
             phone=data["mobile"].strip(),
-            city=data["city"].strip(),
-            state=data["state"].strip(),
-            country=data["country"].strip(),
             currency="INR",
             plan="credits",
             require_paid_features=True,
@@ -229,8 +226,6 @@ class PublicWorkshopSignupView(APIView):
             code="HO",
             phone=data["mobile"].strip(),
             email=data["email"],
-            city=data["city"].strip(),
-            state=data["state"].strip(),
             is_head_office=True,
             is_active=True,
         )
