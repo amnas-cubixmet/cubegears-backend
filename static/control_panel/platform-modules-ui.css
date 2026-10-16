@@ -138,7 +138,7 @@ html[data-theme=dark] .remaining-state.is-good{color:#6ee7b7;background:#064e3b}
    Without JavaScript, tab navigation stays hidden and every section remains readable. */
 .credit-tab-navigation{min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:8px}
 .credit-tab-navigation[hidden],.credit-tab-panel[hidden]{display:none!important}
-.credit-tab-list{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.credit-tab-list{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .credit-tab-list [role=tab]{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;min-height:45px;padding:9px 10px;border:1px solid transparent;border-radius:9px;background:transparent;color:var(--muted);cursor:pointer;font:inherit;font-size:15px;font-weight:750;line-height:1.35;text-align:center;transition:background .15s,border-color .15s,color .15s}
 .credit-tab-list [role=tab]:hover{background:var(--surface-soft);color:var(--text)}
 .credit-tab-list [role=tab][aria-selected=true]{background:var(--brand-soft);border-color:var(--brand);color:var(--brand)}
