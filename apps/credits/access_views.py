@@ -34,7 +34,9 @@ class TenantFeatureAccessView(APIView):
             # server's StorageAccountReadPermission even without a paid label.
             | ({"storage.view"} if is_company_owner(user) else set())
         )
-        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
+        core = (CORE_MODULES | {"storage"} if is_company_owner(user) else CORE_MODULES)
+        if not user.company.require_paid_features:
+            core |= {"settings", "storage", "notifications"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core
