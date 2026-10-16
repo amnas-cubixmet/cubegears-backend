@@ -10,6 +10,33 @@ class CreditPackageForm(forms.ModelForm):
         model = CreditPackage
         fields = ["name", "credits", "price_inr", "is_active", "sort_order"]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # ModelForm otherwise marks PositiveIntegerField(required=True) even
+        # though its model default is 0. A blank order must be accepted.
+        self.fields["sort_order"].required = False
+        self.fields["sort_order"].help_text = (
+            "Optional. Leave blank to place new packages after existing packages."
+        )
+
+    def clean_sort_order(self):
+        value = self.cleaned_data.get("sort_order")
+        if value is not None:
+            return value
+        if self.instance.pk is not None:
+            # A blank field during an edit must not reorder the package.
+            return self.instance.sort_order
+
+        from django.db.models import Max
+        latest = CreditPackage.objects.aggregate(last=Max("sort_order"))["last"]
+        if latest is None:
+            return 0
+        # PositiveIntegerField is backed by a finite database integer type.
+        # Avoid overflow if the last manually entered order is already huge.
+        # A last value at SQLite/PostgreSQL's positive integer maximum cannot
+        # be incremented; placing at zero still produces a deterministic order.
+        return latest + 1 if latest < 2147483647 else 0
+
     def clean(self):
         data = super().clean()
         qty, value = data.get("credits"), data.get("price_inr")

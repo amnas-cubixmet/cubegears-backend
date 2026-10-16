@@ -28,7 +28,12 @@ def credits_control(request):
                 form.save()
                 messages.success(request, "Credit package saved.")
                 return redirect("panel:credits")
-            messages.error(request, "Invalid package. " + str(form.errors))
+            # Form errors are user-facing plain text, not raw HTML <ul> markup.
+            errors = " ".join(
+                f"{form.fields[name].label if name in form.fields else name}: {', '.join(messages_)}"
+                for name, messages_ in form.errors.items()
+            )
+            messages.error(request, "Invalid package. " + errors)
         elif action == "price":
             key = request.POST.get("feature")
             feature = get_object_or_404(PlanFeature, pk=key)
