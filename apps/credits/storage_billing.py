@@ -51,6 +51,9 @@ def storage_quote(company, policy=None, now=None):
 
 @transaction.atomic
 def charge_storage_period(company, policy=None, now=None):
+    from .calendar_billing import active_policy
+    if active_policy():
+        raise ValueError("Legacy snapshot charging disabled under calendar billing.")
     if settings.STORAGE_MONTHLY_METERED_ENABLED:
         # Strictly one storage ledger engine at a time; even direct callers
         # may not debit a legacy monthly snapshot on top of usage accrual.
