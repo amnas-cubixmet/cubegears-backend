@@ -173,6 +173,10 @@ class OwnerOnboardingTests(TestCase):
         company = Company.objects.get(slug='signup-workshop')
         self.assertTrue(company.require_paid_features)
         self.assertEqual(company.owner.email, 'new@example.test')
+        self.assertEqual(
+            list(Role.objects.filter(company=company).values_list('code', flat=True)),
+            ['SUPER_ADMIN'],
+        )  # Staff role definitions must come from the company owner, never hardcoded seeds.
         self.assertEqual(company.plan, 'credits')
         self.assertEqual(company.country, 'India')
         self.assertEqual(company.state, '')

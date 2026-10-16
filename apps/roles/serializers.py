@@ -14,10 +14,21 @@ class RoleSerializer(serializers.ModelSerializer):
     def get_usersCount(self, obj):
         return obj.users.filter(is_active=True).count()
 
+    def validate_code(self, value):
+        code = str(value or "").upper().strip()
+        if code in {"SUPER_ADMIN", "OWNER", "ADMIN_OWNER"} or not code:
+            raise serializers.ValidationError("Choose a valid, non-owner role code.")
+        return code
+
     def validate_permissions(self, value):
         user = self.context['request'].user
         if not isinstance(value, list) or any(not isinstance(code, str) for code in value):
             raise serializers.ValidationError("Permissions must be a list of strings.")
-        if not user.is_superuser and (any(code.startswith('panel.') for code in value) or not can_delegate(user, value)):
+        if "*" in value or any(
+            code.startswith("panel.") or code.startswith("billing.") or code == "company.manage"
+            for code in value
+        ):
+            raise serializers.ValidationError("Staff roles cannot receive owner or platform authority.")
+        if not can_delegate(user, value):
             raise serializers.ValidationError("You cannot grant permissions beyond your own role.")
         return list(dict.fromkeys(value))
