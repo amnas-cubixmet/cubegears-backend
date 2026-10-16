@@ -63,6 +63,32 @@ class OwnerManagedRolesTests(APITestCase):
         self.assertEqual(role.code, "TECHNICIAN")
         self.assertEqual(role.permissions, ["dashboard.view"])
 
+    def test_owner_can_edit_and_remove_role_with_not_purchased_paid_permissions(self):
+        # A role's permission template is not an entitlement. No Jobs or
+        # Invoices purchase is required to remove or configure this role.
+        saved = self._create(
+            name="Former Workshop Clerk", code="FORMER_CLERK",
+            permissions=["jobs.view", "invoices.view"],
+        )
+        self.assertEqual(saved.status_code, 201, saved.data)
+        role_id = saved.data["id"]
+
+        changed = self.client.patch(
+            f"/api/v1/roles/{role_id}",
+            {"permissions": ["stock.view", "invoices.view"]}, format="json",
+        )
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.assertEqual(changed.data["permissions"], ["stock.view", "invoices.view"])
+
+        removed = self.client.delete(f"/api/v1/roles/{role_id}")
+        self.assertEqual(removed.status_code, 204)
+        self.assertFalse(Role.objects.filter(pk=role_id).exists())
+
+    def test_owner_cannot_create_unknown_permission_even_with_paid_role_editing(self):
+        unknown = self._create(permissions=["arbitrary.feature.admin"])
+        self.assertEqual(unknown.status_code, 400)
+        self.assertFalse(Role.objects.filter(company=self.company, code="TECHNICIAN").exists())
+
     def test_company_manager_with_manage_permission_cannot_mutate_roles(self):
         self.client.force_authenticate(self.manager)
         self.assertEqual(self.client.get("/api/v1/roles/").status_code, 200)
