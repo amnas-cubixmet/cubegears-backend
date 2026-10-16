@@ -1,6 +1,7 @@
 """Owner account metadata and read-only catalogue/audit records."""
 from decimal import Decimal
 from django.conf import settings
+from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from apps.accounts.permissions import IsCompanyOwner, MODEL_PERMISSION_PREFIX
@@ -13,9 +14,11 @@ class CompanyAccountView(APIView):
     permission_classes = [IsCompanyOwner]
 
     def get(self, request):
+        from .monthly_policy import billing_status
         company = request.user.company
         domain = getattr(settings, 'TENANT_BASE_DOMAIN', '').strip('.')
         return Response({
+            'billingStatus': billing_status(company),
             'companyId': str(company.pk), 'companyName': company.name,
             'subdomain': company.slug,
             'accountPath': '/account',
@@ -83,6 +86,10 @@ class MonthlyStatementsView(APIView):
         for _, item in sorted(months.items(), reverse=True):
             statuses = item.pop('statuses')
             item['status'] = 'paid' if all(s == 'paid' for s in statuses) else 'insufficient' if 'insufficient' in statuses else 'pending'
+            from .monthly_policy import deadline, overdue
+            cycle = deadline(item['period'])
+            item['dueAt'] = cycle.due_at.isoformat() if cycle else None
+            item['overdue'] = bool(cycle and item['status'] != 'paid' and overdue(cycle, timezone.now()))
             item['totalCredits'] = str(item['featureCredits'] + item['storageCredits'])
             item['featureCredits'] = str(item['featureCredits'])
             item['storageCredits'] = str(item['storageCredits'])

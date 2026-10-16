@@ -86,6 +86,13 @@ def feature_allowed(user, permission):
     # in user_has_permission: this never gives employees owner/billing access.
     if module in FREE_TENANT_MODULES:
         return True
+    # Tenant storage accounting is an owner-only SaaS Account subsection,
+    # not a fourth free workshop module. RBAC runs first in
+    # user_has_permission(); staff do not inherit these permissions.
+    if module == "storage":
+        from apps.accounts.permissions import is_company_owner
+        if is_company_owner(user):
+            return True
     # Account purchase/recovery controls do not require a paid module.
     if strict_company and module == "company":
         return True
@@ -132,7 +139,9 @@ def feature_allowed(user, permission):
     # Nonpayment suspension removes access immediately without waiting for a
     # Celery cycle; the frontend never decides the permission.
     if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
-        from apps.credits.models import CompanyPostpaidFeature
+        from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
+        if ModulePriceLabel.objects.filter(feature__key=module, monthly_postpaid=True, bundle__is_active=False).exists():
+            return False
         if CompanyPostpaidFeature.objects.filter(
             company=user.company, feature__key=module,
             feature__is_active=True, enabled=True, suspended=False,

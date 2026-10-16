@@ -6,12 +6,23 @@
     <div><p class="eyebrow">Platform / Usage credits</p><h2>Credit Wallet Control</h2><p>Manage Razorpay credit packages, company wallet adjustments and auditable transactions. Paid Feature Labels and storage usage have separate dedicated controls.</p></div>
   </div>
 
+  <p><a class="btn" href="{% url 'panel:credit-cycle' %}">Configure monthly billing cycle (5th → 5th)</a></p>
   <section class="directory-stats remaining-stats" aria-label="Credit wallet overview">
     <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true">P</span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
     <article class="user-stat-card"><div class="user-stat-top"><span>Published Packages</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ published_packages }}</strong><small class="user-stat-meta">Packages available to purchase</small></article>
     <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true">W</span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
   </section>
 
+  <section class="panel-card" id="monthly-billing-settings">
+    <h3>Monthly usage payment settings</h3>
+    <p>Feature and storage usage close at calendar month-end. Collect credits on the configured day next month (default 5). Access continues through the due day; unpaid usage restricts the workspace from the next day. SaaS Account, top-ups and storage logs remain available. Days 29–31 use the last day of shorter months. Issued deadlines are preserved.</p>
+    <form method="post" class="credit-panel-form">{% csrf_token %}
+      <input type="hidden" name="action" value="monthly_policy">
+      {{ monthly_billing_form.as_p }}
+      <button class="btn btn-primary" type="submit">Save monthly payment settings</button>
+    </form>
+    <p>Requires an active monthly metering engine and one running billing scheduler. Prepaid package purchases keep their existing immediate charge.</p>
+  </section>
   <nav class="credit-tab-navigation" aria-label="Credit management navigation" data-credit-tab-navigation hidden>
     <div class="credit-tab-list" role="tablist" aria-label="Credit management sections">
       <button type="button" role="tab" id="credit-tab-packages" aria-controls="credit-panel-packages" aria-selected="true" data-credit-tab="packages"><span>Credit Packages</span><span class="credit-tab-count">{{ package_total }}</span></button>

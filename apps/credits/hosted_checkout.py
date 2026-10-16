@@ -58,6 +58,8 @@ def credit_hosted_purchase(purchase_id, link, payment):
     purchase.status = "credited"
     purchase.paid_at = timezone.now()
     purchase.save(update_fields=["payment_id", "status", "paid_at"])
+    from .monthly_policy import retry_after_topup
+    retry_after_topup(purchase.company)
     return purchase
 
 

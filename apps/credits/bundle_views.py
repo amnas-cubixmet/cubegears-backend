@@ -12,8 +12,9 @@ from rest_framework.views import APIView
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
-from .models import FeatureBundle, CompanyBundleAccess
+from .models import FeatureBundle, CompanyBundleAccess, ModulePriceLabel, CompanyPostpaidFeature
 from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
+from .cycle_billing import effective_policy, activate_cycle_label
 
 
 class BundlePurchaseThrottle(UserRateThrottle):
@@ -29,9 +30,14 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         {"key": feature.key, "label": feature.label}
         for feature in bundle.features.all() if feature.is_active
     ]
+    mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).first()
+    postpaid = bool(mapping)
+    postpaid_state = CompanyPostpaidFeature.objects.filter(company=company, feature=mapping.feature).first() if mapping and company else None
     # Expose the platform's real readiness state, not a browser-only toggle.
     disabled_reason = (
-        "FEATURE_ENTITLEMENTS_NOT_ENABLED"
+        "POSTPAID_MONTHLY_ONLY"
+        if effective_policy() and bundle.billing_type != "monthly"
+        else "FEATURE_ENTITLEMENTS_NOT_ENABLED"
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
         else "METERED_OPERATION_NOT_READY"
         if bundle.billing_type == "per_use"
@@ -43,7 +49,13 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00")
         else None
     )
+    if postpaid:
+        from .monthly_features import _enabled
+        from .monthly_policy import policy
+        if not _enabled() or not policy():
+            disabled_reason = 'POSTPAID_ENGINE_DISABLED'
     return {
+        'billingMode': 'monthly_postpaid' if postpaid else 'prepaid',
         "id": bundle.pk, "key": bundle.key, "name": bundle.name,
         "description": bundle.description,
         "perUserCredits": str(bundle.per_user_credits),
@@ -52,7 +64,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "billingType": bundle.billing_type,
         "features": active_features,
         "freeModules": [feature["key"] for feature in active_features if feature["key"] in FREE_TENANT_MODULES],
-        "active": bundle_is_usable(access) if access else False,
+        "active": bool(postpaid_state and postpaid_state.enabled and not postpaid_state.suspended) if postpaid else (bundle_is_usable(access) if access else False),
         "canResume": bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
             access.billing_type_at_purchase == "permanent" or (
                 access.billing_type_at_purchase in {"hourly", "daily", "weekly", "monthly"}
@@ -64,6 +76,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "meteredReady": bundle.billing_type != "per_use",
         "purchaseEnabled": disabled_reason is None,
         "purchaseDisabledReason": disabled_reason,
+        "cyclePostpaid": bool(company and effective_policy() and
+            bundle.billing_type == "monthly"),
     }
 
 
@@ -115,6 +129,9 @@ class BundlePurchaseView(APIView):
     def post(self, request):
         if not request.user.company_id or not user_has_permission(request.user, "billing.edit"):
             return Response({"message": "Company billing administrator permission required."}, status=403)
+        from .monthly_policy import billing_status
+        if billing_status(request.user.company)['blocked']:
+            return Response({'code': 'MONTHLY_PAYMENT_OVERDUE', 'message': 'Settle outstanding usage before activating another module.'}, status=409)
         payload = BundleInput(data=request.data)
         payload.is_valid(raise_exception=True)
         bundle = get_object_or_404(
@@ -132,8 +149,24 @@ class BundlePurchaseView(APIView):
                 "message": "Per-use billing needs server-side usage tracking for the selected features before it can be purchased.",
                 "code": "METERED_OPERATION_NOT_READY",
             }, status=409)
+        mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).select_related('feature').first()
+        if mapping:
+            from .monthly_features import activate_postpaid_feature
+            from .monthly_policy import policy
+            if not policy():
+                return Response({'message': 'Monthly due-date collection must be configured first.'}, status=409)
+            try:
+                state, charged = activate_postpaid_feature(request.user.company, mapping.feature)
+            except ValueError as exc:
+                return Response({'message': str(exc)}, status=409)
+            from .views import record_feature_change
+            record_feature_change(request, mapping.feature, True)
+            return Response({'bundle': _public_bundle(bundle, company=request.user.company, user_count=billable_user_count(request.user.company)), 'chargedCredits': str(charged), 'billingMode':'monthly_postpaid'})
         try:
-            access, charged = purchase_feature_bundle(request.user.company, bundle, request.user)
+            if effective_policy():
+                access, charged = activate_cycle_label(request.user.company, bundle, request.user)
+            else:
+                access, charged = purchase_feature_bundle(request.user.company, bundle, request.user)
         except ValueError as exc:
             return Response({"message": str(exc)}, status=409)
         return Response({
@@ -151,6 +184,13 @@ class BundleDisableView(APIView):
         payload = BundleInput(data=request.data)
         payload.is_valid(raise_exception=True)
         bundle = get_object_or_404(FeatureBundle, pk=payload.validated_data["bundleId"])
+        mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).select_related('feature').first()
+        if mapping:
+            from .monthly_features import deactivate_postpaid_feature
+            deactivate_postpaid_feature(request.user.company, mapping.feature)
+            from .views import record_feature_change
+            record_feature_change(request, mapping.feature, False)
+            return Response({'bundle': _public_bundle(bundle, company=request.user.company, user_count=billable_user_count(request.user.company)), 'chargedCredits':'0.00'})
         access = disable_feature_bundle(request.user.company, bundle, actor=request.user)
         if not access:
             return Response({"message": "This company has not purchased this label."}, status=404)

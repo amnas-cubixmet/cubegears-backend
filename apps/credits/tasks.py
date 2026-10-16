@@ -16,6 +16,9 @@ def renew_due_features(self):
     if not settings.CREDIT_BILLING_CELERY_ENABLED:
         logger.info("Feature credit billing disabled: no charge")
         return "disabled"
+    from .cycle_billing import effective_policy
+    if effective_policy():
+        return "cycle_mode"
     # The Django management command calls the existing atomic/idempotent
     # billing service, which uses stable renewal references.
     if (settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
@@ -31,6 +34,9 @@ def bill_due_storage(self):
     if not settings.CREDIT_BILLING_CELERY_ENABLED:
         logger.info("Storage credit billing disabled: no charge")
         return "disabled"
+    from .cycle_billing import effective_policy
+    if effective_policy():
+        return "cycle_mode"
     if getattr(settings, "STORAGE_MONTHLY_METERED_ENABLED", False):
         logger.info("Legacy storage snapshot billing skipped for newer monthly meter")
         return "monthly_metered"
@@ -44,6 +50,9 @@ def meter_postpaid_storage(self):
     """Measure current bytes once per configured interval. No wallet debits."""
     if not settings.CREDIT_BILLING_CELERY_ENABLED:
         return "disabled"
+    from .cycle_billing import effective_policy
+    if effective_policy():
+        return "cycle_mode"
     from apps.companies.models import Company
     from .models import StorageCreditPolicy
     from .postpaid import record_storage_interval
@@ -77,6 +86,9 @@ def settle_previous_month(self):
     """Month closes on the first day, 00:20 in configured local timezone."""
     if not settings.CREDIT_BILLING_CELERY_ENABLED:
         return "disabled"
+    from .cycle_billing import effective_policy
+    if effective_policy():
+        return "cycle_mode"
     from .postpaid import run_monthly_settlement
     return run_monthly_settlement()
 
@@ -145,3 +157,16 @@ def send_monthly_billing_notices():
         return {"disabled": 1}
     from .billing_notices import dispatch_pending_billing_notices
     return dispatch_pending_billing_notices()
+
+
+@shared_task(ignore_result=True, name="credits.collect_due_monthly_bills")
+def collect_due_monthly_bills():
+    if not settings.CREDIT_BILLING_CELERY_ENABLED:
+        return 'disabled'
+    from .monthly_policy import policy, retry_after_topup
+    if not policy():
+        return 'disabled'
+    from apps.companies.models import Company
+    for company in Company.objects.filter(is_active=True).iterator():
+        retry_after_topup(company)
+    return 'completed'

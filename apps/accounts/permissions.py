@@ -99,6 +99,11 @@ def user_has_permission(user, permission_code):
     if permission_code.startswith("billing."):
         return is_company_owner(user)
 
+    if user.company_id:
+        from apps.credits.monthly_policy import billing_status
+        if billing_status(user.company)['blocked']:
+            return False
+
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False
@@ -106,6 +111,18 @@ def user_has_permission(user, permission_code):
     if not role_allows:
         return False
     if not permission_code.startswith("panel."):
+        # A persisted, past-due invoice locks paid/workshop APIs server-side;
+        # hiding React navigation alone would be an authorization bypass.
+        # Billing/top-up and the OWNER's storage usage/file audit remain
+        # available for repayment and data export after a hold.
+        if not permission_code.startswith("billing.") and not (
+            is_company_owner(user) and permission_code.startswith(
+                ("storage.", "company.")
+            )
+        ):
+            from apps.credits.cycle_billing import company_is_overdue
+            if company_is_overdue(user.company):
+                return False
         from apps.saas.access import feature_allowed
         return feature_allowed(user, permission_code)
     return True

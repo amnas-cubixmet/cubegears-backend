@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from django import forms
+from django.conf import settings
 
 from .models import StorageCreditPolicy
 
@@ -35,6 +36,8 @@ class StorageCreditPolicyForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if settings.STORAGE_MONTHLY_METERED_ENABLED:
+            self.fields['billing_mode'].choices = [('snapshot', 'Time-weighted monthly usage (active engine)')]
         # Older forms and admin tests may omit newly introduced fields.
         self.fields["billing_mode"].required = False
         self.fields["meter_interval_seconds"].required = False
@@ -58,5 +61,9 @@ class StorageCreditPolicyForm(forms.ModelForm):
             self.add_error("meter_interval_seconds", "Choose a metering interval from 60 to 86400 seconds.")
         if result.get("billing_mode") == "metered_monthly" and result.get("billing_period") != "monthly":
             self.add_error("billing_period", "Metered usage settles monthly; select Monthly.")
+
+        if settings.STORAGE_MONTHLY_METERED_ENABLED and result.get('is_active'):
+            if result.get('billing_mode') != 'snapshot' or result.get('billing_period') != 'monthly':
+                self.add_error('billing_mode', 'The monthly storage meter requires monthly usage mode. Do not combine two storage engines.')
 
         return result
