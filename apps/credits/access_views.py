@@ -29,8 +29,10 @@ class TenantFeatureAccessView(APIView):
             return Response({"message": "An active company account is required."}, status=403)
 
         permissions = sorted(
-            code for code in TENANT_PERMISSIONS
-            if user_has_permission(user, code)
+            set(code for code in TENANT_PERMISSIONS if user_has_permission(user, code))
+            # Owner's read-only SaaS storage audit is authorized by the
+            # server's StorageAccountReadPermission even without a paid label.
+            | ({"storage.view"} if is_company_owner(user) else set())
         )
         core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
         modules = sorted({
