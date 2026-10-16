@@ -9,7 +9,7 @@ from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import PlanFeature
 from apps.saas.access import active_label_modules, FREE_TENANT_MODULES
 
-_CORE = frozenset({"billing", "company", "roles", "dashboard", "staff"})
+_CORE = frozenset({"billing", "company", "roles", "dashboard", "staff", "settings"})
 
 
 class CompanyModuleEntitlementsView(APIView):
