@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
                 ("storage_credits", models.DecimalField(decimal_places=2, default=Decimal("0"), max_digits=16)),
                 ("total_credits", models.DecimalField(decimal_places=2, default=Decimal("0"), max_digits=16)),
                 ("details", models.JSONField(blank=True, default=dict)),
-                ("status", models.CharField(choices=[("pending", "Pending"), ("paid", "Paid")], default="pending", max_length=12)),
+                ("status", models.CharField(choices=[("pending", "Pending"), ("insufficient", "Insufficient credits"), ("paid", "Paid")], default="pending", max_length=12)),
                 ("finalized_at", models.DateTimeField(default=django.utils.timezone.now)),
                 ("settled_at", models.DateTimeField(blank=True, null=True)),
                 ("company", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="calendar_billing_statements", to="companies.company")),
