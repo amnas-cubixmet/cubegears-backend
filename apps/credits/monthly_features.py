@@ -12,6 +12,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.companies.models import Company
+from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     CompanyCreditFeature, CompanyPostpaidFeature, CreditLedger,
     FeatureCreditPrice, FeatureMeterPeriod, FeatureMeterReading,
@@ -37,6 +38,8 @@ def _enabled():
 
 
 def _rate(company, feature):
+    if feature.key in FREE_TENANT_MODULES:
+        raise ValueError("Free modules cannot be billed.")
     price = FeatureCreditPrice.objects.filter(
         feature=feature, is_available=True, feature__is_active=True,
         billing_period="monthly",
@@ -117,6 +120,8 @@ def activate_postpaid_feature(company, feature, *, at=None):
 
 @transaction.atomic
 def meter_postpaid_feature(item, *, at=None):
+    if item.feature.key in FREE_TENANT_MODULES:
+        return "free_module", None
     if not _enabled():
         return "disabled", None
     at = at or timezone.now()
@@ -211,6 +216,8 @@ def meter_all_postpaid_features(*, at=None):
 
 @transaction.atomic
 def settle_postpaid_feature(company, feature, period, *, at=None, dry_run=False):
+    if feature.key in FREE_TENANT_MODULES:
+        return "free_module", ZERO
     if not _enabled():
         return "disabled", ZERO
     at = at or timezone.now()

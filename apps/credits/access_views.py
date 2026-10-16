@@ -10,13 +10,13 @@ from rest_framework.views import APIView
 
 from django.utils import timezone
 from apps.credits.models import CompanyBundleAccess
-from apps.saas.access import active_label_modules
+from apps.saas.access import active_label_modules, FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, is_company_owner
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
 CORE_MODULES = frozenset({
-    "billing", "company", "roles",
+    "billing", "company", "roles", "dashboard", "staff",
 })
 
 
@@ -32,7 +32,7 @@ class TenantFeatureAccessView(APIView):
             code for code in TENANT_PERMISSIONS
             if user_has_permission(user, code)
         )
-        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"dashboard", "settings", "storage", "notifications"}
+        core = CORE_MODULES if user.company.require_paid_features else CORE_MODULES | {"settings", "storage", "notifications"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core
@@ -54,6 +54,7 @@ class TenantFeatureAccessView(APIView):
             "permissions": permissions,
             "enabledModules": modules,
             "labelOnly": label_only,
+            "freeModules": sorted(FREE_TENANT_MODULES),
             "activeLabelModules": label_modules,
             "nextLabelExpiryAt": next_expiry.isoformat() if next_expiry else None,
             "enforcementEnabled": bool(

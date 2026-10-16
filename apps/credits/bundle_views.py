@@ -10,6 +10,7 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.saas.feature_discovery import module_inventory
+from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess
 from .service import purchase_feature_bundle, disable_feature_bundle, bundle_is_usable, billable_user_count
@@ -36,6 +37,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         if bundle.billing_type == "per_use"
         else "FEATURE_LABEL_EMPTY"
         if not active_features
+        else "FREE_MODULES_ONLY"
+        if all(item["key"] in FREE_TENANT_MODULES for item in active_features)
         else "INVALID_USER_PRICE"
         if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00")
         else None
@@ -48,6 +51,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "totalCredits": str((bundle.per_user_credits * user_count).quantize(Decimal("0.01"))),
         "billingType": bundle.billing_type,
         "features": active_features,
+        "freeModules": [feature["key"] for feature in active_features if feature["key"] in FREE_TENANT_MODULES],
         "active": bundle_is_usable(access) if access else False,
         "canResume": bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
             access.billing_type_at_purchase == "permanent" or (

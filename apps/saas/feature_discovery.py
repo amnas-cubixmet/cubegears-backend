@@ -5,11 +5,9 @@ of truth; internal panel controls and system prerequisites cannot be sold.
 """
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
+from apps.saas.access import FREE_TENANT_MODULES
 
-SYSTEM_MODULES = frozenset({
-    "company", "billing",
-    "roles",
-})
+SYSTEM_MODULES = frozenset({"company", "roles"}) | FREE_TENANT_MODULES
 
 DISPLAY_NAMES = {
     "attendance": "Attendance & Punches",
