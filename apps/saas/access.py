@@ -4,7 +4,7 @@ from .models import Subscription
 
 # Always included for every active tenant, subject to the role's explicit permissions.
 # `billing` remains company-owner-only in user_has_permission().
-FREE_TENANT_MODULES = frozenset({"dashboard", "settings", "staff", "billing"})
+FREE_TENANT_MODULES = frozenset({"dashboard", "settings", "staff", "roles", "billing"})
 
 
 def active_plan(company):
@@ -68,13 +68,13 @@ def feature_allowed(user, permission):
     from django.conf import settings
     module = permission.split(".")[0]
     strict_company = user.company.require_paid_features
-    # Dashboard, Settings, Staff Management and SaaS Account are free in EVERY billing
+    # Dashboard, Settings, Staff Management, Roles & Permissions and SaaS Account are free in EVERY billing
     # mode, including strict paid-label-only mode. RBAC/tenant checks run first
     # in user_has_permission: this never gives employees owner/billing access.
     if module in FREE_TENANT_MODULES:
         return True
     # Account purchase/recovery controls do not require a paid module.
-    if strict_company and module in {"company", "roles"}:
+    if strict_company and module == "company":
         return True
     # Legacy rollout compatibility.
     if not strict_company and module in {"dashboard", "billing", "settings", "company", "storage",
