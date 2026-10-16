@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.employees.models import Employee
 from apps.accounts.models import User
+from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     CreditWallet, CreditLedger, FeatureCreditPrice, CompanyCreditFeature,
     CreditPurchase,
@@ -82,6 +83,8 @@ def adjust_company_balance(company, delta, *, reason, actor, reference):
 
 @transaction.atomic
 def enable_paid_feature(company, feature, actor):
+    if feature.key in FREE_TENANT_MODULES:
+        raise ValueError("This module is free and cannot be purchased.")
     if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
         raise ValueError('Activate a Feature Label instead of a standalone module.')
     pricing = FeatureCreditPrice.objects.select_related("feature").filter(
@@ -159,6 +162,8 @@ def disable_paid_feature(company, feature, actor):
 
 @transaction.atomic
 def renew_feature(state):
+    if state.feature.key in FREE_TENANT_MODULES:
+        return "free_module"
     if getattr(settings, 'CREDIT_LABEL_ONLY_ACCESS_ENABLED', False):
         return 'label_only'
     if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
@@ -266,6 +271,8 @@ def purchase_feature_bundle(company, bundle, actor):
             raise ValueError("This package overlaps an active monthly-postpaid feature. Disable it first.")
     if not bundle.features.filter(is_active=True).exists():
         raise ValueError("This label has no active features.")
+    if not bundle.features.filter(is_active=True).exclude(key__in=FREE_TENANT_MODULES).exists():
+        raise ValueError("This package contains only free modules. No purchase is required.")
     if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00"):
         raise ValueError("Invalid per-user credit price for this label.")
     wallet_for(company)
