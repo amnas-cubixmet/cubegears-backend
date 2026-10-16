@@ -1,9 +1,8 @@
-"""CubixGear Django package.
+"""Expose the configured Celery app to Django and ``celery -A config``.
 
-Celery is disabled for WSGI deployments without a worker. Keep config/celery.py
-for when a broker and worker are provisioned in the future.
+Importing the app only registers configuration/tasks. It does not start a
+worker, connect to Redis, send email or enable billing schedules.
 """
+from .celery import app as celery_app
 
-# To re-enable Celery, uncomment these lines and install celery[redis]:
-# from .celery import app as celery_app
-# __all__ = ("celery_app",)
+__all__ = ("celery_app",)
