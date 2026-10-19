@@ -41,10 +41,49 @@
     </article>
   </section>
 
+  <section class="cg-storage-monitoring" id="storage-monitoring" aria-labelledby="storage-monitor-title">
+    <div class="cg-storage-monitor-top">
+      <div>
+        <span class="cg-storage-monitor-eyebrow">AUTOMATIC MONITORING</span>
+        <h3 id="storage-monitor-title">Storage Usage Snapshots</h3>
+        <p>Recalculate actual stored files on a recurring schedule. No wallet debit.</p>
+      </div>
+      <span class="cg-storage-monitor-state {% if monitoring_policy.enabled %}is-enabled{% endif %}">
+        {% if monitoring_policy.enabled %}Enabled{% else %}Disabled{% endif %}
+      </span>
+    </div>
+    <form method="post" action="{% url 'panel:storage' %}#storage-monitoring" class="cg-storage-monitor-form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="storage_monitoring">
+      {% if monitoring_form.non_field_errors %}
+        <div class="cg-storage-monitor-errors" role="alert">{{ monitoring_form.non_field_errors }}</div>
+      {% endif %}
+      <div class="cg-storage-monitor-control">
+        <label for="{{ monitoring_form.interval_seconds.id_for_label }}">Calculation interval</label>
+        {{ monitoring_form.interval_seconds }}
+        {% for error in monitoring_form.interval_seconds.errors %}<small class="cg-storage-monitor-errors" role="alert">{{ error }}</small>{% endfor %}
+      </div>
+      <label class="cg-storage-monitor-toggle">
+        {{ monitoring_form.enabled }}
+        <span>Enable automatic snapshots</span>
+      </label>
+      {% if can_edit_storage_pricing %}
+        <button type="submit" class="btn btn-primary">Save Schedule</button>
+      {% endif %}
+    </form>
+    <footer class="cg-storage-monitor-footer">
+      <div><span>Last calculation</span><strong>{% if monitoring_policy.last_run_at %}{{ monitoring_policy.last_run_at|date:"d M Y, H:i" }}{% else %}Not run yet{% endif %}</strong></div>
+      <div><span>Next calculation</span><strong>{% if monitoring_next_due %}{{ monitoring_next_due|date:"d M Y, H:i" }}{% elif monitoring_policy.enabled %}When scheduler starts{% else %}Disabled{% endif %}</strong></div>
+      <div><span>Scheduler</span><strong>{% if monitoring_scheduler_ready %}Redis configured{% else %}Redis not configured{% endif %}</strong></div>
+    </footer>
+    {% if not monitoring_scheduler_ready %}<p class="cg-storage-monitor-hint">Configure Redis and run a Celery worker + Beat to start automated checks.</p>{% else %}<p class="cg-storage-monitor-hint">Requires a running Celery worker and one Beat instance. Snapshots update daily history; billing remains separate.</p>{% endif %}
+  </section>
+
   <nav class="cg-storage-dash-tabs" aria-label="Storage sections">
     <a href="#storage-live-title">Live Usage</a>
     <a href="#storage-directory-title">Storage History</a>
     <a href="#storage-events-title">Activity Log</a>
+    <a href="#storage-monitoring">Monitoring</a>
     <span class="cg-storage-dash-rate">Rate: {{ storage_policy.credits_per_gb|default:"0.00" }} credits / GB</span>
   </nav>
 
