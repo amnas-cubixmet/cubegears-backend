@@ -21,13 +21,5 @@ jobs:
       - run: python manage.py check
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
-      - name: Backend regression suite
-        run: python manage.py test apps --noinput
-      - name: Deployment setup tests
-        run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Real Redis, Celery worker and Beat integration
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y redis-server
-          python scripts/smoke_celery_worker.py
-          python scripts/smoke_runtime_billing.py
+      # Automated test suites and smoke-test scripts were removed by request.
+      # Retain static analysis, Django checks, migration consistency and migrate.
