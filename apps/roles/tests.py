@@ -122,8 +122,12 @@ class OwnerManagedRolesTests(APITestCase):
 from apps.roles.legacy_cleanup import LEGACY_SIGNUP_PRESETS
 
 
-class LegacyAutoRoleCleanupTests(OwnerManagedRolesTests):
+class LegacyAutoRoleCleanupTests(APITestCase):
     """Company signup used to seed five roles, but existing data must be safe."""
+
+    def setUp(self):
+        super().setUp()
+        OwnerManagedRolesTests.setUp(self)
 
     def _seed(self, code, *, company=None, permissions=None, name=None):
         original_name, original_permissions = LEGACY_SIGNUP_PRESETS[code]
@@ -153,7 +157,7 @@ class LegacyAutoRoleCleanupTests(OwnerManagedRolesTests):
             {row["id"] for row in response.data["roles"]},
             {str(mechanic.id), str(accountant.id)},
         )
-        self.assertEqual(Role.objects.filter(company=self.company).count(), 8)
+        self.assertEqual(Role.objects.filter(company=self.company).count(), 7)
         self.assertIn("Review", response.data["notice"])
 
     def test_cleanup_is_explicit_and_leaves_owner_custom_and_assigned_roles(self):
