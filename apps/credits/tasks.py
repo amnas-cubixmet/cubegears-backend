@@ -170,3 +170,16 @@ def collect_due_monthly_bills():
     for company in Company.objects.filter(is_active=True).iterator():
         retry_after_topup(company)
     return 'completed'
+
+
+@shared_task(ignore_result=True, name="credits.run_configured_billing")
+def run_configured_billing():
+    """Minute heartbeat; actual intervals and due time are read from the DB."""
+    if not settings.CREDIT_BILLING_CELERY_ENABLED:
+        return {"disabled": 1}
+    from .runtime_billing import policy
+    if not policy():
+        return {"disabled": 1}
+    from .calendar_billing import run_calendar_cycles
+    return {"storage": sample_monthly_storage(), "features": sample_monthly_features(),
+            "settlement": run_calendar_cycles()}

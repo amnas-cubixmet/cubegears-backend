@@ -372,3 +372,12 @@ if CREDIT_BILLING_CELERY_ENABLED:
         "task": "credits.collect_due_monthly_bills",
         "schedule": crontab(minute=35),
     }
+
+
+# Heartbeat reads admin intervals/due time from the database at execution time.
+# A single Beat process is required. Legacy tasks remain gated/idempotent.
+if CREDIT_BILLING_CELERY_ENABLED:
+    CELERY_BEAT_SCHEDULE["cubegear-configured-billing"] = {
+        "task": "credits.run_configured_billing",
+        "schedule": 60.0,
+    }

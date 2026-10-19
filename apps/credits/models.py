@@ -1,5 +1,6 @@
 """Company wallet accounting. Never store financial balances in the browser."""
 import uuid
+from datetime import time
 from decimal import Decimal
 from django.db import models
 from django.utils import timezone
@@ -279,6 +280,7 @@ class StorageMeterCursor(models.Model):
         related_name="storage_meter_cursor",
     )
     sampled_at = models.DateTimeField(null=True, blank=True)
+    rate_duration_seconds = models.PositiveIntegerField(default=0)
     used_bytes = models.BigIntegerField(default=0)
     billable_gb = models.DecimalField(max_digits=18, decimal_places=6, default=Decimal("0"))
     rate_per_gb = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
@@ -332,6 +334,7 @@ class CompanyPostpaidFeature(models.Model):
     suspended = models.BooleanField(default=False)
     sampled_at = models.DateTimeField(null=True, blank=True)
     monthly_rate = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    rate_duration_seconds = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -442,6 +445,12 @@ class MonthlyBillingCycle(models.Model):
 class BillingCyclePolicy(models.Model):
     """Single global, opt-in calendar-month postpaid settlement policy."""
     singleton = models.PositiveSmallIntegerField(unique=True, default=1, editable=False)
+    due_time = models.TimeField(default=time(0, 5))
+    calculation_interval_seconds = models.PositiveIntegerField(default=300)
+    storage_tracking_interval_seconds = models.PositiveIntegerField(default=300)
+    rate_duration_seconds = models.PositiveIntegerField(default=0)
+    event_tracking_enabled = models.BooleanField(default=False)
+
     enabled = models.BooleanField(default=False)
     due_day = models.PositiveSmallIntegerField(default=5)
     restrict_overdue = models.BooleanField(default=True)
@@ -475,3 +484,11 @@ class BillingCycleStatement(models.Model):
             fields=["company", "month"], name="credits_one_calendar_statement_per_month",
         )]
         ordering = ["-month"]
+
+
+class CompanyStorageState(models.Model):
+    """Transactional byte counter; initialized once from existing MediaFile metadata."""
+    company = models.OneToOneField("companies.Company", on_delete=models.CASCADE)
+    used_bytes = models.PositiveBigIntegerField(default=0)
+    file_count = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)

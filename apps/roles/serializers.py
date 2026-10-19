@@ -42,6 +42,6 @@ class RoleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Choose known staff permissions available to this company.')
         previous = set(self.instance.permissions or []) if self.instance else set()
         additions = [code for code in value if code not in previous]
-        if not can_delegate(user, additions):
+        if not can_delegate(self.context["request"].user, additions):
             raise serializers.ValidationError("You cannot grant permissions beyond your own role.")
         return list(dict.fromkeys(value))

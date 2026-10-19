@@ -17,6 +17,10 @@ from .service import change_balance, wallet_for
 
 
 def storage_usage(company):
+    from .runtime_billing import policy, storage_state
+    current = policy()
+    if current and current.event_tracking_enabled:
+        return storage_state(company).used_bytes
     bytes_used = MediaFile.objects.filter(company=company).aggregate(
         total=Sum("size_bytes")
     )["total"] or 0

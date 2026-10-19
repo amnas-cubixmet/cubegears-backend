@@ -49,7 +49,12 @@ def _rate(company, feature):
     users = billable_user_count(company)
     staff = staff_count(company)
     amount = price_for(price, staff, users)
-    if amount <= ZERO or price.activation_credits < ZERO:
+    from .change_tracking import enabled_policy
+    if enabled_policy():
+        components = (price.base_credits, price.per_staff_credits, price.per_user_credits)
+        if any(value < ZERO for value in components) or not any(value > ZERO for value in components) or price.activation_credits < ZERO:
+            raise ValueError("A positive monthly feature price is required.")
+    elif amount <= ZERO or price.activation_credits < ZERO:
         raise ValueError("A positive monthly feature price is required.")
     return price, amount, users, staff
 
@@ -108,8 +113,11 @@ def activate_postpaid_feature(company, feature, *, at=None):
     item.enabled = True
     item.suspended = False
     item.sampled_at = at
+    from .runtime_billing import policy as runtime_policy
+    runtime = runtime_policy()
+    item.rate_duration_seconds = runtime.rate_duration_seconds if runtime else 0
     item.monthly_rate = rate
-    item.save(update_fields=["enabled", "suspended", "sampled_at", "monthly_rate", "updated_at"])
+    item.save(update_fields=["enabled", "suspended", "sampled_at", "monthly_rate", "rate_duration_seconds", "updated_at"])
     FeatureMeterReading.objects.create(
         company=company, feature=feature, sampled_at=at,
         users=users, staff=staff, monthly_rate=rate,
@@ -137,21 +145,25 @@ def meter_postpaid_feature(item, *, at=None, force=False):
         state.sampled_at = at
         state.save(update_fields=['suspended', 'sampled_at', 'updated_at'])
         return 'payment_blocked', None
-    if state.sampled_at and at <= state.sampled_at:
+    if state.sampled_at and (at < state.sampled_at or (at == state.sampled_at and not force)):
         return "already_metered", None
 
     from .monthly_policy import policy as collection_policy
     cycle_policy = collection_policy()
-    if cycle_policy and state.sampled_at and not force and (at - state.sampled_at).total_seconds() < cycle_policy.feature_meter_interval_seconds:
+    from .runtime_billing import policy as runtime_policy
+    runtime = runtime_policy()
+    interval = runtime.calculation_interval_seconds if runtime else (cycle_policy.feature_meter_interval_seconds if cycle_policy else settings.STORAGE_METER_INTERVAL_SECONDS)
+    if (runtime or cycle_policy) and state.sampled_at and not force and (at - state.sampled_at).total_seconds() < interval:
         return 'not_due', None
     old = state.sampled_at
     month_cost = ZERO
     covered = 0
     if old:
         elapsed = int((at - old).total_seconds())
-        max_gap = (cycle_policy.feature_meter_interval_seconds if cycle_policy else settings.STORAGE_METER_INTERVAL_SECONDS) * 2
-        start = old if elapsed <= max_gap else at
-        if elapsed > max_gap:
+        max_gap = interval * 2
+        tracked = bool(runtime and runtime.event_tracking_enabled)
+        start = old if tracked or elapsed <= max_gap else at
+        if elapsed > max_gap and not tracked:
             LOG.warning(
                 "Feature metering gap company=%s feature=%s: %s seconds unobserved (no charge)",
                 state.company_id, state.feature_id, elapsed,
@@ -164,7 +176,7 @@ def meter_postpaid_feature(item, *, at=None, force=False):
             if seconds <= 0:
                 break
             begin, finish = _month_bounds(period_name)
-            month_seconds = int((finish - begin).total_seconds())
+            month_seconds = state.rate_duration_seconds or int((finish - begin).total_seconds())
             amount = (state.monthly_rate * Decimal(seconds) / Decimal(month_seconds)).quantize(
                 PRECISION, rounding=ROUND_HALF_UP,
             )
@@ -189,8 +201,9 @@ def meter_postpaid_feature(item, *, at=None, force=False):
         next_rate, users, staff = ZERO, 0, 0
         state.suspended = True
     state.sampled_at = at
+    state.rate_duration_seconds = runtime.rate_duration_seconds if runtime else 0
     state.monthly_rate = next_rate
-    state.save(update_fields=["sampled_at", "monthly_rate", "suspended", "updated_at"])
+    state.save(update_fields=["sampled_at", "monthly_rate", "rate_duration_seconds", "suspended", "updated_at"])
     reading = FeatureMeterReading.objects.create(
         company=state.company, feature=state.feature, sampled_at=at,
         users=users, staff=staff, monthly_rate=next_rate,

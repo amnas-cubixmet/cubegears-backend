@@ -4,7 +4,7 @@ from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from apps.companies.models import Company
 logger = logging.getLogger(__name__)
-from django.db.models import Sum
+from django.db.models import Sum, Count
 from .storage_ledger import as_dict, ensure_baseline, record_event, history_days, history_day
 from django.utils import timezone
 from rest_framework import parsers, response, status, serializers
@@ -216,6 +216,7 @@ class StorageFilesDeleteView(APIView):
                 name=obj.file.name if obj.file else None
                 storage=obj.file.storage if name else None
                 snapshot_id = obj.pk
+                obj._storage_actor = request.user
                 obj.delete()
                 obj.pk = snapshot_id
                 record_event(obj,"DELETE",request.user)
@@ -438,3 +439,70 @@ class SettingsView(APIView):
         setting.data = {**setting.data, **payload}
         setting.save(update_fields=["data", "updated_at"])
         return self.get(request, category)
+
+
+class StorageFileReplaceView(APIView):
+    """Replace one tenant-owned file; client-supplied byte counts are ignored."""
+    permission_classes = [RolePermission]
+    permission_code = 'storage.manage'
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def patch(self, request, file_id):
+        upload = request.FILES.get('file')
+        if not upload:
+            return response.Response({'message': 'Supply the replacement file.'}, status=400)
+        cfg = CompanySetting.objects.filter(company=request.user.company, category='storage').first()
+        policy = {**DEFAULTS['storage'], **(cfg.data if cfg else {})}
+        allowed = set(policy['allowedTypes']) & set(DEFAULTS['storage']['allowedTypes'])
+        max_bytes = min(int(policy.get('maxFileMb') or 20), 20) * 1024 * 1024
+        if upload.size <= 0 or upload.size > max_bytes or upload.content_type not in allowed:
+            return response.Response({'message': 'Invalid file type or size.'}, status=400)
+        new_file = None
+        media = None
+        replacement_started = False
+        try:
+            with transaction.atomic():
+                Company.objects.select_for_update().get(pk=request.user.company_id)
+                media = MediaFile.objects.select_for_update().filter(company=request.user.company, pk=file_id).first()
+                if media is None:
+                    raise Http404('File not found.')
+                from apps.credits.storage_billing import storage_usage
+                used = storage_usage(request.user.company)
+                sub = Subscription.objects.filter(company=request.user.company, status__iexact='Active').select_related('plan_definition').order_by('-created_at').first()
+                if sub and sub.plan_definition_id and used - media.size_bytes + upload.size > sub.plan_definition.included_storage_gb * (1024 ** 3):
+                    return response.Response({'message': 'Storage quota exceeded.'}, status=413)
+                from apps.credits.storage_observation import observe_storage
+                at = timezone.now()
+                observe_storage(request.user.company, at)
+                ensure_baseline(request.user.company)
+                old_name, old_storage = media.file.name, media.file.storage
+                replacement_started = True
+                media._storage_actor = request.user
+                media.file = upload
+                media.size_bytes = upload.size
+                media.mime_type = upload.content_type
+                # Preserve the display name, even if physical storage assigns a
+                # different key to keep the old blob safe until DB commit.
+                media.save(update_fields=['file', 'size_bytes', 'mime_type', 'updated_at'])
+                new_file = media.file
+                observe_storage(request.user.company, timezone.now())
+                from apps.credits.change_tracking import enabled_policy
+                if not enabled_policy():
+                    # Legacy mode still exposes the replacement in file history.
+                    totals = MediaFile.objects.filter(company=request.user.company).aggregate(total=Sum('size_bytes'), count=Count('id'))
+                    after = totals['total'] or 0
+                    StorageEvent.objects.create(company=media.company, branch=media.branch,
+                        event_type='REPLACE', file_id_snapshot=media.pk, name_snapshot=media.name,
+                        category_snapshot=media.category, mime_type_snapshot=media.mime_type,
+                        file_size_bytes=media.size_bytes, delta_bytes=after-used,
+                        storage_before_bytes=used, storage_after_bytes=after,
+                        file_count_after=totals['count'], actor=request.user)
+                if old_name and old_name != media.file.name:
+                    transaction.on_commit(lambda: safe_delete_storage(old_storage, old_name))
+        except Exception:
+            if not new_file and replacement_started and media.file._committed:
+                new_file = media.file
+            if new_file:
+                new_file.delete(save=False)
+            raise
+        return response.Response(MediaFileSerializer(media, context={'request': request}).data)

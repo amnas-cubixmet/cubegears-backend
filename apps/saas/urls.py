@@ -36,6 +36,7 @@ urlpatterns=[
     path("storage",StorageSummaryView.as_view(),name="storage-summary"),
     path("storage/files",StorageFilesView.as_view(),name="storage-files"),
     path("storage/files/delete",StorageFilesDeleteView.as_view(),name="storage-files-delete"),
+    path("storage/files/<uuid:file_id>",StorageFileReplaceView.as_view(),name="storage-file-replace"),
     path("storage/files/<uuid:file_id>/download",StorageFileDownloadView.as_view(),name="storage-file-download"),
     path("storage/settings",StorageSettingsView.as_view(),name="storage-settings"),
     path("storage/history",StorageHistoryListView.as_view(),name="storage-history-list"),

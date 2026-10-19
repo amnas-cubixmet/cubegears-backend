@@ -89,7 +89,10 @@ def meter_company_storage(company, *, at=None, mutation=False):
         return "already_metered", None
 
     from .monthly_policy import policy as collection_policy
-    if collection_policy() and cursor.sampled_at and not mutation and (at - cursor.sampled_at).total_seconds() < policy.meter_interval_seconds:
+    from .runtime_billing import policy as runtime_policy
+    runtime = runtime_policy()
+    interval = runtime.storage_tracking_interval_seconds if runtime else (policy.meter_interval_seconds if collection_policy() else settings.STORAGE_METER_INTERVAL_SECONDS)
+    if (runtime or collection_policy()) and cursor.sampled_at and not mutation and (at - cursor.sampled_at).total_seconds() < interval:
         return 'not_due', None
     # No MediaFile bytes can be invented or submitted by a browser.
     bytes_used = storage_usage(company)
@@ -101,12 +104,14 @@ def meter_company_storage(company, *, at=None, mutation=False):
     if cursor.sampled_at:
         elapsed = int((at - cursor.sampled_at).total_seconds())
         from .monthly_policy import policy as collection_policy
-        interval = policy.meter_interval_seconds if collection_policy() else settings.STORAGE_METER_INTERVAL_SECONDS
         max_gap = int(interval) * 2
         # Never back-bill intervals during which the worker was down and file
         # changes could have gone unobserved.
-        start = cursor.sampled_at if elapsed <= max_gap else at
-        if elapsed > max_gap:
+        # A transactional change counter proves unchanged bytes even while Beat
+        # is down. Snapshot mode retains its conservative no-backfill behavior.
+        tracked = bool(runtime and runtime.event_tracking_enabled)
+        start = cursor.sampled_at if tracked or elapsed <= max_gap else at
+        if elapsed > max_gap and not tracked:
             LOG.warning(
                 "Storage metering gap for company %s: %s seconds unobserved; no charge for the gap",
                 company.pk, elapsed,
@@ -119,7 +124,7 @@ def meter_company_storage(company, *, at=None, mutation=False):
             if seconds <= 0:
                 break
             month_start, month_end = _month_bounds(month)
-            month_seconds = int((month_end - month_start).total_seconds())
+            month_seconds = cursor.rate_duration_seconds or int((month_end - month_start).total_seconds())
             cost = (
                 cursor.billable_gb * cursor.rate_per_gb
                 * Decimal(seconds) / Decimal(month_seconds)
@@ -144,12 +149,13 @@ def meter_company_storage(company, *, at=None, mutation=False):
         billable_gb=billable, rate_per_gb=policy.credits_per_gb,
         covered_seconds=covered, accrued_credits=credited,
     )
+    cursor.rate_duration_seconds = runtime.rate_duration_seconds if runtime else 0
     cursor.sampled_at = at
     cursor.used_bytes = bytes_used
     cursor.billable_gb = billable
     cursor.rate_per_gb = policy.credits_per_gb
     cursor.save(update_fields=[
-        "sampled_at", "used_bytes", "billable_gb", "rate_per_gb", "updated_at",
+        "sampled_at", "used_bytes", "billable_gb", "rate_per_gb", "rate_duration_seconds", "updated_at",
     ])
     return "metered", reading
 

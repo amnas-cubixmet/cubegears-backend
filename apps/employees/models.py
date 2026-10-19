@@ -17,6 +17,11 @@ class Shift(CompanyOwnedModel):
     is_active=models.BooleanField(default=True)
 
 class Employee(CompanyOwnedModel):
+    def save(self, *args, **kwargs):
+        from apps.credits.change_tracking import observe_save
+        with observe_save(self, kwargs, storage=False):
+            return super().save(*args, **kwargs)
+
     user=models.OneToOneField("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="employee_profile")
     employee_code=models.CharField(max_length=40)
     name=models.CharField(max_length=160)
