@@ -1,52 +1,60 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<div class="cg-storage-dashboard">
-  <header class="cg-storage-dash-header">
+<div class="ref-dashboard cg-storage-dashboard cg-storage-ref">
+  <header class="ref-dashboard-heading">
     <div>
-      <p class="cg-storage-dash-crumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Storage</p>
-      <h2>Storage Management</h2>
-      <p>Company storage, usage history and file activity.</p>
+      <p class="ref-overline">Platform / Storage</p>
+      <h2>Storage overview</h2>
+      <p>Current usage, scheduled snapshots and file activity across workshops.</p>
     </div>
-    <div class="cg-storage-dash-actions">
+    <div class="ref-heading-actions">
       {% panel_can 'storage' as can_access_storage %}
       {% panel_can 'credits' as can_access_credits %}
       {% if can_access_storage and can_access_credits %}
         <a class="btn btn-primary" href="{% url 'panel:billing-settings' %}#storage-pricing-title">Billing Settings</a>
       {% endif %}
-      <a class="btn" href="#storage-events-title">File Activity</a>
+      <a class="btn ref-btn-secondary" href="#storage-events-title">View activity</a>
     </div>
   </header>
 
-  <section class="cg-storage-dash-stats" aria-label="Historical storage overview">
-    <article class="cg-storage-dash-stat">
-      <span>Usage snapshots</span>
-      <strong>{{ snapshot_count }}</strong>
-      <small>Historical records</small>
+  <section class="ref-kpis cg-storage-ref-kpis" aria-label="Historical storage statistics">
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Recorded snapshots</span><span class="ref-kpi-icon tone-cobalt"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ snapshot_count }}</div>
+      <p>History observations</p>
+      <div class="ref-kpi-track"><span class="tone-cobalt" style="width:100%"></span></div>
+      <small>For selected company filter</small>
     </article>
-    <article class="cg-storage-dash-stat">
-      <span>Files in snapshots</span>
-      <strong>{{ total_files }}</strong>
-      <small>Sum across reporting dates</small>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Files in snapshots</span><span class="ref-kpi-icon tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#package"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_files }}</div>
+      <p>Files counted across reporting dates</p>
+      <div class="ref-kpi-track"><span class="tone-blue" style="width:100%"></span></div>
+      <small>Historical, not a live file count</small>
     </article>
-    <article class="cg-storage-dash-stat">
-      <span>Storage in snapshots</span>
-      <strong>{{ total_bytes|filesizeformat }}</strong>
-      <small>Sum across reporting dates</small>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Storage in snapshots</span><span class="ref-kpi-icon tone-sky"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_bytes|filesizeformat }}</div>
+      <p>Accumulated snapshot totals</p>
+      <div class="ref-kpi-track"><span class="tone-sky" style="width:100%"></span></div>
+      <small>Historical, not unique live storage</small>
     </article>
-    <article class="cg-storage-dash-stat">
-      <span>Recorded companies</span>
-      <strong>{{ covered_companies }}</strong>
-      <small>Distinct companies</small>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Recorded companies</span><span class="ref-kpi-icon tone-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ covered_companies }}</div>
+      <p>Companies with usage records</p>
+      <div class="ref-kpi-track"><span class="tone-purple" style="width:100%"></span></div>
+      <small>Distinct companies in selection</small>
     </article>
   </section>
 
-  <section class="cg-storage-monitoring" id="storage-monitoring" aria-labelledby="storage-monitor-title">
-    <div class="cg-storage-monitor-top">
+  <section class="ref-panel cg-storage-monitoring" id="storage-monitoring" aria-labelledby="storage-monitor-title">
+    <div class="ref-panel-head cg-storage-monitor-top">
       <div>
-        <span class="cg-storage-monitor-eyebrow">AUTOMATIC MONITORING</span>
-        <h3 id="storage-monitor-title">Storage Usage Snapshots</h3>
-        <p>Recalculate actual stored files on a recurring schedule. No wallet debit.</p>
+        <p class="ref-overline">Automatic monitoring</p>
+        <h3 id="storage-monitor-title">Storage snapshots</h3>
+        <p>Check actual stored files on a schedule. Wallet billing is separate.</p>
       </div>
       <span class="cg-storage-monitor-state {% if monitoring_policy.enabled %}is-enabled{% endif %}">
         {% if monitoring_policy.enabled %}Enabled{% else %}Disabled{% endif %}
@@ -81,23 +89,24 @@
     {% if not monitoring_scheduler_ready %}<p class="cg-storage-monitor-hint">Configure Redis and run a Celery worker + Beat to start automated checks.</p>{% else %}<p class="cg-storage-monitor-hint">Requires a running Celery worker and one Beat instance. Snapshots update daily history; billing remains separate.</p>{% endif %}
   </section>
 
-  <nav class="cg-storage-dash-tabs" aria-label="Storage sections">
-    <a href="#storage-live-title">Live Usage</a>
-    <a href="#storage-directory-title">Storage History</a>
-    <a href="#storage-events-title">Activity Log</a>
+  <nav class="cg-storage-ref-nav" aria-label="Storage sections">
+    <a href="#storage-live-title">Live usage</a>
+    <a href="#storage-directory-title">History</a>
+    <a href="#storage-events-title">File activity</a>
     <a href="#storage-monitoring">Monitoring</a>
     <span class="cg-storage-dash-rate">Rate: {{ storage_policy.credits_per_gb|default:"0.00" }} credits / GB</span>
   </nav>
 
-  <section class="panel-card remaining-directory cg-storage-live" aria-labelledby="storage-live-title">
-    <header class="section-head directory-section-heading cg-storage-dash-section-head">
+  <section class="ref-panel cg-storage-live" aria-labelledby="storage-live-title">
+    <header class="ref-panel-head">
       <div>
-        <h3 id="storage-live-title">Live Storage &amp; Credit Estimate</h3>
-        <p>Current stored files and estimated wallet credits.</p>
+        <p class="ref-overline">Live usage</p>
+        <h3 id="storage-live-title">Company storage</h3>
+        <p>Actual stored files and estimated wallet credits.</p>
       </div>
-      <span class="directory-result-count">{{ live_storage_count }} companies</span>
+      <span class="cg-storage-ref-count">{{ live_storage_count }} companies</span>
     </header>
-    <form class="remaining-filter-form cg-storage-dash-filter" method="get" aria-label="Filter live storage by company">
+    <form class="cg-storage-ref-filter" method="get" aria-label="Filter live storage by company">
       <label class="sr-only" for="storage-live-company">Company</label>
       <select id="storage-live-company" name="company">
         <option value="">All companies</option>
@@ -108,7 +117,7 @@
       <button class="btn btn-primary" type="submit">Apply filter</button>
       {% if company_id %}<a class="btn" href="{% url 'panel:storage' %}#storage-live-title">Clear</a>{% endif %}
     </form>
-    <div class="responsive-table remaining-table">
+    <div class="responsive-table ref-table cg-storage-ref-table">
       <table>
         <thead>
           <tr><th>Company</th><th>Stored data</th><th>Files</th><th>Used GB</th><th>Billable GB</th><th>Est. credits</th><th>Status</th></tr>
@@ -135,7 +144,7 @@
       </table>
     </div>
     {% if live_storage_page.has_other_pages %}
-      <nav class="cg-storage-pagination" aria-label="Live company storage pages">
+      <nav class="cg-storage-ref-pagination" aria-label="Live company storage pages">
         {% if live_storage_page.has_previous %}
           <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}live_page={{ live_storage_page.previous_page_number }}#storage-live-title">Previous</a>
         {% endif %}
@@ -145,18 +154,19 @@
         {% endif %}
       </nav>
     {% endif %}
-    <p class="cg-storage-dash-hint">Estimates are based on current stored files; saving settings does not charge wallets.</p>
+    <p class="cg-storage-ref-note">Estimates are based on current stored files; saving settings does not charge wallets.</p>
   </section>
 
-  <section class="panel-card remaining-directory cg-storage-history" aria-labelledby="storage-directory-title">
-    <header class="section-head directory-section-heading cg-storage-dash-section-head">
+  <section class="ref-panel cg-storage-history" aria-labelledby="storage-directory-title">
+    <header class="ref-panel-head">
       <div>
-        <h3 id="storage-directory-title">Storage History</h3>
-        <p>Reported usage snapshots.</p>
+        <p class="ref-overline">Historical records</p>
+        <h3 id="storage-directory-title">Storage history</h3>
+        <p>Saved usage snapshots by date.</p>
       </div>
-      <span class="directory-result-count">{{ rows.paginator.count }} records</span>
+      <span class="cg-storage-ref-count">{{ rows.paginator.count }} records</span>
     </header>
-    <form class="remaining-filter-form cg-storage-dash-filter" method="get" aria-label="Filter storage history by company">
+    <form class="cg-storage-ref-filter" method="get" aria-label="Filter storage history by company">
       <label class="sr-only" for="storage-company">Company</label>
       <select id="storage-company" name="company">
         <option value="">All companies</option>
@@ -165,7 +175,7 @@
       <button class="btn btn-primary" type="submit">Apply filter</button>
       {% if company_id %}<a class="btn" href="{% url 'panel:storage' %}#storage-directory-title">Clear</a>{% endif %}
     </form>
-    <div class="responsive-table remaining-table">
+    <div class="responsive-table ref-table cg-storage-ref-table">
       <table>
         <thead><tr><th>Date</th><th>Company</th><th>Category</th><th>Storage Used</th><th>Files</th></tr></thead>
         <tbody>
@@ -184,7 +194,7 @@
       </table>
     </div>
     {% if rows.has_other_pages %}
-      <nav class="cg-storage-pagination" aria-label="Storage history pages">
+      <nav class="cg-storage-ref-pagination" aria-label="Storage history pages">
         {% if rows.has_previous %}
           <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}page={{ rows.previous_page_number }}#storage-directory-title">Previous</a>
         {% endif %}
@@ -194,18 +204,19 @@
         {% endif %}
       </nav>
     {% endif %}
-    <p class="cg-storage-dash-hint">Historical snapshot totals can count files more than once across reporting dates.</p>
+    <p class="cg-storage-ref-note">Historical snapshot totals can count files more than once across reporting dates.</p>
   </section>
 
-  <section class="panel-card remaining-directory cg-storage-events" aria-labelledby="storage-events-title">
-    <header class="section-head directory-section-heading cg-storage-dash-section-head">
+  <section class="ref-panel cg-storage-events" aria-labelledby="storage-events-title">
+    <header class="ref-panel-head">
       <div>
-        <h3 id="storage-events-title">Storage Activity Log</h3>
-        <p>File uploads, removals and recorded storage changes.</p>
+        <p class="ref-overline">File audit</p>
+        <h3 id="storage-events-title">Storage activity</h3>
+        <p>Recorded uploads, removals and storage changes.</p>
       </div>
-      <span class="directory-result-count">{{ event_count }} events</span>
+      <span class="cg-storage-ref-count">{{ event_count }} events</span>
     </header>
-    <div class="responsive-table remaining-table">
+    <div class="responsive-table ref-table cg-storage-ref-table">
       <table>
         <thead><tr><th>Date &amp; time</th><th>Company</th><th>Action</th><th>File</th><th>Size change</th><th>Storage after</th><th>Actor</th></tr></thead>
         <tbody>
@@ -226,7 +237,7 @@
       </table>
     </div>
     {% if event_rows.has_other_pages %}
-      <nav class="cg-storage-pagination" aria-label="Storage activity pages">
+      <nav class="cg-storage-ref-pagination" aria-label="Storage activity pages">
         {% if event_rows.has_previous %}
           <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}event_page={{ event_rows.previous_page_number }}#storage-events-title">Previous</a>
         {% endif %}
