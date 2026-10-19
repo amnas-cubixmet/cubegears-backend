@@ -9,6 +9,7 @@ from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from .billing_cycle_forms import BillingCyclePolicyForm
 from .models import BillingCyclePolicy, BillingCycleStatement
+from apps.control_panel.audit import record_panel_event
 
 
 @panel_admin_required
@@ -24,7 +25,13 @@ def calendar_policy_control(request):
     )
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
-            form.save()
+            saved = form.save()
+            record_panel_event(request, 'CALENDAR_BILLING_POLICY_UPDATED', {
+                'enabled': saved.enabled, 'due_day': saved.due_day,
+                'due_time': saved.due_time.strftime('%H:%M'),
+                'calculation_interval_seconds': saved.calculation_interval_seconds,
+                'storage_tracking_interval_seconds': saved.storage_tracking_interval_seconds,
+            })
         messages.success(
             request,
             "Calendar month billing settings saved. New usage settles only on the due day.",

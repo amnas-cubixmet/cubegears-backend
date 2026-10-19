@@ -108,7 +108,7 @@ class RemainingModulesUITests(TestCase):
     def test_security_and_storage_are_read_only_views(self):
         security = self.client.get(reverse("panel:security"))
         self.assertEqual(security.status_code, 200)
-        self.assertContains(security, "Security &amp; Activity")
+        self.assertContains(security, "Security &amp; Audit Logs")
         self.assertContains(security, "Read-only event history")
         self.assertEqual(security.context["total_events"], 0)
         storage = self.client.get(reverse("panel:storage"))

@@ -40,6 +40,7 @@ from .permissions import route_allowed, landing_route
 from .auth_views import _limited
 from apps.accounts.permissions import can_delegate, panel_permission
 from apps.roles.models import Role
+from .audit import record_panel_event
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
@@ -97,6 +98,7 @@ def panel_login(request):
             form.add_error(None, "This account does not have Control Panel access.")
         else:
             login(request, user)
+            record_panel_event(request, "PANEL_LOGIN")
             return _safe_redirect(request, request.GET.get("next"), "panel:" + destination)
 
     return render(request, "control_panel/login.html", {"form": form})
@@ -105,6 +107,7 @@ def panel_login(request):
 @panel_admin_required
 @require_POST
 def panel_logout(request):
+    record_panel_event(request, "PANEL_LOGOUT")
     logout(request)
     return redirect("panel:login")
 
@@ -397,7 +400,15 @@ def storage(request):
 
     if cycle_action:
         if cycle_form.is_valid():
-            cycle_form.save()
+            with transaction.atomic():
+                policy_record = cycle_form.save()
+                record_panel_event(request, 'CALENDAR_BILLING_POLICY_UPDATED', {
+                    'enabled': policy_record.enabled,
+                    'due_day': policy_record.due_day,
+                    'due_time': policy_record.due_time.strftime('%H:%M'),
+                    'calculation_interval_seconds': policy_record.calculation_interval_seconds,
+                    'storage_tracking_interval_seconds': policy_record.storage_tracking_interval_seconds,
+                })
             messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original due date.")
             return redirect("panel:storage")
     policy_form = StorageCreditPolicyForm(
@@ -409,6 +420,14 @@ def storage(request):
             # Keep a single effective published rule, including for older databases
             # which may already have multiple policy records.
             StorageCreditPolicy.objects.exclude(pk=saved.pk).update(is_active=False)
+            record_panel_event(request, 'STORAGE_PRICE_UPDATED', {
+                'credits_per_gb': str(saved.credits_per_gb),
+                'included_gb': str(saved.included_gb),
+                'billing_mode': saved.billing_mode,
+                'billing_period': saved.billing_period,
+                'meter_interval_seconds': saved.meter_interval_seconds,
+                'active': saved.is_active,
+            })
         messages.success(
             request,
             "Storage per-GB rate saved. Wallets are only charged by the scheduled storage billing command.",
@@ -512,7 +531,7 @@ def security(request):
             | Q(ip_address__icontains=q)
         )
     return render(request, "control_panel/security.html", {
-        "page_title": "Security & Activity", "active": "security",
+        "page_title": "Security & Audit Logs", "active": "security",
         "rows": _paginate(request, qs),
         "company_id": company_id, "companies": _company_choices(), "q": q,
         "total_events": total_events, "recent_events": recent_events,

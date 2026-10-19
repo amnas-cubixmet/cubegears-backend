@@ -1,0 +1,55 @@
+/* Shared platform UI rhythm: applies only to authenticated Control Panel pages.
+   Respects purpose-built per-section CSS and never scales icons or financial totals. */
+:root{--cg-panel-focus:#1677ff;--cg-panel-radius:14px}
+.content-wrap{min-width:0}
+.content-wrap > :is(section,div,form){min-width:0}
+.directory-heading,.remaining-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.panel-card,.remaining-directory,.cg-paid-label-card{border-radius:var(--cg-panel-radius);min-width:0}
+:where(.content-wrap) :is(.btn,button,input,select,textarea){font-family:inherit}
+:where(.content-wrap) :is(input:not([type=checkbox]):not([type=radio]),select,textarea){min-height:42px;max-width:100%}
+:where(.content-wrap) :is(input,select,textarea,button,a):focus-visible{outline:2px solid var(--cg-panel-focus);outline-offset:2px}
+:where(.content-wrap) :is(.section-head,.directory-section-heading){gap:12px;flex-wrap:wrap}
+:where(.content-wrap) :is(.responsive-table,.remaining-table){max-width:100%;overflow-x:auto}
+:where(.content-wrap) :is(.empty-state,.empty-cell){line-height:1.6}
+:where(.content-wrap) :is([role=alert],.flash-message){overflow-wrap:anywhere;line-height:1.5}
+.sidebar .nav-text{min-width:0;overflow-wrap:anywhere}
+.sidebar .nav-item{gap:9px;line-height:1.3}
+.sidebar .nav-icon{flex-shrink:0}
+@media (min-width:1024px){
+  .sidebar .nav-item,.sidebar .logout-link,.sidebar .account-copy strong{font-size:16px}
+  .sidebar .nav-label{font-size:13px;letter-spacing:.075em}
+  .topbar .eyebrow{font-size:13px}
+  .content-wrap :is(p,li,label,small,button,a,input,select,textarea,td,th,summary){font-size:16px}
+  .content-wrap .responsive-table td,.content-wrap .responsive-table th{font-size:16px}
+  .content-wrap :is(h1,h2,h3,strong){line-height:1.3}
+}
+@media(max-width:880px){
+  .content-wrap{padding-inline:14px}
+  .directory-heading,.remaining-heading{gap:12px}
+  .topbar{padding-inline:14px}
+}
+@media(max-width:600px){
+  .content-wrap{padding:14px 12px 96px}
+  .directory-heading h2{font-size:21px}
+  .section-head{padding:12px}
+  .panel-card{width:100%}
+  .topbar-actions .user-chip{max-width:110px}
+  .topbar h1{font-size:19px}
+}
+/* Central module pricing: compact grouped controls without introducing
+   fabricated prices, or altering real tenant entitlements. */
+.cg-module-page-summary{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 16px}
+.cg-module-page-summary span{border:1px solid var(--line);background:var(--surface);padding:9px 12px;border-radius:10px;font-weight:650}
+.cg-module-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:14px 16px;margin-bottom:16px}
+.cg-module-toolbar label{display:flex;flex:1 1 250px;align-items:center;gap:9px}
+.cg-module-toolbar input{flex:1;min-width:0}
+.cg-module-toolbar nav{display:flex;gap:8px;flex-wrap:wrap}
+.cg-module-empty{padding:18px;color:var(--muted)}
+.module-pricing-card{min-width:0;scroll-margin-top:94px}
+.module-pricing-card[hidden]{display:none!important}
+.module-pricing-card form{min-width:0}
+.module-pricing-card .module-price-fields{min-width:0;display:grid;gap:10px}
+.module-pricing-card .module-price-fields p{min-width:0;margin:0}
+.module-pricing-card .module-price-fields input[type=number],.module-pricing-card .module-price-fields select{width:100%;max-width:100%;min-height:42px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);padding:9px 11px}
+.module-pricing-card .module-price-fields .btn{width:100%}
+@media(max-width:600px){.cg-module-toolbar{padding:12px}.cg-module-toolbar nav{width:100%}.cg-module-toolbar nav a{flex:1}}

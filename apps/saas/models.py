@@ -41,6 +41,9 @@ class CompanySetting(CompanyOwnedModel):
         constraints=[models.UniqueConstraint(fields=["company","category"],name="unique_company_setting_category")]
 
 class SecurityEvent(CompanyOwnedModel):
+    # Platform administrators have no tenant company. Their audit entries
+    # belong to the platform and must not use an invented tenant.
+    company=models.ForeignKey("companies.Company",on_delete=models.CASCADE,null=True,blank=True)
     user=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
     event=models.CharField(max_length=100)
     ip_address=models.GenericIPAddressField(null=True,blank=True)
