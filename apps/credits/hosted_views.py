@@ -49,7 +49,7 @@ class HostedCreditCheckoutView(APIView):
         payload = HostedLinkInput(data=request.data)
         payload.is_valid(raise_exception=True)
         package = get_object_or_404(
-            CreditPackage, pk=payload.validated_data["packageId"], is_active=True,
+            CreditPackage, pk=payload.validated_data["packageId"], is_active=True, is_archived=False,
         )
         amount = int((package.price_inr * Decimal("100")).to_integral_exact())
         if package.credits <= 0 or amount < 100 or amount > 10000000000:

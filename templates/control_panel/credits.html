@@ -93,19 +93,23 @@
       <div class="cg-package-library">
         <div class="cg-package-library-heading">
           <div>
-            <h4>Package catalog</h4>
-            <p>Current purchase options and their published status.</p>
+            <h4>{% if show_archived_packages %}Archived packages{% else %}Package catalog{% endif %}</h4>
+            <p>{% if show_archived_packages %}Removed packages are retained for past payments and can be restored.{% else %}Manage purchase options and their published status.{% endif %}</p>
           </div>
-          <span class="cg-package-count">{{ published_packages }} published</span>
+          <span class="cg-package-count">{% if show_archived_packages %}{{ archived_package_total }} archived{% else %}{{ published_packages }} published{% endif %}</span>
         </div>
+        <nav class="cg-package-catalog-filters" aria-label="Package catalog filter">
+          <a href="{% url 'panel:credits' %}#credit-panel-packages" {% if not show_archived_packages %}aria-current="page"{% endif %}>Current packages</a>
+          <a href="{% url 'panel:credits' %}?show_archived=1#credit-panel-packages" {% if show_archived_packages %}aria-current="page"{% endif %}>Archived <span>{{ archived_package_total }}</span></a>
+        </nav>
         {% if packages %}
           <div class="cg-package-cards">
             {% for item in packages %}
             <article class="cg-package-card">
               <header class="cg-package-card-top">
                 <span class="cg-package-mark" aria-hidden="true">CG</span>
-                <span class="cg-package-status {% if item.is_active %}is-published{% else %}is-hidden{% endif %}">
-                  <span aria-hidden="true"></span>{% if item.is_active %}Published{% else %}Hidden{% endif %}
+                <span class="cg-package-status {% if item.is_archived %}is-hidden{% elif item.is_active %}is-published{% else %}is-hidden{% endif %}">
+                  <span aria-hidden="true"></span>{% if item.is_archived %}Archived{% elif item.is_active %}Published{% else %}Hidden{% endif %}
                 </span>
               </header>
               <h5>{{ item.name }}</h5>
@@ -115,7 +119,7 @@
                 <span>Order #{{ item.sort_order }}</span>
                 {% if can_manage_packages or can_delete_packages %}
                 <div class="cg-package-card-actions">
-                  {% if can_manage_packages %}
+                  {% if can_manage_packages and not item.is_archived %}
                   <button type="button" class="btn cg-package-edit" data-package-edit hidden
                     data-id="{{ item.pk }}" data-name="{{ item.name }}" data-credits="{{ item.credits }}"
                     data-price="{{ item.price_inr }}" data-order="{{ item.sort_order }}"
@@ -123,21 +127,31 @@
                     aria-label="Edit {{ item.name }}">Edit</button>
                   {% endif %}
                   {% if can_delete_packages %}
-                  {% if item.has_purchases %}
-                  <span class="cg-package-locked" title="Purchase history exists. Hide this package from the Edit form instead.">In use</span>
+                  {% if item.is_archived %}
+                  <form method="post" class="cg-package-restore-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="restore_package">
+                    <input type="hidden" name="package_id" value="{{ item.pk }}">
+                    <input type="hidden" name="confirm_restore" value="yes">
+                    <button type="submit" class="btn cg-package-restore">Restore</button>
+                  </form>
                   {% else %}
                   <details class="cg-package-delete" data-package-delete>
                     <summary class="btn btn-danger" aria-label="Delete {{ item.name }}">Delete</summary>
                     <div class="cg-package-delete-confirm">
                       <strong>Delete {{ item.name }}?</strong>
-                      <p>This cannot be undone.</p>
+                      {% if item.has_purchases %}
+                      <p>This package has purchase history. Deleting removes it from the catalog and stops new purchases; historical payments are preserved.</p>
+                      {% else %}
+                      <p>This package has no purchases and will be permanently deleted. This cannot be undone.</p>
+                      {% endif %}
                       <form method="post">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="delete_package">
                         <input type="hidden" name="package_id" value="{{ item.pk }}">
                         <label><input type="checkbox" name="confirm_delete" value="yes" required> Confirm deletion</label>
                         <div class="cg-package-delete-buttons">
-                          <button type="submit" class="btn btn-danger">Delete package</button>
+                          <button type="submit" class="btn btn-danger">{% if item.has_purchases %}Remove from catalog{% else %}Delete permanently{% endif %}</button>
                         </div>
                       </form>
                     </div>
@@ -154,7 +168,7 @@
           <div class="cg-package-empty">
             <span class="cg-package-empty-icon" aria-hidden="true">+</span>
             <strong>No credit packages yet</strong>
-            <p>{% if can_manage_packages %}Create your first package using the form.{% else %}No packages are configured.{% endif %}</p>
+            <p>{% if show_archived_packages %}No archived packages. Deleted unused packages are removed permanently.{% elif can_manage_packages %}Create your first package using the form.{% else %}No packages are configured.{% endif %}</p>
           </div>
         {% endif %}
       </div>

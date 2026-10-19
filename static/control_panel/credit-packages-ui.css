@@ -84,3 +84,14 @@
 .credit-panel-wrap .cg-package-delete-buttons button{min-height:38px}
 .credit-panel-wrap .cg-package-delete[open] summary{border-color:var(--danger);color:var(--danger)}
 @media(max-width:480px){.credit-panel-wrap .cg-package-card-actions{flex-basis:100%;justify-content:space-between}.credit-panel-wrap .cg-package-delete-buttons button{width:100%}}
+
+/* Separate current and archived catalogs without dropping historical payments. */
+.credit-panel-wrap .cg-package-catalog-filters{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 16px}
+.credit-panel-wrap .cg-package-catalog-filters a{display:inline-flex;align-items:center;gap:7px;min-height:36px;padding:7px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);font-size:13px;font-weight:700;text-decoration:none}
+.credit-panel-wrap .cg-package-catalog-filters a:hover{border-color:var(--brand);color:var(--brand)}
+.credit-panel-wrap .cg-package-catalog-filters a[aria-current="page"]{border-color:var(--brand);background:var(--brand-soft);color:var(--brand)}
+.credit-panel-wrap .cg-package-catalog-filters a span{font-size:12px;font-weight:750;font-variant-numeric:tabular-nums}
+.credit-panel-wrap .cg-package-restore-form{margin:0}
+.credit-panel-wrap .cg-package-restore{min-height:36px;padding:0 12px;font-size:13px;font-weight:750}
+.credit-panel-wrap .cg-package-restore:hover{border-color:var(--brand);color:var(--brand)}
+.credit-panel-wrap .cg-package-delete-confirm p{line-height:1.55}
