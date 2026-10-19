@@ -546,6 +546,11 @@ def storage(request):
         "page_title": "Storage", "active": "storage",
         "monitoring_form": monitoring_form,
         "monitoring_policy": monitoring_policy,
+        "monitoring_next_due": (
+            monitoring_policy.last_run_at + timedelta(seconds=monitoring_policy.interval_seconds)
+            if monitoring_policy and monitoring_policy.enabled and monitoring_policy.last_run_at
+            else None
+        ),
         "monitoring_scheduler_ready": django_settings.CELERY_BROKER_URL.startswith(("redis://", "rediss://")),
         "rows": _paginate(request, qs),
         "total_bytes": totals["bytes"] or 0,
