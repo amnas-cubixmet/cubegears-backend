@@ -1,19 +1,19 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
-<section class="directory-heading remaining-heading"><div><p class="eyebrow">Platform / Audit</p><h2>Security &amp; Activity</h2><p>Review recorded security events by company, user, event and originating IP.</p></div></section>
+<section class="directory-heading remaining-heading"><div><p class="eyebrow">Platform / Audit</p><h2>Security &amp; Audit Logs</h2><p>Review platform pricing and billing changes, sign-in activity, and security events by company, user and IP.</p></div></section>
 <section class="directory-stats remaining-stats" aria-label="Security overview">
   <article class="user-stat-card"><div class="user-stat-top"><span>Recorded Events</span><span class="user-stat-icon" aria-hidden="true">E</span></div><strong class="user-stat-value">{{ total_events }}</strong><small class="user-stat-meta">All audit events</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Last 7 Days</span><span class="user-stat-icon" aria-hidden="true">7</span></div><strong class="user-stat-value">{{ recent_events }}</strong><small class="user-stat-meta">Recorded in the past seven days</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Companies Tracked</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ tracked_companies }}</strong><small class="user-stat-meta">Distinct companies in log</small></article>
 </section>
 <section class="panel-card remaining-directory" aria-labelledby="security-directory-title">
-  <header class="section-head directory-section-heading"><div><p class="eyebrow">Audit trail</p><h2 id="security-directory-title">Recent Security Events</h2><p>Read-only event history with platform permissions</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
+  <header class="section-head directory-section-heading"><div><p class="eyebrow">Audit trail</p><h2 id="security-directory-title">Audit Log Events</h2><p>Read-only event history with platform permissions</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
   <form class="remaining-filter-form" method="get" aria-label="Filter security history">
     <label class="sr-only" for="security-search">Search events</label><input id="security-search" type="search" name="q" value="{{ q }}" placeholder="Event, user email or IP address">
     <label class="sr-only" for="security-company">Company</label>
     <select id="security-company" name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
     <button class="btn btn-primary" type="submit">Filter</button>
-    {% if company_id or q %}<a class="btn" href="{% url 'panel:security' %}">Clear</a>{% endif %}
+    {% if company_id or q %}<a class="btn" href="{% url 'panel:audit-logs' %}">Clear</a>{% endif %}
   </form>
   <div class="responsive-table remaining-table"><table>
     <thead><tr><th>Time</th><th>Company</th><th>Account</th><th>Event</th><th>IP Address</th><th>Device / Browser</th></tr></thead>
