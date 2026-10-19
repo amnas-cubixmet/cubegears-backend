@@ -1,5 +1,7 @@
 """Platform-only module prices backed by the existing per-user label purchases."""
 from decimal import Decimal
+
+MIN_MODULE_USER_CREDITS = Decimal('5.00')
 from uuid import uuid4
 from django import forms
 from django.db import transaction
@@ -10,7 +12,7 @@ from .models import FeatureBundle, ModulePriceLabel, FeatureCreditPrice, Company
 
 class ModulePriceForm(forms.Form):
     module = forms.ChoiceField(widget=forms.HiddenInput)
-    per_user_credits = forms.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'), max_value=Decimal('1000000'), label='Credits per active login user')
+    per_user_credits = forms.DecimalField(max_digits=12, decimal_places=2, min_value=MIN_MODULE_USER_CREDITS, max_value=Decimal('1000000'), label='Credits per active login user', help_text='Minimum 5 credits per active user per billing period.')
     billing_type = forms.ChoiceField(choices=[p for p in FeatureBundle.PERIODS if p[0] != 'per_use'])
     monthly_postpaid = forms.BooleanField(required=False, label='Use now, pay next month (monthly postpaid)')
     published = forms.BooleanField(required=False, label='Published for activation')
@@ -38,6 +40,8 @@ def save_module_price(data, actor):
     from apps.accounts.permissions import panel_permission
     if not panel_permission(actor, 'features', 'edit'):
         raise PermissionError('Feature price edit permission required.')
+    if not MIN_MODULE_USER_CREDITS <= Decimal(data['per_user_credits']) <= Decimal('1000000'):
+        raise ValueError('Module pricing must be at least 5 credits per active user.')
     module = next(m for m in module_inventory() if m['key'] == data['module'] and m['billable'])
     group, _ = FeatureGroup.objects.get_or_create(key='module-prices', defaults={'label':'Module Pricing'})
     feature, _ = PlanFeature.objects.get_or_create(key=module['key'], defaults={'label':module['label'], 'group':group})
