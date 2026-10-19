@@ -25,9 +25,10 @@ def credits_control(request):
         instance=billing_config,
     )
     if request.method == "POST":
-        if not panel_permission(request.user, "credits", "edit"):
-            return HttpResponseForbidden("Credit management permission is required.")
         action = request.POST.get("action")
+        required_permission = "delete" if action in {"delete_package", "restore_package"} else "edit"
+        if not panel_permission(request.user, "credits", required_permission):
+            return HttpResponseForbidden("Credit management permission is required.")
         if action == 'monthly_policy':
             if billing_form.is_valid():
                 saved = billing_form.save(commit=False)
@@ -36,34 +37,77 @@ def credits_control(request):
                 messages.success(request, 'Monthly collection policy saved. Issued deadlines are preserved.')
                 return redirect('panel:credits')
         elif action == "delete_package":
-            if not panel_permission(request.user, "credits", "delete"):
-                return HttpResponseForbidden("Credit package delete permission is required.")
             if request.POST.get("confirm_delete") != "yes":
                 messages.error(request, "Confirm deletion before removing the package.")
             else:
+                # Protect purchases and statements while making used packages
+                # disappear immediately from the available package catalog.
                 pk = request.POST.get("package_id")
-                package = get_object_or_404(CreditPackage, pk=pk)
-                # Historical purchases permanently reference the package.
-                # Never delete packages used by any verified or pending order.
-                if CreditPurchase.objects.filter(package_id=package.pk).exists():
-                    messages.error(request, "This package has purchase history. Edit it and uncheck Published instead.")
-                else:
+                with transaction.atomic():
+                    package = get_object_or_404(
+                        CreditPackage.objects.select_for_update(),
+                        pk=pk, is_archived=False,
+                    )
                     package_id, package_name = package.pk, package.name
-                    try:
-                        with transaction.atomic():
-                            package.delete()
+                    if CreditPurchase.objects.filter(package_id=package_id).exists():
+                        package.is_archived = True
+                        package.is_active = False
+                        package.save(update_fields=["is_archived", "is_active"])
+                        record_panel_event(request, "CREDIT_PACKAGE_ARCHIVED", {
+                            "package_id": package_id,
+                            "package_name": package_name,
+                        })
+                        messages.success(
+                            request, f"'{package_name}' removed from the catalog. Purchase history is preserved."
+                        )
+                    else:
+                        try:
+                            # A savepoint lets other protected references be
+                            # handled safely without breaking the transaction.
+                            with transaction.atomic():
+                                package.delete()
+                        except (ProtectedError, IntegrityError):
+                            # Preserve any other linked data, even if another
+                            # table gains a protective foreign key in future.
+                            package.is_archived = True
+                            package.is_active = False
+                            package.save(update_fields=["is_archived", "is_active"])
+                            record_panel_event(request, "CREDIT_PACKAGE_ARCHIVED", {
+                                "package_id": package_id,
+                                "package_name": package_name,
+                                "reason": "related_records",
+                            })
+                            messages.success(request, f"'{package_name}' removed from the catalog. Related records were preserved.")
+                        else:
                             record_panel_event(request, "CREDIT_PACKAGE_DELETED", {
                                 "package_id": package_id,
                                 "package_name": package_name,
                             })
-                    except (ProtectedError, IntegrityError):
-                        messages.error(request, "This package is referenced by other records and cannot be deleted. Hide it instead.")
-                    else:
-                        messages.success(request, f"Credit package '{package_name}' deleted.")
-                        return redirect("panel:credits")
+                            messages.success(request, f"Credit package '{package_name}' permanently deleted.")
+                return redirect("panel:credits")
+        elif action == "restore_package":
+            if request.POST.get("confirm_restore") != "yes":
+                messages.error(request, "Confirm package restoration.")
+            else:
+                with transaction.atomic():
+                    package = get_object_or_404(
+                        CreditPackage.objects.select_for_update(),
+                        pk=request.POST.get("package_id"), is_archived=True,
+                    )
+                    package.is_archived = False
+                    # Do not make archived packages purchasable without
+                    # a separate explicit publish action.
+                    package.is_active = False
+                    package.save(update_fields=["is_archived", "is_active"])
+                    record_panel_event(request, "CREDIT_PACKAGE_RESTORED", {
+                        "package_id": package.pk,
+                        "package_name": package.name,
+                    })
+                messages.success(request, f"'{package.name}' restored as Hidden. Publish it from Edit when ready.")
+                return redirect("panel:credits")
         elif action == "package":
             pk = request.POST.get("package_id") or None
-            instance = get_object_or_404(CreditPackage, pk=pk) if pk else None
+            instance = get_object_or_404(CreditPackage, pk=pk, is_archived=False) if pk else None
             form = CreditPackageForm(request.POST, instance=instance)
             if form.is_valid():
                 form.save()
@@ -114,7 +158,8 @@ def credits_control(request):
         else:
             records = records.filter(company_id=company_id)
     wallets = CreditWallet.objects.select_related("company").order_by("company__name")
-    packages = CreditPackage.objects.annotate(
+    show_archived = request.GET.get("show_archived") == "1"
+    packages = CreditPackage.objects.filter(is_archived=show_archived).annotate(
         has_purchases=Exists(
             CreditPurchase.objects.filter(package_id=OuterRef("pk"))
         )
@@ -125,6 +170,8 @@ def credits_control(request):
         "page_title": "Credit Wallet",
         "active": "credits",
         "packages": packages,
+        "show_archived_packages": show_archived,
+        "archived_package_total": CreditPackage.objects.filter(is_archived=True).count(),
         "can_manage_packages": can_manage_packages,
         "can_delete_packages": panel_permission(request.user, "credits", "delete"),
         "package_draft": package_draft,
@@ -134,7 +181,7 @@ def credits_control(request):
         "purchases": purchases,
         "filter_company": company_id,
         "adjustment_request_id": str(uuid.uuid4()),
-        "package_total": CreditPackage.objects.count(),
-        "published_packages": CreditPackage.objects.filter(is_active=True).count(),
+        "package_total": CreditPackage.objects.filter(is_archived=False).count(),
+        "published_packages": CreditPackage.objects.filter(is_active=True, is_archived=False).count(),
         "wallet_total": CreditWallet.objects.count(),
     })
