@@ -1,0 +1,80 @@
+<section class="panel-card cg-storage-settings cg-legacy-cycle" id="legacy-credit-cycle" aria-labelledby="legacy-cycle-title">
+  <header class="cg-storage-settings-header">
+    <div class="cg-storage-settings-heading">
+      <p class="eyebrow">SETTINGS / CREDIT WALLET / OPTIONAL LEGACY ENGINE</p>
+      <h2 id="legacy-cycle-title">Fixed-date monthly credit cycle</h2>
+      <p>Optional billing from one chosen day of the month to the same day next month. Use this only if Calendar Billing and other overlapping credit engines are OFF.</p>
+    </div>
+    <span class="cg-storage-settings-status {% if legacy_cycle_policy.enabled %}is-active{% else %}is-inactive{% endif %}">
+      {% if legacy_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}
+    </span>
+  </header>
+
+  <div class="cg-legacy-cycle-content">
+    <div class="cg-legacy-cycle-editor">
+      {% if legacy_cycle_form.non_field_errors %}
+        <div class="cg-storage-errors" role="alert">{{ legacy_cycle_form.non_field_errors }}</div>
+      {% endif %}
+      {% if can_edit_calendar_billing %}
+        <form method="post" action="{% url 'panel:billing-settings' %}#legacy-credit-cycle" class="cg-legacy-cycle-form">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="legacy_credit_cycle">
+          <div class="cg-storage-field">
+            <label for="{{ legacy_cycle_form.day_of_month.id_for_label }}">{{ legacy_cycle_form.day_of_month.label }}</label>
+            {{ legacy_cycle_form.day_of_month }}
+            <small>Choose 1–28. The collection window ends on this date each month.</small>
+            {% for error in legacy_cycle_form.day_of_month.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+          </div>
+          <div class="cg-legacy-cycle-switches">
+            <label class="cg-legacy-cycle-toggle">
+              {{ legacy_cycle_form.enabled }}
+              <span><strong>Enable fixed-date monthly billing</strong><small>Requires Celery billing and cannot run alongside enabled calendar or legacy postpaid engines.</small></span>
+            </label>
+            {% for error in legacy_cycle_form.enabled.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+            <label class="cg-legacy-cycle-toggle">
+              {{ legacy_cycle_form.block_overdue }}
+              <span><strong>Restrict overdue workshops</strong><small>Keep owners' account settings, wallet recharge and billing history available.</small></span>
+            </label>
+            {% for error in legacy_cycle_form.block_overdue.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+          </div>
+          <button class="btn btn-primary cg-legacy-cycle-save" type="submit">Save Credit Cycle Policy</button>
+        </form>
+      {% else %}
+        <dl class="cg-legacy-cycle-readonly">
+          <div><dt>Cycle day</dt><dd>{{ legacy_cycle_policy.day_of_month|default:5 }}</dd></div>
+          <div><dt>Enabled</dt><dd>{{ legacy_cycle_policy.enabled|yesno:"Yes,No" }}</dd></div>
+          <div><dt>Overdue restrictions</dt><dd>{{ legacy_cycle_policy.block_overdue|yesno:"Enabled,Disabled" }}</dd></div>
+        </dl>
+        <p class="cg-legacy-cycle-help">Credits Edit permission is required to change this policy.</p>
+      {% endif %}
+      <p class="cg-legacy-cycle-help">Saving configuration does not debit wallets. Settlements occur after a completed cycle through the scheduled worker.</p>
+    </div>
+    <aside class="cg-legacy-cycle-guide">
+      <h3>Cycle billing safeguards</h3>
+      <ol>
+        <li>Enable only after disabling and reconciling overlapping billing engines.</li>
+        <li>Company usage starts from the actual activation baseline, not an invented past date.</li>
+        <li>Settle with Celery or run <code>python manage.py settle_credit_cycles --dry-run</code> to preview.</li>
+      </ol>
+      <p class="cg-legacy-cycle-since">Activated at: {{ legacy_cycle_policy.activated_at|date:"d M Y H:i"|default:"Not activated" }}</p>
+    </aside>
+  </div>
+  <div class="cg-legacy-cycle-invoices">
+    <div class="cg-legacy-cycle-invoices-head">
+      <h3>Recent fixed-date cycle invoices</h3>
+      <p>Read-only history; up to 40 latest records.</p>
+    </div>
+    <div class="responsive-table">
+      <table>
+        <thead><tr><th>Company</th><th>Cycle starts</th><th>Due date</th><th>Category</th><th>Credits</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for bill in legacy_invoices %}
+            <tr><td>{{ bill.company.name }}</td><td>{{ bill.starts_on|date:"d M Y" }}</td><td>{{ bill.due_at|date:"d M Y H:i" }}</td><td>{{ bill.category|title }}</td><td>{{ bill.credits_due|floatformat:2 }}</td><td>{{ bill.get_status_display }}</td></tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty-cell">No fixed-date credit cycle invoices recorded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
