@@ -16,15 +16,24 @@
     {% if company_id or q %}<a class="btn" href="{% url 'panel:audit-logs' %}">Clear</a>{% endif %}
   </form>
   <div class="responsive-table remaining-table"><table>
-    <thead><tr><th>Time</th><th>Company</th><th>Account</th><th>Event</th><th>IP Address</th><th>Device / Browser</th></tr></thead>
+    <thead><tr><th>Time</th><th>Company</th><th>Account</th><th>Event</th><th>Details</th><th>IP Address</th><th>Device / Browser</th></tr></thead>
     <tbody>{% for row in rows %}<tr>
       <td data-label="Time">{{ row.created_at|date:"d M Y H:i" }}</td>
       <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
       <td data-label="Account">{{ row.user.email|default:"System" }}</td>
       <td data-label="Event"><span class="remaining-chip">{{ row.event }}</span></td>
+      <td data-label="Details">
+        {% if row.event == 'FEATURE_PRICE_UPDATED' %}
+          {{ row.metadata.module }} · {{ row.metadata.credits }} credits/user · {{ row.metadata.billing_type }}
+        {% elif row.event == 'STORAGE_PRICE_UPDATED' %}
+          {{ row.metadata.credits_per_gb }} credits/GB · {{ row.metadata.included_gb }} GB free · {{ row.metadata.billing_mode }}
+        {% elif row.event == 'CALENDAR_BILLING_POLICY_UPDATED' %}
+          Due day {{ row.metadata.due_day }} at {{ row.metadata.due_time }} · feature {{ row.metadata.calculation_interval_seconds }}s · storage {{ row.metadata.storage_tracking_interval_seconds }}s
+        {% else %}—{% endif %}
+      </td>
       <td data-label="IP"><span class="remaining-mono">{{ row.ip_address|default:"—" }}</span></td>
       <td data-label="Device"><span class="table-sub">{{ row.user_agent|truncatechars:72|default:"—" }}</span></td>
-    </tr>{% empty %}<tr><td colspan="6" class="empty-cell">No security events match the selected filters.</td></tr>{% endfor %}</tbody>
+    </tr>{% empty %}<tr><td colspan="7" class="empty-cell">No security events match the selected filters.</td></tr>{% endfor %}</tbody>
   </table></div>
   <p class="remaining-note">Activity records are read-only. Counts reflect logged events, not a guarantee of real-time threat detection.</p>
 </section>
