@@ -151,3 +151,59 @@
 @media(max-width:760px){.cg-billing-settings-page .cg-settings-summary{grid-template-columns:1fr}.cg-billing-settings-page .cg-settings-summary-card{padding:16px}.cg-billing-settings-page .cg-settings-hero-actions{width:100%}.cg-billing-settings-page .cg-settings-hero-actions .btn{flex:1 1 145px}.cg-billing-settings-page .cg-billing-settings-nav{position:relative;top:auto}.cg-billing-settings-page .cg-billing-settings-nav a{flex:1 1 135px}.cg-billing-settings-page .cg-billing-settings-nav .cg-settings-audit-link{margin-left:0}.cg-billing-settings-page .cg-storage-steps{grid-template-columns:1fr}.cg-billing-settings-page .cg-storage-settings-editor,.cg-billing-settings-page .cg-storage-settings-guide,.cg-billing-settings-page .cg-legacy-cycle-editor,.cg-billing-settings-page .cg-legacy-cycle-guide{padding:17px}}
 @media(max-width:490px){.cg-billing-settings-page .cg-settings-hero{gap:13px}.cg-billing-settings-page .cg-storage-settings-header{padding:16px}.cg-billing-settings-page .cg-storage-settings-icon{height:38px;width:38px;flex-basis:38px}.cg-billing-settings-page .cg-storage-settings-heading h2{font-size:17px}.cg-billing-settings-page .cg-storage-fields{grid-template-columns:1fr}.cg-billing-settings-page .cg-legacy-cycle-invoices{padding:15px}.cg-billing-settings-page .cg-storage-settings-actions .btn{width:100%}}
 @media(prefers-reduced-motion:reduce){.cg-billing-settings-page .cg-billing-settings-nav a{transition:none}}
+
+
+/* Compact Settings forms: one clean column, no explanation-only sidebars. */
+.cg-billing-settings-page .cg-storage-settings-content,
+.cg-billing-settings-page .cg-legacy-cycle-content{grid-template-columns:minmax(0,1fr)}
+.cg-billing-settings-page .cg-storage-settings-editor,
+.cg-billing-settings-page .cg-legacy-cycle-editor{width:100%;max-width:100%;padding:23px}
+.cg-billing-settings-page .cg-storage-settings-header{padding:18px 23px}
+.cg-billing-settings-page .cg-storage-settings-heading h2{font-size:18px;margin:0}
+.cg-billing-settings-page .cg-settings-summary-card{gap:9px;padding:16px 18px}
+.cg-billing-settings-page .cg-settings-summary-card strong{font-size:22px}
+.cg-billing-settings-page .cg-storage-fields{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:19px;row-gap:17px}
+.cg-billing-settings-page .cg-storage-settings-actions{justify-content:flex-start}
+.cg-billing-settings-page .cg-storage-settings-actions .cg-storage-toggle{flex:1 1 235px}
+.cg-billing-settings-page .cg-storage-settings-actions .btn{margin-left:auto;white-space:normal}
+.cg-billing-settings-page .cg-storage-settings-editor .cg-storage-field select,
+.cg-billing-settings-page .cg-storage-settings-editor .cg-storage-field input:not([type=checkbox]){
+  width:100%;max-width:100%;min-width:0;min-height:44px;border-radius:9px;
+  background:var(--surface);color:var(--text);border:1px solid var(--line-strong);
+  padding:9px 11px;font-size:14px
+}
+.cg-billing-settings-page .cg-storage-settings-editor .cg-storage-field:has(> input) {gap:8px}
+.cg-billing-settings-page .cg-storage-settings-editor .cg-storage-field>label{font-size:13px}
+.cg-billing-settings-page .cg-storage-settings-editor .cg-storage-toggle{font-size:13px}
+.cg-billing-settings-page .cg-legacy-cycle-switches{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.cg-billing-settings-page .cg-legacy-cycle-switches>.cg-legacy-cycle-toggle{flex:1 1 210px;min-width:0}
+.cg-billing-settings-page .cg-legacy-cycle-form{gap:16px}
+.cg-billing-settings-page .cg-legacy-invoice-history{border-top:1px solid var(--line);background:var(--surface)}
+.cg-billing-settings-page .cg-legacy-invoice-history>summary{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 23px;min-height:52px;color:var(--text);font-size:13px;font-weight:760;
+  cursor:pointer;list-style:none
+}
+.cg-billing-settings-page .cg-legacy-invoice-history>summary::-webkit-details-marker{display:none}
+.cg-billing-settings-page .cg-legacy-invoice-history>summary:after{content:"+";font-size:21px;color:var(--brand);font-weight:600}
+.cg-billing-settings-page .cg-legacy-invoice-history[open]>summary:after{content:"−"}
+.cg-billing-settings-page .cg-legacy-invoice-history>.responsive-table{padding:0 23px 18px}
+.cg-billing-settings-page .cg-legacy-invoice-history table{width:100%;min-width:570px;border-collapse:collapse}
+.cg-billing-settings-page .cg-legacy-invoice-history th,
+.cg-billing-settings-page .cg-legacy-invoice-history td{font-size:12px;color:var(--text);padding:11px 9px;border-bottom:1px solid var(--line);text-align:left}
+.cg-billing-settings-page .cg-legacy-invoice-history th{font-weight:780;background:var(--surface-soft)}
+@media(max-width:760px){
+ .cg-billing-settings-page .cg-storage-settings-content,
+ .cg-billing-settings-page .cg-legacy-cycle-content{grid-template-columns:minmax(0,1fr)}
+ .cg-billing-settings-page .cg-storage-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .cg-billing-settings-page .cg-storage-settings-editor,
+ .cg-billing-settings-page .cg-legacy-cycle-editor{padding:18px}
+ .cg-billing-settings-page .cg-storage-settings-actions .btn{margin-left:0}
+}
+@media(max-width:540px){
+ .cg-billing-settings-page .cg-storage-fields{grid-template-columns:minmax(0,1fr)}
+ .cg-billing-settings-page .cg-storage-settings-actions .btn{width:100%}
+ .cg-billing-settings-page .cg-legacy-invoice-history>summary{padding:15px 17px}
+ .cg-billing-settings-page .cg-legacy-invoice-history>.responsive-table{padding:0 14px 14px}
+ .cg-billing-settings-page .cg-settings-summary-card{padding:15px}
+}
