@@ -32,9 +32,9 @@ from apps.employees.models import Employee
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
-from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, CreditWallet, BillingCyclePolicy
+from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, CreditWallet, BillingCyclePolicy, StorageMonitoringPolicy
 from apps.credits.billing_cycle_forms import BillingCyclePolicyForm
-from apps.credits.storage_forms import StorageCreditPolicyForm
+from apps.credits.storage_forms import StorageCreditPolicyForm, StorageMonitoringPolicyForm
 from apps.saas.feature_discovery import sync_existing_modules
 from .permissions import route_allowed, landing_route
 from .auth_views import _limited
@@ -386,6 +386,12 @@ def storage(request):
     action = request.POST.get("action", "storage_pricing") if request.method == "POST" else ""
     cycle_action = action == "billing_cycle"
     legacy_action = action == "legacy_credit_cycle"
+    monitoring_action = action == "storage_monitoring"
+    monitoring_policy = StorageMonitoringPolicy.objects.filter(singleton=1).first()
+    monitoring_form = StorageMonitoringPolicyForm(
+        request.POST if monitoring_action else None,
+        instance=monitoring_policy or StorageMonitoringPolicy(singleton=1),
+    )
     cycle_form = BillingCyclePolicyForm(
         request.POST if cycle_action else None, instance=cycle_policy,
     )
@@ -394,12 +400,25 @@ def storage(request):
         request.POST if legacy_action else None, instance=legacy_policy,
     )
     if request.method == "POST":
-        if action not in ("storage_pricing", "billing_cycle", "legacy_credit_cycle"):
+        if action not in ("storage_pricing", "billing_cycle", "legacy_credit_cycle", "storage_monitoring"):
             return HttpResponseBadRequest("Unknown billing settings action.")
+        if monitoring_action and is_settings_page:
+            return HttpResponseBadRequest("Storage monitoring is managed on the Storage page.")
+        if monitoring_action and not can_edit_pricing:
+            return HttpResponseForbidden("Storage Edit permission required.")
         if (cycle_action or legacy_action) and not can_edit_cycle:
             return HttpResponseForbidden("Platform credit policy edit permission required.")
         if action == "storage_pricing" and not can_edit_pricing:
             return HttpResponseForbidden("Platform storage pricing edit permission required.")
+
+    if monitoring_action and monitoring_form.is_valid():
+        updated_monitoring = monitoring_form.save()
+        record_panel_event(request, "STORAGE_MONITORING_POLICY_UPDATED", {
+            "enabled": updated_monitoring.enabled,
+            "interval_seconds": updated_monitoring.interval_seconds,
+        })
+        messages.success(request, "Storage snapshot schedule saved. This does not charge wallets.")
+        return redirect(reverse("panel:storage") + "#storage-monitoring")
 
     if legacy_action:
         if legacy_cycle_form.is_valid():
@@ -525,6 +544,9 @@ def storage(request):
         "event_rows": event_page,
         "event_count": event_page.paginator.count,
         "page_title": "Storage", "active": "storage",
+        "monitoring_form": monitoring_form,
+        "monitoring_policy": monitoring_policy,
+        "monitoring_scheduler_ready": django_settings.CELERY_BROKER_URL.startswith(("redis://", "rediss://")),
         "rows": _paginate(request, qs),
         "total_bytes": totals["bytes"] or 0,
         "total_files": totals["files"] or 0,
@@ -542,7 +564,7 @@ def storage(request):
         "live_storage_count": company_page.paginator.count,
         "live_storage_page": company_page,
         "storage_period": period,
-    })
+    }, status=400 if monitoring_action and monitoring_form.errors else 200)
 
 
 @panel_admin_required
