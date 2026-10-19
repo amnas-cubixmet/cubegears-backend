@@ -1,9 +1,13 @@
-from rest_framework import generics
+from django.db import transaction
+from rest_framework import generics, serializers
+from rest_framework.views import APIView
+from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from apps.accounts.permissions import IsCompanyAdmin, can_delegate, is_company_owner, user_has_permission
 from .models import Role
 from .serializers import RoleSerializer
+from .legacy_cleanup import eligible_legacy_signup_roles
 
 class CanReadRolesOwnerCanWrite(BasePermission):
     message = "Only the company owner can create, edit or delete roles."
@@ -48,3 +52,57 @@ class RoleDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return Role.objects.filter(company=self.request.user.company, is_system=False)
+
+
+class LegacySignupRolesCleanupView(APIView):
+    """Explicit company-owner review and cleanup; never run on login/signup."""
+    permission_classes = [CanReadRolesOwnerCanWrite]
+
+    def _require_owner(self, request):
+        if not (is_company_owner(request.user)
+                and user_has_permission(request.user, "company.manage")):
+            raise PermissionDenied("Only the company owner can clean up legacy roles.")
+
+    def get(self, request):
+        self._require_owner(request)
+        candidates = eligible_legacy_signup_roles(request.user.company)
+        return Response({
+            "roles": [
+                {"id": str(role.pk), "name": role.name, "code": role.code}
+                for role in candidates
+            ],
+            "notice": (
+                "Only unchanged, unassigned legacy signup presets are eligible. "
+                "Review each role before confirming. Existing custom roles and "
+                "roles assigned to staff are never removed."
+            ),
+        })
+
+    @transaction.atomic
+    def post(self, request):
+        self._require_owner(request)
+        requested = serializers.ListField(
+            child=serializers.UUIDField(), allow_empty=False, max_length=5
+        ).run_validation(request.data.get("roleIds"))
+        requested_ids = {str(value) for value in requested}
+        if len(requested_ids) != len(requested):
+            raise ValidationError({"roleIds": "Duplicate role IDs are not allowed."})
+
+        candidates = eligible_legacy_signup_roles(request.user.company, lock=True)
+        eligible_by_id = {str(role.id): role for role in candidates}
+        if not requested_ids.issubset(eligible_by_id):
+            raise ValidationError({
+                "roleIds": "Some roles have changed or are assigned to staff. Refresh the review before continuing."
+            })
+        removed = [
+            {"id": str(role.pk), "name": role.name}
+            for role in candidates if str(role.pk) in requested_ids
+        ]
+        # QuerySet deletion is constrained to this company and explicitly
+        # selected, freshly verified rows; no other tenant records are touched.
+        Role.objects.filter(
+            company=request.user.company,
+            pk__in=[row["id"] for row in removed],
+            is_system=False,
+        ).delete()
+        return Response({"removed": removed, "count": len(removed)})
