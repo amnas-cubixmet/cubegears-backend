@@ -20,7 +20,7 @@ Platform staff with `panel.plans.*`, `panel.features.*`, `panel.requests.view` c
 - `/plans/` — create/edit plan, monthly/yearly prices, promotions, limits, enabled features
 - `/features/` — create/edit arbitrary label groups, nested labels and feature keys
 - `/requests/` — view upgrade, downgrade and custom plan enquiries
-- `/subscriptions/` — platform administration assigns a catalog plan to a company
+- The former `/subscriptions/` Control Panel CRUD interface has been retired. Existing assignments and payment records are retained for compatibility and history.
 
 The SaaS platform has no company attached. Company owners have tenant-scoped roles, **not** platform privileges.
 
@@ -40,7 +40,7 @@ The company frontend needs `VITE_API_URL` pointing to Django `/api/v1`; fake/moc
 ## Important production boundaries
 
 - Plan change and custom enquiries are **requests only**. No checkout, verified paid plan activation, subscription tax invoice, recurring charge, payment webhook or auto-renewal is implemented by this PR.
-- A platform administrator verifies payment separately and assigns/updates the catalog-linked subscription using `/subscriptions/`.
+- Historical note: administrators previously assigned catalog-linked subscriptions through `/subscriptions/`. That Control Panel route has been retired; do not use these legacy instructions for new onboarding.
 - Limits are enforced in known branch and staff-login creation APIs for catalog-linked active subscriptions. Audit any future or alternate account creation routes.
 - Feature checks are applied to matching Django role-permission modules when an **active**, catalog-linked subscription exists. Historical subscriptions without a catalog link retain previous behaviour until migrated. This migration strategy intentionally avoids unexpectedly locking existing workshops.
 - Extra storage rate is an **indicative monthly estimate**, not an issued invoice. Historic snapshots do not invent charges.
