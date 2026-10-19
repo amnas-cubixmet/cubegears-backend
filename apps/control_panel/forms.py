@@ -16,7 +16,7 @@ from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.roles.models import Role
-from apps.saas.models import Subscription, SubscriptionPlan, FeatureGroup, PlanFeature, PlanFeatureAccess
+from apps.saas.models import SubscriptionPlan, FeatureGroup, PlanFeature, PlanFeatureAccess
 from apps.vehicles.models import Vehicle
 from apps.credits.models import FeatureBundle
 
@@ -203,48 +203,6 @@ class UserForm(AdminModelForm):
             user.save()
             self.save_m2m()
         return user
-
-
-class SubscriptionForm(AdminModelForm):
-    class Meta:
-        model = Subscription
-        fields = [
-            "company", "branch", "plan_definition", "plan", "status", "billing_cycle",
-            "amount", "currency", "starts_at", "renews_at", "seats",
-        ]
-        widgets = {
-            "starts_at": forms.DateTimeInput(
-                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
-            ),
-            "renews_at": forms.DateTimeInput(
-                format="%Y-%m-%dT%H:%M", attrs={"type": "datetime-local"}
-            ),
-        }
-        help_texts = {
-            "plan_definition": "Selecting an active defined plan applies its pricing and seat limit when saved.",
-            "plan": "Automatically set when a Plan Builder definition is selected.",
-            "amount": "The configured subscription amount, not a collected payment.",
-            "seats": "Automatically set from Plan Builder when a defined plan is selected.",
-        }
-
-    def clean(self):
-        data = super().clean()
-        company = data.get("company")
-        branch = data.get("branch")
-        if branch and company and branch.company_id != company.id:
-            self.add_error("branch", "Selected branch does not belong to this company.")
-        plan = data.get("plan_definition")
-        if plan:
-            if not plan.is_active:
-                self.add_error("plan_definition", "Select an active plan.")
-            cycle = data.get("billing_cycle")
-            if cycle not in ("monthly", "yearly"):
-                self.add_error("billing_cycle", "Choose monthly or yearly billing.")
-            else:
-                data["plan"] = plan.name
-                data["seats"] = plan.max_users
-                data["amount"] = plan.price_for(cycle)
-        return data
 
 
 class CustomerForm(AdminModelForm):
