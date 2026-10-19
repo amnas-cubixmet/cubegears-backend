@@ -166,19 +166,6 @@ class StorageCreditPolicy(models.Model):
         return "Storage wallet billing policy"
 
 
-class StorageMonitoringPolicy(models.Model):
-    """Read-only storage snapshot cadence, independent of all billing engines."""
-
-    singleton = models.PositiveSmallIntegerField(default=1, unique=True, editable=False)
-    enabled = models.BooleanField(default=False)
-    interval_seconds = models.PositiveIntegerField(default=43200)
-    last_run_at = models.DateTimeField(null=True, blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return "Storage usage monitoring schedule"
-
-
 class CreditCyclePolicy(models.Model):
     """Opt-in global day-of-month wallet billing, independent of old plans.
 
