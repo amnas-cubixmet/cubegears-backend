@@ -531,6 +531,7 @@ def storage(request):
         "billing_cycle_form": cycle_form,
         "can_edit_storage_pricing": can_edit_pricing,
         "can_edit_calendar_billing": can_edit_cycle,
+        "time_weighted_storage_enabled": __import__("django.conf", fromlist=["settings"]).settings.STORAGE_MONTHLY_METERED_ENABLED,
         "live_storage_rows": live_rows,
         "live_storage_count": company_page.paginator.count,
         "live_storage_page": company_page,
