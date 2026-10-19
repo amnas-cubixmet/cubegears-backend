@@ -1,0 +1,114 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="cg-feature-editor">
+  <header class="cg-feature-heading">
+    <div>
+      <nav class="cg-feature-crumbs" aria-label="Breadcrumb">
+        <a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span>
+        <a href="{% url 'panel:feature-pricing' %}">Feature Pricing</a><span aria-hidden="true">/</span>
+        <span aria-current="page">{{ page_title }}</span>
+      </nav>
+      <h2>{{ page_title }}</h2>
+      <p>{% if feature_form_kind == "feature" %}Configure a feature module in the platform catalog.
+        {% elif feature_form_kind == "group" %}Organize feature modules into labels and categories.
+        {% else %}Build a paid feature label using existing active modules and per-user credit pricing.{% endif %}
+      </p>
+    </div>
+    <a href="{% url 'panel:feature-pricing' %}" class="btn cg-feature-btn-secondary">← Feature pricing</a>
+  </header>
+
+  <form method="post" class="cg-feature-form" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}
+      <div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>
+    {% endif %}
+    <div class="cg-feature-layout">
+      <div class="cg-feature-main">
+        <section class="cg-feature-card">
+          <header class="cg-feature-card-head">
+            <span class="cg-feature-kicker">01 · Configuration</span>
+            <h3>{% if feature_form_kind == "feature" %}Feature information{% elif feature_form_kind == "group" %}Group information{% else %}Paid label information{% endif %}</h3>
+            <p>Fields marked with an asterisk are required.</p>
+          </header>
+          <div class="cg-feature-fields">
+            {% if feature_form_kind == "feature" %}
+              {% include "control_panel/company_field.html" with field=form.label %}
+              {% include "control_panel/company_field.html" with field=form.key %}
+              {% include "control_panel/company_field.html" with field=form.group %}
+              {% include "control_panel/company_field.html" with field=form.sort_order %}
+              {% include "control_panel/company_field.html" with field=form.description wide=True %}
+            {% elif feature_form_kind == "group" %}
+              {% include "control_panel/company_field.html" with field=form.label %}
+              {% include "control_panel/company_field.html" with field=form.key %}
+              {% include "control_panel/company_field.html" with field=form.parent %}
+              {% include "control_panel/company_field.html" with field=form.sort_order %}
+            {% elif feature_form_kind == "bundle" %}
+              {% include "control_panel/company_field.html" with field=form.name %}
+              {% include "control_panel/company_field.html" with field=form.description wide=True %}
+              {% include "control_panel/company_field.html" with field=form.per_user_credits %}
+              {% include "control_panel/company_field.html" with field=form.billing_type %}
+            {% endif %}
+          </div>
+        </section>
+
+        {% if feature_form_kind == "bundle" %}
+          <section class="cg-feature-card" aria-labelledby="cg-feature-selection-title">
+            <header class="cg-feature-card-head">
+              <span class="cg-feature-kicker">02 · Included modules</span>
+              <h3 id="cg-feature-selection-title">Select existing features</h3>
+              <p>Choose one or more active catalog features for this paid label.</p>
+            </header>
+            <div class="cg-feature-multi">
+              <div class="cg-feature-multi-options">{{ form.features }}</div>
+              {% if form.features.help_text %}<p class="cg-feature-tip">{{ form.features.help_text }}</p>{% endif %}
+              {% for error in form.features.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+            </div>
+          </section>
+        {% endif %}
+      </div>
+
+      <aside class="cg-feature-sidebar">
+        {% if feature_form_kind == "feature" or feature_form_kind == "group" %}
+          <section class="cg-feature-card">
+            <header class="cg-feature-card-head"><span class="cg-feature-kicker">02 · Visibility</span><h3>Catalog status</h3><p>Control whether this entry is enabled in the platform catalog.</p></header>
+            <div class="cg-feature-settings">
+              <div class="cg-feature-setting">
+                <div><strong>Active in catalog</strong><small>Feature access for individual companies still requires separate activation.</small></div>
+                <label class="cg-feature-switch" for="{{ form.is_active.id_for_label }}">{{ form.is_active }}<span aria-hidden="true"></span><span class="sr-only">Active in catalog</span></label>
+              </div>
+              {% for error in form.is_active.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}
+            </div>
+          </section>
+        {% endif %}
+
+        <section class="cg-feature-card">
+          <header class="cg-feature-card-head"><span class="cg-feature-kicker">Important</span><h3>{% if feature_form_kind == "bundle" %}Credit billing rules{% else %}Catalog guidance{% endif %}</h3></header>
+          <div class="cg-feature-info">
+            {% if feature_form_kind == "feature" %}
+              <p>The feature key is the permanent identifier used by backend permission and discovery systems. Use an existing permission key when connecting an implemented module.</p>
+              <p>Creating a catalog entry alone does not activate any tenant’s features.</p>
+            {% elif feature_form_kind == "group" %}
+              <p>Feature groups organize catalog entries. Editing their labels does not automatically purchase or enable features for companies.</p>
+            {% else %}
+              <p><strong>Wallet credits, not rupees.</strong> The price entered applies per active login user for the selected billing period.</p>
+              <p>Price saving does not debit a wallet. Purchased labels cannot have features removed or billing periods changed.</p>
+              <p>Minimum configured module pricing may be managed separately on the Feature Pricing page.</p>
+            {% endif %}
+            {% if is_edit %}
+              <div class="cg-feature-meta">
+                <span>Editing existing record</span>
+                <strong>{% if feature_form_kind == "bundle" %}{{ form.instance.name }}{% else %}{{ form.instance.key }}{% endif %}</strong>
+              </div>
+            {% endif %}
+          </div>
+        </section>
+      </aside>
+    </div>
+    <footer class="cg-feature-footer">
+      <a href="{% url cancel_url %}" class="btn cg-feature-btn-secondary">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if is_edit %}Save changes{% else %}Create {% if feature_form_kind == "feature" %}feature{% elif feature_form_kind == "group" %}group{% else %}paid label{% endif %}{% endif %}</button>
+    </footer>
+  </form>
+</div>
+{% endblock %}
