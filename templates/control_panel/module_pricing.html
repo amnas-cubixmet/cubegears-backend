@@ -1,28 +1,36 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<section class="directory-heading remaining-heading">
-  <div><p class="eyebrow">SaaS administration / Pricing</p><h2>All Module Prices</h2>
-    <p>Manage all billable modules in one place. Minimum 5 wallet credits per active login user and billing period. Existing published company entitlements are never changed by opening this page.</p></div>
-</section>
-<section class="panel-card module-pricing-info">
-  <p>Price per billing period = credits per active login user × company active login accounts. Saving a price does not activate any company or deduct credits. Unpriced modules are unavailable for individual activation. Existing multi-feature labels keep their own published prices. Unpublishing a module also removes access granted by that module label; business records are retained.</p>
-  {% if submission_errors %}<div role="alert">{{ submission_errors }}</div>{% endif %}
-  {% if not can_edit %}<p>You have view access. Ask a SaaS administrator for Features → Edit permission to change prices.</p>{% endif %}
-</section>
-<div class="cg-module-page-summary" aria-label="Module pricing overview">
-  <span>Total paid modules: {{ module_count }}</span>
-  <span>Configured: {{ priced_count }}</span>
-  <span>Not priced: {{ unpriced_count }}</span>
-  <span>Minimum: 5 credits per active user</span>
-</div>
+<div class="cg-module-pricing-page">
+  <header class="cg-module-page-heading">
+    <div>
+      <p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Feature Pricing</p>
+      <h2>Feature Pricing</h2>
+      <p>Manage prices and availability for workshop modules.</p>
+    </div>
+    <span class="cg-module-base-rate">5 credits <small>/ active user · minimum</small></span>
+  </header>
+
+  {% if submission_errors %}<div class="cg-module-error" role="alert">{{ submission_errors }}</div>{% endif %}
+  {% if not can_edit %}<p class="cg-module-readonly">View only · Features Edit permission required.</p>{% endif %}
+
+  <section class="cg-module-summary-grid" aria-label="Feature pricing overview">
+    <article class="cg-module-summary-card">
+      <span>Total modules</span><strong>{{ module_count }}</strong><small>Billable features</small>
+    </article>
+    <article class="cg-module-summary-card">
+      <span>Published</span><strong>{{ published_count }}</strong><small>Available for activation</small>
+    </article>
+    <article class="cg-module-summary-card">
+      <span>Configured</span><strong>{{ priced_count }}</strong><small>{{ unpriced_count }} unpriced</small>
+    </article>
+  </section>
 <details class="cg-feature-management" id="feature-management">
   <summary>
     <span class="cg-feature-management-title">Feature catalog &amp; label management</span>
-    <span class="cg-feature-management-summary">Manage modules, groups and paid labels <span aria-hidden="true">⌄</span></span>
+    <span class="cg-feature-management-summary">Manage catalog <span aria-hidden="true">⌄</span></span>
   </summary>
   <div class="cg-feature-management-content">
-    <p class="cg-feature-manage-description">Manage real catalog records without changing company activation or wallet balances. Module prices are configured below.</p>
     {% if can_edit %}
     <div class="cg-feature-management-actions">
       <a class="btn btn-primary" href="{% url 'panel:feature-create' %}">+ Add feature</a>
@@ -69,38 +77,60 @@
         </div>
       </section>
     </div>
-    <p class="cg-feature-manage-note">Sync scans implemented backend modules only; it does not set prices or enable any company. A module-linked paid label may open its pricing card when edited.</p>
   </div>
 </details>
-<section class="panel-card cg-module-toolbar" aria-label="Pricing navigation">
-  <label for="cg-module-search">Search modules
-    <input id="cg-module-search" type="search" placeholder="Filter by module name or key" autocomplete="off">
-  </label>
-  <nav aria-label="Pricing and billing sections">
-    {% panel_can "storage" as storage_allowed %}{% if storage_allowed %}<a class="btn" href="{% url 'panel:storage' %}">Storage Pricing</a>{% endif %}
-    {% panel_can "credits" as credits_allowed %}{% if credits_allowed %}<a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Calendar Billing</a>{% endif %}
+<section class="cg-module-toolbar" aria-label="Module pricing tools">
+  <div class="cg-module-search">
+    <label for="cg-module-search" class="sr-only">Search modules</label>
+    <input id="cg-module-search" type="search" placeholder="Search modules..." autocomplete="off">
+  </div>
+  <nav aria-label="Related settings">
+    {% panel_can "billing-settings" as billing_allowed %}{% if billing_allowed %}<a class="btn" href="{% url 'panel:billing-settings' %}#storage-pricing-title">Billing Settings</a>{% endif %}
     {% panel_can "security" as audit_allowed %}{% if audit_allowed %}<a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
   </nav>
 </section>
-<div id="cg-module-no-results" class="panel-card cg-module-empty" role="status" hidden>No matching modules.</div>
-<div class="cg-paid-label-grid" id="cg-module-grid">
+<div id="cg-module-no-results" class="cg-module-empty" role="status" hidden>No matching modules.</div>
+<div class="cg-module-grid" id="cg-module-grid">
 {% for row in rows %}
-<section class="cg-paid-label-card module-pricing-card" id="module-{{ row.module.key }}" data-module-search="{{ row.module.label|lower }} {{ row.module.key|lower }}">
-  <h3>{{ row.module.label }}</h3><p><code>{{ row.module.key }}</code> · {% if row.bundle %}{{ row.bundle.is_active|yesno:"Published,Unpublished" }}{% else %}Price not set{% endif %}</p>
-  <form method="post" class="credit-panel-form">{% csrf_token %}{{ row.form.module }}
-    {% if row.form.errors %}<div role="alert">{{ row.form.errors }}</div>{% endif %}
+<section class="module-pricing-card" id="module-{{ row.module.key }}" data-module-search="{{ row.module.label|lower }} {{ row.module.key|lower }}">
+  <div class="cg-module-card-top">
+    <span class="cg-module-card-mark" aria-hidden="true">{{ row.module.label|slice:":1" }}</span>
+    {% if row.bundle and row.bundle.is_active and row.mapping.feature.is_active %}
+      <span class="cg-module-state is-published"><span aria-hidden="true"></span>Published</span>
+    {% elif row.bundle %}
+      <span class="cg-module-state"><span aria-hidden="true"></span>Unpublished</span>
+    {% else %}
+      <span class="cg-module-state is-unpriced"><span aria-hidden="true"></span>Not priced</span>
+    {% endif %}
+  </div>
+  <h3>{{ row.module.label }}</h3>
+  <p class="cg-module-key">{{ row.module.key }}</p>
+  <form method="post" class="cg-module-card-form">
+    {% csrf_token %}
+    {{ row.form.module }}
+    {% if row.form.errors %}<div class="cg-module-form-errors" role="alert">{{ row.form.errors }}</div>{% endif %}
     <fieldset class="module-price-fields" {% if not can_edit %}disabled{% endif %}>
-      <p><label for="{{ row.form.per_user_credits.id_for_label }}">Credits per active login user</label>{{ row.form.per_user_credits }}<small>Minimum 5 credits per active user; price save never deducts wallet credits.</small></p>
-      <p><label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>{{ row.form.billing_type }}</p>
-      <p><label>{{ row.form.monthly_postpaid }} Use now, pay next month</label><small>Monthly only. Requires monthly postpaid metering and due-date collection to be enabled. No upfront wallet balance is required; usage is payable next month.</small></p>
-      <p><label class="module-price-publish">{{ row.form.published }} Published for activation</label></p>
-      {% if row.mapping and not row.mapping.feature.is_active %}<p>This module is disabled in the feature catalogue. Its prices do not grant access until the module is published.</p>{% endif %}
-      <button type="submit" class="btn btn-primary">Save {{ row.module.label }} Price</button>
+      <div class="cg-module-card-fields">
+        <div class="cg-module-field">
+          <label for="{{ row.form.per_user_credits.id_for_label }}">Credits / user</label>
+          {{ row.form.per_user_credits }}
+        </div>
+        <div class="cg-module-field">
+          <label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>
+          {{ row.form.billing_type }}
+        </div>
+      </div>
+      <div class="cg-module-card-toggles">
+        <label class="cg-module-checkbox">{{ row.form.published }} <span>Published</span></label>
+        <label class="cg-module-checkbox">{{ row.form.monthly_postpaid }} <span>Pay next month</span></label>
+      </div>
+      <button type="submit" class="btn btn-primary">Save price</button>
     </fieldset>
   </form>
-  {% if row.mapping %}<small>Last updated {{ row.mapping.updated_at }}{% if row.mapping.updated_by %} by {{ row.mapping.updated_by.name }}{% endif %}</small>{% endif %}
+  {% if row.mapping %}<small class="cg-module-updated">Updated {{ row.mapping.updated_at|date:"d M Y" }}</small>{% endif %}
 </section>
 {% endfor %}
+</div>
 </div>
 <script defer src="{% static 'control_panel/module-pricing.js' %}"></script>
 {% endblock %}
