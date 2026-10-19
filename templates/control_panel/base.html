@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="{% static 'control_panel/billing-settings-ui.css' %}?v=20261019cycle">
   {% endif %}
   <link rel="stylesheet" href="{% static 'control_panel/reference-ui.css' %}?v=20261019b">
+  {% if active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/credit-packages-ui.css' %}?v=20261019a">{% endif %}
   {% if active == 'features' %}<link rel="stylesheet" href="{% static 'control_panel/features-management-ui.css' %}?v=20261019a">{% endif %}
   {% if active == 'companies' or active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/companies-reference.css' %}?v=20261019icons">{% endif %}
   {% if active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/users-reference.css' %}?v=20261019icons">{% endif %}
