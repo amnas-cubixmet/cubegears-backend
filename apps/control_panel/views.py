@@ -481,18 +481,36 @@ def storage(request):
     can_edit_cycle = panel_permission(request.user, "credits", "edit")
     is_settings_page = request.resolver_match.url_name == "billing-settings"
     save_destination = "panel:billing-settings" if is_settings_page else "panel:storage"
-    cycle_action = request.method == "POST" and request.POST.get("action") == "billing_cycle"
+    from apps.credits.cycle_panel import CreditCyclePolicyForm, save_credit_cycle_policy
+    from apps.credits.models import CreditCyclePolicy, CreditCycleInvoice
+
+    action = request.POST.get("action", "storage_pricing") if request.method == "POST" else ""
+    cycle_action = action == "billing_cycle"
+    legacy_action = action == "legacy_credit_cycle"
     cycle_form = BillingCyclePolicyForm(
         request.POST if cycle_action else None, instance=cycle_policy,
     )
+    legacy_policy = CreditCyclePolicy.objects.order_by("pk").first()
+    legacy_cycle_form = CreditCyclePolicyForm(
+        request.POST if legacy_action else None, instance=legacy_policy,
+    )
     if request.method == "POST":
-        action = request.POST.get("action", "storage_pricing")
-        if action not in ("storage_pricing", "billing_cycle"):
+        if action not in ("storage_pricing", "billing_cycle", "legacy_credit_cycle"):
             return HttpResponseBadRequest("Unknown billing settings action.")
-        if cycle_action and not can_edit_cycle:
+        if (cycle_action or legacy_action) and not can_edit_cycle:
             return HttpResponseForbidden("Platform credit policy edit permission required.")
-        if not cycle_action and not can_edit_pricing:
+        if action == "storage_pricing" and not can_edit_pricing:
             return HttpResponseForbidden("Platform storage pricing edit permission required.")
+
+    if legacy_action:
+        if legacy_cycle_form.is_valid():
+            saved_legacy = save_credit_cycle_policy(legacy_cycle_form)
+            record_panel_event(request, 'LEGACY_CREDIT_CYCLE_POLICY_UPDATED', {
+                'enabled': saved_legacy.enabled, 'day_of_month': saved_legacy.day_of_month,
+                'block_overdue': saved_legacy.block_overdue,
+            })
+            messages.success(request, "Monthly credit cycle saved; no wallet debit occurred.")
+            return redirect(reverse("panel:billing-settings") + "#legacy-credit-cycle")
 
     if cycle_action:
         if cycle_form.is_valid():
@@ -508,9 +526,9 @@ def storage(request):
             messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original due date.")
             return redirect(save_destination)
     policy_form = StorageCreditPolicyForm(
-        request.POST if request.method == "POST" and not cycle_action else None, instance=policy,
+        request.POST if request.method == "POST" and action == "storage_pricing" else None, instance=policy,
     )
-    if request.method == "POST" and not cycle_action and policy_form.is_valid():
+    if request.method == "POST" and action == "storage_pricing" and policy_form.is_valid():
         with transaction.atomic():
             saved = policy_form.save()
             # Keep a single effective published rule, including for older databases
@@ -538,6 +556,9 @@ def storage(request):
             "storage_policy_form": policy_form,
             "billing_cycle_policy": cycle_policy,
             "billing_cycle_form": cycle_form,
+            "legacy_cycle_form": legacy_cycle_form,
+            "legacy_cycle_policy": legacy_policy,
+            "legacy_invoices": CreditCycleInvoice.objects.select_related("company").order_by("-starts_on", "company__name", "category")[:40],
             "can_edit_storage_pricing": can_edit_pricing,
             "can_edit_calendar_billing": can_edit_cycle,
             "time_weighted_storage_enabled": django_settings.STORAGE_MONTHLY_METERED_ENABLED,
