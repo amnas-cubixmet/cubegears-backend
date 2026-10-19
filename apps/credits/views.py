@@ -111,7 +111,7 @@ class CreditPackagesView(APIView):
         return Response([
             {"id": p.id, "name": p.name, "credits": str(p.credits),
              "priceInr": str(p.price_inr), "active": p.is_active}
-            for p in CreditPackage.objects.filter(is_active=True)
+            for p in CreditPackage.objects.filter(is_active=True, is_archived=False)
         ])
 
 
@@ -315,7 +315,7 @@ class CreateCreditOrderView(APIView):
             return Response({"message": "Company billing administrator permission required."}, status=403)
         validated = PackageInput(data=request.data)
         validated.is_valid(raise_exception=True)
-        package = get_object_or_404(CreditPackage, id=validated.validated_data["packageId"], is_active=True)
+        package = get_object_or_404(CreditPackage, id=validated.validated_data["packageId"], is_active=True, is_archived=False)
         amount = int((package.price_inr * Decimal("100")).to_integral_exact())
         if package.credits <= 0 or amount < 100 or amount > 10000000000:
             return Response({"message": "Invalid published credit package."}, status=400)
