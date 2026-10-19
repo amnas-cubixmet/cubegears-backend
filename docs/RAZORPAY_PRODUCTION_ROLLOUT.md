@@ -43,7 +43,7 @@ Select events `payment.captured` and `refund.processed` (you can additionally su
 - In Razorpay Test Mode, validate UPI/card/netbanking methods actually enabled, failed/abandoned payments, delayed webhooks, forged signature, wrong amount, duplicate delivery and refunds.
 - Confirm all existing companies that must retain access are migrated or accommodated **before enabling** strict paywall. Existing manually created subscriptions do **not** count as Razorpay paid proof. Enabling gate immediately blocks any company without a captured order.
 - Verify admin can configure both `access_duration_days` and `checkout_price` on `/plans/`. Newly created or existing plans default to checkout_price=₹0 and **cannot** create a checkout order until configured.
-- Review the read-only platform payment ledger at `/subscriptions/payments/` (gross captured transactions, not settlement reconciliation).
+- Preserve and reconcile RazorpayPlanPayment records through authorized administrative reporting and Razorpay's transaction exports. The former Control Panel ledger at `/subscriptions/payments/` has been retired; the historical payment records and verification APIs remain available.
 - Configure daily reminder scheduling after SMTP is verified, for example `0 9 * * * cd /srv/cubixgear/cubegears-backend && .venv/bin/python manage.py send_subscription_expiry_reminders` (adapt path and timezone to your host).
 - Verify new signup → password setup → login → `/subscribe` → captured payment → dashboard.
 - Verify unpaid JWT API calls return HTTP 402 even if the React UI is bypassed.
