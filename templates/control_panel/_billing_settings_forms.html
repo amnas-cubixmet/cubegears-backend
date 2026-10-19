@@ -152,10 +152,10 @@
             {% endfor %}
           </div>
           <div class="cg-storage-settings-actions">
-            <label class="cg-storage-toggle">{{ billing_cycle_form.event_tracking_enabled }} <span><strong>Track file and staff changes</strong>{% if not compact_billing_settings %}<small>Use stored byte totals between changes; no repeated file scan.</small>{% endif %}</span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>Enable calendar billing</strong>{% if not compact_billing_settings %}<small>Only the selected time-metered engine(s); older billing paths stop.</small>{% endif %}</span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>Allow zero-balance usage</strong>{% if not compact_billing_settings %}<small>Records liability; never creates negative wallet balances.</small>{% endif %}</span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>Restrict overdue workspaces</strong>{% if not compact_billing_settings %}<small>After the configured due date: account, recharge, history and billing remain available.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.event_tracking_enabled }} <span><strong>{% if compact_billing_settings %}Track file and staff changes{% else %}Track file and active staff changes{% endif %}</strong>{% if not compact_billing_settings %}<small>Use stored byte totals between changes; no repeated file scan.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>{% if compact_billing_settings %}Enable calendar billing{% else %}Enable calendar credit settlement{% endif %}</strong>{% if not compact_billing_settings %}<small>Only the selected time-metered engine(s); older billing paths stop.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>{% if compact_billing_settings %}Allow zero-balance usage{% else %}Allow usage at zero credits until due{% endif %}</strong>{% if not compact_billing_settings %}<small>Records liability; never creates negative wallet balances.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>{% if compact_billing_settings %}Restrict overdue workspaces{% else %}Restrict overdue workshop modules{% endif %}</strong>{% if not compact_billing_settings %}<small>After the configured due date: account, recharge, history and billing remain available.</small>{% endif %}</span></label>
             <button class="btn btn-primary" type="submit">Save Calendar Billing Policy</button>
           </div>
         </form>
