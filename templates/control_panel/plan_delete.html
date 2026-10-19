@@ -1,4 +1,5 @@
 {% extends "control_panel/base.html" %}
+{% load panel_access %}
 {% block content %}
 <section class="cg-plan-delete-page" aria-labelledby="delete-plan-title">
   <nav class="cg-plan-delete-breadcrumb" aria-label="Breadcrumb">
@@ -14,24 +15,22 @@
       <div><dt>Key</dt><dd>{{ object.key }}</dd></div>
       <div><dt>Linked subscriptions</dt><dd>{{ subscription_count }}</dd></div>
       <div><dt>Plan-change requests</dt><dd>{{ request_count }}</dd></div>
+      <div><dt>Razorpay payment records</dt><dd>{{ payment_count }}</dd></div>
     </dl>
     {% if is_used %}
       <div class="cg-plan-delete-warning" role="alert">
         <strong>Deletion blocked — this plan is in use.</strong>
-        <p>Linked subscription and plan-change history must remain intact. Use Edit Plan to switch off Active Plan and archive it instead.</p>
+        <p>Linked subscriptions, payment records and plan-change history must remain intact. Use Edit Plan to switch off Active Plan and archive it instead.</p>
       </div>
       <div class="cg-plan-delete-actions">
         <a class="btn" href="{% url 'panel:plans' %}">Back to plans</a>
-        {% if request.user.is_superuser %}
-          <a class="btn btn-primary" href="{% url 'panel:plan-edit' object.pk %}">Edit / Archive plan</a>
-        {% else %}
-          <a class="btn btn-primary" href="{% url 'panel:plan-edit' object.pk %}">Edit plan</a>
-        {% endif %}
+        {% panel_can 'plan-edit' as can_edit_plan %}
+        {% if can_edit_plan %}<a class="btn btn-primary" href="{% url 'panel:plan-edit' object.pk %}">Edit / Archive plan</a>{% endif %}
       </div>
     {% else %}
       <div class="cg-plan-delete-warning">
         <strong>Review before deleting.</strong>
-        <p>No linked subscriptions or plan-change requests were found. The server will recheck dependencies before deleting.</p>
+        <p>No linked subscriptions, plan-change requests or payments were found. The server will recheck dependencies before deleting.</p>
       </div>
       <form method="post" class="cg-plan-delete-actions">
         {% csrf_token %}
