@@ -62,3 +62,25 @@
 @media(max-width:1180px){.credit-panel-wrap .cg-package-workspace{grid-template-columns:minmax(0,1fr)}.credit-panel-wrap .cg-package-editor{max-width:none}}
 @media(max-width:720px){.credit-panel-wrap .cg-package-cards{grid-template-columns:1fr}.credit-panel-wrap .cg-package-card{min-height:220px}}
 @media(max-width:480px){.credit-panel-wrap .cg-package-editor{padding:15px}.credit-panel-wrap .cg-package-fields-two{grid-template-columns:1fr}.credit-panel-wrap .cg-package-card{padding:16px}.credit-panel-wrap .cg-package-form-actions .btn{width:100%}}
+
+/* Inline, no-JavaScript-required deletion confirmation on catalog cards. */
+.credit-panel-wrap .credit-summary-title .eyebrow a{color:var(--brand);text-decoration:none}
+.credit-panel-wrap .credit-summary-title .eyebrow a:hover{text-decoration:underline}
+.credit-panel-wrap .cg-package-card-footer{flex-wrap:wrap}
+.credit-panel-wrap .cg-package-card-actions{display:flex;flex:1 1 auto;justify-content:flex-end;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.credit-panel-wrap .cg-package-edit{font-size:13px;min-height:36px}
+.credit-panel-wrap .cg-package-locked{font-size:12px;font-weight:700;color:var(--muted);padding:7px 0;white-space:nowrap}
+.credit-panel-wrap .cg-package-delete{min-width:0;max-width:100%}
+.credit-panel-wrap .cg-package-delete summary{list-style:none;display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 12px;font-size:13px;font-weight:750;cursor:pointer;user-select:none}
+.credit-panel-wrap .cg-package-delete summary::-webkit-details-marker{display:none}
+.credit-panel-wrap .cg-package-delete[open]{width:100%;flex:1 0 100%}
+.credit-panel-wrap .cg-package-delete-confirm{margin-top:10px;padding:14px;border:1px solid var(--line);border-radius:11px;background:var(--surface-soft);width:100%;overflow-wrap:anywhere}
+.credit-panel-wrap .cg-package-delete-confirm strong{display:block;color:var(--text);font-size:14px}
+.credit-panel-wrap .cg-package-delete-confirm p{margin:5px 0 12px;color:var(--muted);font-size:13px}
+.credit-panel-wrap .cg-package-delete-confirm form{display:grid;gap:12px}
+.credit-panel-wrap .cg-package-delete-confirm label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text);cursor:pointer}
+.credit-panel-wrap .cg-package-delete-confirm input[type="checkbox"]{accent-color:var(--brand);width:17px;height:17px;min-height:17px;flex:0 0 17px}
+.credit-panel-wrap .cg-package-delete-buttons{display:flex;justify-content:flex-end}
+.credit-panel-wrap .cg-package-delete-buttons button{min-height:38px}
+.credit-panel-wrap .cg-package-delete[open] summary{border-color:var(--danger);color:var(--danger)}
+@media(max-width:480px){.credit-panel-wrap .cg-package-card-actions{flex-basis:100%;justify-content:space-between}.credit-panel-wrap .cg-package-delete-buttons button{width:100%}}

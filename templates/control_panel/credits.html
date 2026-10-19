@@ -3,7 +3,7 @@
 {% block content %}
 <div class="credit-panel-wrap">
   <div class="credit-summary-title directory-heading">
-    <div><p class="eyebrow">Platform / Usage credits</p><h2>Credit Wallet Control</h2><p>Manage Razorpay credit packages, company wallet adjustments and auditable transactions. Paid Feature Labels and storage usage have separate dedicated controls.</p></div>
+    <div><p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Credit Wallet</p><h2>Credit Wallet</h2><p>Manage credit packages, company wallet balances and transaction activity.</p></div>
   </div>
 
   <div class="cg-credit-shortcuts">
@@ -113,12 +113,38 @@
               <div class="cg-package-price">₹{{ item.price_inr }} <span>one-time top-up</span></div>
               <footer class="cg-package-card-footer">
                 <span>Order #{{ item.sort_order }}</span>
-                {% if can_manage_packages %}
-                <button type="button" class="btn cg-package-edit" data-package-edit hidden
-                  data-id="{{ item.pk }}" data-name="{{ item.name }}" data-credits="{{ item.credits }}"
-                  data-price="{{ item.price_inr }}" data-order="{{ item.sort_order }}"
-                  data-active="{{ item.is_active|yesno:'true,false' }}"
-                  aria-label="Edit {{ item.name }}">Edit package</button>
+                {% if can_manage_packages or can_delete_packages %}
+                <div class="cg-package-card-actions">
+                  {% if can_manage_packages %}
+                  <button type="button" class="btn cg-package-edit" data-package-edit hidden
+                    data-id="{{ item.pk }}" data-name="{{ item.name }}" data-credits="{{ item.credits }}"
+                    data-price="{{ item.price_inr }}" data-order="{{ item.sort_order }}"
+                    data-active="{{ item.is_active|yesno:'true,false' }}"
+                    aria-label="Edit {{ item.name }}">Edit</button>
+                  {% endif %}
+                  {% if can_delete_packages %}
+                  {% if item.has_purchases %}
+                  <span class="cg-package-locked" title="Purchase history exists. Hide this package from the Edit form instead.">In use</span>
+                  {% else %}
+                  <details class="cg-package-delete" data-package-delete>
+                    <summary class="btn btn-danger" aria-label="Delete {{ item.name }}">Delete</summary>
+                    <div class="cg-package-delete-confirm">
+                      <strong>Delete {{ item.name }}?</strong>
+                      <p>This cannot be undone.</p>
+                      <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_package">
+                        <input type="hidden" name="package_id" value="{{ item.pk }}">
+                        <label><input type="checkbox" name="confirm_delete" value="yes" required> Confirm deletion</label>
+                        <div class="cg-package-delete-buttons">
+                          <button type="submit" class="btn btn-danger">Delete package</button>
+                        </div>
+                      </form>
+                    </div>
+                  </details>
+                  {% endif %}
+                  {% endif %}
+                </div>
                 {% endif %}
               </footer>
             </article>
