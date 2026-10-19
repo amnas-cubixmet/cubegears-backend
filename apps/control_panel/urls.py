@@ -60,30 +60,6 @@ urlpatterns = [
     path("storage/", views.storage, name="storage"),
     path("security/", views.security, name="security"),
 
-    path("customers/", views.customers, name="customers"),
-    path("customers/add/", views.customer_create, name="customer-create"),
-    path("customers/<uuid:pk>/", views.customer_detail, name="customer-detail"),
-    path("customers/<uuid:pk>/edit/", views.customer_edit, name="customer-edit"),
-    path("customers/<uuid:pk>/delete/", views.customer_delete, name="customer-delete"),
-
-    path("jobs/", views.jobs, name="jobs"),
-    path("jobs/add/", views.job_create, name="job-create"),
-    path("jobs/<uuid:pk>/", views.job_detail, name="job-detail"),
-    path("jobs/<uuid:pk>/edit/", views.job_edit, name="job-edit"),
-    path("jobs/<uuid:pk>/delete/", views.job_delete, name="job-delete"),
-
-    path("stock/", views.stock, name="stock"),
-    path("stock/add/", views.stock_create, name="stock-create"),
-    path("stock/<uuid:pk>/", views.stock_detail, name="stock-detail"),
-    path("stock/<uuid:pk>/edit/", views.stock_edit, name="stock-edit"),
-    path("stock/<uuid:pk>/delete/", views.stock_delete, name="stock-delete"),
-
-    path("invoices/", views.invoices, name="invoices"),
-    path("invoices/add/", views.invoice_create, name="invoice-create"),
-    path("invoices/<uuid:pk>/", views.invoice_detail, name="invoice-detail"),
-    path("invoices/<uuid:pk>/edit/", views.invoice_edit, name="invoice-edit"),
-    path("invoices/<uuid:pk>/delete/", views.invoice_delete, name="invoice-delete"),
-
     path("staff/", views.staff, name="staff"),
     path("staff/add/", views.staff_create, name="staff-create"),
     path("staff/<uuid:pk>/", views.staff_detail, name="staff-detail"),
