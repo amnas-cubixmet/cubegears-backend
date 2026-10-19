@@ -391,12 +391,21 @@ def storage(request):
     policy = StorageCreditPolicy.objects.order_by("pk").first()
     cycle_policy = BillingCyclePolicy.objects.order_by("pk").first()
     can_edit_pricing = panel_permission(request.user, "storage", "edit")
+    can_edit_cycle = panel_permission(request.user, "credits", "edit")
+    is_settings_page = request.resolver_match.url_name == "billing-settings"
+    save_destination = "panel:billing-settings" if is_settings_page else "panel:storage"
     cycle_action = request.method == "POST" and request.POST.get("action") == "billing_cycle"
     cycle_form = BillingCyclePolicyForm(
         request.POST if cycle_action else None, instance=cycle_policy,
     )
-    if request.method == "POST" and not can_edit_pricing:
-        return HttpResponseForbidden("Platform storage pricing edit permission required.")
+    if request.method == "POST":
+        action = request.POST.get("action", "storage_pricing")
+        if action not in ("storage_pricing", "billing_cycle"):
+            return HttpResponseBadRequest("Unknown billing settings action.")
+        if cycle_action and not can_edit_cycle:
+            return HttpResponseForbidden("Platform credit policy edit permission required.")
+        if not cycle_action and not can_edit_pricing:
+            return HttpResponseForbidden("Platform storage pricing edit permission required.")
 
     if cycle_action:
         if cycle_form.is_valid():
@@ -410,7 +419,7 @@ def storage(request):
                     'storage_tracking_interval_seconds': policy_record.storage_tracking_interval_seconds,
                 })
             messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original due date.")
-            return redirect("panel:storage")
+            return redirect(save_destination)
     policy_form = StorageCreditPolicyForm(
         request.POST if request.method == "POST" and not cycle_action else None, instance=policy,
     )
@@ -432,7 +441,21 @@ def storage(request):
             request,
             "Storage per-GB rate saved. Wallets are only charged by the scheduled storage billing command.",
         )
-        return redirect("panel:storage")
+        return redirect(save_destination)
+
+    if is_settings_page:
+        from django.conf import settings as django_settings
+        return render(request, "control_panel/billing_settings.html", {
+            "page_title": "Storage & Credit Billing Settings",
+            "active": "billing-settings",
+            "storage_policy": policy,
+            "storage_policy_form": policy_form,
+            "billing_cycle_policy": cycle_policy,
+            "billing_cycle_form": cycle_form,
+            "can_edit_storage_pricing": can_edit_pricing,
+            "can_edit_calendar_billing": can_edit_cycle,
+            "time_weighted_storage_enabled": django_settings.STORAGE_MONTHLY_METERED_ENABLED,
+        }, status=400 if request.method == "POST" else 200)
 
     qs = StorageUsage.objects.select_related("company").order_by("-date")
     qs, company_id = _company_filter(request, qs)
@@ -507,6 +530,7 @@ def storage(request):
         "billing_cycle_policy": cycle_policy,
         "billing_cycle_form": cycle_form,
         "can_edit_storage_pricing": can_edit_pricing,
+        "can_edit_calendar_billing": can_edit_cycle,
         "live_storage_rows": live_rows,
         "live_storage_count": company_page.paginator.count,
         "live_storage_page": company_page,
