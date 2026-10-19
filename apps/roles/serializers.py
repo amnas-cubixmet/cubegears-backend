@@ -31,7 +31,6 @@ class RoleSerializer(serializers.ModelSerializer):
         return code
 
     def validate_permissions(self, value):
-        user = self.context['request'].user
         if not isinstance(value, list) or any(not isinstance(code, str) for code in value):
             raise serializers.ValidationError("Permissions must be a list of strings.")
         if "*" in value or any(
