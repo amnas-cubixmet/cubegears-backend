@@ -1616,12 +1616,13 @@ def plan_delete(request, pk):
     plan = get_object_or_404(SubscriptionPlan, pk=pk)
     subscription_count = Subscription.objects.filter(plan_definition=plan).count()
     request_count = PlanChangeRequest.objects.filter(requested_plan=plan).count()
-    is_used = bool(subscription_count or request_count)
+    payment_count = RazorpayPlanPayment.objects.filter(plan=plan).count()
+    is_used = bool(subscription_count or request_count or payment_count)
     if request.method == "POST":
         if is_used:
             messages.error(
                 request,
-                "This plan is used by subscriptions or plan-change requests. "
+                "This plan is used by subscriptions, payment records or plan-change requests. "
                 "Archive it via Edit Plan instead of deleting billing history.",
             )
             return redirect("panel:plans")
@@ -1644,7 +1645,7 @@ def plan_delete(request, pk):
     return render(request, "control_panel/plan_delete.html", {
         "page_title": "Delete Plan", "active": "plans", "object": plan,
         "subscription_count": subscription_count, "request_count": request_count,
-        "is_used": is_used,
+        "payment_count": payment_count, "is_used": is_used,
     })
 
 
