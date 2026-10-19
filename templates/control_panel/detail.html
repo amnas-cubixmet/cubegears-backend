@@ -9,88 +9,19 @@
   </div>
 </div>
 
-{% if active == 'customers' or active == 'vehicles' or active == 'branches' or active == 'roles' %}
+{% if active == 'branches' or active == 'roles' %}
 <section class="panel-card remaining-profile-header">
-  <div class="remaining-profile-symbol" aria-hidden="true">{% if active == 'customers' %}C{% elif active == 'vehicles' %}V{% elif active == 'branches' %}B{% else %}R{% endif %}</div>
+  <div class="remaining-profile-symbol" aria-hidden="true">{% if active == 'branches' %}B{% else %}R{% endif %}</div>
   <div class="remaining-profile-info">
-    <p class="eyebrow">{% if active == 'customers' %}Customer profile{% elif active == 'vehicles' %}Vehicle profile{% elif active == 'branches' %}Branch profile{% else %}Role profile{% endif %}</p>
-    <h2>{% if active == 'customers' or active == 'branches' or active == 'roles' %}{{ object.name }}{% else %}{{ object.registration }}{% endif %}</h2>
-    <p>{{ object.company.name|default:"Platform" }}{% if active == 'customers' %} · {{ object.phone }}{% elif active == 'vehicles' %} · {{ object.customer.name }}{% elif active == 'branches' %} · {{ object.code }}{% elif active == 'roles' %} · {{ object.code }}{% endif %}</p>
+    <p class="eyebrow">{% if active == 'branches' %}Branch profile{% else %}Role profile{% endif %}</p>
+    <h2>{{ object.name }}</h2>
+    <p>{{ object.company.name|default:"Platform" }} · {{ object.code }}</p>
     <div class="remaining-profile-tags">
-      {% if active == 'customers' or active == 'vehicles' %}<span class="remaining-state {% if object.status|lower == 'active' %}is-good{% else %}is-neutral{% endif %}">{{ object.status|title }}</span>
-      {% else %}<span class="remaining-state {% if object.is_active %}is-good{% else %}is-neutral{% endif %}">{% if object.is_active %}Active{% else %}Inactive{% endif %}</span>{% endif %}
+      <span class="remaining-state {% if object.is_active %}is-good{% else %}is-neutral{% endif %}">{% if object.is_active %}Active{% else %}Inactive{% endif %}</span>
       {% if active == 'branches' and object.is_head_office %}<span class="remaining-chip">Head Office</span>{% endif %}
       {% if active == 'roles' and object.is_system %}<span class="remaining-chip">System Role</span>{% endif %}
     </div>
   </div>
-</section>
-{% endif %}
-
-{% if active == 'jobs' %}
-<section class="panel-card jobs-profile-header">
-  <span class="jobs-profile-icon" aria-hidden="true">J</span>
-  <div class="jobs-profile-info">
-    <p class="eyebrow">Workshop job card</p>
-    <h2>{{ object.job_number }}</h2>
-    <p>{{ object.company.name }} · {{ object.customer.name }} · {{ object.vehicle.registration }}</p>
-    <div class="jobs-profile-tags">
-      {% if object.status == "Delivered" or object.status == "Ready for Delivery" %}
-        <span class="jobs-status-pill is-complete">{{ object.status }}</span>
-      {% elif object.status == "Waiting for Parts" or object.status == "Estimate Pending" %}
-        <span class="jobs-status-pill is-waiting">{{ object.status }}</span>
-      {% elif object.status == "In Progress" or object.status == "QC" %}
-        <span class="jobs-status-pill is-progress">{{ object.status }}</span>
-      {% else %}
-        <span class="jobs-status-pill is-neutral">{{ object.status }}</span>
-      {% endif %}
-      <span class="jobs-priority-pill {% if object.priority|lower == 'high' or object.priority|lower == 'urgent' %}is-high{% endif %}">{{ object.priority }} priority</span>
-    </div>
-  </div>
-  <div class="jobs-profile-summary">
-    <span>Saved estimate</span>
-    <strong>₹{{ object.estimate_total|floatformat:2 }}</strong>
-    <span>{{ object.technician.name|default:"No technician assigned" }}</span>
-  </div>
-</section>
-{% endif %}
-
-{% if active == 'stock' %}
-<section class="panel-card stock-profile-header">
-  <span class="stock-profile-icon" aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>
-  <div class="stock-profile-info">
-    <p class="eyebrow">Inventory item details</p>
-    <h2>{{ object.name }}</h2>
-    <p>{{ object.sku }} · {{ object.company.name }}{% if object.branch %} · {{ object.branch.name }}{% endif %}</p>
-    <div class="stock-profile-tags">
-      {% if object.available_quantity <= 0 %}<span class="stock-level-pill is-out">Out of Stock</span>
-      {% elif object.low_stock %}<span class="stock-level-pill is-low">Low Stock</span>
-      {% else %}<span class="stock-level-pill is-healthy">In Stock</span>{% endif %}
-      <span class="stock-state-tag">{{ object.status }}</span>
-    </div>
-  </div>
-  <div class="stock-profile-quantity">
-    <span>Available units</span>
-    <strong>{{ object.available_quantity|floatformat:2 }}</strong>
-    <span>{{ object.unit }} · {{ object.reserved|floatformat:2 }} reserved</span>
-  </div>
-</section>
-{% endif %}
-
-{% if active == 'invoices' %}
-<section class="panel-card invoice-profile-header">
-  <div class="invoice-profile-symbol" aria-hidden="true">{% if object.kind == 'estimate' %}E{% else %}I{% endif %}</div>
-  <div class="invoice-profile-info">
-    <p class="eyebrow">Billing document details</p>
-    <h2>{{ object.number }} · {{ object.kind|title }}</h2>
-    <p>{{ object.company.name }} · {{ object.customer.name }} · {{ object.date|date:"d M Y" }}</p>
-    <div class="invoice-profile-tags">
-      <span class="invoice-type-tag {% if object.kind == 'estimate' %}is-estimate{% endif %}">{{ object.kind|title }}</span>
-      {% if object.status|lower == 'paid' or object.status|lower == 'completed' %}<span class="invoice-status-tag is-paid">{{ object.status }}</span>
-      {% elif object.status|lower == 'cancelled' or object.status|lower == 'canceled' %}<span class="invoice-status-tag is-cancelled">{{ object.status }}</span>
-      {% else %}<span class="invoice-status-tag is-other">{{ object.status|default:"Not set" }}</span>{% endif %}
-    </div>
-  </div>
-  <div class="invoice-profile-amount"><span>Recorded total</span><strong>₹{{ object.total|floatformat:2 }}</strong><span>Balance: ₹{{ object.balance|floatformat:2 }}</span></div>
 </section>
 {% endif %}
 

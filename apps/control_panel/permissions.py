@@ -1,10 +1,9 @@
 from apps.accounts.permissions import panel_permission
 
 RESOURCES = ['dashboard', 'companies', 'users', 'branches', 'roles', 'credits',
-             'storage', 'security', 'plans', 'features', 'requests', 'customers', 'vehicles', 'jobs', 'stock', 'invoices', 'staff']
+             'storage', 'security', 'plans', 'features', 'requests', 'staff']
 SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 'featurebundle': 'features', 'company': 'companies', 'user': 'users', 'branch': 'branches', 'role': 'roles', 'role-saas': 'roles',
-            'customer': 'customers', 'vehicle': 'vehicles',
-            'job': 'jobs', 'invoice': 'invoices', 'stock': 'stock', 'staff': 'staff'}
+            'staff': 'staff'}
 
 
 def route_allowed(user, route):
