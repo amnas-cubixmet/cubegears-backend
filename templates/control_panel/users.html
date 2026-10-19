@@ -1,85 +1,95 @@
 {% extends "control_panel/base.html" %}
 {% load panel_access %}
 {% block content %}
-<section class="directory-heading">
-  <div>
-    <p class="eyebrow">Platform / User directory</p>
-    <h2>Users &amp; Access Management</h2>
-    <p>Manage account identities, roles, company assignments and access status.</p>
-  </div>
-  {% panel_can 'panel:user-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:user-create' %}">+ Add User</a>{% endif %}
-</section>
-
-<section class="directory-stats" aria-label="User overview">
-  <article class="user-stat-card"><div class="user-stat-top"><span>Total Users</span><span class="user-stat-icon" aria-hidden="true">U</span></div><strong class="user-stat-value">{{ total_users }}</strong><small class="user-stat-meta">Registered accounts</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Active Users</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_users }}</strong><small class="user-stat-meta">Enabled accounts</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Admin Accounts</span><span class="user-stat-icon" aria-hidden="true">A</span></div><strong class="user-stat-value">{{ admin_users }}</strong><small class="user-stat-meta">Staff / super admin</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Verified Emails</span><span class="user-stat-icon" aria-hidden="true">@</span></div><strong class="user-stat-value">{{ verified_users }}</strong><small class="user-stat-meta">Email verified users</small></article>
-</section>
-
-<section class="panel-card user-directory" aria-labelledby="user-directory-title">
-  <header class="section-head directory-section-heading">
-    <div><p class="eyebrow">Accounts</p><h2 id="user-directory-title">User Directory</h2><p>Users across the CubixGear platform</p></div>
-    <span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+<div class="cg-users">
+  <header class="cg-page-heading">
+    <div>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><span aria-current="page">Users</span></nav>
+      <h2>Users’ List</h2>
+      <p>Manage staff accounts, company assignments, roles and access.</p>
+    </div>
+    {% panel_can 'panel:user-create' as can_create %}
+    {% if can_create %}<a class="btn btn-primary cg-create-button" href="{% url 'panel:user-create' %}"><span aria-hidden="true">＋</span> New user</a>{% endif %}
   </header>
 
-  <form class="user-filter-form" method="get" aria-label="Filter users">
-    <label class="sr-only" for="user-search">Search users</label>
-    <input id="user-search" type="search" name="q" value="{{ q }}" placeholder="Search by name, email or phone">
-    <label class="sr-only" for="user-company-filter">Company</label>
-    <select id="user-company-filter" name="company"><option value="">All companies</option>{% for company in companies %}<option value="{{ company.id }}" {% if company_id == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select>
-    <label class="sr-only" for="user-status-filter">Account status</label>
-    <select id="user-status-filter" name="status">
-      <option value="">All statuses</option>
-      <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
-      <option value="disabled" {% if status == "disabled" %}selected{% endif %}>Disabled</option>
-    </select>
-    <label class="sr-only" for="user-access-filter">Access type</label>
-    <select id="user-access-filter" name="access">
-      <option value="">All access types</option>
-      <option value="superuser" {% if access == "superuser" %}selected{% endif %}>Super Admin</option>
-      <option value="admin" {% if access == "admin" %}selected{% endif %}>Admin Staff</option>
-      <option value="workshop" {% if access == "workshop" %}selected{% endif %}>Workshop User</option>
-    </select>
-    <button class="btn btn-primary" type="submit">Filter</button>
-    {% if q or company_id or status or access %}<a class="btn" href="{% url 'panel:users' %}">Clear</a>{% endif %}
-  </form>
-
-  <div class="responsive-table user-directory-table">
-    <table>
-      <thead><tr><th>User</th><th>Company</th><th>Branch</th><th>Role</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>
-        {% for row in rows %}
-        <tr>
-          <td data-label="User">
-            <div class="user-directory-identity">
-              <span class="user-directory-avatar" aria-hidden="true">{{ row.name|default:row.email|slice:":1"|upper }}</span>
-              <div class="user-directory-identity-copy">
-                <strong>{{ row.name|default:row.email }}</strong>
-                <span class="table-sub">{{ row.email }}</span>
-                <span class="user-verify-state {% if row.email_verified %}is-verified{% endif %}">{% if row.email_verified %}Verified email{% else %}Email unverified{% endif %}</span>
-              </div>
-            </div>
-          </td>
-          <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
-          <td data-label="Branch">{{ row.branch.name|default:"—" }}</td>
-          <td data-label="Role">{{ row.role.name|default:"—" }}</td>
-          <td data-label="Access">{% if row.is_superuser %}<span class="access-pill is-superuser">Super Admin</span>{% elif row.is_staff %}<span class="access-pill is-admin">Admin Staff</span>{% else %}<span class="access-pill">Workshop User</span>{% endif %}</td>
-          <td data-label="Status">{% if row.is_active %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="company-status-tag is-disabled">Disabled</span>{% endif %}</td>
-          <td data-label="Actions"><div class="row-actions user-row-actions">
-            {% panel_can 'panel:user-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:user-detail' row.pk %}">View</a>{% endif %}
-            {% panel_can 'panel:user-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:user-edit' row.pk %}">Edit</a>{% endif %}
-            {% if row.pk != request.user.pk %}
-              {% panel_can 'panel:user-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:user-toggle' row.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name|default:row.email }}">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
-              {% panel_can 'panel:user-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:user-delete' row.pk %}">Delete</a>{% endif %}
-            {% else %}<span class="current-user-tag">You</span>{% endif %}
-          </div></td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="7" class="empty-cell">No users match the selected filters.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  <div class="cg-company-totals" aria-label="Live user statistics">
+    <div><span>Total users</span><strong>{{ total_users }}</strong></div>
+    <div><span>Active accounts</span><strong>{{ active_users }}</strong></div>
+    <div><span>Admin accounts</span><strong>{{ admin_users }}</strong></div>
+    <div><span>Verified emails</span><strong>{{ verified_users }}</strong></div>
   </div>
-</section>
+
+  <section class="cg-directory-panel" aria-labelledby="cg-users-list-title">
+    <header class="cg-directory-top cg-users-directory-top">
+      <div><h3 id="cg-users-list-title">User directory</h3><p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</p></div>
+      <form class="cg-user-filters" method="get" role="search" aria-label="Search and filter users">
+        <label class="cg-company-search">
+          <span class="sr-only">Search users</span>
+          <input type="search" name="q" value="{{ q }}" placeholder="Search name, email or phone">
+        </label>
+        <label><span class="sr-only">Company filter</span><select name="company" aria-label="Company filter">
+          <option value="">All companies</option>
+          {% for company in companies %}<option value="{{ company.pk }}" {% if company_id == company.pk|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+        </select></label>
+        <label><span class="sr-only">Status filter</span><select name="status" aria-label="Status filter">
+          <option value="">All statuses</option>
+          <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+          <option value="disabled" {% if status == 'disabled' %}selected{% endif %}>Disabled</option>
+        </select></label>
+        <label><span class="sr-only">Access filter</span><select name="access" aria-label="Access filter">
+          <option value="">All access types</option>
+          <option value="superuser" {% if access == 'superuser' %}selected{% endif %}>Super Admin</option>
+          <option value="admin" {% if access == 'admin' %}selected{% endif %}>Admin Staff</option>
+          <option value="workshop" {% if access == 'workshop' %}selected{% endif %}>Workshop User</option>
+        </select></label>
+        <button class="btn cg-filter-submit" type="submit">Search</button>
+        {% if q or company_id or status or access %}<a class="cg-clear-filter" href="{% url 'panel:users' %}">Clear</a>{% endif %}
+      </form>
+    </header>
+
+    <div class="responsive-table cg-companies-table cg-users-table">
+      <table>
+        <thead><tr><th>User</th><th>Company</th><th>Branch</th><th>Role</th><th>Access</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          {% panel_can 'panel:user-detail' as can_view %}
+          {% panel_can 'panel:user-edit' as can_edit %}
+          {% panel_can 'panel:user-toggle' as can_toggle %}
+          {% panel_can 'panel:user-delete' as can_delete %}
+          {% for row in rows %}
+          <tr>
+            <td data-label="User">
+              <div class="cg-company-identity">
+                {% if can_view %}<a class="cg-company-link" href="{% url 'panel:user-detail' row.pk %}" aria-label="Open {{ row.name|default:row.email }} user profile">{% endif %}
+                  {% if row.avatar %}<img class="cg-company-avatar cg-user-avatar" src="{{ row.avatar }}" alt="">
+                  {% else %}<span class="cg-company-avatar cg-company-letter" aria-hidden="true">{{ row.name|default:row.email|slice:":1"|upper }}</span>{% endif %}
+                  <span class="cg-company-name-group"><strong>{{ row.name|default:row.email }}</strong><small>{{ row.email }}</small><small class="cg-user-verification">{% if row.email_verified %}Email verified{% else %}Email unverified{% endif %}</small></span>
+                {% if can_view %}</a>{% endif %}
+              </div>
+            </td>
+            <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
+            <td data-label="Branch">{{ row.branch.name|default:"—" }}</td>
+            <td data-label="Role">{{ row.role.name|default:"—" }}</td>
+            <td data-label="Access">
+              {% if row.is_superuser %}<span class="cg-user-access is-admin">Super Admin</span>
+              {% elif row.is_staff %}<span class="cg-user-access is-admin">Admin Staff</span>
+              {% else %}<span class="cg-user-access">Workshop User</span>{% endif %}
+            </td>
+            <td data-label="Status"><span class="cg-company-state {% if row.is_active %}is-on{% else %}is-off{% endif %}">{% if row.is_active %}Active{% else %}Disabled{% endif %}</span></td>
+            <td data-label="Actions">
+              <div class="cg-company-actions">
+                {% if can_view %}<a class="cg-icon-action" href="{% url 'panel:user-detail' row.pk %}" title="View {{ row.name|default:row.email }}" aria-label="View {{ row.name|default:row.email }}">↗</a>{% endif %}
+                {% if can_edit %}<a class="cg-icon-action" href="{% url 'panel:user-edit' row.pk %}" title="Edit {{ row.name|default:row.email }}" aria-label="Edit {{ row.name|default:row.email }}">✎</a>{% endif %}
+                {% if row.pk != request.user.pk %}
+                  {% if can_toggle %}<a class="cg-icon-action" href="{% url 'panel:user-toggle' row.pk %}" title="{% if row.is_active %}Disable{% else %}Enable{% endif %} user" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name|default:row.email }}">⏻</a>{% endif %}
+                  {% if can_delete %}<a class="cg-icon-action is-danger" href="{% url 'panel:user-delete' row.pk %}" title="Delete user" aria-label="Delete {{ row.name|default:row.email }}">⌫</a>{% endif %}
+                {% else %}<span class="cg-user-self">You</span>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}<tr><td colspan="7" class="empty-cell cg-companies-empty"><strong>No users found</strong><span>Try adjusting search or account filters.</span></td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
 {% endblock %}

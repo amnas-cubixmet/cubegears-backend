@@ -1,94 +1,82 @@
 {% extends "control_panel/base.html" %}
 {% block content %}
-<section class="user-editor-page">
-  <header class="user-editor-heading">
+<div class="cg-user-editor">
+  <header class="cg-page-heading">
     <div>
-      <nav class="user-editor-breadcrumb" aria-label="Breadcrumb">
-        <a href="{% url 'panel:users' %}">Users &amp; Access</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit User{% else %}Add User{% endif %}</span>
-      </nav>
-      <h2>{% if is_edit %}Edit User{% else %}Create User Account{% endif %}</h2>
-      <p>{% if is_edit %}Update user identity, company role and account permissions.{% else %}Create an account and assign a company and role before inviting the user.{% endif %}</p>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><a href="{% url 'panel:users' %}">Users</a><span aria-hidden="true">/</span><span aria-current="page">{% if is_edit %}Edit user{% else %}Add user{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit user{% else %}Add user{% endif %}</h2>
+      <p>{% if is_edit %}Update account information, company and platform access.{% else %}Create an account with the correct company, role and secure sign-in access.{% endif %}</p>
     </div>
-    <a href="{% url cancel_url %}" class="btn">← Back to Users</a>
+    <a href="{% url cancel_url %}" class="btn cg-back-button">← Back to users</a>
   </header>
-
-  <form method="post" class="user-editor-form" novalidate>
+  <form method="post" class="cg-editor-form cg-user-editor-form" novalidate>
     {% csrf_token %}
     {% if not is_edit %}{{ form.password }}{% endif %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
-
-    <section class="panel-card user-editor-section">
-      <header class="user-editor-section-header"><span class="user-section-number">01</span>
-        <div><h3>Personal Information</h3><p>Identify the user and their contact details.</p></div>
-      </header>
-      <div class="user-editor-grid">
-        {% include "control_panel/company_field.html" with field=form.name %}
-        {% include "control_panel/company_field.html" with field=form.email %}
-        {% include "control_panel/company_field.html" with field=form.phone %}
-        {% include "control_panel/company_field.html" with field=form.avatar %}
-      </div>
-    </section>
-
-    <section class="panel-card user-editor-section">
-      <header class="user-editor-section-header"><span class="user-section-number">02</span>
-        <div><h3>Company &amp; Role</h3><p>Assign an account to its organisation, branch and permissions.</p></div>
-      </header>
-      <div class="user-editor-grid">
-        {% include "control_panel/company_field.html" with field=form.company %}
-        {% include "control_panel/company_field.html" with field=form.branch %}
-        {% include "control_panel/company_field.html" with field=form.role %}
-      </div>
-      <p class="user-editor-hint">Branch and role must belong to the selected company. Platform accounts should only be granted appropriate administrative permissions.</p>
-    </section>
-
-    <section class="panel-card user-editor-section">
-      <header class="user-editor-section-header"><span class="user-section-number">03</span>
-        <div><h3>Access &amp; Security</h3><p>Control activation, staff access and verified email status.</p></div>
-      </header>
-      <div class="user-access-grid">
-        <div class="user-access-setting">
-          <label class="user-checkbox-label">{{ form.is_active }} <span>Account Active</span></label>
-          <small>Disabling an account blocks new sign-ins.</small>
-          {% for error in form.is_active.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-        </div>
-        <div class="user-access-setting">
-          <label class="user-checkbox-label">{{ form.is_staff }} <span>Admin Staff</span></label>
-          <small>Platform staff status; access is still controlled by role permissions.</small>
-          {% for error in form.is_staff.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-        </div>
-        <div class="user-access-setting">
-          <label class="user-checkbox-label">{{ form.is_superuser }} <span>Super Admin</span></label>
-          <small>High-privilege account: grant only to trusted platform administrators.</small>
-          {% for error in form.is_superuser.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-        </div>
-        <div class="user-access-setting">
-          <label class="user-checkbox-label">{{ form.email_verified }} <span>Email Verified</span></label>
-          <small>New users must verify their email using the existing authentication process.</small>
-          {% for error in form.email_verified.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-        </div>
-      </div>
-      <div class="user-editor-notice">
-        {% if is_edit %}
-          <strong>Password management</strong>
-          <p>Leave the password empty to keep the current password. Use an approved reset flow when possible.</p>
-          <div class="user-editor-password">
-            <label for="{{ form.password.id_for_label }}">New Password (optional)</label>
-            {# Password field is rendered as a normal input below only for edit. #}
-            {{ form.password }}
-            {% if form.password.help_text %}<small>{{ form.password.help_text }}</small>{% endif %}
-            {% for error in form.password.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+    <div class="cg-editor-layout">
+      <div class="cg-editor-main">
+        <section class="cg-editor-card" aria-labelledby="cg-user-personal">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">01 / Account</span><h3 id="cg-user-personal">Personal information</h3><p>Identity and contact details for the user.</p></div></div>
+          <div class="cg-form-grid">
+            {% include "control_panel/company_field.html" with field=form.name %}
+            {% include "control_panel/company_field.html" with field=form.email %}
+            {% include "control_panel/company_field.html" with field=form.phone %}
+            {% include "control_panel/company_field.html" with field=form.avatar %}
           </div>
-        {% else %}
-          <strong>Secure password invitation</strong>
-          <p>New accounts have no usable password until they complete the existing email setup process. The invitation is sent only when their access is configured appropriately.</p>
-        {% endif %}
+        </section>
+        <section class="cg-editor-card" aria-labelledby="cg-user-assignment">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">02 / Organization</span><h3 id="cg-user-assignment">Company & role</h3><p>Assign a company, branch and a valid role with the appropriate permissions.</p></div></div>
+          <div class="cg-form-grid">
+            {% include "control_panel/company_field.html" with field=form.company %}
+            {% include "control_panel/company_field.html" with field=form.branch %}
+            {% include "control_panel/company_field.html" with field=form.role wide=True %}
+          </div>
+          <p class="cg-user-form-note">The selected branch and role must belong to the selected company. Platform roles cannot be assigned to a different tenant.</p>
+        </section>
       </div>
-    </section>
-
-    <footer class="user-editor-actions">
-      <a href="{% url cancel_url %}" class="btn">Cancel</a>
-      <button class="btn btn-primary" type="submit">{% if is_edit %}Save Changes{% else %}Create User{% endif %}</button>
+      <aside class="cg-editor-side" aria-label="User access and security">
+        <section class="cg-editor-card" aria-labelledby="cg-user-access">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">03 / Security</span><h3 id="cg-user-access">Access & permissions</h3><p>Account status and administrator access.</p></div></div>
+          <div class="cg-user-settings">
+            <div class="cg-user-setting">
+              <div><strong>Account active</strong><small>Disable to block future sign-ins.</small></div>
+              <label class="cg-switch-control" for="{{ form.is_active.id_for_label }}">{{ form.is_active }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Account active</span></label>
+              {% for error in form.is_active.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+            <div class="cg-user-setting">
+              <div><strong>Admin staff</strong><small>Staff flag. Permission checks still apply.</small></div>
+              <label class="cg-switch-control" for="{{ form.is_staff.id_for_label }}">{{ form.is_staff }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Admin staff</span></label>
+              {% for error in form.is_staff.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+            <div class="cg-user-setting">
+              <div><strong>Super admin</strong><small>Highly privileged; grant only when authorized.</small></div>
+              <label class="cg-switch-control" for="{{ form.is_superuser.id_for_label }}">{{ form.is_superuser }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Super admin</span></label>
+              {% for error in form.is_superuser.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+            <div class="cg-user-setting">
+              <div><strong>Email verified</strong><small>New accounts verify email using the setup flow.</small></div>
+              <label class="cg-switch-control" for="{{ form.email_verified.id_for_label }}">{{ form.email_verified }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Email verified</span></label>
+              {% for error in form.email_verified.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+          </div>
+        </section>
+        <section class="cg-editor-card" aria-labelledby="cg-user-password">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">Account security</span><h3 id="cg-user-password">Password & invitation</h3></div></div>
+          <div class="cg-user-password-box">
+            {% if is_edit %}
+              <p>Keep the password field empty to retain the current password. Prefer secure reset links for regular account recovery.</p>
+              <div class="company-editor-field"><label for="{{ form.password.id_for_label }}">New password (optional)</label>{{ form.password }}{% for error in form.password.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}</div>
+            {% else %}
+              <p>The new account receives no usable password until its secure email setup invitation is completed. Email delivery follows the existing invite configuration.</p>
+            {% endif %}
+          </div>
+        </section>
+      </aside>
+    </div>
+    <footer class="cg-editor-footer">
+      <a class="btn cg-back-button" href="{% url cancel_url %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if is_edit %}Save changes{% else %}Create user{% endif %}</button>
     </footer>
   </form>
-</section>
+</div>
 {% endblock %}

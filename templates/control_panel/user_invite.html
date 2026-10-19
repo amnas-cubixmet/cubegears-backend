@@ -1,0 +1,20 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="cg-user-confirm cg-company-confirm">
+  <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:users' %}">Users</a><span aria-hidden="true">/</span><span aria-current="page">Account invitation</span></nav>
+  <section class="cg-confirm-card" aria-labelledby="user-invite-title">
+    <span class="cg-confirm-symbol cg-confirm-info" aria-hidden="true">✉</span>
+    <span class="cg-section-kicker">Secure sign-in</span>
+    <h2 id="user-invite-title">Send account invitation?</h2>
+    <p>A secure setup or reset link will be requested for <strong>{{ object.name|default:object.email }}</strong>.</p>
+    <div class="cg-confirm-summary"><span>Recipient</span><strong>{{ object.email }}</strong></div>
+    <p class="cg-confirm-note">Delivery depends on email configuration, account status and role requirements. No email is sent until you confirm.</p>
+    <form method="post" class="cg-confirm-actions">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'panel:user-detail' object.pk %}">
+      <a class="btn cg-back-button" href="{% url 'panel:user-detail' object.pk %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">Send invitation</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

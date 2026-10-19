@@ -1,0 +1,19 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="cg-user-confirm cg-company-confirm">
+  <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:users' %}">Users</a><span aria-hidden="true">/</span><span aria-current="page">Delete user</span></nav>
+  <section class="cg-confirm-card" aria-labelledby="user-delete-title">
+    <span class="cg-confirm-symbol cg-confirm-danger" aria-hidden="true">!</span>
+    <span class="cg-section-kicker">Permanent action</span>
+    <h2 id="user-delete-title">Delete this user?</h2>
+    <p>You are about to permanently delete <strong>{{ object.name|default:object.email }}</strong>. This action cannot be undone.</p>
+    <div class="cg-confirm-summary"><span>Email address</span><strong>{{ object.email }}</strong></div>
+    <p class="cg-confirm-note">Protected related records may prevent deletion. Consider disabling access if the account should be retained.</p>
+    <form method="post" class="cg-confirm-actions">
+      {% csrf_token %}
+      <a class="btn cg-back-button" href="{% url 'panel:user-detail' object.pk %}">Keep user</a>
+      <button class="btn cg-danger-button" type="submit">Delete permanently</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

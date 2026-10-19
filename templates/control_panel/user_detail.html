@@ -1,0 +1,74 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="cg-user-profile">
+  <header class="cg-page-heading">
+    <div>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><a href="{% url 'panel:users' %}">Users</a><span aria-hidden="true">/</span><span aria-current="page">User profile</span></nav>
+      <h2>User details</h2><p>Account profile, role assignments and access status.</p>
+    </div>
+    <a class="btn cg-back-button" href="{% url 'panel:users' %}">← Back to users</a>
+  </header>
+  <section class="cg-profile-banner">
+    <div class="cg-profile-company">
+      {% if object.avatar %}<img class="cg-profile-avatar" src="{{ object.avatar }}" alt="{{ object.name }} avatar">
+      {% else %}<span class="cg-profile-avatar cg-company-letter" aria-hidden="true">{{ object.name|default:object.email|slice:":1"|upper }}</span>{% endif %}
+      <div class="cg-profile-title">
+        <span class="cg-section-kicker">Registered platform user</span>
+        <h3>{{ object.name|default:object.email }}</h3>
+        <p>{{ object.email }} · {{ object.company.name|default:"Platform" }}</p>
+        <span class="cg-company-state {% if object.is_active %}is-on{% else %}is-off{% endif %}">{% if object.is_active %}Active{% else %}Disabled{% endif %}</span>
+      </div>
+    </div>
+    {% if can_manage_target %}
+    <div class="cg-profile-actions">
+      {% panel_can 'panel:user-edit' as can_edit %}{% if can_edit %}<a class="btn btn-primary" href="{% url 'panel:user-edit' object.pk %}">Edit user</a>{% endif %}
+      {% panel_can 'panel:user-invite' as can_invite %}{% if can_invite %}<a class="btn cg-back-button" href="{% url 'panel:user-invite' object.pk %}">Send invite</a>{% endif %}
+      {% if object.pk != request.user.pk %}
+        {% panel_can 'panel:user-toggle' as can_toggle %}{% if can_toggle %}<a class="btn cg-back-button" href="{% url 'panel:user-toggle' object.pk %}">{% if object.is_active %}Disable access{% else %}Enable access{% endif %}</a>{% endif %}
+        {% panel_can 'panel:user-delete' as can_delete %}{% if can_delete %}<a class="btn cg-danger-outline" href="{% url 'panel:user-delete' object.pk %}">Delete</a>{% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </section>
+  <div class="cg-profile-counts">
+    <div><span>Company</span><strong>{{ object.company.name|default:"Platform" }}</strong></div>
+    <div><span>Account role</span><strong>{{ object.role.name|default:"Not assigned" }}</strong></div>
+    <div><span>Branch</span><strong>{{ object.branch.name|default:"—" }}</strong></div>
+    <div><span>Joined</span><strong>{{ object.created_at|date:"d M Y" }}</strong></div>
+  </div>
+  <div class="cg-profile-layout">
+    <div class="cg-profile-main">
+      <section class="cg-editor-card">
+        <div class="cg-card-heading"><span class="cg-section-kicker">Account</span><h3>Personal information</h3></div>
+        <dl class="cg-detail-grid">
+          <div><dt>Full name</dt><dd>{{ object.name|default:"—" }}</dd></div>
+          <div><dt>Email</dt><dd class="cg-breakable">{{ object.email }}</dd></div>
+          <div><dt>Phone</dt><dd>{{ object.phone|default:"—" }}</dd></div>
+          <div><dt>Email verification</dt><dd>{% if object.email_verified %}Verified{% else %}Unverified{% endif %}</dd></div>
+        </dl>
+      </section>
+      <section class="cg-editor-card">
+        <div class="cg-card-heading"><span class="cg-section-kicker">Organization</span><h3>Company & role</h3></div>
+        <dl class="cg-detail-grid">
+          <div><dt>Company</dt><dd>{{ object.company.name|default:"Platform" }}</dd></div>
+          <div><dt>Branch</dt><dd>{{ object.branch.name|default:"—" }}</dd></div>
+          <div><dt>Assigned role</dt><dd>{{ object.role.name|default:"—" }}</dd></div>
+          <div><dt>Last updated</dt><dd>{{ object.updated_at|date:"d M Y, g:i A" }}</dd></div>
+        </dl>
+      </section>
+    </div>
+    <aside class="cg-profile-side">
+      <section class="cg-editor-card">
+        <div class="cg-card-heading"><span class="cg-section-kicker">Security</span><h3>Account access</h3></div>
+        <dl class="cg-detail-grid cg-detail-stack">
+          <div><dt>Account status</dt><dd>{% if object.is_active %}Active{% else %}Disabled{% endif %}</dd></div>
+          <div><dt>Administrator flag</dt><dd>{% if object.is_staff %}Enabled{% else %}Not enabled{% endif %}</dd></div>
+          <div><dt>Super administrator</dt><dd>{% if object.is_superuser %}Yes{% else %}No{% endif %}</dd></div>
+          <div><dt>Email verified</dt><dd>{% if object.email_verified %}Yes{% else %}No{% endif %}</dd></div>
+        </dl>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

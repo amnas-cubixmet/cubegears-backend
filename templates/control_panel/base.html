@@ -18,7 +18,8 @@
   {% if active == 'customers' or active == 'vehicles' or active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
   {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261015a">{% endif %}
   <link rel="stylesheet" href="{% static 'control_panel/reference-ui.css' %}?v=20261019b">
-  {% if active == 'companies' %}<link rel="stylesheet" href="{% static 'control_panel/companies-reference.css' %}?v=20261019a">{% endif %}
+  {% if active == 'companies' or active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/companies-reference.css' %}?v=20261019b">{% endif %}
+  {% if active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/users-reference.css' %}?v=20261019a">{% endif %}
 </head>
 <body class="panel-body">
   <div class="app-shell">
