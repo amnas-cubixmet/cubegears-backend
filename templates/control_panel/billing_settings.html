@@ -6,7 +6,6 @@
     <div class="cg-settings-hero-copy">
       <p class="cg-settings-breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span> Billing Settings</p>
       <h2>Billing Settings</h2>
-      <p>Manage storage pricing, monthly settlements and credit cycles.</p>
     </div>
     <div class="cg-settings-hero-actions">
       <a class="btn" href="{% url 'panel:storage' %}">
@@ -27,7 +26,6 @@
       </div>
       <div class="cg-settings-summary-heading"><span>Storage billing</span><span class="cg-settings-state {% if storage_policy.is_active %}is-enabled{% endif %}">{% if storage_policy.is_active %}Enabled{% else %}Disabled{% endif %}</span></div>
       <strong>{{ storage_policy.credits_per_gb|default:"0.00" }} <small>credits / GB</small></strong>
-      <p>{{ storage_policy.included_gb|default:"0" }} GB free allowance</p>
     </article>
     <article class="cg-settings-summary-card">
       <div class="cg-settings-summary-icon" aria-hidden="true">
@@ -35,7 +33,6 @@
       </div>
       <div class="cg-settings-summary-heading"><span>Calendar billing</span><span class="cg-settings-state {% if billing_cycle_policy.enabled %}is-enabled{% endif %}">{% if billing_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}</span></div>
       <strong>Day {{ billing_cycle_policy.due_day|default:5 }}</strong>
-      <p>Collection due next month</p>
     </article>
     <article class="cg-settings-summary-card">
       <div class="cg-settings-summary-icon" aria-hidden="true">
@@ -43,7 +40,6 @@
       </div>
       <div class="cg-settings-summary-heading"><span>Fixed-date cycle</span><span class="cg-settings-state {% if legacy_cycle_policy.enabled %}is-enabled{% endif %}">{% if legacy_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}</span></div>
       <strong>Day {{ legacy_cycle_policy.day_of_month|default:5 }}</strong>
-      <p>Optional monthly billing engine</p>
     </article>
   </section>
 
@@ -56,13 +52,13 @@
   </nav>
 
   <div class="cg-settings-panels">
-    {% include "control_panel/_billing_settings_forms.html" %}
-    {% include "control_panel/_legacy_credit_cycle_settings.html" %}
+    {% include "control_panel/_billing_settings_forms.html" with compact_billing_settings=True %}
+    {% include "control_panel/_legacy_credit_cycle_settings.html" with compact_billing_settings=True %}
   </div>
 
   <div class="cg-settings-footnote" role="note">
     <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
-    Saving settings does not charge wallets. Each billing policy is saved separately.
+    Enable only one monthly billing engine. Saving settings does not debit wallets.
   </div>
 </div>
 {% endblock %}

@@ -1,9 +1,9 @@
 <section class="panel-card cg-storage-settings cg-legacy-cycle" id="legacy-credit-cycle" aria-labelledby="legacy-cycle-title">
   <header class="cg-storage-settings-header">
     <div class="cg-storage-settings-heading">
-      <p class="eyebrow">SETTINGS / CREDIT WALLET / OPTIONAL LEGACY ENGINE</p>
-      <h2 id="legacy-cycle-title">Fixed-date monthly credit cycle</h2>
-      <p>Optional billing from one chosen day of the month to the same day next month. Use this only if Calendar Billing and other overlapping credit engines are OFF.</p>
+      {% if not compact_billing_settings %}<p class="eyebrow">SETTINGS / CREDIT WALLET / OPTIONAL LEGACY ENGINE</p>{% endif %}
+      <h2 id="legacy-cycle-title">{% if compact_billing_settings %}Credit Cycle{% else %}Fixed-date monthly credit cycle{% endif %}</h2>
+      {% if not compact_billing_settings %}<p>Optional billing from one chosen day of the month to the same day next month. Use this only if Calendar Billing and other overlapping credit engines are OFF.</p>{% endif %}
     </div>
     <span class="cg-storage-settings-status {% if legacy_cycle_policy.enabled %}is-active{% else %}is-inactive{% endif %}">
       {% if legacy_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}
@@ -20,20 +20,20 @@
           {% csrf_token %}
           <input type="hidden" name="action" value="legacy_credit_cycle">
           <div class="cg-storage-field">
-            <label for="{{ legacy_cycle_form.day_of_month.id_for_label }}">{{ legacy_cycle_form.day_of_month.label }}</label>
+            <label for="{{ legacy_cycle_form.day_of_month.id_for_label }}">{% if compact_billing_settings %}Cycle day (1–28){% else %}{{ legacy_cycle_form.day_of_month.label }}{% endif %}</label>
             {{ legacy_cycle_form.day_of_month }}
-            <small>Choose 1–28. The collection window ends on this date each month.</small>
+            {% if not compact_billing_settings %}<small>Choose 1–28. The collection window ends on this date each month.</small>{% endif %}
             {% for error in legacy_cycle_form.day_of_month.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
           </div>
           <div class="cg-legacy-cycle-switches">
             <label class="cg-legacy-cycle-toggle">
               {{ legacy_cycle_form.enabled }}
-              <span><strong>Enable fixed-date monthly billing</strong><small>Requires Celery billing and cannot run alongside enabled calendar or legacy postpaid engines.</small></span>
+              <span><strong>Enable fixed-date billing</strong>{% if not compact_billing_settings %}<small>Requires Celery billing and cannot run alongside enabled calendar or legacy postpaid engines.</small>{% endif %}</span>
             </label>
             {% for error in legacy_cycle_form.enabled.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             <label class="cg-legacy-cycle-toggle">
               {{ legacy_cycle_form.block_overdue }}
-              <span><strong>Restrict overdue workshops</strong><small>Keep owners' account settings, wallet recharge and billing history available.</small></span>
+              <span><strong>Restrict overdue workshops</strong>{% if not compact_billing_settings %}<small>Keep owners' account settings, wallet recharge and billing history available.</small>{% endif %}</span>
             </label>
             {% for error in legacy_cycle_form.block_overdue.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
           </div>
@@ -47,8 +47,9 @@
         </dl>
         <p class="cg-legacy-cycle-help">Credits Edit permission is required to change this policy.</p>
       {% endif %}
-      <p class="cg-legacy-cycle-help">Saving configuration does not debit wallets. Settlements occur after a completed cycle through the scheduled worker.</p>
+      {% if not compact_billing_settings %}<p class="cg-legacy-cycle-help">Saving configuration does not debit wallets. Settlements occur after a completed cycle through the scheduled worker.</p>{% endif %}
     </div>
+    {% if not compact_billing_settings %}
     <aside class="cg-legacy-cycle-guide">
       <h3>Cycle billing safeguards</h3>
       <ol>
@@ -58,12 +59,18 @@
       </ol>
       <p class="cg-legacy-cycle-since">Activated at: {{ legacy_cycle_policy.activated_at|date:"d M Y H:i"|default:"Not activated" }}</p>
     </aside>
+    {% endif %}
   </div>
+  {% if compact_billing_settings %}
+  <details class="cg-legacy-invoice-history">
+    <summary>Recent cycle invoices</summary>
+  {% else %}
   <div class="cg-legacy-cycle-invoices">
     <div class="cg-legacy-cycle-invoices-head">
       <h3>Recent fixed-date cycle invoices</h3>
       <p>Read-only history; up to 40 latest records.</p>
     </div>
+  {% endif %}
     <div class="responsive-table">
       <table>
         <thead><tr><th>Company</th><th>Cycle starts</th><th>Due date</th><th>Category</th><th>Credits</th><th>Status</th></tr></thead>
@@ -76,5 +83,9 @@
         </tbody>
       </table>
     </div>
+  {% if compact_billing_settings %}
+  </details>
+  {% else %}
   </div>
+  {% endif %}
 </section>

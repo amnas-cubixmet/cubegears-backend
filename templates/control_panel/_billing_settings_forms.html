@@ -9,9 +9,9 @@
         </svg>
       </div>
       <div class="cg-storage-settings-heading">
-        <p class="eyebrow">Storage / Credit Billing</p>
-        <h2 id="storage-pricing-title">Per-GB Storage Pricing</h2>
-        <p>Configure one platform-wide storage rate for every company.</p>
+        {% if not compact_billing_settings %}<p class="eyebrow">Storage / Credit Billing</p>{% endif %}
+        <h2 id="storage-pricing-title">{% if compact_billing_settings %}Storage Pricing{% else %}Per-GB Storage Pricing{% endif %}</h2>
+        {% if not compact_billing_settings %}<p>Configure one platform-wide storage rate for every company.</p>{% endif %}
       </div>
     </div>
     <span class="cg-storage-settings-status {% if storage_policy.is_active %}is-active{% else %}is-inactive{% endif %}">
@@ -28,39 +28,39 @@
           {% if storage_policy_form.non_field_errors %}
             <div class="cg-storage-errors cg-storage-errors-banner" role="alert">{{ storage_policy_form.non_field_errors }}</div>
           {% endif %}
-          <div class="cg-storage-form-heading">
+          {% if not compact_billing_settings %}<div class="cg-storage-form-heading">
             <h3>Pricing configuration</h3>
             <p>Amounts are wallet credits, not rupees. No wallet debit happens when you save.</p>
-          </div>
+          </div>{% endif %}
           <div class="cg-storage-fields">
             <div class="cg-storage-field">
               <label for="{{ storage_policy_form.credits_per_gb.id_for_label }}">Credits per GB <span class="cg-required" aria-hidden="true">*</span></label>
               {{ storage_policy_form.credits_per_gb }}
-              <small id="cg-storage-price-help">Charge per billable GB for each billing period.</small>
+              {% if not compact_billing_settings %}<small id="cg-storage-price-help">Charge per billable GB for each billing period.</small>{% endif %}
               {% for error in storage_policy_form.credits_per_gb.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field">
               <label for="{{ storage_policy_form.included_gb.id_for_label }}">Free storage allowance <span class="cg-unit-label">(GB)</span></label>
               {{ storage_policy_form.included_gb }}
-              <small>Each company receives this amount before charges begin.</small>
+              {% if not compact_billing_settings %}<small>Each company receives this amount before charges begin.</small>{% endif %}
               {% for error in storage_policy_form.included_gb.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field">
               <label for="{{ storage_policy_form.billing_mode.id_for_label }}">Billing method</label>
               {{ storage_policy_form.billing_mode }}
-              <small>Snapshot charges the current GB amount once per period. Metered tracks GB-time and settles after month-end.</small>
+              {% if not compact_billing_settings %}<small>Snapshot charges the current GB amount once per period. Metered tracks GB-time and settles after month-end.</small>{% endif %}
               {% for error in storage_policy_form.billing_mode.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field">
               <label for="{{ storage_policy_form.meter_interval_seconds.id_for_label }}">Meter interval (seconds)</label>
               {{ storage_policy_form.meter_interval_seconds }}
-              <small>{% if time_weighted_storage_enabled %}Monthly time-weighted storage uses the Calendar Billing tracking interval below; this legacy interval is not used.{% else %}60–86400 seconds. Applies only when the legacy metered monthly engine is selected.{% endif %}</small>
+              {% if compact_billing_settings %}{% if time_weighted_storage_enabled %}<small>Configured in Calendar Billing.</small>{% endif %}{% else %}<small>{% if time_weighted_storage_enabled %}Monthly time-weighted storage uses the Calendar Billing tracking interval below; this legacy interval is not used.{% else %}60–86400 seconds. Applies only when the legacy metered monthly engine is selected.{% endif %}</small>{% endif %}
               {% for error in storage_policy_form.meter_interval_seconds.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field cg-storage-field-period">
               <label for="{{ storage_policy_form.billing_period.id_for_label }}">Billing period</label>
               {{ storage_policy_form.billing_period }}
-              <small>Charged at most once per selected day or calendar month.</small>
+              {% if not compact_billing_settings %}<small>Charged at most once per selected day or calendar month.</small>{% endif %}
               {% for error in storage_policy_form.billing_period.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
           </div>
@@ -70,7 +70,7 @@
               <span class="cg-storage-toggle-control">{{ storage_policy_form.is_active }}<span class="cg-storage-toggle-track" aria-hidden="true"></span></span>
               <span class="cg-storage-toggle-copy">
                 <strong>Enable storage credit billing</strong>
-                <small>Charges run through the scheduled backend billing command.</small>
+                {% if not compact_billing_settings %}<small>Charges run through the scheduled backend billing command.</small>{% endif %}
               </span>
             </label>
             <button type="submit" class="btn btn-primary cg-storage-save">
@@ -92,6 +92,7 @@
       {% endif %}
     </div>
 
+    {% if not compact_billing_settings %}
     <aside class="cg-storage-settings-guide" aria-label="Storage billing explanation">
       <div class="cg-storage-guide-heading">
         <p class="eyebrow">BILLING OVERVIEW</p>
@@ -108,19 +109,22 @@
         <small>{{ storage_policy.get_billing_mode_display|default:"Period snapshot" }} · {{ storage_policy.get_billing_period_display|default:"Monthly" }} · {{ storage_policy.included_gb|default:"0" }} GB free</small>
       </div>
     </aside>
+    {% endif %}
   </div>
+  {% if not compact_billing_settings %}
   <p class="cg-storage-settings-disclaimer">
     <span aria-hidden="true">ⓘ</span>
     Saving pricing does not deduct credits. Review <code>python manage.py bill_storage_credits --dry-run</code> before scheduling billing. Stored file usage is taken from actual MediaFile records.
   </p>
+  {% endif %}
 </section>
 
 <section class="panel-card cg-storage-settings" aria-labelledby="calendar-billing-title">
   <header class="cg-storage-settings-header">
     <div class="cg-storage-settings-heading">
-      <p class="eyebrow">PLATFORM / BILLING CYCLE</p>
-      <h2 id="calendar-billing-title">Calendar-month credit billing</h2>
-      <p>Usage: 1st through last day of the month. Finalize when meter data is complete; collect credits on the configured day of the next month. Never debit from this page.</p>
+      {% if not compact_billing_settings %}<p class="eyebrow">PLATFORM / BILLING CYCLE</p>{% endif %}
+      <h2 id="calendar-billing-title">{% if compact_billing_settings %}Calendar Billing{% else %}Calendar-month credit billing{% endif %}</h2>
+      {% if not compact_billing_settings %}<p>Usage: 1st through last day of the month. Finalize when meter data is complete; collect credits on the configured day of the next month. Never debit from this page.</p>{% endif %}
     </div>
     <span class="cg-storage-settings-status {% if billing_cycle_policy.enabled %}is-active{% else %}is-inactive{% endif %}">
       {% if billing_cycle_policy.enabled %}Calendar billing enabled{% else %}Opt-in disabled{% endif %}
@@ -134,24 +138,24 @@
           <input type="hidden" name="action" value="billing_cycle">
           {% if billing_cycle_form.non_field_errors %}<div class="cg-storage-errors" role="alert">{{ billing_cycle_form.non_field_errors }}</div>{% endif %}
           <div class="cg-storage-fields">
-            <label class="cg-storage-field">Payment due day (next month, 1–28)
+            <label class="cg-storage-field">{% if compact_billing_settings %}Payment due day (1–28){% else %}Payment due day (next month, 1–28){% endif %}
               {{ billing_cycle_form.due_day }}
               {% for error in billing_cycle_form.due_day.errors %}<small role="alert">{{ error }}</small>{% endfor %}
             </label>
             {% for field in billing_cycle_form %}
               {% if field.name == 'due_time' or field.name == 'calculation_interval_seconds' or field.name == 'storage_tracking_interval_seconds' or field.name == 'rate_duration_seconds' %}
                 <label class="cg-storage-field">{{ field.label }}{{ field }}
-                  <small>{{ field.help_text }}</small>
+                  {% if not compact_billing_settings %}<small>{{ field.help_text }}</small>{% endif %}
                   {% for error in field.errors %}<small role="alert">{{ error }}</small>{% endfor %}
                 </label>
               {% endif %}
             {% endfor %}
           </div>
           <div class="cg-storage-settings-actions">
-            <label class="cg-storage-toggle">{{ billing_cycle_form.event_tracking_enabled }} <span><strong>Track file and active staff changes</strong><small>Use stored byte totals between changes; no repeated file scan.</small></span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>Enable calendar credit settlement</strong><small>Only the selected time-metered engine(s); older billing paths stop.</small></span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>Allow usage at zero credits until due</strong><small>Records liability; never creates negative wallet balances.</small></span></label>
-            <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>Restrict overdue workshop modules</strong><small>After the configured due date: account, recharge, history and billing remain available.</small></span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.event_tracking_enabled }} <span><strong>{% if compact_billing_settings %}Track file and staff changes{% else %}Track file and active staff changes{% endif %}</strong>{% if not compact_billing_settings %}<small>Use stored byte totals between changes; no repeated file scan.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>{% if compact_billing_settings %}Enable calendar billing{% else %}Enable calendar credit settlement{% endif %}</strong>{% if not compact_billing_settings %}<small>Only the selected time-metered engine(s); older billing paths stop.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>{% if compact_billing_settings %}Allow zero-balance usage{% else %}Allow usage at zero credits until due{% endif %}</strong>{% if not compact_billing_settings %}<small>Records liability; never creates negative wallet balances.</small>{% endif %}</span></label>
+            <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>{% if compact_billing_settings %}Restrict overdue workspaces{% else %}Restrict overdue workshop modules{% endif %}</strong>{% if not compact_billing_settings %}<small>After the configured due date: account, recharge, history and billing remain available.</small>{% endif %}</span></label>
             <button class="btn btn-primary" type="submit">Save Calendar Billing Policy</button>
           </div>
         </form>
@@ -159,6 +163,7 @@
         <p>Billing cycle: calendar month · Due day: {{ billing_cycle_policy.due_day|default:5 }} · Overdue restriction: {{ billing_cycle_policy.restrict_overdue|yesno:"On,Off" }}. Editing requires Credits Edit permission.</p>
       {% endif %}
     </div>
+    {% if not compact_billing_settings %}
     <aside class="cg-storage-settings-guide">
       <h3>Settlement timeline</h3>
       <ol class="cg-storage-steps">
@@ -169,6 +174,7 @@
       <p>Activation month: {{ billing_cycle_policy.effective_month|default:"Set on first enable" }}. No pre-activation period is automatically charged.</p>
       <p>Run <code>python manage.py settle_calendar_credits --dry-run</code> for a read-only preview. The regular Celery schedule settles exactly once by ledger reference.</p>
     </aside>
+    {% endif %}
   </div>
 </section>
 
