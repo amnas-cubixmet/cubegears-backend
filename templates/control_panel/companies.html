@@ -72,10 +72,12 @@
           <tr>
             <td data-label="Company">
               <div class="cg-company-identity">
-                {% if row.logo_image %}<img src="{{ row.logo_image.url }}" alt="" class="cg-company-avatar">
-                {% elif row.logo %}<img src="{{ row.logo }}" alt="" class="cg-company-avatar">
-                {% else %}<span class="cg-company-avatar cg-company-letter" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}
-                <div><strong>{{ row.name }}</strong><small>{{ row.legal_name|default:row.slug }}</small></div>
+                {% if can_view %}<a class="cg-company-link" href="{% url 'panel:company-detail' row.pk %}" aria-label="Open {{ row.name }} company page">{% endif %}
+                  {% if row.logo_image %}<img src="{{ row.logo_image.url }}" alt="" class="cg-company-avatar">
+                  {% elif row.logo %}<img src="{{ row.logo }}" alt="" class="cg-company-avatar">
+                  {% else %}<span class="cg-company-avatar cg-company-letter" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}
+                  <span class="cg-company-name-group"><strong>{{ row.name }}</strong><small>{{ row.legal_name|default:row.slug }}</small></span>
+                {% if can_view %}</a>{% endif %}
               </div>
             </td>
             <td data-label="Status"><span class="cg-company-state {% if row.is_active %}is-on{% else %}is-off{% endif %}">{% if row.is_active %}Active{% else %}Disabled{% endif %}</span></td>
