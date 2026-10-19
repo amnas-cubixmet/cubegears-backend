@@ -9,6 +9,7 @@ from apps.accounts.email import queue_email
 from apps.accounts.account_links import password_action_url
 from uuid import UUID
 
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.views import redirect_to_login
@@ -444,7 +445,6 @@ def storage(request):
         return redirect(save_destination)
 
     if is_settings_page:
-        from django.conf import settings as django_settings
         return render(request, "control_panel/billing_settings.html", {
             "page_title": "Storage & Credit Billing Settings",
             "active": "billing-settings",
@@ -531,7 +531,7 @@ def storage(request):
         "billing_cycle_form": cycle_form,
         "can_edit_storage_pricing": can_edit_pricing,
         "can_edit_calendar_billing": can_edit_cycle,
-        "time_weighted_storage_enabled": __import__("django.conf", fromlist=["settings"]).settings.STORAGE_MONTHLY_METERED_ENABLED,
+        "time_weighted_storage_enabled": django_settings.STORAGE_MONTHLY_METERED_ENABLED,
         "live_storage_rows": live_rows,
         "live_storage_count": company_page.paginator.count,
         "live_storage_page": company_page,
