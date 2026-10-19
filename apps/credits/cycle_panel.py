@@ -70,6 +70,18 @@ class CreditCyclePolicyForm(forms.ModelForm):
         return values
 
 
+def save_credit_cycle_policy(form):
+    """Apply the validated policy with activation baselines and no debit."""
+    with transaction.atomic():
+        saved = form.save(commit=False)
+        if saved.enabled and (not form.instance.pk or not form.instance.enabled):
+            saved.activated_at = timezone.now()
+            for company in Company.objects.filter(is_active=True).iterator():
+                ensure_baseline(company)
+        saved.save()
+    return saved
+
+
 @panel_admin_required
 @require_http_methods(["GET", "POST"])
 def cycle_policy_control(request):
@@ -79,16 +91,18 @@ def cycle_policy_control(request):
     existing = CreditCyclePolicy.objects.order_by("pk").first()
     form = CreditCyclePolicyForm(request.POST if request.method == "POST" else None, instance=existing)
     if request.method == "POST" and form.is_valid():
-        with transaction.atomic():
-            saved = form.save(commit=False)
-            if saved.enabled and (not existing or not existing.enabled):
-                saved.activated_at = timezone.now()
-                # Do not guess usage before enabling; ensure a real baseline.
-                for company in Company.objects.filter(is_active=True).iterator():
-                    ensure_baseline(company)
-            saved.save()
+        save_credit_cycle_policy(form)
         messages.success(request, "Cycle policy saved. Wallet charges occur only after a closed cycle via the worker.")
+        from django.urls import reverse
+        from apps.control_panel.permissions import route_allowed
+        if route_allowed(request.user, "billing-settings"):
+            return redirect(reverse("panel:billing-settings") + "#legacy-credit-cycle")
         return redirect("panel:credit-cycle")
+    if request.method == "GET":
+        from django.urls import reverse
+        from apps.control_panel.permissions import route_allowed
+        if route_allowed(request.user, "billing-settings"):
+            return redirect(reverse("panel:billing-settings") + "#legacy-credit-cycle")
     invoices = CreditCycleInvoice.objects.select_related("company").order_by(
         "-starts_on", "company__name", "category",
     )[:60]
