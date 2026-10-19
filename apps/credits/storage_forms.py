@@ -4,7 +4,7 @@ from decimal import Decimal
 from django import forms
 from django.conf import settings
 
-from .models import StorageCreditPolicy
+from .models import StorageCreditPolicy, StorageMonitoringPolicy
 
 
 class StorageCreditPolicyForm(forms.ModelForm):
@@ -67,3 +67,21 @@ class StorageCreditPolicyForm(forms.ModelForm):
                 self.add_error('billing_mode', 'The monthly storage meter requires monthly usage mode. Do not combine two storage engines.')
 
         return result
+
+
+class StorageMonitoringPolicyForm(forms.ModelForm):
+    """Configure read-only storage snapshots, not any wallet debit."""
+
+    INTERVAL_CHOICES = (
+        (21600, "Every 6 hours"),
+        (43200, "Every 12 hours"),
+        (86400, "Every 24 hours"),
+    )
+    interval_seconds = forms.TypedChoiceField(
+        choices=INTERVAL_CHOICES, coerce=int,
+        widget=forms.Select(attrs={"class": "form-control"}),
+    )
+
+    class Meta:
+        model = StorageMonitoringPolicy
+        fields = ["enabled", "interval_seconds"]
