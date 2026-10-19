@@ -28,9 +28,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.companies.models import Company
-from apps.customers.models import Customer
 from apps.employees.models import Employee
-from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
@@ -44,9 +42,8 @@ from apps.accounts.permissions import can_delegate, panel_permission
 from apps.roles.models import Role
 from .audit import record_panel_event
 from .forms import (
-    BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
-    RoleForm, VehicleForm,
-    PanelLoginForm, StockItemForm, UserForm, StaffInviteForm,
+    BranchForm, CompanyForm, EmployeeForm, RoleForm,
+    PanelLoginForm, UserForm, StaffInviteForm,
     PlatformStaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
 )
@@ -574,209 +571,6 @@ def security(request):
 
 
 @panel_admin_required
-def customers(request):
-    all_customers = Customer.objects.all()
-    total_customers = all_customers.count()
-    active_customers = all_customers.filter(status="active").count()
-    business_customers = all_customers.filter(customer_type="business").count()
-    customer_companies = all_customers.values("company_id").distinct().count()
-
-    qs = all_customers.select_related("company", "branch").order_by("-created_at")
-    qs, company_id = _company_filter(request, qs)
-    q = request.GET.get("q", "").strip()
-    status = request.GET.get("status", "").strip().lower()
-    customer_type = request.GET.get("type", "").strip().lower()
-    if q:
-        qs = qs.filter(
-            Q(name__icontains=q) | Q(phone__icontains=q)
-            | Q(email__icontains=q) | Q(company_name__icontains=q)
-        )
-    if status in {"active", "archived"}:
-        qs = qs.filter(status=status)
-    else:
-        status = ""
-    if customer_type in {"individual", "business"}:
-        qs = qs.filter(customer_type=customer_type)
-    else:
-        customer_type = ""
-
-    return render(request, "control_panel/customers.html", {
-        "page_title": "All Customers", "active": "customers",
-        "rows": _paginate(request, qs),
-        "q": q, "status": status, "customer_type": customer_type,
-        "company_id": company_id, "companies": _company_choices(),
-        "total_customers": total_customers, "active_customers": active_customers,
-        "business_customers": business_customers, "customer_companies": customer_companies,
-    })
-
-
-@panel_admin_required
-def jobs(request):
-    # Overview is based on all saved Job records, not the filtered page.
-    all_jobs = Job.objects.all()
-    total_jobs = all_jobs.count()
-    in_progress_jobs = all_jobs.filter(status=Job.STATUS_IN_PROGRESS).count()
-    waiting_parts_jobs = all_jobs.filter(status=Job.STATUS_WAITING_PARTS).count()
-    delivered_jobs = all_jobs.filter(status=Job.STATUS_DELIVERED).count()
-    priorities = sorted(
-        (value for value in all_jobs.order_by().values_list("priority", flat=True).distinct() if value),
-        key=str.casefold,
-    )
-
-    qs = all_jobs.select_related(
-        "company", "branch", "customer", "vehicle", "advisor", "technician"
-    ).order_by("-created_at")
-    qs, company_id = _company_filter(request, qs)
-    status_value = request.GET.get("status", "").strip()
-    priority = request.GET.get("priority", "").strip()
-    q = request.GET.get("q", "").strip()
-    valid_statuses = {value for value, _ in Job.STATUS_CHOICES}
-    if status_value in valid_statuses:
-        qs = qs.filter(status=status_value)
-    else:
-        status_value = ""
-    if priority and any(option.casefold() == priority.casefold() for option in priorities):
-        qs = qs.filter(priority__iexact=priority)
-    else:
-        priority = ""
-    if q:
-        qs = qs.filter(
-            Q(job_number__icontains=q)
-            | Q(customer__name__icontains=q)
-            | Q(vehicle__registration__icontains=q)
-            | Q(company__name__icontains=q)
-            | Q(technician__name__icontains=q)
-        )
-    return render(request, "control_panel/jobs.html", {
-        "page_title": "All Job Cards",
-        "active": "jobs",
-        "rows": _paginate(request, qs),
-        "status_choices": Job.STATUS_CHOICES,
-        "status_value": status_value,
-        "priority": priority,
-        "priorities": priorities,
-        "q": q,
-        "company_id": company_id,
-        "companies": _company_choices(),
-        "total_jobs": total_jobs,
-        "in_progress_jobs": in_progress_jobs,
-        "waiting_parts_jobs": waiting_parts_jobs,
-        "delivered_jobs": delivered_jobs,
-    })
-
-
-@panel_admin_required
-def stock(request):
-    # The same available quantity formula used by StockItem.available_quantity:
-    # on hand minus reserved. No stock movement or quantity mutation happens here.
-    all_items = StockItem.objects.all()
-    total_items = all_items.count()
-    low_stock_count = all_items.filter(
-        on_hand__lte=F("reserved") + F("minimum_stock")
-    ).count()
-    out_of_stock_count = all_items.filter(on_hand__lte=F("reserved")).count()
-    stock_companies = all_items.values("company_id").distinct().count()
-    status_options = sorted(
-        (value for value in all_items.order_by().values_list("status", flat=True).distinct() if value),
-        key=str.casefold,
-    )
-
-    qs = all_items.select_related(
-        "company", "branch", "category", "supplier"
-    ).order_by("company__name", "name")
-    qs, company_id = _company_filter(request, qs)
-    q = request.GET.get("q", "").strip()
-    status = request.GET.get("status", "").strip()
-    level = request.GET.get("level", "").strip().lower()
-    if q:
-        qs = qs.filter(
-            Q(name__icontains=q) | Q(sku__icontains=q)
-            | Q(barcode__icontains=q) | Q(brand__icontains=q)
-            | Q(company__name__icontains=q)
-        )
-    if status:
-        if any(value.casefold() == status.casefold() for value in status_options):
-            qs = qs.filter(status__iexact=status)
-        else:
-            status = ""
-    if level == "out":
-        qs = qs.filter(on_hand__lte=F("reserved"))
-    elif level == "low":
-        qs = qs.filter(
-            on_hand__gt=F("reserved"),
-            on_hand__lte=F("reserved") + F("minimum_stock"),
-        )
-    elif level == "healthy":
-        qs = qs.filter(on_hand__gt=F("reserved") + F("minimum_stock"))
-    else:
-        level = ""
-
-    return render(request, "control_panel/stock.html", {
-        "page_title": "Global Stock",
-        "active": "stock",
-        "rows": _paginate(request, qs),
-        "q": q, "status": status, "level": level,
-        "status_options": status_options,
-        "company_id": company_id,
-        "companies": _company_choices(),
-        "total_items": total_items,
-        "low_stock_count": low_stock_count,
-        "out_of_stock_count": out_of_stock_count,
-        "stock_companies": stock_companies,
-    })
-
-
-@panel_admin_required
-def invoices(request):
-    # Counts are across actual platform records, independent of directory filters.
-    all_documents = Invoice.objects.all()
-    total_documents = all_documents.count()
-    invoice_count = all_documents.filter(kind="invoice").count()
-    estimate_count = all_documents.filter(kind="estimate").count()
-    outstanding_count = all_documents.filter(kind="invoice", balance__gt=0).count()
-    status_options = sorted(
-        (value for value in all_documents.order_by().values_list("status", flat=True).distinct() if value),
-        key=str.casefold,
-    )
-
-    qs = all_documents.select_related("company", "branch", "customer").order_by("-date", "-created_at")
-    qs, company_id = _company_filter(request, qs)
-    q = request.GET.get("q", "").strip()
-    kind = request.GET.get("kind", "").strip().lower()
-    status = request.GET.get("status", "").strip()
-    if kind in {"invoice", "estimate"}:
-        qs = qs.filter(kind=kind)
-    else:
-        kind = ""
-    if status:
-        if any(value.casefold() == status.casefold() for value in status_options):
-            qs = qs.filter(status__iexact=status)
-        else:
-            status = ""
-    if q:
-        qs = qs.filter(
-            Q(number__icontains=q)
-            | Q(customer__name__icontains=q)
-            | Q(company__name__icontains=q)
-        )
-    return render(request, "control_panel/invoices.html", {
-        "page_title": "Global Billing Documents",
-        "active": "invoices",
-        "rows": _paginate(request, qs),
-        "q": q,
-        "kind": kind,
-        "status": status,
-        "status_options": status_options,
-        "company_id": company_id,
-        "companies": _company_choices(),
-        "total_documents": total_documents,
-        "invoice_count": invoice_count,
-        "estimate_count": estimate_count,
-        "outstanding_count": outstanding_count,
-    })
-
-
-@panel_admin_required
 def staff(request):
     # Summary cards represent all workshop staff, not a filtered subset.
     all_staff = Employee.objects.all()
@@ -933,12 +727,8 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
         else "control_panel/plan_editor.html" if isinstance(form, PlanBuilderForm)
         else "control_panel/staff_form.html" if isinstance(form, (StaffInviteForm, EmployeeForm))
         and active == "staff"
-        else "control_panel/invoice_form.html" if isinstance(form, InvoiceForm) and active == "invoices"
-        else "control_panel/stock_form.html" if isinstance(form, StockItemForm) and active == "stock"
-        else "control_panel/job_form.html" if isinstance(form, JobForm) and active == "jobs"
-        else "control_panel/customer_form.html" if isinstance(form, CustomerForm) and active == "customers"
         else "control_panel/feature_editor.html" if isinstance(form, (PlanFeatureForm, FeatureGroupForm, FeatureBundleForm)) and active == "features"
-        else "control_panel/remaining_form.html" if active in {"vehicles", "branches", "roles", "features"}
+        else "control_panel/remaining_form.html" if active in {"branches", "roles", "features"}
         else "control_panel/form.html"
     )
     return render(request, template, {
@@ -1057,142 +847,6 @@ def user_delete(request, pk):
         request, obj, title="User", active="users", cancel_url="panel:users",
         template_name="control_panel/user_delete.html",
     )
-
-
-@panel_admin_required
-def customer_create(request):
-    return _save_form(request, CustomerForm, title="Add Customer", active="customers", cancel_url="panel:customers")
-
-
-@panel_admin_required
-def customer_detail(request, pk):
-    obj = get_object_or_404(Customer.objects.select_related("company", "branch"), pk=pk)
-    return render(request, "control_panel/detail.html", {
-        "page_title": "Customer Details", "active": "customers", "object": obj,
-        "rows": _display_rows(obj, [
-            ("company", "Company"), ("branch", "Branch"), ("name", "Name"),
-            ("phone", "Phone"), ("whatsapp", "WhatsApp"), ("email", "Email"),
-            ("customer_type", "Type"), ("company_name", "Business name"), ("gstin", "GSTIN"),
-            ("address", "Address"), ("city", "City"), ("state", "State"), ("pincode", "Pincode"),
-            ("credit_limit", "Credit limit"), ("status", "Status"), ("notes", "Notes"),
-        ]),
-        "edit_url": "panel:customer-edit", "delete_url": "panel:customer-delete",
-    })
-
-
-@panel_admin_required
-def customer_edit(request, pk):
-    obj = get_object_or_404(Customer, pk=pk)
-    return _save_form(request, CustomerForm, instance=obj, title="Edit Customer", active="customers", cancel_url="panel:customers")
-
-
-@panel_admin_required
-def customer_delete(request, pk):
-    obj = get_object_or_404(Customer, pk=pk)
-    return _delete_object(request, obj, title="Customer", active="customers", cancel_url="panel:customers")
-
-
-@panel_admin_required
-def job_create(request):
-    return _save_form(request, JobForm, title="Add Job Card", active="jobs", cancel_url="panel:jobs")
-
-
-@panel_admin_required
-def job_detail(request, pk):
-    obj = get_object_or_404(Job.objects.select_related("company", "branch", "customer", "vehicle", "advisor", "technician"), pk=pk)
-    return render(request, "control_panel/detail.html", {
-        "page_title": "Job Card Details", "active": "jobs", "object": obj,
-        "rows": _display_rows(obj, [
-            ("job_number", "Job number"), ("company", "Company"), ("branch", "Branch"),
-            ("customer", "Customer"), ("vehicle", "Vehicle"), ("advisor", "Advisor"),
-            ("technician", "Technician"), ("status", "Status"), ("priority", "Priority"),
-            ("odometer", "Odometer"), ("fuel_level", "Fuel level"), ("promised_at", "Promised"),
-            ("delivered_at", "Delivered"), ("estimate_total", "Estimate total"),
-            ("labour_total", "Labour total"), ("parts_total", "Parts total"), ("notes", "Notes"),
-        ]),
-        "edit_url": "panel:job-edit", "delete_url": "panel:job-delete",
-    })
-
-
-@panel_admin_required
-def job_edit(request, pk):
-    obj = get_object_or_404(Job, pk=pk)
-    return _save_form(request, JobForm, instance=obj, title="Edit Job Card", active="jobs", cancel_url="panel:jobs")
-
-
-@panel_admin_required
-def job_delete(request, pk):
-    obj = get_object_or_404(Job, pk=pk)
-    return _delete_object(request, obj, title="Job Card", active="jobs", cancel_url="panel:jobs")
-
-
-@panel_admin_required
-def stock_create(request):
-    return _save_form(request, StockItemForm, title="Add Stock Item", active="stock", cancel_url="panel:stock")
-
-
-@panel_admin_required
-def stock_detail(request, pk):
-    obj = get_object_or_404(StockItem.objects.select_related("company", "branch", "category", "supplier"), pk=pk)
-    return render(request, "control_panel/detail.html", {
-        "page_title": "Stock Item Details", "active": "stock", "object": obj,
-        "rows": _display_rows(obj, [
-            ("name", "Item"), ("company", "Company"), ("branch", "Branch"), ("sku", "SKU"),
-            ("barcode", "Barcode"), ("category", "Category"), ("brand", "Brand"),
-            ("compatible_vehicle", "Compatible vehicle"), ("unit", "Unit"), ("cost_price", "Cost price"),
-            ("selling_price", "Selling price"), ("on_hand", "On hand"), ("reserved", "Reserved"),
-            ("minimum_stock", "Minimum stock"), ("reorder_level", "Reorder level"),
-            ("rack", "Rack"), ("supplier", "Supplier"), ("tax", "Tax"), ("hsn_code", "HSN"),
-            ("status", "Status"),
-        ]),
-        "edit_url": "panel:stock-edit", "delete_url": "panel:stock-delete",
-    })
-
-
-@panel_admin_required
-def stock_edit(request, pk):
-    obj = get_object_or_404(StockItem, pk=pk)
-    return _save_form(request, StockItemForm, instance=obj, title="Edit Stock Item", active="stock", cancel_url="panel:stock")
-
-
-@panel_admin_required
-def stock_delete(request, pk):
-    obj = get_object_or_404(StockItem, pk=pk)
-    return _delete_object(request, obj, title="Stock Item", active="stock", cancel_url="panel:stock")
-
-
-@panel_admin_required
-def invoice_create(request):
-    return _save_form(request, InvoiceForm, title="Add Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
-
-
-@panel_admin_required
-def invoice_detail(request, pk):
-    obj = get_object_or_404(Invoice.objects.select_related("company", "branch", "customer", "vehicle", "job"), pk=pk)
-    return render(request, "control_panel/detail.html", {
-        "page_title": "Billing Document Details", "active": "invoices", "object": obj,
-        "rows": _display_rows(obj, [
-            ("number", "Number"), ("company", "Company"), ("branch", "Branch"), ("kind", "Type"),
-            ("invoice_type", "Invoice type"), ("status", "Status"), ("date", "Date"),
-            ("customer", "Customer"), ("vehicle", "Vehicle"), ("job", "Job"), ("tax_mode", "Tax mode"),
-            ("taxable", "Taxable"), ("cgst", "CGST"), ("sgst", "SGST"), ("igst", "IGST"),
-            ("discount", "Discount"), ("total", "Total"), ("paid", "Paid"), ("balance", "Balance"),
-            ("payment_mode", "Payment mode"), ("payment_terms", "Payment terms"), ("notes", "Notes"),
-        ]),
-        "edit_url": "panel:invoice-edit", "delete_url": "panel:invoice-delete",
-    })
-
-
-@panel_admin_required
-def invoice_edit(request, pk):
-    obj = get_object_or_404(Invoice, pk=pk)
-    return _save_form(request, InvoiceForm, instance=obj, title="Edit Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
-
-
-@panel_admin_required
-def invoice_delete(request, pk):
-    obj = get_object_or_404(Invoice, pk=pk)
-    return _delete_object(request, obj, title="Invoice / Estimate", active="invoices", cancel_url="panel:invoices")
 
 
 @panel_admin_required
@@ -1329,7 +983,6 @@ def staff_delete(request, pk):
 PANEL_RESOURCES = {
     'branches': (BranchForm, 'Branches', 'branch', ['name', 'code', 'company__name']),
     'roles': (RoleForm, 'Roles & Permissions', 'role', ['name', 'code', 'company__name']),
-    'vehicles': (VehicleForm, 'Vehicles', 'vehicle', ['registration', 'make', 'model', 'customer__name']),
 }
 
 
@@ -1350,8 +1003,6 @@ def resource_list(request, resource):
         special_records = all_records.filter(status__iexact="inactive").count()
 
     queryset = all_records.select_related("company")
-    if resource == "vehicles":
-        queryset = queryset.select_related("customer", "branch")
     queryset = queryset.order_by("-created_at", "pk")
     queryset, company_id = _company_filter(request, queryset)
     role_scope_filter = ""
