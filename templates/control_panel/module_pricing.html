@@ -2,21 +2,38 @@
 {% block content %}
 <section class="directory-heading remaining-heading">
   <div><p class="eyebrow">SaaS administration / Pricing</p><h2>All Module Prices</h2>
-    <p>Platform administrators and authorized SaaS staff set prices here. Company owners can purchase access; workshop staff cannot edit these prices.</p></div>
+    <p>Manage all billable modules in one place. Minimum 5 wallet credits per active login user and billing period. Existing published company entitlements are never changed by opening this page.</p></div>
 </section>
 <section class="panel-card module-pricing-info">
   <p>Price per billing period = credits per active login user × company active login accounts. Saving a price does not activate any company or deduct credits. Unpriced modules are unavailable for individual activation. Existing multi-feature labels keep their own published prices. Unpublishing a module also removes access granted by that module label; business records are retained.</p>
   {% if submission_errors %}<div role="alert">{{ submission_errors }}</div>{% endif %}
   {% if not can_edit %}<p>You have view access. Ask a SaaS administrator for Features → Edit permission to change prices.</p>{% endif %}
 </section>
-<div class="cg-paid-label-grid">
+<div class="cg-module-page-summary" aria-label="Module pricing overview">
+  <span>Total paid modules: {{ module_count }}</span>
+  <span>Configured: {{ priced_count }}</span>
+  <span>Not priced: {{ unpriced_count }}</span>
+  <span>Minimum: 5 credits per active user</span>
+</div>
+<section class="panel-card cg-module-toolbar" aria-label="Pricing navigation">
+  <label for="cg-module-search">Search modules
+    <input id="cg-module-search" type="search" placeholder="Filter by module name or key" autocomplete="off">
+  </label>
+  <nav aria-label="Pricing and billing sections">
+    <a class="btn" href="{% url 'panel:storage' %}">Storage Pricing</a>
+    <a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Calendar Billing</a>
+    <a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>
+  </nav>
+</section>
+<div id="cg-module-no-results" class="panel-card cg-module-empty" role="status" hidden>No matching modules.</div>
+<div class="cg-paid-label-grid" id="cg-module-grid">
 {% for row in rows %}
-<section class="cg-paid-label-card module-pricing-card" id="module-{{ row.module.key }}">
+<section class="cg-paid-label-card module-pricing-card" id="module-{{ row.module.key }}" data-module-search="{{ row.module.label|lower }} {{ row.module.key|lower }}">
   <h3>{{ row.module.label }}</h3><p><code>{{ row.module.key }}</code> · {% if row.bundle %}{{ row.bundle.is_active|yesno:"Published,Unpublished" }}{% else %}Price not set{% endif %}</p>
   <form method="post" class="credit-panel-form">{% csrf_token %}{{ row.form.module }}
     {% if row.form.errors %}<div role="alert">{{ row.form.errors }}</div>{% endif %}
     <fieldset class="module-price-fields" {% if not can_edit %}disabled{% endif %}>
-      <p><label for="{{ row.form.per_user_credits.id_for_label }}">Credits per active login user</label>{{ row.form.per_user_credits }}</p>
+      <p><label for="{{ row.form.per_user_credits.id_for_label }}">Credits per active login user</label>{{ row.form.per_user_credits }}<small>Minimum 5 credits per active user; price save never deducts wallet credits.</small></p>
       <p><label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>{{ row.form.billing_type }}</p>
       <p><label>{{ row.form.monthly_postpaid }} Use now, pay next month</label><small>Monthly only. Requires monthly postpaid metering and due-date collection to be enabled. No upfront wallet balance is required; usage is payable next month.</small></p>
       <p><label class="module-price-publish">{{ row.form.published }} Published for activation</label></p>
@@ -28,4 +45,6 @@
 </section>
 {% endfor %}
 </div>
-{% endblock %}
+{% load static %}
+<script defer src="{% static 'control_panel/module-pricing.js' %}"></script>
+{% endblock %>
