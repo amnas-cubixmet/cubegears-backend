@@ -9,7 +9,7 @@
     </div>
     <a href="{% url cancel_url %}" class="btn cg-back-button">← Back to users</a>
   </header>
-  <form method="post" class="cg-user-editor-form" novalidate>
+  <form method="post" class="cg-editor-form cg-user-editor-form" novalidate>
     {% csrf_token %}
     {% if not is_edit %}{{ form.password }}{% endif %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
