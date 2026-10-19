@@ -1,0 +1,74 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="cg-company-profile">
+  <header class="cg-page-heading">
+    <div>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span aria-current="page">Company profile</span></nav>
+      <h2>Company details</h2>
+      <p>Business information, workspace details and access settings.</p>
+    </div>
+    <a class="btn cg-back-button" href="{% url 'panel:companies' %}">← Back to companies</a>
+  </header>
+
+  <section class="cg-profile-banner" aria-label="Company summary">
+    <div class="cg-profile-company">
+      {% if object.logo_image %}<img src="{{ object.logo_image.url }}" class="cg-profile-avatar" alt="{{ object.name }} logo">
+      {% elif object.logo %}<img src="{{ object.logo }}" class="cg-profile-avatar" alt="{{ object.name }} logo">
+      {% else %}<span class="cg-profile-avatar cg-company-letter" aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>{% endif %}
+      <div class="cg-profile-title"><span class="cg-section-kicker">Registered company</span><h3>{{ object.name }}</h3><p>{{ object.legal_name|default:object.slug }}</p><span class="cg-company-state {% if object.is_active %}is-on{% else %}is-off{% endif %}">{% if object.is_active %}Active workspace{% else %}Workspace disabled{% endif %}</span></div>
+    </div>
+    <div class="cg-profile-actions">
+      {% panel_can 'panel:company-edit' as can_edit %}{% if can_edit %}<a class="btn btn-primary" href="{% url 'panel:company-edit' object.pk %}">Edit company</a>{% endif %}
+      {% panel_can 'panel:company-toggle' as can_toggle %}{% if can_toggle %}<a class="btn cg-back-button" href="{% url 'panel:company-toggle' object.pk %}">{% if object.is_active %}Disable access{% else %}Enable access{% endif %}</a>{% endif %}
+      {% panel_can 'panel:company-delete' as can_delete %}{% if can_delete %}<a class="btn cg-danger-outline" href="{% url 'panel:company-delete' object.pk %}">Delete</a>{% endif %}
+    </div>
+  </section>
+
+  <div class="cg-profile-counts" aria-label="Company activity">
+    <div><span>Users</span><strong>{{ object.user_count }}</strong></div>
+    <div><span>Branches</span><strong>{{ object.branch_count }}</strong></div>
+    <div><span>Plan</span><strong>{{ object.plan|title }}</strong></div>
+    <div><span>Joined</span><strong>{{ object.created_at|date:"d M Y" }}</strong></div>
+  </div>
+
+  <div class="cg-profile-layout">
+    <div class="cg-profile-main">
+      <section class="cg-editor-card" aria-labelledby="cg-profile-general">
+        <div class="cg-card-heading"><div><span class="cg-section-kicker">Business details</span><h3 id="cg-profile-general">General information</h3></div></div>
+        <dl class="cg-detail-grid">
+          <div><dt>Company name</dt><dd>{{ object.name }}</dd></div>
+          <div><dt>Legal name</dt><dd>{{ object.legal_name|default:"—" }}</dd></div>
+          <div><dt>GSTIN</dt><dd>{{ object.gstin|default:"—" }}</dd></div>
+          <div><dt>Workspace ID</dt><dd class="cg-breakable">{{ object.slug }}</dd></div>
+        </dl>
+      </section>
+      <section class="cg-editor-card" aria-labelledby="cg-profile-contact">
+        <div class="cg-card-heading"><div><span class="cg-section-kicker">Contact</span><h3 id="cg-profile-contact">Contact & address</h3></div></div>
+        <dl class="cg-detail-grid">
+          <div><dt>Company email</dt><dd class="cg-breakable">{{ object.email|default:"—" }}</dd></div>
+          <div><dt>Phone</dt><dd>{{ object.phone|default:"—" }}</dd></div>
+          <div class="cg-detail-wide"><dt>Address</dt><dd>{{ object.address|default:"—"|linebreaksbr }}</dd></div>
+          <div><dt>City</dt><dd>{{ object.city|default:"—" }}</dd></div>
+          <div><dt>State</dt><dd>{{ object.state|default:"—" }}</dd></div>
+          <div><dt>Country</dt><dd>{{ object.country|default:"—" }}</dd></div>
+          <div><dt>Postal code</dt><dd>{{ object.pincode|default:"—" }}</dd></div>
+        </dl>
+      </section>
+    </div>
+    <aside class="cg-profile-side" aria-label="Workspace overview">
+      <section class="cg-editor-card" aria-labelledby="cg-profile-workspace">
+        <div class="cg-card-heading"><div><span class="cg-section-kicker">Settings</span><h3 id="cg-profile-workspace">Workspace</h3></div></div>
+        <dl class="cg-detail-grid cg-detail-stack">
+          <div><dt>Company owner</dt><dd>{{ object.owner.name|default:object.owner.email|default:"Not assigned" }}</dd></div>
+          <div><dt>Currency</dt><dd>{{ object.currency }}</dd></div>
+          <div><dt>Plan</dt><dd>{{ object.plan|title }}</dd></div>
+          <div><dt>Feature access mode</dt><dd>{% if object.require_paid_features %}Paid features required{% else %}Standard existing access{% endif %}</dd></div>
+          <div><dt>Company access</dt><dd>{% if object.is_active %}Enabled{% else %}Disabled{% endif %}</dd></div>
+          <div><dt>Last updated</dt><dd>{{ object.updated_at|date:"d M Y, g:i A" }}</dd></div>
+        </dl>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}
