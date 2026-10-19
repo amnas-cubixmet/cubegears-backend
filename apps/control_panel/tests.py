@@ -12,7 +12,8 @@ from apps.employees.models import Employee
 from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
-from apps.saas.models import Subscription
+from apps.saas.models import Subscription, SubscriptionPlan, PlanFeature, FeatureGroup
+from apps.credits.models import FeatureBundle
 from apps.roles.models import Role
 from apps.vehicles.models import Vehicle
 from .forms import CustomerForm, UserForm
@@ -27,8 +28,13 @@ class PanelTests(TestCase):
         cls.customer = Customer.objects.create(company=cls.company, name='Customer', phone='1234567890')
         cls.vehicle = Vehicle.objects.create(company=cls.company, customer=cls.customer, registration='KL01AA1234')
         cls.job = Job.objects.create(company=cls.company, customer=cls.customer, vehicle=cls.vehicle, job_number='JOB-1')
+        cls.feature_group = FeatureGroup.objects.create(key='panel-test-group', label='Panel group')
         cls.records = {
             'company': cls.company, 'user': cls.admin,
+            'plan': SubscriptionPlan.objects.create(key='panel-test-plan', name='Panel plan'),
+            'featuregroup': cls.feature_group,
+            'feature': PlanFeature.objects.create(key='panel-test-feature', label='Panel feature', group=cls.feature_group),
+            'featurebundle': FeatureBundle.objects.create(key='panel-test-bundle', name='Panel bundle', price_credits=10),
             'branch': Branch.objects.create(company=cls.company, name='Main', code='MAIN'),
             'role': Role.objects.create(company=cls.company, name='Mechanic', code='mechanic'),
             'vehicle': cls.vehicle,
@@ -49,29 +55,41 @@ class PanelTests(TestCase):
         self.assertEqual(self.client.get('/api/v1/health/').status_code, 200)
         self.assertEqual(self.client.get('/admin/').status_code, 200)
 
+    def route_url(self, route):
+        kwargs = {}
+        for name, converter in route.pattern.converters.items():
+            if name == 'pk':
+                kwargs[name] = self.records[route.name.split('-')[0]].pk
+            else:
+                kwargs[name] = 'invalid-token'
+        return reverse('panel:' + route.name, kwargs=kwargs)
+
     def test_every_panel_get_route_renders(self):
+        post_only = {'logout', 'user-invite', 'staff-invite', 'features-edit'}
+        redirects = {'login', 'user-delete', 'features', 'payment-settings'}
         for route in urlpatterns:
-            name = route.name
-            kwargs = {}
-            if '<uuid:pk>' in str(route.pattern):
-                kwargs['pk'] = self.records[name.split('-')[0]].pk
-            with self.subTest(route=name):
-                response = self.client.get(reverse('panel:' + name, kwargs=kwargs))
-                expected = 405 if name == 'logout' else 403 if name.endswith('-toggle') else 302 if name in ('login', 'user-delete') else 200
+            with self.subTest(route=route.name):
+                response = self.client.get(self.route_url(route))
+                expected = (405 if route.name in post_only else
+                            403 if route.name.endswith('-toggle') else
+                            302 if route.name in redirects else 200)
                 self.assertEqual(response.status_code, expected)
 
     def test_all_routes_require_login_and_reject_regular_users(self):
         regular = User.objects.create_user(email='regular@example.com', name='Regular', password='Test-regular-923!')
+        public = {'login', 'forgot', 'magic-request', 'magic-verify', 'password-reset', 'password-setup'}
         for route in urlpatterns:
-            if route.name == 'login':
+            if route.name in public:
                 continue
-            kwargs = {'pk': self.records[route.name.split('-')[0]].pk} if '<uuid:pk>' in str(route.pattern) else {}
-            url = reverse('panel:' + route.name, kwargs=kwargs)
+            url = self.route_url(route)
             with self.subTest(route=route.name):
                 self.client.logout()
-                self.assertEqual(self.client.get(url).status_code, 302)
+                response = self.client.get(url, follow=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.redirect_chain[-1][0].startswith('/login/'))
                 self.client.force_login(regular)
-                self.assertEqual(self.client.get(url).status_code, 405 if route.name == "logout" else 403)
+                response = self.client.get(url, follow=True)
+                self.assertEqual(response.status_code, 405 if route.name == 'logout' else 403)
 
     def test_login_redirect_is_safe_and_preserves_filters(self):
         self.client.logout()
@@ -120,9 +138,10 @@ class PanelTests(TestCase):
 
     def test_password_and_tenant_validation(self):
         form = UserForm(data={'email': 'new@example.com', 'name': 'New'})
-        self.assertFalse(form.is_valid())
-        self.assertIn('password', form.errors)
-        form = UserForm(data={'email': 'new@example.com', 'name': 'New', 'password': '123'})
+        self.assertTrue(form.is_valid(), form.errors)
+        invited = form.save()
+        self.assertFalse(invited.has_usable_password())
+        form = UserForm(data={'email': 'password@example.com', 'name': 'New', 'password': '123'})
         self.assertFalse(form.is_valid())
         self.assertIn('password', form.errors)
         other = Company.objects.create(name='Other', slug='other')

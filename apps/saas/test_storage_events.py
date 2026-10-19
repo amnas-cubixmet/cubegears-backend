@@ -54,7 +54,7 @@ class StorageEventTests(TestCase):
         self.assertEqual(details.status_code, 200)
         self.assertEqual(details.data["files"], [])
         self.assertEqual(len(details.data["events"]), 2)
-        self.assertEqual(self.client.post("/api/v1/saas/storage/events").status_code, 405)
+        self.assertEqual(self.client.post("/api/v1/saas/storage/events").status_code, 403)
         self.assertEqual(self.client.get("/api/v1/saas/storage/events?limit=101").status_code, 400)
         other_role = Role.objects.create(company=self.other, name="Manager", code="ADMIN",
                                           permissions=["storage.view"])

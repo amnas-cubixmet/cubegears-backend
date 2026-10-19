@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Role
-from apps.roles.permission_catalog import TENANT_PERMISSIONS
+from apps.accounts.permissions import can_delegate
+from .assignment import STAFF_PERMISSION_CODES
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -13,6 +14,15 @@ class RoleSerializer(serializers.ModelSerializer):
 
     def get_usersCount(self, obj):
         return obj.users.filter(is_active=True).count()
+
+    def validate_name(self, value):
+        value = value.strip()
+        roles = Role.objects.filter(company=self.context['request'].user.company, name__iexact=value)
+        if self.instance:
+            roles = roles.exclude(pk=self.instance.pk)
+        if not value or roles.exists():
+            raise serializers.ValidationError('Choose a unique role name in this company.')
+        return value
 
     def validate_code(self, value):
         code = str(value or "").upper().strip()
@@ -28,10 +38,10 @@ class RoleSerializer(serializers.ModelSerializer):
             for code in value
         ):
             raise serializers.ValidationError("Staff roles cannot receive owner or platform authority.")
-        # Owner controls role definitions, while feature entitlements control
-        # actual API use. An expired or unpurchased feature may still be
-        # configured in a role without granting access to that feature.
-        invalid = sorted(set(value) - set(TENANT_PERMISSIONS))
-        if invalid:
-            raise serializers.ValidationError("Unknown or unsupported permissions.")
+        if any(code not in STAFF_PERMISSION_CODES for code in value):
+            raise serializers.ValidationError('Choose known staff permissions available to this company.')
+        previous = set(self.instance.permissions or []) if self.instance else set()
+        additions = [code for code in value if code not in previous]
+        if not can_delegate(user, additions):
+            raise serializers.ValidationError("You cannot grant permissions beyond your own role.")
         return list(dict.fromkeys(value))

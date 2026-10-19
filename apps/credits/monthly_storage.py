@@ -186,6 +186,7 @@ def settle_company_storage(company, period, *, at=None, dry_run=False):
     if collection_waiting(period, at, dry_run=dry_run):
         return "not_due", ZERO
 
+    live_policy = _policy()
     cursor = StorageMeterCursor.objects.select_for_update().filter(company=company).first()
     # Must observe the month-end boundary before finalizing its amount.
     if live_policy is not None and (cursor is None or cursor.sampled_at is None or cursor.sampled_at < end):

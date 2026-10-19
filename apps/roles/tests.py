@@ -104,7 +104,7 @@ class OwnerManagedRolesTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         keys = {role["id"] for role in response.data}
         self.assertNotIn(str(self.other_role.pk), keys)
-        self.assertIn(str(self.owner_role.pk), keys)
+        self.assertNotIn(str(self.owner_role.pk), keys)
         self.assertEqual(self.client.patch(
             f"/api/v1/roles/{self.owner_role.pk}", {"name": "Unprotected"}, format="json",
         ).status_code, 404)

@@ -68,10 +68,10 @@ class PermissionBoundaryTests(TestCase):
         self.grant(['company.manage', 'jobs.view'])
         for permissions in [['*'], ['payroll.edit'], ['panel.users.edit'], 'jobs.view']:
             result = self.api.post('/api/v1/roles/', {'name': 'Escalated', 'code': 'BAD', 'permissions': permissions}, format='json')
-            self.assertEqual(result.status_code, 400)
+            self.assertEqual(result.status_code, 403)
         result = self.api.post('/api/v1/roles/', {'name': 'Reader', 'code': 'NEW', 'permissions': ['jobs.view'], 'is_system': True}, format='json')
-        self.assertEqual(result.status_code, 201)
-        self.assertFalse(Role.objects.get(pk=result.data['id']).is_system)
+        self.assertEqual(result.status_code, 403)
+        self.assertFalse(Role.objects.filter(code='NEW').exists())
 
     def test_staff_editor_cannot_assign_owner_or_link_other_tenant(self):
         self.grant(['staff.edit'])
@@ -83,16 +83,16 @@ class PermissionBoundaryTests(TestCase):
         result = self.api.patch(f'/api/v1/employees/{staff.pk}', {'user': str(other_user.pk)}, format='json')
         self.assertEqual(result.status_code, 400)
 
-    def test_clearing_employee_role_revokes_login_permissions(self):
+    def test_clearing_linked_employee_role_is_rejected(self):
         self.grant(['staff.edit', 'jobs.view'])
         lower = Role.objects.create(company=self.company, name='Lower', code='LOW', permissions=['jobs.view'])
         linked = User.objects.create_user(email='linked@example.com', name='Linked', company=self.company, role=lower)
         employee = Employee.objects.create(company=self.company, name='Linked', employee_code='EMP2', user=linked, role_name='Lower')
         result = self.api.patch(f'/api/v1/employees/{employee.pk}', {'role': ''}, format='json')
-        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.status_code, 400)
         linked.refresh_from_db()
-        self.assertIsNone(linked.role)
-        self.assertFalse(user_has_permission(linked, 'jobs.view'))
+        self.assertEqual(linked.role_id, lower.pk)
+        self.assertTrue(user_has_permission(linked, 'jobs.view'))
 
     def test_tenant_wildcard_cannot_access_platform(self):
         self.grant(['*'])
@@ -116,7 +116,7 @@ class PermissionBoundaryTests(TestCase):
         self.assertEqual(self.api.get('/api/v1/auth/me').data['effectivePermissions'], ['jobs.view'])
         self.user.is_superuser = True
         self.user.save()
-        self.assertTrue(user_has_permission(self.user, 'panel.users.delete'))
+        self.assertFalse(user_has_permission(self.user, 'panel.users.delete'))
         self.user.is_active = False
         self.assertFalse(user_has_permission(self.user, 'panel.users.delete'))
 
@@ -129,6 +129,9 @@ class PermissionBoundaryTests(TestCase):
 class DirectEmailTests(TestCase):
     """Historical class name retained for CI; email now uses simulated worker."""
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.addCleanup(cache.clear)
         from apps.accounts.test_email_helpers import simulate_celery_worker
         simulate_celery_worker(self)
 

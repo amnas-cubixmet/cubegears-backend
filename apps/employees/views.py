@@ -1,5 +1,4 @@
 import re
-from urllib.parse import quote
 
 from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
@@ -8,6 +7,7 @@ from django.utils.http import urlsafe_base64_encode
 
 from django.conf import settings
 from apps.accounts.email import queue_email, email_delivery_mode
+from apps.accounts.account_links import password_action_url, magic_action_url
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
@@ -136,7 +136,7 @@ class ShiftViewSet(CompanyScopedModelViewSet):
 
 
 class EmployeeViewSet(CompanyScopedModelViewSet):
-    queryset=Employee.objects.select_related("team","shift","user").all()
+    queryset=Employee.objects.select_related("team","shift","user__role").all()
     serializer_class=EmployeeSerializer
     permission_prefix="staff"
     action_permission_map={
@@ -154,20 +154,27 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 raise ValidationError("You cannot disable your own account.")
         return obj
 
-    def _resolve_role(self,role_name):
+    def _resolve_role(self,role_name,role_id=None):
         from apps.roles.models import Role
-        if not role_name:
+        if not role_name and not role_id:
             return None
-        role = Role.objects.filter(
+        roles = Role.objects.filter(
             company=self.request.user.company,
-            name__iexact=role_name,
             is_active=True,
             is_system=False,
-        ).first()
+        )
+        if role_id:
+            role = roles.filter(pk=role_id).first()
+        else:
+            matches = roles.filter(name__iexact=role_name)
+            if matches.count() > 1:
+                raise ValidationError({"roleId": "Select the role by ID."})
+            role = matches.first()
         if not role:
             raise ValidationError({"role": "Select an active, non-admin staff role from this company."})
-        if not can_delegate(self.request.user, role.permissions):
-            raise ValidationError({"role": "You cannot assign a role with permissions beyond your own."})
+        from apps.roles.assignment import assignable_role
+        if not assignable_role(role, self.request.user):
+            raise ValidationError({"role": "Choose a company-created staff role without owner or platform authority."})
         return role
 
     def _send_staff_access_email(self, employee, user):
@@ -189,16 +196,13 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             # Previously activated staff can receive one-use login links;
             # never reset an existing password while resending an invite.
             magic_token = MagicLink.issue(user)
-            url = f"{settings.FRONTEND_URL.rstrip('/')}/magic-link/verify?token={quote(magic_token, safe='')}"
+            url = magic_action_url(self.request, user, magic_token)
             subject = "Sign in to your CubixGear workshop"
             instruction = "Use the button below to sign in securely."
         else:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
-            url = (
-                f"{settings.FRONTEND_URL.rstrip('/')}/setup-password"
-                f"?uid={quote(uid, safe='')}&token={quote(token, safe='')}&email={quote(user.email, safe='')}"
-            )
+            url = password_action_url(self.request, user, uid, token, setup=True)
             subject = "Create your CubixGear staff password"
             instruction = "Use the button below to create your account password."
 
@@ -208,6 +212,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 f"Hi {employee.name},\n\n"
                 f"You have been invited to {employee.company.name} on CubixGear.\n"
                 f"{instruction}\n\n"
+                f"Login email: {user.email}\n"
+                f"Assigned role: {user.role.name}\n"
+                f"Login page: {settings.FRONTEND_URL.rstrip('/')}/login\n"
                 f"Employee number: {_employee_display_no(employee)}\n"
                 "Your login grants access only to your assigned workshop role.\n"
                 "If you weren't expecting this email, ignore it."
@@ -264,7 +271,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         email = (serializer.validated_data.get("email") or "").strip().lower()
         name = serializer.validated_data.get("name") or code
         role_name = serializer.validated_data.get("role_name") or ""
-        requested_role = self._resolve_role(role_name) if role_name else None
+        role_id = serializer.validated_data.pop("roleId", None)
+        requested_role = self._resolve_role(role_name, role_id) if role_name else None
         branch = serializer.validated_data.get("branch", self.request.user.branch)
         team = serializer.validated_data.get("team")
         shift = serializer.validated_data.get("shift")
@@ -312,15 +320,17 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             obj._invite_email_delivery = {"status": "not_requested"}
 
 
+    @transaction.atomic
     def perform_update(self,serializer):
         instance=self.get_object()
         if instance.user and instance.user.role and instance.user.role.is_system:
             raise PermissionDenied("Protected company owner accounts cannot be edited here.")
+        selected_id = serializer.validated_data.pop("roleId", None)
         requested_name=serializer.validated_data.get("role_name")
         requested_email=serializer.validated_data.get("email")
         if instance.user and requested_email is not None and requested_email.strip().lower() != instance.user.email.lower():
             raise ValidationError({"email": "To change a linked login email, contact your company administrator."})
-        if requested_name is not None and requested_name != instance.role_name:
+        if requested_name is not None and (requested_name != instance.role_name or (selected_id and instance.user and selected_id != instance.user.role_id)):
             if not user_has_permission(self.request.user, "company.manage"):
                 raise PermissionDenied("Only a company admin can change a login role.")
             if requested_name.strip().upper().replace(" ", "_") in {"SUPER_ADMIN", "PLATFORM_ADMIN"}:
@@ -355,7 +365,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 obj.user.name=obj.name
                 fields.append("name")
             if "role_name" in serializer.validated_data:
-                role=self._resolve_role(obj.role_name)
+                role=self._resolve_role(obj.role_name, selected_id)
                 if obj.user.role_id != (role.pk if role else None):
                     obj.user.role=role
                     fields.append("role")
@@ -429,7 +439,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if obj.status != "Active":
                 raise ValidationError({"status": "Activate this employee before sending a login invitation."})
             user = self._ensure_login_user(obj)
-            role = self._resolve_role(obj.role_name)
+            role = self._resolve_role(obj.role_name, user.role_id)
             if not role:
                 raise ValidationError({"role": "A valid staff role is required."})
             if user.role_id != role.id:
@@ -469,6 +479,7 @@ class EmployeeDocumentViewSet(CompanyScopedModelViewSet):
             {"documentId":str(obj.id)},
         )
 
+    @transaction.atomic
     def perform_update(self,serializer):
         obj=serializer.save()
         _record_activity(
