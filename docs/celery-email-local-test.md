@@ -51,10 +51,16 @@ passwords in React/Vite variables or commit secrets.
 ## 4. Worker (separate terminal)
 
 ```powershell
-celery -A config.celery:app worker --loglevel=info --pool=solo
+python manage.py start_email_worker
 ```
 
-Windows requires `--pool=solo` for this local workflow. The startup
+This command loads the backend .env, checks Redis, reports the email backend,
+and automatically uses `--pool=solo` on Windows. It stops with an actionable
+error if email is disabled or Redis is unavailable. With console mode it starts
+a diagnostic worker; real inbox delivery still requires SMTP (step 6).
+
+The equivalent direct command on Windows is
+`celery -A config.celery:app worker --loglevel=info --pool=solo`. The startup
 output should register `apps.accounts.tasks.send_email_task` and connect to
 `redis://127.0.0.1:6379/0`, not `amqp://guest@127.0.0.1:5672//`.
 
