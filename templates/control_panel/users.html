@@ -1,5 +1,5 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
 <div class="cg-users">
   <header class="cg-page-heading">
@@ -55,6 +55,7 @@
           {% panel_can 'panel:user-edit' as can_edit %}
           {% panel_can 'panel:user-toggle' as can_toggle %}
           {% panel_can 'panel:user-delete' as can_delete %}
+          {% panel_can 'panel:user-invite' as can_invite %}
           {% for row in rows %}
           <tr>
             <td data-label="User">
@@ -76,12 +77,25 @@
             </td>
             <td data-label="Status"><span class="cg-company-state {% if row.is_active %}is-on{% else %}is-off{% endif %}">{% if row.is_active %}Active{% else %}Disabled{% endif %}</span></td>
             <td data-label="Actions">
-              <div class="cg-company-actions">
-                {% if can_view %}<a class="cg-icon-action" href="{% url 'panel:user-detail' row.pk %}" title="View {{ row.name|default:row.email }}" aria-label="View {{ row.name|default:row.email }}">↗</a>{% endif %}
-                {% if can_edit %}<a class="cg-icon-action" href="{% url 'panel:user-edit' row.pk %}" title="Edit {{ row.name|default:row.email }}" aria-label="Edit {{ row.name|default:row.email }}">✎</a>{% endif %}
+              <div class="cg-company-actions" role="group" aria-label="Actions for {{ row.name|default:row.email }}">
+                {% if can_view %}<a class="cg-icon-action" href="{% url 'panel:user-detail' row.pk %}" title="Open {{ row.name|default:row.email }}" aria-label="Open {{ row.name|default:row.email }} profile">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-open"></use></svg>
+                </a>{% endif %}
+                {% if can_edit %}<a class="cg-icon-action" href="{% url 'panel:user-edit' row.pk %}" title="Edit {{ row.name|default:row.email }}" aria-label="Edit {{ row.name|default:row.email }}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-edit"></use></svg>
+                </a>{% endif %}
                 {% if row.pk != request.user.pk %}
-                  {% if can_toggle %}<a class="cg-icon-action" href="{% url 'panel:user-toggle' row.pk %}" title="{% if row.is_active %}Disable{% else %}Enable{% endif %} user" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name|default:row.email }}">⏻</a>{% endif %}
-                  {% if can_delete %}<a class="cg-icon-action is-danger" href="{% url 'panel:user-delete' row.pk %}" title="Delete user" aria-label="Delete {{ row.name|default:row.email }}">⌫</a>{% endif %}
+                  {% if can_toggle %}<a class="cg-icon-action" href="{% url 'panel:user-toggle' row.pk %}" title="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name|default:row.email }}" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name|default:row.email }}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#{% if row.is_active %}action-eye-off{% else %}action-eye{% endif %}"></use></svg>
+                  </a>{% endif %}
+                {% endif %}
+                {% if can_invite %}<a class="cg-icon-action" href="{% url 'panel:user-invite' row.pk %}" title="Invite {{ row.name|default:row.email }}" aria-label="Send invitation to {{ row.name|default:row.email }}">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-mail"></use></svg>
+                </a>{% endif %}
+                {% if row.pk != request.user.pk %}
+                  {% if can_delete %}<a class="cg-icon-action is-danger" href="{% url 'panel:user-delete' row.pk %}" title="Delete {{ row.name|default:row.email }}" aria-label="Delete {{ row.name|default:row.email }}">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-trash"></use></svg>
+                  </a>{% endif %}
                 {% else %}<span class="cg-user-self">You</span>{% endif %}
               </div>
             </td>
