@@ -8,7 +8,8 @@
     <a class="btn" href="{% url 'panel:credits' %}">Credit Wallet</a>
   </div>
   <section class="panel-card">
-    <h3>Billing policy</h3>
+    <h3>Billing policy and Celery timing</h3>
+    <p>Usage closes at calendar month-end. Set the rate duration separately from the calculation intervals. File changes update the stored byte total immediately; the storage interval accrues elapsed time without re-reading every file. Active staff login accounts are billable; customer records are excluded. Feature OFF stops new accrual.</p>
     <p>New companies may accrue verified postpaid usage with zero wallet credits during the grace period when enabled. No negative balances or partial charges are created. Prior months are not charged retroactively when this policy is first enabled.</p>
     {% if form.non_field_errors %}<div role="alert">{{ form.non_field_errors }}</div>{% endif %}
     <form method="post">{% csrf_token %}
@@ -19,8 +20,8 @@
       </div>
       {% if can_edit %}<button type="submit" class="btn btn-primary">Save calendar billing policy</button>{% endif %}
     </form>
-    <p><strong>Current policy:</strong> {% if policy.enabled %}Enabled{% else %}Disabled{% endif %} · Deduct on next month's day {{ policy.due_day|default:5 }} · {% if policy.restrict_overdue %}Restrict overdue workshop operations{% else %}No overdue restriction{% endif %}</p>
-    <p><strong>Deployment:</strong> Select one monthly feature/storage metering engine and configure Celery. Disable old 5th-to-5th cycle and legacy overlapping settlement tasks. Start with <code>python manage.py settle_calendar_credits --dry-run</code>.</p>
+    <p><strong>Current policy:</strong> {% if policy.enabled %}Enabled{% else %}Disabled{% endif %} · Deduct on next month's day {{ policy.due_day|default:5 }} at {{ policy.due_time|time:'H:i'|default:'00:05' }} · {% if policy.restrict_overdue %}Restrict overdue workshop operations{% else %}No overdue restriction{% endif %}</p>
+    <p><strong>Deployment:</strong> Select one monthly feature/storage metering engine and configure Celery. Disable old 5th-to-5th cycle and legacy overlapping settlement tasks. Run <code>celery -A config worker --loglevel=info --pool=solo</code> and, in a separate terminal, <code>celery -A config beat --loglevel=info</code>. Start with <code>python manage.py settle_calendar_credits --dry-run</code>.</p>
   </section>
   <section class="panel-card">
     <h3>Closed monthly statements</h3>

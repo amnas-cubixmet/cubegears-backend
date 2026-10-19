@@ -19,6 +19,10 @@ def ensure_baseline(company):
         )
 
 def record_event(media, kind, actor):
+    from apps.credits.change_tracking import enabled_policy
+    if enabled_policy():
+        # Transactional model hooks already emitted this exact change.
+        return StorageEvent.objects.filter(company=media.company, file_id_snapshot=media.pk).first()
     if kind not in ("UPLOAD", "DELETE"):
         raise ValueError("Invalid storage event")
     state=MediaFile.objects.filter(company=media.company).aggregate(total=Sum("size_bytes"), count=Count("id"))

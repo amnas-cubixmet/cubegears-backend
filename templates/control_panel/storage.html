@@ -147,8 +147,17 @@
               {{ billing_cycle_form.due_day }}
               {% for error in billing_cycle_form.due_day.errors %}<small role="alert">{{ error }}</small>{% endfor %}
             </label>
+            {% for field in billing_cycle_form %}
+              {% if field.name == 'due_time' or field.name == 'calculation_interval_seconds' or field.name == 'storage_tracking_interval_seconds' or field.name == 'rate_duration_seconds' %}
+                <label class="cg-storage-field">{{ field.label }}{{ field }}
+                  <small>{{ field.help_text }}</small>
+                  {% for error in field.errors %}<small role="alert">{{ error }}</small>{% endfor %}
+                </label>
+              {% endif %}
+            {% endfor %}
           </div>
           <div class="cg-storage-settings-actions">
+            <label class="cg-storage-toggle">{{ billing_cycle_form.event_tracking_enabled }} <span><strong>Track file and active staff changes</strong><small>Use stored byte totals between changes; no repeated file scan.</small></span></label>
             <label class="cg-storage-toggle">{{ billing_cycle_form.enabled }} <span><strong>Enable calendar credit settlement</strong><small>Only the selected time-metered engine(s); older billing paths stop.</small></span></label>
             <label class="cg-storage-toggle">{{ billing_cycle_form.allow_zero_balance_usage }} <span><strong>Allow usage at zero credits until due</strong><small>Records liability; never creates negative wallet balances.</small></span></label>
             <label class="cg-storage-toggle">{{ billing_cycle_form.restrict_overdue }} <span><strong>Restrict overdue workshop modules</strong><small>After the configured due date: account, recharge, history and billing remain available.</small></span></label>

@@ -21,6 +21,12 @@ BILLING_DURATIONS = {"daily": timedelta(days=1), "weekly": timedelta(days=7), "m
 
 def staff_count(company):
     """Bill active Employee records, not admin accounts or unauthenticated guesses."""
+    from .change_tracking import enabled_policy
+    if enabled_policy():
+        from django.db.models import Q
+        return Employee.objects.filter(company=company, status__iexact="Active").filter(
+            Q(user__isnull=True) | Q(user__is_active=True, user__is_staff=False, user__is_superuser=False)
+        ).count()
     return Employee.objects.filter(company=company, status__iexact="Active").count()
 
 
@@ -31,6 +37,10 @@ def wallet_for(company):
 
 def billable_user_count(company):
     """Active tenant login accounts; excludes platform staff and inactive logins."""
+    from .change_tracking import enabled_policy
+    if enabled_policy():
+        return User.objects.filter(company=company, is_active=True, is_staff=False, is_superuser=False,
+                                   employee_profile__status__iexact="Active").count()
     return User.objects.filter(company=company, is_active=True).count()
 
 

@@ -5,7 +5,7 @@ configured due day. One atomic wallet debit and one unique ledger reference
 settle a company/month, avoiding category-level partial payment. Legacy
 settlement tasks MUST be gated off while this policy is enabled.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.db import transaction
@@ -35,11 +35,12 @@ def active_policy():
     return BillingCyclePolicy.objects.filter(enabled=True).order_by("pk").first()
 
 
-def deadline_for(month, due_day):
+def deadline_for(month, due_day, due_time=None):
     """5th 00:05 local is debit time; overdue starts on the 6th local."""
     _, end = _month_bounds(month)
     local = timezone.localtime(end, timezone.get_default_timezone())
-    return local.replace(day=due_day, hour=0, minute=5, second=0, microsecond=0)
+    due_time = due_time or time(0, 5)
+    return local.replace(day=due_day, hour=due_time.hour, minute=due_time.minute, second=0, microsecond=0)
 
 
 def _ready(company, month, at):
@@ -110,7 +111,7 @@ def finalize_month(company, month, *, at=None):
         return "awaiting_meter", None
     feature, storage, details = _amounts(company, month)
     statement = BillingCycleStatement.objects.create(
-        company=company, month=month, due_at=deadline_for(month, policy.due_day),
+        company=company, month=month, due_at=deadline_for(month, policy.due_day, policy.due_time),
         feature_credits=feature, storage_credits=storage, total_credits=feature + storage,
         details={"items": details}, finalized_at=at,
     )
@@ -219,10 +220,15 @@ def billing_status(company, *, at=None):
     return {
         "enabled": bool(policy), "dueDay": policy.due_day if policy else 5,
         "dayOfMonth": 1,
+        "dueTime": policy.due_time.strftime("%H:%M") if policy else "00:05",
+        "calculationIntervalSeconds": policy.calculation_interval_seconds if policy else 300,
+        "storageTrackingIntervalSeconds": policy.storage_tracking_interval_seconds if policy else 300,
+        "rateDurationSeconds": policy.rate_duration_seconds if policy else 0,
+        "eventTrackingEnabled": bool(policy and policy.event_tracking_enabled),
         "cycleStart": start.isoformat(),
         "nextDueAt": min(
             (s.due_at for s in rows if s.status != "paid"),
-            default=deadline_for(_period_for(at), policy.due_day if policy else 5),
+            default=deadline_for(_period_for(at), policy.due_day if policy else 5, policy.due_time if policy else None),
         ).isoformat(),
         "amountDue": str(pending_total),
         "overdue": bool(overdue),

@@ -49,6 +49,11 @@ class SecurityEvent(CompanyOwnedModel):
     class Meta: ordering=["-created_at"]
 
 class MediaFile(CompanyOwnedModel):
+    def save(self, *args, **kwargs):
+        from apps.credits.change_tracking import observe_save
+        with observe_save(self, kwargs, storage=True):
+            return super().save(*args, **kwargs)
+
     file=models.FileField(upload_to="saas/%Y/%m/")
     name=models.CharField(max_length=255)
     category=models.CharField(max_length=80,default="General")
@@ -64,7 +69,7 @@ class StorageEvent(CompanyOwnedModel):
     UPLOAD = "UPLOAD"
     DELETE = "DELETE"
     BASELINE = "BASELINE"
-    EVENT_TYPES = [(UPLOAD, "Uploaded"), (DELETE, "Deleted"), (BASELINE, "Existing file baseline")]
+    EVENT_TYPES = [(UPLOAD, "Uploaded"), (DELETE, "Deleted"), (BASELINE, "Existing file baseline"), ("REPLACE", "Replaced / resized")]
 
     event_type = models.CharField(max_length=12, choices=EVENT_TYPES, db_index=True)
     file_id_snapshot = models.UUIDField(db_index=True)
