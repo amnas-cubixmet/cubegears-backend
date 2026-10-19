@@ -11,10 +11,7 @@
   <link rel="stylesheet" href="{% static 'control_panel/unified-platform-ui.css' %}">
   {% if active == 'plans' %}<link rel="stylesheet" href="{% static 'control_panel/plans-ui.css' %}">{% endif %}
   {% if active == 'staff' %}<link rel="stylesheet" href="{% static 'control_panel/staff-ui.css' %}">{% endif %}
-  {% if active == 'invoices' %}<link rel="stylesheet" href="{% static 'control_panel/invoices-ui.css' %}">{% endif %}
-  {% if active == 'stock' %}<link rel="stylesheet" href="{% static 'control_panel/stock-ui.css' %}">{% endif %}
-  {% if active == 'jobs' %}<link rel="stylesheet" href="{% static 'control_panel/jobs-ui.css' %}">{% endif %}
-  {% if active == 'customers' or active == 'vehicles' or active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
+  {% if active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
   {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261015a">{% endif %}
   {% if active == 'billing-settings' %}
     <link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">
@@ -58,12 +55,7 @@
 
         {% panel_can 'branches' as allowed %}{% if allowed %}<a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#git-branch"></use></svg></span><span class="nav-text">Branches</span></a>{% endif %}
         {% panel_can 'roles' as allowed %}{% if allowed %}<a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span><span class="nav-text">Roles & Permissions</span></a>{% endif %}
-        <p class="nav-label">All Workshop Data</p>
-        {% panel_can 'vehicles' as allowed %}{% if allowed %}<a href="{% url 'panel:vehicles' %}" class="nav-item {% if active == 'vehicles' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#car"></use></svg></span><span class="nav-text">Vehicles</span></a>{% endif %}
-        {% panel_can 'customers' as allowed %}{% if allowed %}<a href="{% url 'panel:customers' %}" class="nav-item {% if active == 'customers' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#user-round"></use></svg></span><span class="nav-text">Customers</span></a>{% endif %}
-        {% panel_can 'jobs' as allowed %}{% if allowed %}<a href="{% url 'panel:jobs' %}" class="nav-item {% if active == 'jobs' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#wrench"></use></svg></span><span class="nav-text">Job Cards</span></a>{% endif %}
-        {% panel_can 'stock' as allowed %}{% if allowed %}<a href="{% url 'panel:stock' %}" class="nav-item {% if active == 'stock' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#package"></use></svg></span><span class="nav-text">Stock</span></a>{% endif %}
-        {% panel_can 'invoices' as allowed %}{% if allowed %}<a href="{% url 'panel:invoices' %}" class="nav-item {% if active == 'invoices' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg></span><span class="nav-text">Invoices</span></a>{% endif %}
+        <p class="nav-label">Team</p>
         {% panel_can 'staff' as allowed %}{% if allowed %}<a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#briefcase"></use></svg></span><span class="nav-text">Staff</span></a>{% endif %}
       </nav>
 
