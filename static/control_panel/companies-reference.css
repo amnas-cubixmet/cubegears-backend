@@ -39,6 +39,11 @@
 .cg-companies-table tbody tr:hover{background:var(--cg-blue-pale)}
 .cg-company-identity{display:flex;align-items:center;gap:9px;min-width:170px}
 .cg-company-identity>div{min-width:0;display:grid;gap:2px}
+.cg-company-link{display:flex;align-items:center;gap:9px;min-width:0;max-width:100%;color:inherit;text-decoration:none;border-radius:8px}
+.cg-company-link:hover strong{color:var(--brand);text-decoration:underline;text-underline-offset:3px}
+.cg-company-link:focus-visible{outline:2px solid var(--brand);outline-offset:4px}
+.cg-company-name-group{display:grid;gap:2px;min-width:0}
+.cg-company-name-group strong,.cg-company-name-group small{overflow-wrap:anywhere}
 .cg-company-identity strong{display:block;color:var(--text);font-size:12px;font-weight:750;overflow-wrap:anywhere}
 .cg-company-identity small,.cg-companies-table td small{font-size:11px;color:var(--muted);line-height:1.4;display:block;overflow-wrap:anywhere}
 .cg-company-avatar{width:33px;height:33px;flex:0 0 33px;border-radius:8px;object-fit:cover;border:1px solid var(--line);background:var(--surface-soft)}
