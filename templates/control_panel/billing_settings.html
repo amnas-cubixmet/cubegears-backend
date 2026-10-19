@@ -1,33 +1,68 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
 <div class="cg-billing-settings-page">
-  <header class="directory-heading remaining-heading cg-billing-settings-hero">
-    <div>
-      <p class="eyebrow">PLATFORM / SETTINGS / BILLING</p>
-      <h2>Storage &amp; Credit Billing Settings</h2>
-      <p>Configure storage pricing, calendar billing, optional fixed-date credit cycles and overdue controls. Settings save never deducts wallet credits.</p>
+  <header class="cg-settings-hero">
+    <div class="cg-settings-hero-copy">
+      <p class="cg-settings-breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span> Billing Settings</p>
+      <h2>Billing Settings</h2>
+      <p>Manage storage pricing, monthly settlements and credit cycles.</p>
     </div>
-    <div class="cg-billing-settings-actions">
-      <a class="btn" href="{% url 'panel:storage' %}">Storage Usage &amp; File Logs</a>
-      <a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Statements</a>
+    <div class="cg-settings-hero-actions">
+      <a class="btn" href="{% url 'panel:storage' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></svg>
+        Storage usage
+      </a>
+      <a class="btn btn-primary" href="{% url 'panel:calendar-credit-billing' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4M16 3v4M3 10h18"/><rect x="3" y="5" width="18" height="16" rx="2"/><path d="m9 16 2 2 4-4"/></svg>
+        Statements
+      </a>
     </div>
   </header>
 
+  <section class="cg-settings-summary" aria-label="Current billing configuration">
+    <article class="cg-settings-summary-card">
+      <div class="cg-settings-summary-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="7" rx="2"/><rect x="4" y="14" width="16" height="7" rx="2"/><path d="M8 6.5h.01M8 17.5h.01"/></svg>
+      </div>
+      <div class="cg-settings-summary-heading"><span>Storage billing</span><span class="cg-settings-state {% if storage_policy.is_active %}is-enabled{% endif %}">{% if storage_policy.is_active %}Enabled{% else %}Disabled{% endif %}</span></div>
+      <strong>{{ storage_policy.credits_per_gb|default:"0.00" }} <small>credits / GB</small></strong>
+      <p>{{ storage_policy.included_gb|default:"0" }} GB free allowance</p>
+    </article>
+    <article class="cg-settings-summary-card">
+      <div class="cg-settings-summary-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>
+      </div>
+      <div class="cg-settings-summary-heading"><span>Calendar billing</span><span class="cg-settings-state {% if billing_cycle_policy.enabled %}is-enabled{% endif %}">{% if billing_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}</span></div>
+      <strong>Day {{ billing_cycle_policy.due_day|default:5 }}</strong>
+      <p>Collection due next month</p>
+    </article>
+    <article class="cg-settings-summary-card">
+      <div class="cg-settings-summary-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <div class="cg-settings-summary-heading"><span>Fixed-date cycle</span><span class="cg-settings-state {% if legacy_cycle_policy.enabled %}is-enabled{% endif %}">{% if legacy_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}</span></div>
+      <strong>Day {{ legacy_cycle_policy.day_of_month|default:5 }}</strong>
+      <p>Optional monthly billing engine</p>
+    </article>
+  </section>
+
   <nav class="cg-billing-settings-nav" aria-label="Billing settings sections">
-    <a href="#storage-pricing-title">Storage Pricing</a>
-    <a href="#calendar-billing-title">Calendar Billing &amp; Timing</a>
-    <a href="#legacy-credit-cycle">Monthly Credit Cycle</a>
+    <a href="#storage-pricing-title"><span>01</span> Storage Pricing</a>
+    <a href="#calendar-billing-title"><span>02</span> Calendar Billing</a>
+    <a href="#legacy-credit-cycle"><span>03</span> Credit Cycle</a>
     {% panel_can 'security' as can_audit_logs %}
-    {% if can_audit_logs %}<a href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
+    {% if can_audit_logs %}<a class="cg-settings-audit-link" href="{% url 'panel:audit-logs' %}">Audit Logs <span aria-hidden="true">↗</span></a>{% endif %}
   </nav>
 
-  <div class="cg-billing-settings-note" role="note">
-    <strong>Configuration only — no wallet debit.</strong>
-    Save each section separately. Actual credits are settled only by their enabled billing commands or scheduled workers, with backend safeguards against charging twice.
+  <div class="cg-settings-panels">
+    {% include "control_panel/_billing_settings_forms.html" %}
+    {% include "control_panel/_legacy_credit_cycle_settings.html" %}
   </div>
 
-  {% include "control_panel/_billing_settings_forms.html" %}
-  {% include "control_panel/_legacy_credit_cycle_settings.html" %}
+  <div class="cg-settings-footnote" role="note">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>
+    Saving settings does not charge wallets. Each billing policy is saved separately.
+  </div>
 </div>
 {% endblock %}

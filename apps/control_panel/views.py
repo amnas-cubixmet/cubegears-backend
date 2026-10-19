@@ -449,7 +449,7 @@ def storage(request):
 
     if is_settings_page:
         return render(request, "control_panel/billing_settings.html", {
-            "page_title": "Storage & Credit Billing Settings",
+            "page_title": "Billing Settings",
             "active": "billing-settings",
             "storage_policy": policy,
             "storage_policy_form": policy_form,
