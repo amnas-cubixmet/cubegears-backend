@@ -1,0 +1,31 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<div class="cg-billing-settings-page">
+  <header class="directory-heading remaining-heading cg-billing-settings-hero">
+    <div>
+      <p class="eyebrow">PLATFORM / SETTINGS / BILLING</p>
+      <h2>Storage &amp; Credit Billing Settings</h2>
+      <p>Configure global storage pricing, calendar usage calculation, settlement timing and overdue controls. Settings save never deducts wallet credits.</p>
+    </div>
+    <div class="cg-billing-settings-actions">
+      <a class="btn" href="{% url 'panel:storage' %}">Storage Usage &amp; File Logs</a>
+      <a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Statements</a>
+    </div>
+  </header>
+
+  <nav class="cg-billing-settings-nav" aria-label="Billing settings sections">
+    <a href="#storage-pricing-title">Storage Pricing</a>
+    <a href="#calendar-billing-title">Calendar Billing &amp; Timing</a>
+    {% panel_can 'security' as can_audit_logs %}
+    {% if can_audit_logs %}<a href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
+  </nav>
+
+  <div class="cg-billing-settings-note" role="note">
+    <strong>Configuration only — no wallet debit.</strong>
+    Save each section separately. Actual credits are settled only by their enabled billing commands or scheduled workers, with backend safeguards against charging twice.
+  </div>
+
+  {% include "control_panel/_billing_settings_forms.html" %}
+</div>
+{% endblock %}

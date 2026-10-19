@@ -1,0 +1,28 @@
+/* The unified billing-settings route reuses the exact Storage pricing
+   and Calendar policy forms; styles here affect only that landing page. */
+.cg-billing-settings-page{display:grid;gap:16px;min-width:0}
+.cg-billing-settings-page .cg-billing-settings-hero{margin:0;padding:18px 22px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.cg-billing-settings-page .cg-billing-settings-hero h2{margin:4px 0 7px;font-size:26px;line-height:1.25}
+.cg-billing-settings-page .cg-billing-settings-hero p:last-child{max-width:720px;line-height:1.6;color:var(--muted);margin:0}
+.cg-billing-settings-page .cg-billing-settings-actions{display:flex;flex-wrap:wrap;gap:8px}
+.cg-billing-settings-page .cg-billing-settings-nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0}
+.cg-billing-settings-page .cg-billing-settings-nav a{padding:10px 14px;display:inline-flex;align-items:center;justify-content:center;min-height:42px;text-decoration:none;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:10px;font-weight:700}
+.cg-billing-settings-page .cg-billing-settings-nav a:hover,
+.cg-billing-settings-page .cg-billing-settings-nav a:focus-visible{border-color:var(--brand);color:var(--brand)}
+.cg-billing-settings-page .cg-billing-settings-note{padding:13px 17px;border:1px solid var(--line);border-radius:12px;background:var(--surface-blue);line-height:1.55}
+.cg-billing-settings-page .cg-billing-settings-note strong{margin-right:5px}
+.cg-billing-settings-page .cg-storage-settings{margin:0;scroll-margin-top:90px}
+.cg-billing-settings-page .cg-storage-field,
+.cg-billing-settings-page .cg-storage-pricing-form{min-width:0}
+.cg-billing-settings-page .cg-storage-field :is(input,select){max-width:100%;min-height:42px}
+.cg-billing-settings-page .cg-storage-field small{display:block;line-height:1.5}
+.cg-billing-settings-page .cg-storage-settings-actions{gap:12px}
+.cg-billing-settings-page .cg-storage-settings-actions .btn{min-height:44px}
+.cg-billing-settings-page :is(#storage-pricing-title,#calendar-billing-title){scroll-margin-top:110px}
+@media(max-width:650px){
+  .cg-billing-settings-page .cg-billing-settings-hero{padding:16px}
+  .cg-billing-settings-page .cg-billing-settings-hero h2{font-size:22px}
+  .cg-billing-settings-page .cg-billing-settings-actions,.cg-billing-settings-page .cg-billing-settings-nav{width:100%}
+  .cg-billing-settings-page .cg-billing-settings-nav a{flex:1 1 150px}
+  .cg-billing-settings-page .cg-storage-settings-actions .btn{width:100%}
+}
