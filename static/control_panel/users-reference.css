@@ -15,8 +15,8 @@
 .cg-user-access.is-admin{background:var(--brand-soft);border-color:transparent;color:var(--brand-dark)}
 .cg-user-self{font-size:11px;color:var(--muted);font-weight:750}
 .cg-user-avatar{object-fit:cover}
-.cg-users-table .cg-company-actions{min-width:145px}
-.cg-users-table .cg-icon-action{font-size:18px;font-weight:650;line-height:1}
+.cg-users-table .cg-company-actions{min-width:184px;gap:6px}
+.cg-users-table .cg-icon-action{font-size:inherit}
 .cg-user-editor-form .cg-editor-layout{grid-template-columns:minmax(0,1.65fr) minmax(290px,.85fr)}
 .cg-user-form-note{font-size:11px;color:var(--muted);line-height:1.55;padding:0 21px 19px;margin:0}
 .cg-user-settings{display:grid;padding:4px 20px 10px}
