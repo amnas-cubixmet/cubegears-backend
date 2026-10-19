@@ -13,7 +13,7 @@ from apps.roles.models import Role
 from apps.saas.feature_discovery import module_inventory, sync_existing_modules
 from apps.saas.models import FeatureGroup, MediaFile, PlanFeature
 from apps.credits.models import (
-    CompanyCreditFeature, CreditLedger, CreditWallet, FeatureBundle,
+    CreditLedger, CreditWallet, FeatureBundle,
     FeatureCreditPrice, StorageCreditPolicy,
 )
 from apps.credits.service import enable_paid_feature, renew_feature, purchase_feature_bundle

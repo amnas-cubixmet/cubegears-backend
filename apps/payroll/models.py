@@ -414,7 +414,15 @@ from .timer_models import JobWorkSession  # noqa: E402,F401
 
 
 # Imported here so Django discovers the standalone, non-monthly wage models.
+# Re-export these models so Django registers the split daily-wage module and
+# existing imports from apps.payroll.models remain supported.
 from .daily_wage_models import (
-    EmployeeDailyWageRate, DailyWageEntry, DailyWageExtra,
-    WageAdjustment, WagePayment, WagePaymentAllocation, WagePaymentReversal, WageAuditLog,
+    EmployeeDailyWageRate as EmployeeDailyWageRate,
+    DailyWageEntry as DailyWageEntry,
+    DailyWageExtra as DailyWageExtra,
+    WageAdjustment as WageAdjustment,
+    WagePayment as WagePayment,
+    WagePaymentAllocation as WagePaymentAllocation,
+    WagePaymentReversal as WagePaymentReversal,
+    WageAuditLog as WageAuditLog,
 )

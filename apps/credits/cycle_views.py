@@ -1,10 +1,9 @@
 """Read-only cycle invoices and explicit owner-initiated wallet settlement retry."""
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsCompanyOwner
-from .cycle_billing import cycle_status, run_due_cycles
+from .cycle_billing import cycle_status
 
 
 class CreditCycleStatusView(APIView):

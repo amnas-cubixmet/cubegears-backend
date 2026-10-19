@@ -1,9 +1,6 @@
-import json
 from unittest.mock import patch
-from datetime import timedelta
 from django.test import TestCase, override_settings
 from django.conf import settings
-from django.utils import timezone
 from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.companies.models import Company
@@ -48,7 +45,7 @@ class RazorpaySubscriptionTests(TestCase):
     def test_captured_payment_idempotent_and_company_scoped(self, fetch):
         fetch.return_value={"status":"captured","order_id":"order_test001",
             "amount":99900,"currency":"INR","method":"upi"}
-        pending=SubscriptionPayment.objects.create(company=self.company,order_id="order_test001",
+        SubscriptionPayment.objects.create(company=self.company,order_id="order_test001",
             plan=self.plan,requested_by=self.owner,billing_cycle="monthly",amount_paise=99900)
         first=activate_captured("order_test001","pay_001")
         self.assertEqual(first.status,"captured")

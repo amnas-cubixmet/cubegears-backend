@@ -8,5 +8,5 @@ Pillow>=11.0,<13.0  # ImageField validation and PNG/JPEG/WebP company logos
 
 python-dotenv>=1.1
 
-# Optional later: uncomment only when running a Celery worker/broker.
+# Required by config.celery and the email/billing task modules.
 celery[redis]>=5.6,<5.8

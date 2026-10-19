@@ -4,13 +4,12 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import decorators, response, serializers, status
+from rest_framework import decorators, response, serializers
 from rest_framework.exceptions import ValidationError
 
-from apps.accounts.permissions import user_has_permission
 from apps.expenses.models import Expense
 from common.viewsets import CompanyScopedModelViewSet
-from .models import Job, OutsideLabourCharge
+from .models import OutsideLabourCharge
 from .audit import record_job_event
 
 

@@ -11,7 +11,6 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from apps.companies.models import Company
 from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     CompanyCreditFeature, CompanyPostpaidFeature, CreditLedger,

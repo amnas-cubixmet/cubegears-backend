@@ -32,7 +32,6 @@ from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
-from apps.vehicles.models import Vehicle
 from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, BillingCyclePolicy
 from apps.credits.billing_cycle_forms import BillingCyclePolicyForm
 from apps.credits.storage_forms import StorageCreditPolicyForm

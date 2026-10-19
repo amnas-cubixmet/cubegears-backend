@@ -11,8 +11,8 @@ from apps.accounts.permissions import can_delegate
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.customers.models import Customer
-from apps.employees.models import Employee, Shift, Team
-from apps.inventory.models import StockCategory, StockItem, Supplier
+from apps.employees.models import Employee
+from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.roles.models import Role

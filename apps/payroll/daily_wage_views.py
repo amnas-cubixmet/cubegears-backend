@@ -1,9 +1,6 @@
-import uuid
-from collections import defaultdict
-from datetime import date
 from decimal import Decimal
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework.response import Response
@@ -19,7 +16,7 @@ from .daily_wage_models import (
 )
 from .daily_wage_service import (
     amount, applied_rate, audit, day_amounts, finalize_attendance,
-    parsed_date, pay_balance, request_key, set_rate, totals, sum_amount,
+    parsed_date, pay_balance, request_key, set_rate, totals,
 )
 
 

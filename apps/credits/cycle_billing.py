@@ -7,8 +7,7 @@ wallet balance. A monthly bill becomes due at the next cycle boundary; it is
 retried idempotently after top-ups. Paid APIs lock after an unpaid due invoice.
 """
 import logging
-from calendar import monthrange
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
@@ -17,14 +16,12 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounts.permissions import is_company_owner
 from apps.companies.models import Company
 from apps.saas.models import StorageEvent
-from apps.saas.storage_ledger import ensure_baseline
 from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     CompanyBundleAccess, CreditCycleInvoice, CreditCyclePolicy,
-    CycleLabelSession, FeatureBundle, StorageCreditPolicy,
+    CycleLabelSession, StorageCreditPolicy,
 )
 from .service import billable_user_count, change_balance, wallet_for
 

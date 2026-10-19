@@ -8,7 +8,6 @@ is not silently billed; late intervals are capped and logged.
 Each closed period has one exact company/month reference in CreditLedger.
 No browser-provided usage or credit amount is trusted.
 """
-import calendar
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP

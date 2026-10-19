@@ -1,5 +1,4 @@
 """Render and access-control regression checks for the company-inspired SaaS dashboard."""
-from pathlib import Path
 
 from django.contrib.staticfiles import finders
 from django.test import TestCase

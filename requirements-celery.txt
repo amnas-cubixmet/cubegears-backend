@@ -1,3 +1,2 @@
-# Optional for a dedicated Redis worker/Beat machine. Core WSGI remains unchanged.
+# Compatibility entry point for worker setup guides; Celery is in requirements.txt.
 -r requirements.txt
-celery[redis]>=5.6,<5.8

@@ -1,7 +1,6 @@
 """Calendar-month closure, next-month due day and zero-credit grace regressions."""
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -13,7 +12,7 @@ from apps.companies.models import Company
 from apps.roles.models import Role
 from apps.saas.models import FeatureGroup, PlanFeature
 from .calendar_billing import (
-    billing_status, deadline_for, finalize_month, overdue_statements,
+    deadline_for, finalize_month, overdue_statements,
     run_calendar_cycles, settle_statement,
 )
 from .models import (

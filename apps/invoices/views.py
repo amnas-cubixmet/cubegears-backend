@@ -83,7 +83,6 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 
     def _recalculate(self,obj):
         """Recompute totals from saved lines; client-provided CGST/SGST/IGST are never trusted."""
-        from .models import Invoice
         from apps.jobs.india_gst import gst_context, gst_rate, calculate_tax
         from decimal import ROUND_HALF_UP
 
