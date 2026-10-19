@@ -1,9 +1,9 @@
 from apps.accounts.permissions import panel_permission
 
-RESOURCES = ['dashboard', 'companies', 'users', 'branches', 'roles', 'subscriptions', 'credits',
+RESOURCES = ['dashboard', 'companies', 'users', 'branches', 'roles', 'credits',
              'storage', 'security', 'plans', 'features', 'requests', 'customers', 'vehicles', 'jobs', 'stock', 'invoices', 'staff']
 SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 'featurebundle': 'features', 'company': 'companies', 'user': 'users', 'branch': 'branches', 'role': 'roles', 'role-saas': 'roles',
-            'subscription': 'subscriptions', 'customer': 'customers', 'vehicle': 'vehicles',
+            'customer': 'customers', 'vehicle': 'vehicles',
             'job': 'jobs', 'invoice': 'invoices', 'stock': 'stock', 'staff': 'staff'}
 
 
@@ -18,7 +18,7 @@ def route_allowed(user, route):
     if route == 'feature-pricing':
         return panel_permission(user, 'features', 'view')
     if route == 'payment-settings':
-        return panel_permission(user, 'subscriptions', 'edit')
+        return panel_permission(user, 'credits', 'view')
     if route == 'logout':
         return bool(user.is_authenticated and user.is_active)
     if '-' in route:
