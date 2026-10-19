@@ -13,8 +13,9 @@ class CreditCeleryTaskSafetyTests(SimpleTestCase):
         cmd.assert_not_called()
 
     @override_settings(CREDIT_BILLING_CELERY_ENABLED=True)
+    @patch("apps.credits.cycle_billing.effective_policy", return_value=None)
     @patch("apps.credits.tasks.call_command")
-    def test_enabled_tasks_use_existing_audited_commands(self, cmd):
+    def test_enabled_tasks_use_existing_audited_commands(self, cmd, policy):
         from apps.credits.tasks import bill_due_storage, renew_due_features
         self.assertEqual(bill_due_storage(), "completed")
         self.assertEqual(renew_due_features(), "completed")

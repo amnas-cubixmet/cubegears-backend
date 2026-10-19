@@ -10,6 +10,11 @@ from apps.roles.models import Role
 
 
 class PasswordAuthenticationFlowTests(APITestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.addCleanup(cache.clear)
+
     email = "owner@example.com"
     setup_password = "WorkshopPass938!"
     old_password = "OldWorkshop938!"

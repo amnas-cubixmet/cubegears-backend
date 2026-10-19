@@ -4,8 +4,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from apps.accounts.permissions import IsCompanyAdmin, can_delegate, is_company_owner, user_has_permission
+from apps.accounts.permissions import IsCompanyAdmin, is_company_owner, user_has_permission
 from .models import Role
+from .assignment import assignable_role
 from .serializers import RoleSerializer
 from .legacy_cleanup import eligible_legacy_signup_roles
 
@@ -13,7 +14,11 @@ class CanReadRolesOwnerCanWrite(BasePermission):
     message = "Only the company owner can create, edit or delete roles."
 
     def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated or not request.user.company_id:
+            return False
         if request.method in SAFE_METHODS:
+            if request.query_params.get('assignable') == '1':
+                return user_has_permission(request.user, 'staff.create') or user_has_permission(request.user, 'staff.edit') or IsCompanyAdmin().has_permission(request, view)
             return IsCompanyAdmin().has_permission(request, view)
         return is_company_owner(request.user) and user_has_permission(request.user, 'company.manage')
 
@@ -24,18 +29,20 @@ class RoleListCreateView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         company = self.request.user.company
-        return Role.objects.filter(company=company)
+        roles = Role.objects.filter(company=company, is_system=False)
+        if self.request.query_params.get('assignable') == '1':
+            allowed = [role.pk for role in roles if assignable_role(role, self.request.user)]
+            roles = roles.filter(pk__in=allowed)
+        return roles
 
     def perform_create(self, serializer):
         serializer.save(company=self.request.user.company, is_system=False)
 
 class RoleDetailView(generics.RetrieveUpdateDestroyAPIView):
-    def get_object(self):
-        role = super().get_object()
-        if self.request.method not in {"GET", "HEAD", "OPTIONS"} and not can_delegate(self.request.user, role.permissions):
-            raise PermissionDenied("You cannot modify a role with greater permissions.")
-        return role
-
+    # The permission class already restricts writes to the verified owner.
+    # Do not compare historic role permissions with the owner's *current*
+    # paid entitlements: that blocks deleting roles containing expired modules.
+    # Protected system roles remain excluded by get_queryset().
     serializer_class = RoleSerializer
     permission_classes = [CanReadRolesOwnerCanWrite]
 
