@@ -20,6 +20,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 from django.db import transaction, IntegrityError
 from django.db.models import F, Q, Sum, Count
+from django.db.models.functions import TruncDate
 from django.db.models.deletion import ProtectedError
 from django.http import HttpResponseForbidden
 from django.shortcuts import get_object_or_404, redirect, render
@@ -33,7 +34,7 @@ from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from apps.saas.models import Subscription, StorageUsage, StorageEvent, SecurityEvent, SubscriptionPlan, FeatureGroup, PlanFeature, PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment, MediaFile
-from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, BillingCyclePolicy
+from apps.credits.models import FeatureBundle, StorageCreditPolicy, CreditLedger, CreditWallet, BillingCyclePolicy
 from apps.credits.billing_cycle_forms import BillingCyclePolicyForm
 from apps.credits.storage_forms import StorageCreditPolicyForm
 from apps.saas.feature_discovery import sync_existing_modules
@@ -126,6 +127,7 @@ def _company_choices():
 
 @panel_admin_required
 def dashboard(request):
+    """Live SaaS overview. No placeholder values or subscription-only KPI cards."""
     today = timezone.localdate()
     month_start = today.replace(day=1)
 
@@ -135,6 +137,58 @@ def dashboard(request):
     invoices = Invoice.objects.filter(kind="invoice")
     subscriptions = Subscription.objects.all()
 
+    company_count = companies.count()
+    active_company_count = companies.filter(is_active=True).count()
+    user_count = users.count()
+    admin_count = users.filter(Q(is_staff=True) | Q(is_superuser=True)).distinct().count()
+    job_count = jobs.count()
+    open_job_count = jobs.exclude(status=Job.STATUS_DELIVERED).count()
+    invoice_totals = invoices.aggregate(sales=Sum("total"), outstanding=Sum("balance"))
+
+    # Credits are wallet units, not INR. The credit-first dashboard reports
+    # real balances, without pretending that credits are subscription revenue.
+    wallet_totals = CreditWallet.objects.aggregate(total=Sum("balance"))
+    wallet_count = CreditWallet.objects.count()
+    low_wallet_count = CreditWallet.objects.filter(balance__lte=F("low_threshold")).count()
+
+    # Each chart point comes from real company/user registration timestamps.
+    # Group in the database: only two aggregate queries for the whole week.
+    days = [today - timedelta(days=offset) for offset in range(6, -1, -1)]
+    company_daily = {
+        row["day"]: row["count"]
+        for row in companies.filter(created_at__date__gte=days[0])
+        .annotate(day=TruncDate("created_at"))
+        .values("day").annotate(count=Count("pk"))
+    }
+    user_daily = {
+        row["day"]: row["count"]
+        for row in users.filter(created_at__date__gte=days[0])
+        .annotate(day=TruncDate("created_at"))
+        .values("day").annotate(count=Count("pk"))
+    }
+    company_values = [company_daily.get(day, 0) for day in days]
+    user_values = [user_daily.get(day, 0) for day in days]
+    ceiling = max([1, *company_values, *user_values])
+
+    def chart_coordinates(series):
+        return [
+            (24 + index * 85, round(154 - value * 124 / ceiling, 1))
+            for index, value in enumerate(series)
+        ]
+
+    def polyline(series):
+        return " ".join(f"{x},{y}" for x, y in chart_coordinates(series))
+
+    company_points = polyline(company_values)
+    company_area = "M 24,154 L " + " L ".join(
+        f"{x},{y}" for x, y in chart_coordinates(company_values)
+    ) + " L 534,154 Z"
+    chart_days = [
+        {"label": day.strftime("%a"), "date": day, "companies": company_values[index],
+         "users": user_values[index]}
+        for index, day in enumerate(days)
+    ]
+
     active_subscriptions = subscriptions.filter(status__iexact="Active")
     monthly_revenue = active_subscriptions.filter(
         billing_cycle__iexact="monthly"
@@ -142,28 +196,39 @@ def dashboard(request):
     annual_revenue = active_subscriptions.filter(
         billing_cycle__iexact="annual"
     ).aggregate(v=Sum("amount"))["v"] or 0
-    estimated_mrr = monthly_revenue + (annual_revenue / 12)
 
     context = {
-        "page_title": "SaaS Dashboard",
+        "page_title": "Dashboard",
         "active": "dashboard",
         "today": today,
-        "total_companies": companies.count(),
-        "active_companies": companies.filter(is_active=True).count(),
-        "total_users": users.count(),
-        "admin_users": users.filter(Q(is_staff=True) | Q(is_superuser=True)).distinct().count(),
-        "total_jobs": jobs.count(),
-        "open_jobs": jobs.exclude(status=Job.STATUS_DELIVERED).count(),
+        "total_companies": company_count,
+        "active_companies": active_company_count,
+        "inactive_companies": company_count - active_company_count,
+        "active_company_percent": round(active_company_count * 100 / company_count) if company_count else 0,
+        "total_users": user_count,
+        "admin_users": admin_count,
+        "total_jobs": job_count,
+        "open_jobs": open_job_count,
         "total_invoices": invoices.count(),
-        "platform_sales": invoices.aggregate(v=Sum("total"))["v"] or 0,
-        "platform_outstanding": invoices.aggregate(v=Sum("balance"))["v"] or 0,
+        "platform_sales": invoice_totals["sales"] or 0,
+        "platform_outstanding": invoice_totals["outstanding"] or 0,
+        "wallet_credits_total": wallet_totals["total"] or 0,
+        "wallet_count": wallet_count,
+        "low_wallet_count": low_wallet_count,
         "active_subscriptions": active_subscriptions.count(),
-        "estimated_mrr": estimated_mrr,
+        "estimated_mrr": monthly_revenue + (annual_revenue / 12),
         "new_companies_month": companies.filter(created_at__date__gte=month_start).count(),
         "new_users_month": users.filter(created_at__date__gte=month_start).count(),
+        "chart_company_points": company_points,
+        "chart_user_points": polyline(user_values),
+        "chart_company_area": company_area,
+        "chart_days": chart_days,
+        "chart_company_total": sum(company_values),
+        "chart_user_total": sum(user_values),
         "recent_companies": companies.order_by("-created_at")[:7],
         "recent_users": users.select_related("company", "role").order_by("-created_at")[:7],
         "recent_subscriptions": subscriptions.select_related("company").order_by("-created_at")[:7],
+        "recent_credits": CreditLedger.objects.select_related("company").order_by("-created_at")[:6],
         "security_events": SecurityEvent.objects.select_related("company", "user").order_by("-created_at")[:8],
     }
     return render(request, "control_panel/dashboard.html", context)

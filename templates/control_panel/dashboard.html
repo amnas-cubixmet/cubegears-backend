@@ -1,138 +1,174 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<section class="dashboard-hero">
-  <div>
-    <p class="eyebrow">Platform overview · {{ today|date:"d M Y" }}</p>
-    <h2>Welcome to your dashboard</h2>
-    <p>Manage your companies, users, subscriptions and workshop activity in one place.</p>
-  </div>
-  <div class="quick-actions">
-    {% panel_can 'panel:companies' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:companies' %}">Companies</a>{% endif %}
-    {% panel_can 'panel:users' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:users' %}">Users</a>{% endif %}
-    {% panel_can 'panel:subscriptions' as allowed %}{% if allowed %}<a class="btn" href="{% url 'panel:subscriptions' %}">Billing</a>{% endif %}
-  </div>
-</section>
-
-<div class="metrics-grid metrics-grid-dashboard">
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Total Companies</span><span class="metric-icon">C</span></div>
-    <strong>{{ total_companies }}</strong>
-    <small>{{ active_companies }} active · {{ new_companies_month }} new this month</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Platform Users</span><span class="metric-icon">U</span></div>
-    <strong>{{ total_users }}</strong>
-    <small>{{ admin_users }} admins · {{ new_users_month }} new this month</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Active Plans</span><span class="metric-icon">P</span></div>
-    <strong>{{ active_subscriptions }}</strong>
-    <small>Estimated MRR ₹{{ estimated_mrr|floatformat:0 }}</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Workshop Jobs</span><span class="metric-icon">J</span></div>
-    <strong>{{ total_jobs }}</strong>
-    <small>{{ open_jobs }} currently open</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Invoices</span><span class="metric-icon">I</span></div>
-    <strong>{{ total_invoices }}</strong>
-    <small>Across all companies</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Platform Sales</span><span class="metric-icon">₹</span></div>
-    <strong>₹{{ platform_sales|floatformat:0 }}</strong>
-    <small>Workshop invoice value</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Outstanding</span><span class="metric-icon">↗</span></div>
-    <strong>₹{{ platform_outstanding|floatformat:0 }}</strong>
-    <small>Open customer balances</small>
-  </article>
-  <article class="metric-card dashboard-stat-card">
-    <div class="metric-top"><span>Admin Access</span><span class="metric-icon">A</span></div>
-    <strong>{{ admin_users }}</strong>
-    <small>Staff / super admin accounts</small>
-  </article>
-</div>
-
-<div class="dashboard-layout admin-dashboard-layout">
-  <section class="panel-card">
-    <div class="section-head">
-      <div><p class="eyebrow">Tenants</p><h2>Recent companies</h2></div>
-      {% panel_can 'panel:companies' as allowed %}{% if allowed %}<a class="text-link" href="{% url 'panel:companies' %}">View all</a>{% endif %}
+<div class="ref-dashboard">
+  <header class="ref-dashboard-heading">
+    <div>
+      <p class="ref-overline">Overview / Dashboard</p>
+      <h2>Platform overview</h2>
+      <p>Live activity across your companies, teams, credits and workshops.</p>
     </div>
-    <div class="responsive-table">
-      <table>
-        <thead><tr><th>Company</th><th>Plan</th><th>Location</th><th>Status</th><th>Joined</th></tr></thead>
-        <tbody>
+    <div class="ref-heading-actions">
+      {% panel_can 'companies' as can_companies %}
+      {% panel_can 'company-create' as can_create_company %}
+      {% panel_can 'credits' as can_credits %}
+      {% panel_can 'users' as can_users %}
+      {% panel_can 'security' as can_security %}
+      {% if can_companies %}<a class="btn ref-btn-secondary" href="{% url 'panel:companies' %}">View companies</a>{% endif %}
+      {% if can_create_company %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">+ Add company</a>{% endif %}
+    </div>
+  </header>
+
+  <section class="ref-kpis" aria-label="Live platform metrics">
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span> Total companies </span><span class="ref-kpi-icon tone-teal"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_companies }}</div>
+      <p><strong>{{ new_companies_month }} new</strong> this month</p>
+      <div class="ref-kpi-track"><span class="tone-teal" style="width:{{ active_company_percent }}%"></span></div>
+      <small>{{ active_companies }} active companies</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Platform users</span><span class="ref-kpi-icon tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_users }}</div>
+      <p><strong>{{ new_users_month }} new</strong> this month</p>
+      <div class="ref-kpi-track"><span class="tone-blue" style="width:100%"></span></div>
+      <small>{{ admin_users }} platform administrators</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Active companies</span><span class="ref-kpi-icon tone-lime"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ active_companies }}</div>
+      <p><strong>{{ active_company_percent }}%</strong> of all companies</p>
+      <div class="ref-kpi-track"><span class="tone-lime" style="width:{{ active_company_percent }}%"></span></div>
+      <small>{{ inactive_companies }} disabled companies</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Open workshop jobs</span><span class="ref-kpi-icon tone-gold"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#wrench"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ open_jobs }}</div>
+      <p><strong>{{ total_jobs }}</strong> jobs in total</p>
+      <div class="ref-kpi-track"><span class="tone-gold" style="width:100%"></span></div>
+      <small>Across all workshops</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Available wallet credits</span><span class="ref-kpi-icon tone-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#credit-card"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ wallet_credits_total|floatformat:2 }}</div>
+      <p><strong>{{ wallet_count }}</strong> company wallets</p>
+      <div class="ref-kpi-track"><span class="tone-purple" style="width:100%"></span></div>
+      <small>{{ low_wallet_count }} at or below low-balance threshold · credits, not ₹</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Outstanding invoices</span><span class="ref-kpi-icon tone-rose"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg></span></div>
+      <div class="ref-kpi-value">₹{{ platform_outstanding|floatformat:0 }}</div>
+      <p><strong>{{ total_invoices }}</strong> invoices</p>
+      <div class="ref-kpi-track"><span class="tone-rose" style="width:100%"></span></div>
+      <small>Workshop customer balances</small>
+    </article>
+  </section>
+
+  <div class="ref-dashboard-primary">
+    <section class="ref-panel ref-trends" aria-labelledby="ref-trend-title">
+      <div class="ref-panel-head">
+        <div>
+          <p class="ref-overline">Analytics</p>
+          <h3 id="ref-trend-title">New registrations</h3>
+          <p>Last 7 days · {{ chart_company_total }} companies · {{ chart_user_total }} users</p>
+        </div>
+        <div class="ref-chart-key" aria-label="Chart legend"><span><i class="ref-dot ref-company-dot"></i> Companies</span><span><i class="ref-dot ref-user-dot"></i> Users</span></div>
+      </div>
+      <div class="ref-chart-area">
+        <svg class="ref-chart" viewBox="0 0 560 190" role="img" aria-label="Daily company registrations shown in teal and user registrations shown in blue over the last seven days">
+          <defs>
+            <linearGradient id="ref-company-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#18aa96" stop-opacity=".20"/><stop offset="100%" stop-color="#18aa96" stop-opacity="0"/></linearGradient>
+          </defs>
+          <path class="ref-gridline" d="M 24 30 H 534 M 24 71 H 534 M 24 113 H 534 M 24 154 H 534"/>
+          <path d="{{ chart_company_area }}" fill="url(#ref-company-gradient)"/>
+          <polyline points="{{ chart_company_points }}" class="ref-chart-line ref-chart-companies"/>
+          <polyline points="{{ chart_user_points }}" class="ref-chart-line ref-chart-users"/>
+        </svg>
+        <div class="ref-chart-axis">
+          {% for day in chart_days %}<span title="{{ day.date|date:'d M Y' }}: {{ day.companies }} companies, {{ day.users }} users">{{ day.label }}</span>{% endfor %}
+        </div>
+      </div>
+      {% if not chart_company_total and not chart_user_total %}<p class="ref-chart-empty">No registrations in the last seven days. The graph will update automatically as new accounts are created.</p>{% endif %}
+      <div class="ref-insights">
+        <div><span>This week</span><strong>{{ chart_company_total }}</strong><small>New companies</small></div>
+        <div><span>This week</span><strong>{{ chart_user_total }}</strong><small>New users</small></div>
+        <div><span>Current total</span><strong>{{ total_companies }}</strong><small>Registered companies</small></div>
+      </div>
+    </section>
+
+    <section class="ref-panel ref-activity" aria-labelledby="ref-activity-title">
+      <div class="ref-panel-head">
+        <div><p class="ref-overline">Platform feed</p><h3 id="ref-activity-title">Recent activity</h3></div>
+        {% if can_credits %}<a class="ref-link" href="{% url 'panel:credits' %}">Wallets →</a>
+        {% elif can_security %}<a class="ref-link" href="{% url 'panel:audit-logs' %}">Audit log →</a>{% endif %}
+      </div>
+      <div class="ref-feed">
+        {% if can_credits %}
+          {% for item in recent_credits %}
+          <div class="ref-feed-item">
+            <span class="ref-feed-avatar tone-{% cycle 'teal' 'blue' 'gold' 'purple' %}">{{ item.company.name|default:"C"|slice:":1"|upper }}</span>
+            <div class="ref-feed-body">
+              <strong>{{ item.company.name|default:"Company" }}</strong>
+              <p>{{ item.description|default:item.kind }}</p>
+              <small>{{ item.created_at|timesince }} ago · {{ item.delta|floatformat:2 }} credits</small>
+            </div>
+          </div>
+          {% empty %}
+          <div class="ref-empty">No credit activity yet.</div>
+          {% endfor %}
+        {% elif can_security %}
+          {% for item in security_events %}
+          <div class="ref-feed-item">
+            <span class="ref-feed-avatar tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span>
+            <div class="ref-feed-body"><strong>{{ item.event }}</strong><p>{{ item.company.name|default:"Platform" }} · {{ item.user.email|default:"System" }}</p><small>{{ item.created_at|timesince }} ago</small></div>
+          </div>
+          {% empty %}
+          <div class="ref-empty">No recent security activity.</div>
+          {% endfor %}
+        {% else %}<div class="ref-empty">Activity details are available to authorized platform staff.</div>{% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="ref-dashboard-secondary">
+    <section class="ref-panel" aria-labelledby="ref-companies-title">
+      <div class="ref-panel-head">
+        <div><p class="ref-overline">Companies</p><h3 id="ref-companies-title">Recently joined</h3></div>
+        {% if can_companies %}<a class="ref-link" href="{% url 'panel:companies' %}">View all →</a>{% endif %}
+      </div>
+      <div class="responsive-table ref-table">
+        <table>
+          <thead><tr><th>Company</th><th>Location</th><th>Status</th><th>Joined</th></tr></thead>
+          <tbody>
           {% for row in recent_companies %}
           <tr>
-            <td data-label="Company"><strong>{{ row.name }}</strong><br><span class="table-sub">{{ row.email|default:"No email" }}</span></td>
-            <td data-label="Plan">{{ row.plan|title }}</td>
+            <td data-label="Company">
+              <span class="ref-table-identity"><span class="ref-letter-avatar">{{ row.name|slice:":1"|upper }}</span><span><strong>{% if can_companies %}<a href="{% url 'panel:company-detail' row.pk %}">{{ row.name }}</a>{% else %}{{ row.name }}{% endif %}</strong><small>{{ row.email|default:"No email" }}</small></span></span>
+            </td>
             <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
-            <td data-label="Status">{% if row.is_active %}<span class="badge">Active</span>{% else %}<span class="badge badge-warn">Disabled</span>{% endif %}</td>
+            <td data-label="Status">{% if row.is_active %}<span class="ref-status is-active">Active</span>{% else %}<span class="ref-status is-disabled">Disabled</span>{% endif %}</td>
             <td data-label="Joined">{{ row.created_at|date:"d M Y" }}</td>
           </tr>
-          {% empty %}<tr><td colspan="5" class="empty-cell">No companies yet.</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel-card">
-    <div class="section-head">
-      <div><p class="eyebrow">Subscriptions</p><h2>Recent plans</h2></div>
-      {% panel_can 'panel:subscriptions' as allowed %}{% if allowed %}<a class="text-link" href="{% url 'panel:subscriptions' %}">Billing</a>{% endif %}
-    </div>
-    <div class="mini-list">
-      {% for row in recent_subscriptions %}
-      <div class="mini-row">
-        <div><strong>{{ row.company.name }}</strong><span>{{ row.plan }} · {{ row.billing_cycle|title }}</span></div>
-        <div class="mini-row-right"><strong>₹{{ row.amount|floatformat:0 }}</strong><span>{{ row.status }}</span></div>
+          {% empty %}<tr><td class="empty-cell" colspan="4">No companies have registered yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
       </div>
-      {% empty %}<div class="empty-state">No subscriptions yet.</div>{% endfor %}
-    </div>
-  </section>
-</div>
-
-<div class="panel-grid dashboard-tables">
-  <section class="panel-card">
-    <div class="section-head">
-      <div><p class="eyebrow">Access</p><h2>Recent users</h2></div>
-      {% panel_can 'panel:users' as allowed %}{% if allowed %}<a class="text-link" href="{% url 'panel:users' %}">Manage users</a>{% endif %}
-    </div>
-    <div class="responsive-table">
-      <table>
-        <thead><tr><th>User</th><th>Company</th><th>Role</th><th>Access</th></tr></thead>
-        <tbody>
-          {% for row in recent_users %}
-          <tr>
-            <td data-label="User"><strong>{{ row.name|default:row.email }}</strong><br><span class="table-sub">{{ row.email }}</span></td>
-            <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
-            <td data-label="Role">{{ row.role.name|default:"—" }}</td>
-            <td data-label="Access">{% if row.is_superuser %}<span class="badge">Super Admin</span>{% elif row.is_staff %}<span class="badge">Admin Staff</span>{% else %}<span class="badge badge-neutral">Workshop User</span>{% endif %}</td>
-          </tr>
-          {% empty %}<tr><td colspan="4" class="empty-cell">No users yet.</td></tr>{% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel-card">
-    <div class="section-head">
-      <div><p class="eyebrow">Security</p><h2>Recent activity</h2></div>
-      {% panel_can 'panel:security' as allowed %}{% if allowed %}<a class="text-link" href="{% url 'panel:security' %}">Open log</a>{% endif %}
-    </div>
-    <div class="mini-list">
-      {% for row in security_events %}
-      <div class="mini-row">
-        <div><strong>{{ row.event }}</strong><span>{{ row.company.name|default:"Platform" }} · {{ row.user.email|default:"System" }}</span></div>
-        <div class="mini-row-right"><span>{{ row.created_at|timesince }} ago</span></div>
+    </section>
+    <section class="ref-panel" aria-labelledby="ref-users-title">
+      <div class="ref-panel-head">
+        <div><p class="ref-overline">Access</p><h3 id="ref-users-title">Recent users</h3></div>
+        {% if can_users %}<a class="ref-link" href="{% url 'panel:users' %}">Manage users →</a>{% endif %}
       </div>
-      {% empty %}<div class="empty-state">No security events yet.</div>{% endfor %}
-    </div>
-  </section>
+      <div class="ref-user-list">
+        {% for row in recent_users %}
+        <div class="ref-user-item">
+          <div class="ref-user-avatar">{{ row.name|default:row.email|slice:":1"|upper }}</div>
+          <div class="ref-user-details"><strong>{{ row.name|default:row.email }}</strong><span>{{ row.company.name|default:"Platform" }} · {{ row.role.name|default:"User" }}</span></div>
+          <span class="ref-status {% if row.is_active %}is-active{% else %}is-disabled{% endif %}">{% if row.is_active %}Active{% else %}Disabled{% endif %}</span>
+        </div>
+        {% empty %}<div class="ref-empty">No registered users yet.</div>{% endfor %}
+      </div>
+    </section>
+  </div>
 </div>
 {% endblock %}
