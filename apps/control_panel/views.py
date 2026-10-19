@@ -46,7 +46,7 @@ from .audit import record_panel_event
 from .forms import (
     BranchForm, CompanyForm, CustomerForm, EmployeeForm, InvoiceForm, JobForm,
     RoleForm, VehicleForm,
-    PanelLoginForm, StockItemForm, SubscriptionForm, UserForm, StaffInviteForm,
+    PanelLoginForm, StockItemForm, UserForm, StaffInviteForm,
     PlatformStaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
 )
@@ -135,7 +135,6 @@ def dashboard(request):
     users = User.objects.all()
     jobs = Job.objects.all()
     invoices = Invoice.objects.filter(kind="invoice")
-    subscriptions = Subscription.objects.all()
 
     company_count = companies.count()
     active_company_count = companies.filter(is_active=True).count()
@@ -189,14 +188,6 @@ def dashboard(request):
         for index, day in enumerate(days)
     ]
 
-    active_subscriptions = subscriptions.filter(status__iexact="Active")
-    monthly_revenue = active_subscriptions.filter(
-        billing_cycle__iexact="monthly"
-    ).aggregate(v=Sum("amount"))["v"] or 0
-    annual_revenue = active_subscriptions.filter(
-        billing_cycle__iexact="annual"
-    ).aggregate(v=Sum("amount"))["v"] or 0
-
     context = {
         "page_title": "Dashboard",
         "active": "dashboard",
@@ -215,8 +206,6 @@ def dashboard(request):
         "wallet_credits_total": wallet_totals["total"] or 0,
         "wallet_count": wallet_count,
         "low_wallet_count": low_wallet_count,
-        "active_subscriptions": active_subscriptions.count(),
-        "estimated_mrr": monthly_revenue + (annual_revenue / 12),
         "new_companies_month": companies.filter(created_at__date__gte=month_start).count(),
         "new_users_month": users.filter(created_at__date__gte=month_start).count(),
         "chart_company_points": company_points,
@@ -227,7 +216,6 @@ def dashboard(request):
         "chart_user_total": sum(user_values),
         "recent_companies": companies.order_by("-created_at")[:7],
         "recent_users": users.select_related("company", "role").order_by("-created_at")[:7],
-        "recent_subscriptions": subscriptions.select_related("company").order_by("-created_at")[:7],
         "recent_credits": CreditLedger.objects.select_related("company").order_by("-created_at")[:6],
         "security_events": SecurityEvent.objects.select_related("company", "user").order_by("-created_at")[:8],
     }
@@ -384,92 +372,6 @@ def user_invite(request, pk):
     else:
         messages.warning(request, "No email sent. Verify the account, role and active status.")
     return _safe_redirect(request, request.POST.get("next"), "panel:users")
-
-
-@panel_admin_required
-def subscriptions(request):
-    # Platform totals do not change when a user filters the directory.
-    all_subscriptions = Subscription.objects.all()
-    now = timezone.now()
-    month_ahead = now + timedelta(days=30)
-    total_subscriptions = all_subscriptions.count()
-    active_subscriptions = all_subscriptions.filter(status__iexact="active").count()
-    upcoming_renewals = all_subscriptions.filter(
-        status__iexact="active", renews_at__gte=now, renews_at__lte=month_ahead
-    ).count()
-    subscriber_companies = all_subscriptions.values("company_id").distinct().count()
-    status_options = sorted(
-        (s for s in all_subscriptions.order_by().values_list("status", flat=True).distinct() if s),
-        key=str.casefold,
-    )
-
-    qs = all_subscriptions.select_related("company", "branch", "plan_definition").order_by("-created_at")
-    qs, company_id = _company_filter(request, qs)
-    q = request.GET.get("q", "").strip()
-    status = request.GET.get("status", "").strip()
-    cycle = request.GET.get("cycle", "").strip().lower()
-
-    if q:
-        qs = qs.filter(
-            Q(company__name__icontains=q) | Q(plan__icontains=q)
-            | Q(status__icontains=q)
-        )
-    if status:
-        if any(value.casefold() == status.casefold() for value in status_options):
-            qs = qs.filter(status__iexact=status)
-        else:
-            status = ""
-    if cycle in ("monthly", "yearly", "annual"):
-        qs = qs.filter(billing_cycle__iexact=cycle)
-    else:
-        cycle = ""
-
-    return render(request, "control_panel/subscriptions.html", {
-        "page_title": "Plans & Billing",
-        "active": "subscriptions",
-        "rows": _paginate(request, qs),
-        "q": q,
-        "status": status,
-        "cycle": cycle,
-        "status_options": status_options,
-        "company_id": company_id,
-        "companies": _company_choices(),
-        "total_subscriptions": total_subscriptions,
-        "active_subscriptions": active_subscriptions,
-        "upcoming_renewals": upcoming_renewals,
-        "subscriber_companies": subscriber_companies,
-    })
-
-
-@panel_admin_required
-def subscription_payments(request):
-    """Read-only gateway ledger, distinct from net bank settlements/tax invoices."""
-    from decimal import Decimal
-    rows = RazorpayPlanPayment.objects.select_related("company", "plan").order_by("-created_at")
-    rows, company_id = _company_filter(request, rows)
-    q = request.GET.get("q", "").strip()
-    if q:
-        rows = rows.filter(
-            Q(company__name__icontains=q) | Q(plan__name__icontains=q)
-            | Q(receipt__icontains=q) | Q(razorpay_order_id__icontains=q)
-            | Q(razorpay_payment_id__icontains=q)
-        )
-    selected_status = request.GET.get("status", "")
-    if selected_status in {"pending", "captured", "failed", "refunded"}:
-        rows = rows.filter(status=selected_status)
-    captured = rows.filter(status="captured")
-    gross_paise = captured.aggregate(total=Sum("amount_paise"))["total"] or 0
-    return render(request, "control_panel/subscription_payments.html", {
-        "page_title": "Razorpay Payment History",
-        "active": "subscriptions",
-        "rows": _paginate(request, rows),
-        "company_id": company_id,
-        "companies": _company_choices(),
-        "q": q,
-        "selected_status": selected_status,
-        "captured_count": captured.count(),
-        "captured_gross_inr": Decimal(gross_paise) / Decimal(100),
-    })
 
 
 @panel_admin_required
@@ -1028,7 +930,6 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
     template = (
         "control_panel/company_form.html" if isinstance(form, CompanyForm)
         else "control_panel/user_form.html" if isinstance(form, UserForm)
-        else "control_panel/subscription_form.html" if isinstance(form, SubscriptionForm)
         else "control_panel/plan_editor.html" if isinstance(form, PlanBuilderForm)
         else "control_panel/staff_form.html" if isinstance(form, (StaffInviteForm, EmployeeForm))
         and active == "staff"
@@ -1156,38 +1057,6 @@ def user_delete(request, pk):
         request, obj, title="User", active="users", cancel_url="panel:users",
         template_name="control_panel/user_delete.html",
     )
-
-
-@panel_admin_required
-def subscription_create(request):
-    return _save_form(request, SubscriptionForm, title="Add Subscription", active="subscriptions", cancel_url="panel:subscriptions")
-
-
-@panel_admin_required
-def subscription_detail(request, pk):
-    obj = get_object_or_404(Subscription.objects.select_related("company", "branch"), pk=pk)
-    return render(request, "control_panel/detail.html", {
-        "page_title": "Subscription Details", "active": "subscriptions", "object": obj,
-        "rows": _display_rows(obj, [
-            ("company", "Company"), ("branch", "Branch"), ("plan", "Plan"),
-            ("status", "Status"), ("billing_cycle", "Billing cycle"), ("amount", "Amount"),
-            ("currency", "Currency"), ("starts_at", "Starts"), ("renews_at", "Renews"),
-            ("seats", "Seats"), ("created_at", "Created"),
-        ]),
-        "edit_url": "panel:subscription-edit", "delete_url": "panel:subscription-delete",
-    })
-
-
-@panel_admin_required
-def subscription_edit(request, pk):
-    obj = get_object_or_404(Subscription, pk=pk)
-    return _save_form(request, SubscriptionForm, instance=obj, title="Edit Subscription", active="subscriptions", cancel_url="panel:subscriptions")
-
-
-@panel_admin_required
-def subscription_delete(request, pk):
-    obj = get_object_or_404(Subscription, pk=pk)
-    return _delete_object(request, obj, title="Subscription", active="subscriptions", cancel_url="panel:subscriptions")
 
 
 @panel_admin_required
