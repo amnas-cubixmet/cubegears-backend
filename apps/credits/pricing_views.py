@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.db import transaction
 from django.http import HttpResponseForbidden
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
@@ -7,6 +8,7 @@ from apps.control_panel.views import panel_admin_required
 from apps.saas.feature_discovery import module_inventory
 from .models import ModulePriceLabel
 from .module_pricing import ModulePriceForm, save_module_price
+from apps.control_panel.audit import record_panel_event
 
 
 @panel_admin_required
@@ -20,7 +22,14 @@ def module_pricing(request):
         submitted = ModulePriceForm(request.POST)
         if submitted.is_valid():
             try:
-                save_module_price(submitted.cleaned_data, request.user)
+                with transaction.atomic():
+                    save_module_price(submitted.cleaned_data, request.user)
+                    record_panel_event(request, 'FEATURE_PRICE_UPDATED', {
+                        'module': submitted.cleaned_data['module'],
+                        'credits': str(submitted.cleaned_data['per_user_credits']),
+                        'billing_type': submitted.cleaned_data['billing_type'],
+                        'published': bool(submitted.cleaned_data['published']),
+                    })
             except ValueError as exc:
                 submitted.add_error(None, str(exc))
             else:
@@ -38,7 +47,9 @@ def module_pricing(request):
             'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else False,
         }, auto_id='id_' + module['key'] + '_%s')
         rows.append({'module':module, 'form':form, 'mapping':mapping, 'bundle':bundle})
+    priced_count = sum(1 for row in rows if row['mapping'])
     return render(request, 'control_panel/module_pricing.html', {
         'page_title':'Module Pricing', 'active':'features', 'rows':rows, 'can_edit':can_edit,
+        'module_count': len(rows), 'priced_count': priced_count, 'min_user_credits': 5,
         'submission_errors': submitted.errors if submitted is not None and request.POST.get('module') not in [r['module']['key'] for r in rows] else None,
     }, status=400 if submitted is not None and submitted.errors else 200)
