@@ -183,3 +183,10 @@ def run_configured_billing():
     from .calendar_billing import run_calendar_cycles
     return {"storage": sample_monthly_storage(), "features": sample_monthly_features(),
             "settlement": run_calendar_cycles()}
+
+
+@shared_task(ignore_result=True, name="cubegear.storage.monitoring.snapshot_due")
+def take_due_storage_monitoring_snapshot():
+    """Read-only heartbeat: cadence is configured by the admin in the database."""
+    from .storage_monitoring import snapshot_due_storage
+    return snapshot_due_storage()
