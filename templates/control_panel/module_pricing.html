@@ -16,6 +16,62 @@
   <span>Not priced: {{ unpriced_count }}</span>
   <span>Minimum: 5 credits per active user</span>
 </div>
+<details class="cg-feature-management" id="feature-management">
+  <summary>
+    <span class="cg-feature-management-title">Feature catalog &amp; label management</span>
+    <span class="cg-feature-management-summary">Manage modules, groups and paid labels <span aria-hidden="true">⌄</span></span>
+  </summary>
+  <div class="cg-feature-management-content">
+    <p class="cg-feature-manage-description">Manage real catalog records without changing company activation or wallet balances. Module prices are configured below.</p>
+    {% if can_edit %}
+    <div class="cg-feature-management-actions">
+      <a class="btn btn-primary" href="{% url 'panel:feature-create' %}">+ Add feature</a>
+      <a class="btn cg-feature-btn-secondary" href="{% url 'panel:featuregroup-create' %}">+ Add group</a>
+      <a class="btn cg-feature-btn-secondary" href="{% url 'panel:featurebundle-create' %}">+ Add paid label</a>
+      <form method="post" action="{% url 'panel:features-edit' %}" class="cg-feature-sync-form">
+        {% csrf_token %}
+        <button type="submit" class="btn cg-feature-btn-secondary" title="Discover new backend modules without changing prices or access">Sync backend modules</button>
+      </form>
+    </div>
+    {% endif %}
+    <div class="cg-feature-management-grids">
+      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-modules-title">
+        <header><h3 id="cg-feature-modules-title">Catalog features</h3><span>{{ catalog_features|length }}</span></header>
+        <div class="cg-feature-list-scroll">
+          {% for item in catalog_features %}
+          <div class="cg-feature-catalog-row">
+            <div><strong>{{ item.label }}</strong><small>{{ item.key }} · {{ item.group.label }}</small></div>
+            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Active{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:feature-edit' item.pk %}" aria-label="Edit {{ item.label }}">Edit</a>{% endif %}</div>
+          </div>
+          {% empty %}<p class="cg-feature-list-empty">No catalog features yet.</p>{% endfor %}
+        </div>
+      </section>
+      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-groups-title">
+        <header><h3 id="cg-feature-groups-title">Feature groups</h3><span>{{ catalog_groups|length }}</span></header>
+        <div class="cg-feature-list-scroll">
+          {% for item in catalog_groups %}
+          <div class="cg-feature-catalog-row">
+            <div><strong>{{ item.label }}</strong><small>{{ item.key }}{% if item.parent %} · Under {{ item.parent.label }}{% endif %}</small></div>
+            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Active{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:featuregroup-edit' item.pk %}" aria-label="Edit {{ item.label }}">Edit</a>{% endif %}</div>
+          </div>
+          {% empty %}<p class="cg-feature-list-empty">No feature groups yet.</p>{% endfor %}
+        </div>
+      </section>
+      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-bundles-title">
+        <header><h3 id="cg-feature-bundles-title">Paid feature labels</h3><span>{{ catalog_bundles|length }}</span></header>
+        <div class="cg-feature-list-scroll">
+          {% for item in catalog_bundles %}
+          <div class="cg-feature-catalog-row">
+            <div><strong>{{ item.name }}</strong><small>{{ item.per_user_credits }} credits / user · {{ item.get_billing_type_display }}</small></div>
+            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Published{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:featurebundle-edit' item.pk %}" aria-label="Edit {{ item.name }}">Edit</a>{% endif %}</div>
+          </div>
+          {% empty %}<p class="cg-feature-list-empty">No paid feature labels yet.</p>{% endfor %}
+        </div>
+      </section>
+    </div>
+    <p class="cg-feature-manage-note">Sync scans implemented backend modules only; it does not set prices or enable any company. A module-linked paid label may open its pricing card when edited.</p>
+  </div>
+</details>
 <section class="panel-card cg-module-toolbar" aria-label="Pricing navigation">
   <label for="cg-module-search">Search modules
     <input id="cg-module-search" type="search" placeholder="Filter by module name or key" autocomplete="off">

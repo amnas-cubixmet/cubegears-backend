@@ -1015,6 +1015,7 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
         else "control_panel/stock_form.html" if isinstance(form, StockItemForm) and active == "stock"
         else "control_panel/job_form.html" if isinstance(form, JobForm) and active == "jobs"
         else "control_panel/customer_form.html" if isinstance(form, CustomerForm) and active == "customers"
+        else "control_panel/feature_editor.html" if isinstance(form, (PlanFeatureForm, FeatureGroupForm, FeatureBundleForm)) and active == "features"
         else "control_panel/remaining_form.html" if active in {"vehicles", "branches", "roles", "features"}
         else "control_panel/form.html"
     )
@@ -1024,6 +1025,12 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
         "form": form,
         "cancel_url": cancel_url,
         "is_edit": instance is not None,
+        "feature_form_kind": (
+            "feature" if isinstance(form, PlanFeatureForm)
+            else "group" if isinstance(form, FeatureGroupForm)
+            else "bundle" if isinstance(form, FeatureBundleForm)
+            else None
+        ),
         "can_add_platform_staff": (
             active == "staff" and panel_permission(request.user, "users", "create")
         ),

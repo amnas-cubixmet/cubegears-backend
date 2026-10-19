@@ -6,7 +6,8 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.saas.feature_discovery import module_inventory
-from .models import ModulePriceLabel
+from apps.saas.models import PlanFeature, FeatureGroup
+from .models import ModulePriceLabel, FeatureBundle
 from .module_pricing import ModulePriceForm, save_module_price
 from apps.control_panel.audit import record_panel_event
 
@@ -52,5 +53,8 @@ def module_pricing(request):
         'page_title':'Module Pricing', 'active':'features', 'rows':rows, 'can_edit':can_edit,
         'module_count': len(rows), 'priced_count': priced_count,
         'unpriced_count': len(rows) - priced_count, 'min_user_credits': 5,
+        'catalog_features': PlanFeature.objects.select_related('group').order_by('group__label', 'sort_order', 'label'),
+        'catalog_groups': FeatureGroup.objects.select_related('parent').order_by('sort_order', 'label'),
+        'catalog_bundles': FeatureBundle.objects.order_by('name'),
         'submission_errors': submitted.errors if submitted is not None and request.POST.get('module') not in [r['module']['key'] for r in rows] else None,
     }, status=400 if submitted is not None and submitted.errors else 200)
