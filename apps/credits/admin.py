@@ -7,7 +7,7 @@ from .models import (
 
 @admin.register(CreditPackage)
 class CreditPackageAdmin(admin.ModelAdmin):
-    list_display = ("name", "credits", "price_inr", "is_active", "sort_order")
+    list_display = ("name", "credits", "price_inr", "is_active", "is_archived", "sort_order")
 
 
 @admin.register(FeatureCreditPrice)
