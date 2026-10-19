@@ -89,7 +89,7 @@ def feature_allowed(user, permission):
     # Tenant storage accounting is an owner-only SaaS Account subsection,
     # not a fourth free workshop module. RBAC runs first in
     # user_has_permission(); staff do not inherit these permissions.
-    if module == "storage":
+    if permission == "storage.view":
         from apps.accounts.permissions import is_company_owner
         if is_company_owner(user):
             return True

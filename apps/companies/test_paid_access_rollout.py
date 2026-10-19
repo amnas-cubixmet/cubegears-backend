@@ -44,7 +44,7 @@ class ExistingCompanyAccessRolloutTests(TestCase):
         self.assertTrue(access['paidAccessRequired'])
         self.assertTrue(access['isCompanyOwner'])
         self.assertEqual(access['enabledModules'], [])
-        self.assertEqual(self.api.get('/api/v1/dashboard').status_code, 403)
+        self.assertEqual(self.api.get('/api/v1/dashboard').status_code, 200)
         self.assertEqual(self.api.get('/api/v1/jobs').status_code, 403)
         self.assertEqual(self.api.get('/api/v1/saas/credits/overview').status_code, 200)
 
@@ -59,7 +59,7 @@ class ExistingCompanyAccessRolloutTests(TestCase):
         self.assertTrue(access.enabled)
         self.assertEqual(access.last_price_credits, Decimal('10'))
         self.assertTrue(user_has_permission(self.owner, 'jobs.view'))
-        self.assertFalse(user_has_permission(self.owner, 'dashboard.view'))
+        self.assertTrue(user_has_permission(self.owner, 'dashboard.view'))
         self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal('100'))
         self.assertEqual(self.company.owner_id, self.owner.pk)
         self.assertFalse(CreditLedger.objects.exists())

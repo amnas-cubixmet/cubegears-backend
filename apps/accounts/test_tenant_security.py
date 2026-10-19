@@ -12,6 +12,9 @@ from apps.roles.models import Role
 
 class TenantSecurityTests(APITestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.addCleanup(cache.clear)
         self.company_a = Company.objects.create(name="Workshop A", slug="workshop-a")
         self.company_b = Company.objects.create(name="Workshop B", slug="workshop-b")
         self.branch_a = Branch.objects.create(company=self.company_a, name="Head Office", code="HO")
@@ -29,6 +32,9 @@ class TenantSecurityTests(APITestCase):
             name="Owner A", company=self.company_a, branch=self.branch_a,
             role=self.owner_role, is_staff=False, is_superuser=False,
         )
+
+        self.company_a.owner = self.owner
+        self.company_a.save(update_fields=["owner"])
 
     def test_public_signup_creates_tenant_owner_not_platform_superuser(self):
         response = self.client.post(
