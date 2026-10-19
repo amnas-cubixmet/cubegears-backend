@@ -252,14 +252,16 @@ python manage.py runserver
 
 | Route | Function |
 | --- | --- |
-| `/` | Platform dashboard and subscription revenue |
+| `/` | Platform dashboard with real companies, users, wallet credits and workshop metrics |
 | `/login/` | Administrator sign-in |
 | `/logout/` | POST sign-out, with CSRF protection |
 | `/companies/` | Companies and enable/disable actions |
 | `/users/` | Accounts, passwords and enable/disable actions |
 | `/branches/` | Company branches |
 | `/roles/` | Roles and permission checkboxes |
-| `/subscriptions/` | Subscription plans and billing records |
+| `/plans/` | Existing plan catalog and plan configuration (legacy payment records are retained) |
+| `/credits/` | Credit packages, company wallets and transaction ledger |
+| `/settings/` | Storage and credit-cycle billing policies |
 | `/customers/` | Customers |
 | `/vehicles/` | Customer vehicles |
 | `/jobs/` | Job cards |
@@ -269,8 +271,7 @@ python manage.py runserver
 | `/storage/` | Storage usage records |
 | `/security/` | Security event records |
 
-Management lists support `/add/`, `/<uuid>/`, `/<uuid>/edit/` and
-`/<uuid>/delete/` below their base path, except read-only storage/security.
+Management lists provide applicable create/edit/detail/delete actions depending on the module. Storage/security and credit/billing settings have their own dedicated controls. Legacy Control Panel subscription CRUD/payment-history routes were retired; existing SaaS subscription and Razorpay models/APIs remain for historic access and payment reconciliation.
 Deletes require a confirmation POST. Lists paginate at 50 records and preserve
 search/filter parameters. Existing records cannot be reassigned between companies;
 related records are checked against the selected company. Administrators cannot
