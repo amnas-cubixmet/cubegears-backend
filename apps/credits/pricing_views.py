@@ -50,6 +50,7 @@ def module_pricing(request):
     priced_count = sum(1 for row in rows if row['mapping'])
     return render(request, 'control_panel/module_pricing.html', {
         'page_title':'Module Pricing', 'active':'features', 'rows':rows, 'can_edit':can_edit,
-        'module_count': len(rows), 'priced_count': priced_count, 'min_user_credits': 5,
+        'module_count': len(rows), 'priced_count': priced_count,
+        'unpriced_count': len(rows) - priced_count, 'min_user_credits': 5,
         'submission_errors': submitted.errors if submitted is not None and request.POST.get('module') not in [r['module']['key'] for r in rows] else None,
     }, status=400 if submitted is not None and submitted.errors else 200)
