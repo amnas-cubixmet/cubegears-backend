@@ -90,18 +90,18 @@
             <td data-label="Plan"><span class="cg-plan">{{ row.plan|title }}</span></td>
             <td data-label="Joined">{{ row.created_at|date:"d M Y" }}</td>
             <td data-label="Actions">
-              <div class="cg-company-actions">
-                {% if can_view %}<a href="{% url 'panel:company-detail' row.pk %}" class="cg-icon-action" title="View {{ row.name }}" aria-label="View {{ row.name }}">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div class="cg-company-actions" role="group" aria-label="Actions for {{ row.name }}">
+                {% if can_view %}<a href="{% url 'panel:company-detail' row.pk %}" class="cg-icon-action" title="Open {{ row.name }}" aria-label="Open {{ row.name }} company page">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-open"></use></svg>
                 </a>{% endif %}
                 {% if can_edit %}<a href="{% url 'panel:company-edit' row.pk %}" class="cg-icon-action" title="Edit {{ row.name }}" aria-label="Edit {{ row.name }}">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m4 16 11-11 4 4-11 11-5 1 1-5ZM13 7l4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-edit"></use></svg>
                 </a>{% endif %}
                 {% if can_toggle %}<a href="{% url 'panel:company-toggle' row.pk %}" class="cg-icon-action" title="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="7"/><circle cx="{% if row.is_active %}13.5{% else %}10.5{% endif %}" cy="12" r="3.25"/></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#{% if row.is_active %}action-eye-off{% else %}action-eye{% endif %}"></use></svg>
                 </a>{% endif %}
                 {% if can_delete %}<a href="{% url 'panel:company-delete' row.pk %}" class="cg-icon-action is-danger" title="Delete {{ row.name }}" aria-label="Delete {{ row.name }}">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}?v=20261019actions#action-trash"></use></svg>
                 </a>{% endif %}
               </div>
             </td>
