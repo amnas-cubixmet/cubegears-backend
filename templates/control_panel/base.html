@@ -17,6 +17,11 @@
   {% if active == 'jobs' %}<link rel="stylesheet" href="{% static 'control_panel/jobs-ui.css' %}">{% endif %}
   {% if active == 'customers' or active == 'vehicles' or active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
   {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261015a">{% endif %}
+  {% if active == 'billing-settings' %}
+    <link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">
+    <link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261019b">
+    <link rel="stylesheet" href="{% static 'control_panel/billing-settings-ui.css' %}?v=20261019cycle">
+  {% endif %}
   <link rel="stylesheet" href="{% static 'control_panel/reference-ui.css' %}?v=20261019b">
   {% if active == 'features' %}<link rel="stylesheet" href="{% static 'control_panel/features-management-ui.css' %}?v=20261019a">{% endif %}
   {% if active == 'companies' or active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/companies-reference.css' %}?v=20261019icons">{% endif %}
