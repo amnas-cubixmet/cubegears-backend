@@ -1,4 +1,5 @@
 {% extends "control_panel/base.html" %}
+{% load static panel_access %}
 {% block content %}
 <section class="directory-heading remaining-heading">
   <div><p class="eyebrow">SaaS administration / Pricing</p><h2>All Module Prices</h2>
@@ -20,9 +21,9 @@
     <input id="cg-module-search" type="search" placeholder="Filter by module name or key" autocomplete="off">
   </label>
   <nav aria-label="Pricing and billing sections">
-    <a class="btn" href="{% url 'panel:storage' %}">Storage Pricing</a>
-    <a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Calendar Billing</a>
-    <a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>
+    {% panel_can "storage" as storage_allowed %}{% if storage_allowed %}<a class="btn" href="{% url 'panel:storage' %}">Storage Pricing</a>{% endif %}
+    {% panel_can "credits" as credits_allowed %}{% if credits_allowed %}<a class="btn" href="{% url 'panel:calendar-credit-billing' %}">Calendar Billing</a>{% endif %}
+    {% panel_can "security" as audit_allowed %}{% if audit_allowed %}<a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
   </nav>
 </section>
 <div id="cg-module-no-results" class="panel-card cg-module-empty" role="status" hidden>No matching modules.</div>
@@ -45,6 +46,5 @@
 </section>
 {% endfor %}
 </div>
-{% load static %}
 <script defer src="{% static 'control_panel/module-pricing.js' %}"></script>
 {% endblock %}
