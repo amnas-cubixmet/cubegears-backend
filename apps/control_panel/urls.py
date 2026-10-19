@@ -19,6 +19,7 @@ urlpatterns = [
          lambda request, uid, token: auth_views.panel_password_action(request, uid, token, setup=True),
          name="password-setup"),
     path("logout/", views.panel_logout, name="logout"),
+    path("audit-logs/", views.security, name="audit-logs"),
     path("", views.dashboard, name="dashboard"),
 
     path("companies/", views.companies, name="companies"),
