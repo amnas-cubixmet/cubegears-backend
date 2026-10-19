@@ -248,6 +248,15 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BEAT_SCHEDULE = {}
+# Storage monitoring is read-only and can run independently of credit billing.
+# It is opt-in at the database level, and its heartbeat never debits wallets.
+# Redis + exactly one Celery worker and one Beat instance are required.
+if CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    from celery.schedules import crontab as monitoring_crontab
+    CELERY_BEAT_SCHEDULE["cubegear-storage-monitoring-snapshots"] = {
+        "task": "cubegear.storage.monitoring.snapshot_due",
+        "schedule": monitoring_crontab(minute="*"),
+    }
 if CREDIT_BILLING_CELERY_ENABLED:
     if not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
         from django.core.exceptions import ImproperlyConfigured
