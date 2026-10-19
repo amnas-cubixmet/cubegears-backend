@@ -144,3 +144,109 @@ class OwnerManagedRolesTests(APITestCase):
         self.assertEqual(self.client.get(other_role_url).status_code, 404)
         self.assertEqual(self.client.patch(other_role_url, {"name": "Hijacked"}, format="json").status_code, 404)
         self.assertEqual(self.client.delete(other_role_url).status_code, 404)
+
+from apps.roles.legacy_cleanup import LEGACY_SIGNUP_PRESETS
+
+
+class LegacyAutoRoleCleanupTests(APITestCase):
+    """Company signup used to seed five roles, but existing data must be safe."""
+
+    def setUp(self):
+        super().setUp()
+        OwnerManagedRolesTests.setUp(self)
+
+    def _seed(self, code, *, company=None, permissions=None, name=None):
+        original_name, original_permissions = LEGACY_SIGNUP_PRESETS[code]
+        return Role.objects.create(
+            company=company or self.company,
+            code=code,
+            name=name or original_name,
+            permissions=list(original_permissions) if permissions is None else permissions,
+            is_active=True,
+            is_system=False,
+        )
+
+    def test_owner_preview_only_lists_unchanged_and_unassigned_preset_roles(self):
+        mechanic = self._seed("MECHANIC")
+        accountant = self._seed("ACCOUNTANT")
+        self._seed("PARTS_MANAGER", name="My Custom Parts Role")
+        self._seed("QC_INSPECTOR", permissions=["staff.view"])
+        advisor = self._seed("SERVICE_ADVISOR")
+        Employee.objects.create(
+            company=self.company, employee_code="EMP-LEGACY",
+            name="Advisor With No Login", role_name=advisor.name,
+        )
+        self._seed("PARTS_MANAGER", company=self.other)
+        response = self.client.get("/api/v1/roles/legacy-presets/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(
+            {row["id"] for row in response.data["roles"]},
+            {str(mechanic.id), str(accountant.id)},
+        )
+        self.assertEqual(Role.objects.filter(company=self.company).count(), 7)
+        self.assertIn("Review", response.data["notice"])
+
+    def test_cleanup_is_explicit_and_leaves_owner_custom_and_assigned_roles(self):
+        mechanic = self._seed("MECHANIC")
+        accountant = self._seed("ACCOUNTANT")
+        custom = Role.objects.create(
+            company=self.company, name="ss", code="SS",
+            permissions=["dashboard.view"], is_active=True,
+        )
+        assigned = self._seed("SERVICE_ADVISOR")
+        Employee.objects.create(
+            company=self.company, employee_code="EMP-ASSIGNED",
+            name="Assigned Staff", role_name=assigned.name,
+        )
+        response = self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(mechanic.pk), str(accountant.pk)]}, format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 2)
+        self.assertFalse(Role.objects.filter(pk__in=[mechanic.pk, accountant.pk]).exists())
+        for existing in (self.owner_role, self.manager_role, custom, assigned):
+            self.assertTrue(Role.objects.filter(pk=existing.pk).exists())
+        second = self.client.get("/api/v1/roles/legacy-presets/")
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["roles"], [])
+
+    def test_owner_must_review_again_if_record_was_changed_or_assigned(self):
+        mechanic = self._seed("MECHANIC")
+        accountant = self._seed("ACCOUNTANT", permissions=["staff.view"])
+        response = self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(mechanic.pk), str(accountant.pk)]}, format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(Role.objects.filter(pk=mechanic.pk).exists())
+        self.assertTrue(Role.objects.filter(pk=accountant.pk).exists())
+        Employee.objects.create(
+            company=self.company, employee_code="EMP-NEW",
+            name="New Mechanic", role_name=mechanic.name,
+        )
+        self.assertEqual(self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(mechanic.pk)]}, format="json",
+        ).status_code, 400)
+        self.assertTrue(Role.objects.filter(pk=mechanic.pk).exists())
+
+    def test_non_owner_cannot_preview_or_run_cleanup_and_cross_tenant_ids_fail(self):
+        role = self._seed("MECHANIC")
+        other_role = self._seed("MECHANIC", company=self.other)
+        self.client.force_authenticate(self.manager)
+        self.assertEqual(self.client.get("/api/v1/roles/legacy-presets/").status_code, 403)
+        self.assertEqual(self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(role.pk)]}, format="json",
+        ).status_code, 403)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(other_role.pk)]}, format="json",
+        ).status_code, 400)
+        self.assertTrue(Role.objects.filter(pk=other_role.pk).exists())
+        self.assertEqual(self.client.post(
+            "/api/v1/roles/legacy-presets/",
+            {"roleIds": [str(role.pk), str(role.pk)]}, format="json",
+        ).status_code, 400)
