@@ -4,8 +4,8 @@
 <section class="directory-heading remaining-heading">
   <div>
     <p class="eyebrow">Platform / Workshop records</p>
-    <h2>{% if active == 'vehicles' %}Vehicle Management{% elif active == 'branches' %}Branch Management{% else %}Roles &amp; Permissions{% endif %}</h2>
-    <p>{% if active == 'vehicles' %}Manage vehicle records and customer assignments across workshops.{% elif active == 'branches' %}Review workshop locations, contact details and head-office settings.{% else %}Create separate SaaS Admin Staff and Workshop roles with scoped permissions.{% endif %}</p>
+    <h2>{% if active == 'branches' %}Branch Management{% else %}Roles &amp; Permissions{% endif %}</h2>
+    <p>{% if active == 'branches' %}Review workshop locations, contact details and head-office settings.{% else %}Create separate SaaS Admin Staff and Workshop roles with scoped permissions.{% endif %}</p>
   </div>
   {% panel_can create_url as allowed %}
   {% if allowed %}
@@ -15,7 +15,7 @@
         <a class="btn btn-primary" href="{% url 'panel:role-saas-create' %}">+ Add SaaS Admin Staff Role</a>
       </nav>
     {% else %}
-      <a class="btn btn-primary" href="{% url create_url %}">+ Add {% if active == 'vehicles' %}Vehicle{% else %}Branch{% endif %}</a>
+      <a class="btn btn-primary" href="{% url create_url %}">+ Add Branch</a>
     {% endif %}
   {% endif %}
 </section>
@@ -27,9 +27,9 @@
 </nav>
 {% endif %}
 <section class="directory-stats remaining-stats" aria-label="Module overview">
-  <article class="user-stat-card"><div class="user-stat-top"><span>Total {% if active == 'vehicles' %}Vehicles{% elif active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">T</span></div><strong class="user-stat-value">{{ total_records }}</strong><small class="user-stat-meta">All saved records</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Active {% if active == 'vehicles' %}Vehicles{% elif active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_records }}</strong><small class="user-stat-meta">Active records</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>{% if active == 'branches' %}Head Offices{% elif active == 'roles' %}System Roles{% else %}Inactive Vehicles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">#</span></div><strong class="user-stat-value">{{ special_records }}</strong><small class="user-stat-meta">According to saved data</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Total {% if active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">T</span></div><strong class="user-stat-value">{{ total_records }}</strong><small class="user-stat-meta">All saved records</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>Active {% if active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_records }}</strong><small class="user-stat-meta">Active records</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>{% if active == 'branches' %}Head Offices{% else %}System Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">#</span></div><strong class="user-stat-value">{{ special_records }}</strong><small class="user-stat-meta">According to saved data</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Companies</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ companies_count }}</strong><small class="user-stat-meta">With module records</small></article>
 </section>
 <section class="panel-card remaining-directory" aria-labelledby="resource-directory-title">
@@ -42,28 +42,19 @@
     <select id="resource-status" name="status"><option value="">All statuses</option><option value="active" {% if status == 'active' %}selected{% endif %}>Active</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option></select>
     <button class="btn btn-primary" type="submit">Filter</button>
     {% if active == 'roles' and role_scope_filter %}<input type="hidden" name="scope" value="{{ role_scope_filter }}">{% endif %}
-    {% if q or company_id or status %}<a class="btn" href="{% if active == 'vehicles' %}{% url 'panel:vehicles' %}{% elif active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% if role_scope_filter %}?scope={{ role_scope_filter }}{% endif %}{% endif %}">Clear</a>{% endif %}
+    {% if q or company_id or status %}<a class="btn" href="{% if active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% if role_scope_filter %}?scope={{ role_scope_filter }}{% endif %}{% endif %}">Clear</a>{% endif %}
   </form>
   <div class="responsive-table remaining-table">
     <table>
       <thead><tr>
-        {% if active == 'vehicles' %}
-          <th>Vehicle</th><th>Workshop</th><th>Customer</th><th>Make &amp; Model</th><th>Year</th><th>Status</th>
-        {% elif active == 'branches' %}
+        {% if active == 'branches' %}
           <th>Branch</th><th>Company</th><th>City</th><th>Email</th><th>Head Office</th><th>Status</th>
         {% else %}
           <th>Role</th><th>Company</th><th>Code</th><th>Permissions</th><th>Type</th><th>Status</th>
         {% endif %}<th>Actions</th>
       </tr></thead>
       <tbody>{% for row in rows %}<tr>
-        {% if active == 'vehicles' %}
-          <td data-label="Vehicle"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">V</span><div><strong>{{ row.registration }}</strong><span class="table-sub">{{ row.fuel_type|default:"Vehicle" }}</span></div></div></td>
-          <td data-label="Workshop">{{ row.company.name }}</td>
-          <td data-label="Customer">{{ row.customer.name|default:"—" }}</td>
-          <td data-label="Make & Model">{{ row.make|default:"—" }} {{ row.model }}</td>
-          <td data-label="Year">{{ row.year|default:"—" }}</td>
-          <td data-label="Status"><span class="remaining-state {% if row.status|lower == 'active' %}is-good{% else %}is-neutral{% endif %}">{{ row.status }}</span></td>
-        {% elif active == 'branches' %}
+        {% if active == 'branches' %}
           <td data-label="Branch"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">B</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.code }}</span></div></div></td>
           <td data-label="Company">{{ row.company.name }}</td>
           <td data-label="City">{{ row.city|default:"—" }}</td>
