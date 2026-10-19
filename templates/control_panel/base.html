@@ -12,13 +12,14 @@
   {% if active == 'plans' %}<link rel="stylesheet" href="{% static 'control_panel/plans-ui.css' %}">{% endif %}
   {% if active == 'staff' %}<link rel="stylesheet" href="{% static 'control_panel/staff-ui.css' %}">{% endif %}
   {% if active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
-  {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261015a">{% endif %}
+  {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261019dashboard1">{% endif %}
   {% if active == 'billing-settings' %}
     <link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">
     <link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261019b">
     <link rel="stylesheet" href="{% static 'control_panel/billing-settings-ui.css' %}?v=20261019settings3">
   {% endif %}
   <link rel="stylesheet" href="{% static 'control_panel/reference-ui.css' %}?v=20261019b">
+  {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-reference-ui.css' %}?v=20261019matchdash1">{% endif %}
   {% if active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/credit-packages-ui.css' %}?v=20261019a">{% endif %}
   {% if active == 'features' %}<link rel="stylesheet" href="{% static 'control_panel/features-management-ui.css' %}?v=20261019a">{% endif %}
   {% if pricing_page %}<link rel="stylesheet" href="{% static 'control_panel/module-pricing-ui.css' %}?v=20261019a">{% endif %}

@@ -381,3 +381,13 @@ if CREDIT_BILLING_CELERY_ENABLED:
         "task": "credits.run_configured_billing",
         "schedule": 60.0,
     }
+
+# Storage monitoring is read-only and can run independently of credit billing.
+# It is opt-in at the database level, and its heartbeat never debits wallets.
+# Redis + exactly one Celery worker and one Beat instance are required.
+if CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    from celery.schedules import crontab as monitoring_crontab
+    CELERY_BEAT_SCHEDULE["cubegear-storage-monitoring-snapshots"] = {
+        "task": "cubegear.storage.monitoring.snapshot_due",
+        "schedule": monitoring_crontab(minute="*"),
+    }
