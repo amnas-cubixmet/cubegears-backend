@@ -17,7 +17,7 @@ from django.core.paginator import Paginator
 from django.http import HttpResponseBadRequest
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.db import transaction, IntegrityError
 from django.db.models import F, Q, Sum, Count
 from django.db.models.functions import TruncDate
@@ -1587,6 +1587,46 @@ def plan_edit(request, pk):
     obj = get_object_or_404(SubscriptionPlan, pk=pk)
     return _save_form(request, PlanBuilderForm, instance=obj, title="Edit Plan",
                       active="plans", cancel_url="panel:plans")
+
+@panel_admin_required
+@require_http_methods(["GET", "POST"])
+def plan_delete(request, pk):
+    """Delete only unused plan definitions; never orphan or cascade billing history."""
+    plan = get_object_or_404(SubscriptionPlan, pk=pk)
+    subscription_count = Subscription.objects.filter(plan_definition=plan).count()
+    request_count = PlanChangeRequest.objects.filter(requested_plan=plan).count()
+    is_used = bool(subscription_count or request_count)
+    if request.method == "POST":
+        if is_used:
+            messages.error(
+                request,
+                "This plan is used by subscriptions or plan-change requests. "
+                "Archive it via Edit Plan instead of deleting billing history.",
+            )
+            return redirect("panel:plans")
+        try:
+            with transaction.atomic():
+                # Protected foreign keys are checked again by the database/collector
+                # to cover references created since the confirmation page loaded.
+                plan.delete()
+                record_panel_event(request, "PLAN_DELETED", {
+                    "plan_id": pk, "plan_key": plan.key, "plan_name": plan.name,
+                })
+        except (ProtectedError, IntegrityError):
+            messages.error(
+                request, "Cannot delete this plan while dependent records exist. "
+                "Archive it from Edit Plan instead.",
+            )
+            return redirect("panel:plans")
+        messages.success(request, f"Plan {plan.name} deleted.")
+        return redirect("panel:plans")
+    return render(request, "control_panel/plan_delete.html", {
+        "page_title": "Delete Plan", "active": "plans", "object": plan,
+        "subscription_count": subscription_count, "request_count": request_count,
+        "is_used": is_used,
+    })
+
+
 
 
 @panel_admin_required
