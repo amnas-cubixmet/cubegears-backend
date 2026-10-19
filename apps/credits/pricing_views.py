@@ -44,14 +44,18 @@ def module_pricing(request):
         mapping = configured.get(module['key'])
         bundle = mapping.bundle if mapping else None
         form = submitted if submitted is not None and request.POST.get('module') == module['key'] else ModulePriceForm(initial={
-            'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 0,
-            'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else False,
+            'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 5,
+            'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else True,
         }, auto_id='id_' + module['key'] + '_%s')
         rows.append({'module':module, 'form':form, 'mapping':mapping, 'bundle':bundle})
     priced_count = sum(1 for row in rows if row['mapping'])
+    published_count = sum(1 for row in rows if (
+        row['bundle'] is not None and row['bundle'].is_active
+        and row['mapping'].feature.is_active
+    ))
     return render(request, 'control_panel/module_pricing.html', {
-        'page_title':'Module Pricing', 'active':'features', 'rows':rows, 'can_edit':can_edit,
-        'module_count': len(rows), 'priced_count': priced_count,
+        'page_title':'Feature Pricing', 'active':'features', 'pricing_page':True, 'rows':rows, 'can_edit':can_edit,
+        'module_count': len(rows), 'priced_count': priced_count, 'published_count': published_count,
         'unpriced_count': len(rows) - priced_count, 'min_user_credits': 5,
         'catalog_features': PlanFeature.objects.select_related('group').order_by('group__label', 'sort_order', 'label'),
         'catalog_groups': FeatureGroup.objects.select_related('parent').order_by('sort_order', 'label'),
