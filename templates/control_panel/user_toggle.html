@@ -1,0 +1,20 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="cg-user-confirm cg-company-confirm">
+  <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:users' %}">Users</a><span aria-hidden="true">/</span><span aria-current="page">Account access</span></nav>
+  <section class="cg-confirm-card" aria-labelledby="user-toggle-title">
+    <span class="cg-confirm-symbol cg-confirm-info" aria-hidden="true">↔</span>
+    <span class="cg-section-kicker">User security</span>
+    <h2 id="user-toggle-title">{% if object.is_active %}Disable{% else %}Enable{% endif %} user access?</h2>
+    <p>You are about to {% if object.is_active %}disable{% else %}enable{% endif %} access for <strong>{{ object.name|default:object.email }}</strong>.</p>
+    <div class="cg-confirm-summary"><span>Account</span><strong>{{ object.email }}</strong></div>
+    <p class="cg-confirm-note">{% if object.is_active %}This user will no longer be able to sign in until re-enabled.{% else %}The user's existing company, role and permission restrictions remain unchanged.{% endif %}</p>
+    <form method="post" class="cg-confirm-actions">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'panel:users' %}">
+      <a class="btn cg-back-button" href="{% url 'panel:user-detail' object.pk %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if object.is_active %}Disable account{% else %}Enable account{% endif %}</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
