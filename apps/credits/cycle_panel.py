@@ -74,7 +74,11 @@ def save_credit_cycle_policy(form):
     """Apply the validated policy with activation baselines and no debit."""
     with transaction.atomic():
         saved = form.save(commit=False)
-        if saved.enabled and (not form.instance.pk or not form.instance.enabled):
+        was_enabled = (
+            CreditCyclePolicy.objects.filter(pk=saved.pk, enabled=True).exists()
+            if saved.pk else False
+        )
+        if saved.enabled and not was_enabled:
             saved.activated_at = timezone.now()
             for company in Company.objects.filter(is_active=True).iterator():
                 ensure_baseline(company)
