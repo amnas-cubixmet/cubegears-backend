@@ -10,10 +10,12 @@
     </div>
     <div class="ref-heading-actions">
       {% panel_can 'companies' as can_companies %}
+      {% panel_can 'company-create' as can_create_company %}
       {% panel_can 'credits' as can_credits %}
       {% panel_can 'users' as can_users %}
       {% panel_can 'security' as can_security %}
-      {% if can_companies %}<a class="btn ref-btn-secondary" href="{% url 'panel:companies' %}">View companies</a><a class="btn btn-primary" href="{% url 'panel:company-create' %}">+ Add company</a>{% endif %}
+      {% if can_companies %}<a class="btn ref-btn-secondary" href="{% url 'panel:companies' %}">View companies</a>{% endif %}
+      {% if can_create_company %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">+ Add company</a>{% endif %}
     </div>
   </header>
 
