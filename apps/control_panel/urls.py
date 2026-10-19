@@ -61,6 +61,7 @@ urlpatterns = [
     path("subscriptions/<uuid:pk>/edit/", views.subscription_edit, name="subscription-edit"),
     path("subscriptions/<uuid:pk>/delete/", views.subscription_delete, name="subscription-delete"),
 
+    path("settings/", views.storage, name="billing-settings"),
     path("storage/", views.storage, name="storage"),
     path("security/", views.security, name="security"),
 
