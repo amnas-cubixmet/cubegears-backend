@@ -387,10 +387,15 @@ def storage(request):
     cycle_action = action == "billing_cycle"
     legacy_action = action == "legacy_credit_cycle"
     monitoring_action = action == "storage_monitoring"
-    monitoring_policy = StorageMonitoringPolicy.objects.filter(singleton=1).first()
-    monitoring_form = StorageMonitoringPolicyForm(
-        request.POST if monitoring_action else None,
-        instance=monitoring_policy or StorageMonitoringPolicy(singleton=1),
+    monitoring_policy = (
+        StorageMonitoringPolicy.objects.filter(singleton=1).first()
+        if not is_settings_page else None
+    )
+    monitoring_form = (
+        StorageMonitoringPolicyForm(
+            request.POST if monitoring_action else None,
+            instance=monitoring_policy or StorageMonitoringPolicy(singleton=1),
+        ) if not is_settings_page else None
     )
     cycle_form = BillingCyclePolicyForm(
         request.POST if cycle_action else None, instance=cycle_policy,
