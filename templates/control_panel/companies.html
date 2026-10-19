@@ -1,67 +1,119 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<section class="companies-heading">
-  <div><p class="eyebrow">Platform / Company directory</p><h2>Companies Management</h2>
-    <p>Manage tenant accounts, access, branches and subscription plans.</p></div>
-  {% panel_can 'panel:company-create' as allowed %}{% if allowed %}<a class="btn btn-primary" href="{% url 'panel:company-create' %}">+ Add Company</a>{% endif %}
-</section>
-
-<div class="companies-stats" aria-label="Company summary">
-  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Total Companies</span><span class="metric-icon" aria-hidden="true">C</span></div><strong class="company-stat-value">{{ total_companies }}</strong><small class="company-stat-meta">Registered company accounts</small></article>
-  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Active Companies</span><span class="metric-icon" aria-hidden="true">✓</span></div><strong class="company-stat-value">{{ active_companies }}</strong><small class="company-stat-meta">Enabled platform access</small></article>
-  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>Disabled Companies</span><span class="metric-icon" aria-hidden="true">–</span></div><strong class="company-stat-value">{{ inactive_companies }}</strong><small class="company-stat-meta">Accounts currently disabled</small></article>
-  <article class="dashboard-stat-card company-stat-card"><div class="metric-top"><span>New This Month</span><span class="metric-icon" aria-hidden="true">+</span></div><strong class="company-stat-value">{{ new_companies_month }}</strong><small class="company-stat-meta">Companies added this month</small></article>
-</div>
-
-<section class="panel-card companies-directory" aria-labelledby="companies-directory-title">
-  <header class="section-head companies-directory-header">
-    <div><p class="eyebrow">Tenants</p><h2 id="companies-directory-title">Company Directory</h2><p>Browse and manage registered companies</p></div>
-    <span class="company-record-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+<div class="cg-companies">
+  <header class="cg-page-heading">
+    <div>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><span aria-current="page">Companies</span></nav>
+      <h2>Companies’ List</h2>
+      <p>Manage your registered companies and their workspace access.</p>
+    </div>
+    {% panel_can 'panel:company-create' as can_create %}
+    {% if can_create %}
+    <a class="btn btn-primary cg-create-button" href="{% url 'panel:company-create' %}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>
+      New company
+    </a>
+    {% endif %}
   </header>
-  <div class="companies-filter-wrap">
-    <form class="companies-filter-form" method="get">
-      <label class="company-search-field">
-        <span class="sr-only">Search companies</span>
-        <input type="search" name="q" value="{{ q }}" placeholder="Search name, GST, city, phone or email" aria-label="Search companies">
-      </label>
-      <label class="company-status-field">
-        <span class="sr-only">Filter by status</span>
-        <select name="status" aria-label="Filter companies by status">
-          <option value="" {% if not status %}selected{% endif %}>All statuses</option>
-          <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
-          <option value="inactive" {% if status == "inactive" %}selected{% endif %}>Disabled</option>
-        </select>
-      </label>
-      <button class="btn btn-primary" type="submit">Search</button>
-      {% if q or status %}<a class="btn" href="{% url 'panel:companies' %}">Clear</a>{% endif %}
-    </form>
+
+  <div class="cg-company-totals" aria-label="Company statistics">
+    <div><span>All companies</span><strong>{{ total_companies }}</strong></div>
+    <div><span>Active</span><strong>{{ active_companies }}</strong></div>
+    <div><span>Disabled</span><strong>{{ inactive_companies }}</strong></div>
+    <div><span>Added this month</span><strong>{{ new_companies_month }}</strong></div>
   </div>
-  <div class="responsive-table companies-table">
-    <table>
-      <thead><tr><th>Company</th><th>Plan</th><th>Users</th><th>Branches</th><th>GST</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>
-      {% for row in rows %}
-        <tr>
-          <td data-label="Company"><div class="company-identity">{% if row.logo_image %}<img class="company-monogram company-logo-image" src="{{ row.logo_image.url }}" alt="">
-            {% elif row.logo %}<img class="company-monogram company-logo-image" src="{{ row.logo }}" alt="">
-            {% else %}<span class="company-monogram" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}<div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.email|default:"No email available" }}</span></div></div></td>
-          <td data-label="Plan"><span class="company-plan-tag">{{ row.plan|title }}</span></td>
-          <td data-label="Users">{{ row.user_count }}</td>
-          <td data-label="Branches">{{ row.branch_count }}</td>
-          <td data-label="GST">{{ row.gstin|default:"—" }}</td>
-          <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
-          <td data-label="Status">{% if row.is_active %}<span class="company-status-tag is-active">Active</span>{% else %}<span class="company-status-tag is-disabled">Disabled</span>{% endif %}</td>
-          <td data-label="Actions"><div class="row-actions company-row-actions">
-            {% panel_can 'panel:company-detail' as allowed %}{% if allowed %}<a href="{% url 'panel:company-detail' row.id %}">View</a>{% endif %}
-            {% panel_can 'panel:company-edit' as allowed %}{% if allowed %}<a href="{% url 'panel:company-edit' row.id %}">Edit</a>{% endif %}
-            {% panel_can 'panel:company-toggle' as allowed %}{% if allowed %}<form method="post" action="{% url 'panel:company-toggle' row.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button type="submit" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}">{% if row.is_active %}Disable{% else %}Enable{% endif %}</button></form>{% endif %}
-            {% panel_can 'panel:company-delete' as allowed %}{% if allowed %}<a class="danger-link" href="{% url 'panel:company-delete' row.id %}">Delete</a>{% endif %}
-          </div></td>
-        </tr>
-      {% empty %}<tr><td colspan="8" class="empty-cell">No companies match the current filters. Try changing your search or status.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+
+  <section class="cg-directory-panel" aria-labelledby="cg-company-directory-title">
+    <header class="cg-directory-top">
+      <div>
+        <h3 id="cg-company-directory-title">Company directory</h3>
+        <p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}{% if q %} for “{{ q }}”{% endif %}</p>
+      </div>
+      <form method="get" class="cg-company-filters" role="search" aria-label="Search and filter companies">
+        <label class="cg-company-search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.3"/><path d="m16 16 5 5" stroke-linecap="round"/></svg>
+          <span class="sr-only">Search companies</span>
+          <input type="search" name="q" value="{{ q }}" placeholder="Search companies..." autocomplete="off">
+        </label>
+        <label class="cg-filter-select">
+          <span class="sr-only">Status</span>
+          <select name="status" aria-label="Filter companies by status">
+            <option value="" {% if not status %}selected{% endif %}>All statuses</option>
+            <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+            <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Disabled</option>
+          </select>
+        </label>
+        <button class="btn cg-filter-submit" type="submit">Search</button>
+        {% if q or status %}<a href="{% url 'panel:companies' %}" class="cg-clear-filter">Clear</a>{% endif %}
+      </form>
+    </header>
+
+    <div class="responsive-table cg-companies-table">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Company</th>
+            <th scope="col">Status</th>
+            <th scope="col">Contact</th>
+            <th scope="col">Location</th>
+            <th scope="col">Users / branches</th>
+            <th scope="col">Plan</th>
+            <th scope="col">Joined</th>
+            <th scope="col" class="cg-actions-heading">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% panel_can 'panel:company-detail' as can_view %}
+          {% panel_can 'panel:company-edit' as can_edit %}
+          {% panel_can 'panel:company-toggle' as can_toggle %}
+          {% panel_can 'panel:company-delete' as can_delete %}
+          {% for row in rows %}
+          <tr>
+            <td data-label="Company">
+              <div class="cg-company-identity">
+                {% if row.logo_image %}<img src="{{ row.logo_image.url }}" alt="" class="cg-company-avatar">
+                {% elif row.logo %}<img src="{{ row.logo }}" alt="" class="cg-company-avatar">
+                {% else %}<span class="cg-company-avatar cg-company-letter" aria-hidden="true">{{ row.name|slice:":1"|upper }}</span>{% endif %}
+                <div><strong>{{ row.name }}</strong><small>{{ row.legal_name|default:row.slug }}</small></div>
+              </div>
+            </td>
+            <td data-label="Status"><span class="cg-company-state {% if row.is_active %}is-on{% else %}is-off{% endif %}">{% if row.is_active %}Active{% else %}Disabled{% endif %}</span></td>
+            <td data-label="Contact">
+              <span class="cg-cell-main">{{ row.email|default:"—" }}</span>
+              <small>{{ row.phone|default:"No phone" }}</small>
+            </td>
+            <td data-label="Location">{{ row.city|default:"—" }}{% if row.state %}, {{ row.state }}{% endif %}</td>
+            <td data-label="Users / branches"><span class="cg-count">{{ row.user_count }} users</span><small>{{ row.branch_count }} branches</small></td>
+            <td data-label="Plan"><span class="cg-plan">{{ row.plan|title }}</span></td>
+            <td data-label="Joined">{{ row.created_at|date:"d M Y" }}</td>
+            <td data-label="Actions">
+              <div class="cg-company-actions">
+                {% if can_view %}<a href="{% url 'panel:company-detail' row.pk %}" class="cg-icon-action" title="View {{ row.name }}" aria-label="View {{ row.name }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>{% endif %}
+                {% if can_edit %}<a href="{% url 'panel:company-edit' row.pk %}" class="cg-icon-action" title="Edit {{ row.name }}" aria-label="Edit {{ row.name }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m4 16 11-11 4 4-11 11-5 1 1-5ZM13 7l4 4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>{% endif %}
+                {% if can_toggle %}<a href="{% url 'panel:company-toggle' row.pk %}" class="cg-icon-action" title="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}" aria-label="{% if row.is_active %}Disable{% else %}Enable{% endif %} {{ row.name }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="7"/><circle cx="{% if row.is_active %}13.5{% else %}10.5{% endif %}" cy="12" r="3.25"/></svg>
+                </a>{% endif %}
+                {% if can_delete %}<a href="{% url 'panel:company-delete' row.pk %}" class="cg-icon-action is-danger" title="Delete {{ row.name }}" aria-label="Delete {{ row.name }}">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v5m4-5v5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </a>{% endif %}
+              </div>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td class="empty-cell cg-companies-empty" colspan="8">
+            <strong>No companies found</strong>
+            <span>{% if q or status %}Try a different search or clear the filters.{% else %}Companies you create will appear here.{% endif %}</span>
+            {% if q or status %}<a href="{% url 'panel:companies' %}">Reset filters</a>{% endif %}
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
 {% endblock %}
