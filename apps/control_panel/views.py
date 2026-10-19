@@ -344,27 +344,41 @@ def users(request):
 
 @panel_admin_required
 def user_toggle(request, pk):
-    if request.method != "POST":
-        return HttpResponseForbidden("POST required.")
     user = get_object_or_404(User, pk=pk)
     if not _can_manage_account(request.user, user):
         return HttpResponseForbidden("Only a superadmin can manage a superadmin account.")
     if user == request.user:
         return HttpResponseForbidden("You cannot disable your own Control Panel account.")
+    if request.method == "GET":
+        return render(request, "control_panel/user_toggle.html", {
+            "page_title": "Change User Access",
+            "active": "users",
+            "object": user,
+        })
+    if request.method != "POST":
+        return HttpResponseBadRequest("Only GET and POST are supported.")
     user.is_active = not user.is_active
     user.save(update_fields=["is_active", "updated_at"])
+    messages.success(request, f"Account access {'enabled' if user.is_active else 'disabled'} for {user.email}.")
     return _safe_redirect(request, request.POST.get("next"), "panel:users")
 
 
 @panel_admin_required
-@require_POST
 def user_invite(request, pk):
-    """Resend a secure setup/reset link to an existing authorized user."""
+    """Confirm on GET; send secure access email only on explicit POST."""
     user = get_object_or_404(
         User.objects.select_related("company", "role"), pk=pk,
     )
     if not _can_manage_account(request.user, user):
         return HttpResponseForbidden("You cannot invite this account.")
+    if request.method == "GET":
+        return render(request, "control_panel/user_invite.html", {
+            "page_title": "Send Account Invitation",
+            "active": "users",
+            "object": user,
+        })
+    if request.method != "POST":
+        return HttpResponseBadRequest("Only GET and POST are supported.")
     if _send_new_user_invite(request, user):
         messages.success(request, "Account access email scheduled for the registered address.")
     else:
@@ -1088,19 +1102,11 @@ def user_create(request):
 @panel_admin_required
 def user_detail(request, pk):
     obj = get_object_or_404(User.objects.select_related("company", "branch", "role"), pk=pk)
-    return render(request, "control_panel/detail.html", {
+    return render(request, "control_panel/user_detail.html", {
         "page_title": "User Details",
         "active": "users",
         "object": obj,
-        "rows": _display_rows(obj, [
-            ("name", "Name"), ("email", "Email"), ("phone", "Phone"),
-            ("company", "Company"), ("branch", "Branch"), ("role", "Role"),
-            ("is_active", "Active"), ("is_staff", "Admin staff"),
-            ("is_superuser", "Super admin"), ("email_verified", "Email verified"),
-            ("created_at", "Created"),
-        ]),
-        "edit_url": "panel:user-edit",
-        "delete_url": "panel:user-delete",
+        "can_manage_target": _can_manage_account(request.user, obj),
     })
 
 
@@ -1118,7 +1124,10 @@ def user_delete(request, pk):
     if obj == request.user:
         messages.error(request, "You cannot delete your own Control Panel account.")
         return redirect("panel:users")
-    return _delete_object(request, obj, title="User", active="users", cancel_url="panel:users")
+    return _delete_object(
+        request, obj, title="User", active="users", cancel_url="panel:users",
+        template_name="control_panel/user_delete.html",
+    )
 
 
 @panel_admin_required
