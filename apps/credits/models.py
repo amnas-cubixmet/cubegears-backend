@@ -18,6 +18,9 @@ class CreditPackage(models.Model):
     credits = models.DecimalField(max_digits=12, decimal_places=2)
     price_inr = models.DecimalField(max_digits=12, decimal_places=2)
     is_active = models.BooleanField(default=True)
+    # Archived packages remain available to historical purchases but cannot
+    # be offered through top-up catalogues or reused accidentally.
+    is_archived = models.BooleanField(default=False, db_index=True)
     sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:
