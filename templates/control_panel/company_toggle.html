@@ -1,0 +1,21 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="cg-company-confirm">
+  <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span aria-current="page">Company access</span></nav>
+  <section class="cg-confirm-card" aria-labelledby="cg-toggle-heading">
+    <span class="cg-confirm-symbol cg-confirm-info" aria-hidden="true">↔</span>
+    <span class="cg-section-kicker">Workspace access</span>
+    <h2 id="cg-toggle-heading">{% if object.is_active %}Disable{% else %}Enable{% endif %} company access?</h2>
+    <p>You are about to {% if object.is_active %}disable{% else %}enable{% endif %} the workspace for <strong>{{ object.name }}</strong>.</p>
+    <div class="cg-confirm-summary"><span>Current status</span><span class="cg-company-state {% if object.is_active %}is-on{% else %}is-off{% endif %}">{% if object.is_active %}Active{% else %}Disabled{% endif %}</span></div>
+    {% if object.is_active %}<p class="cg-confirm-note">Company users will be blocked from accessing this workspace until you enable it again.</p>
+    {% else %}<p class="cg-confirm-note">Enabling the company does not grant extra roles, permissions or paid features.</p>{% endif %}
+    <form method="post" class="cg-confirm-actions">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{% url 'panel:companies' %}">
+      <a class="btn cg-back-button" href="{% url 'panel:company-detail' object.pk %}">Cancel</a>
+      <button class="btn btn-primary" type="submit">{% if object.is_active %}Disable company{% else %}Enable company{% endif %}</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
