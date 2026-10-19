@@ -85,7 +85,7 @@
     <input id="cg-module-search" type="search" placeholder="Search modules..." autocomplete="off">
   </div>
   <nav aria-label="Related settings">
-    {% panel_can "storage" as storage_allowed %}{% if storage_allowed %}<a class="btn" href="{% url 'panel:billing-settings' %}#storage-pricing-title">Billing Settings</a>{% endif %}
+    {% panel_can "billing-settings" as billing_allowed %}{% if billing_allowed %}<a class="btn" href="{% url 'panel:billing-settings' %}#storage-pricing-title">Billing Settings</a>{% endif %}
     {% panel_can "security" as audit_allowed %}{% if audit_allowed %}<a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
   </nav>
 </section>
