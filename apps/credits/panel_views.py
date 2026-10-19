@@ -71,6 +71,9 @@ def credits_control(request):
         else:
             messages.error(request, "Unknown form action.")
 
+    # Preserve failed package submissions, including edits, without losing field values.
+    package_draft = request.POST if request.method == "POST" and request.POST.get("action") == "package" else {}
+    can_manage_packages = panel_permission(request.user, "credits", "edit")
     company_id = request.GET.get("company", "").strip()
     records = CreditLedger.objects.select_related("company", "actor").order_by("-created_at")
     if company_id:
@@ -88,6 +91,8 @@ def credits_control(request):
         "page_title": "Credit Wallet Control",
         "active": "credits",
         "packages": packages,
+        "can_manage_packages": can_manage_packages,
+        "package_draft": package_draft,
         "wallets": wallets[:100],
         "companies": Company.objects.filter(is_active=True).order_by("name"),
         "logs": records[:100],
