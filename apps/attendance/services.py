@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 
 from django.db import IntegrityError
-from django.db.models import Sum
 from django.utils import timezone
 
 from .models import AttendanceRecord, AttendanceRule, AttendanceSession

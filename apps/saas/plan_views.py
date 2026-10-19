@@ -4,15 +4,13 @@ from apps.accounts.permissions import IsCompanyOwner
 Requests never activate subscriptions or change billed amounts. Platform staff
 must verify payment and provision subscriptions separately.
 """
-from django.db.models import Sum
 from rest_framework import serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import IsAuthenticated
 from apps.accounts.permissions import RolePermission
 from .models import (
-    Subscription, SubscriptionPlan, FeatureGroup, PlanFeature,
-    PlanFeatureAccess, PlanChangeRequest, CustomPlanRequest, MediaFile,
+    Subscription, SubscriptionPlan, PlanFeature,
+    PlanChangeRequest, CustomPlanRequest,
 )
 
 

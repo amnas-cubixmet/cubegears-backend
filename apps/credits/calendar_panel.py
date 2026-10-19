@@ -8,7 +8,6 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from .billing_cycle_forms import BillingCyclePolicyForm
-from .calendar_billing import active_policy
 from .models import BillingCyclePolicy, BillingCycleStatement
 
 
@@ -42,5 +41,4 @@ def calendar_policy_control(request):
         "form": form,
         "policy": current,
         "invoices": invoices,
-        "active": "credits",
     }, status=400 if request.method == "POST" and form.errors else 200)

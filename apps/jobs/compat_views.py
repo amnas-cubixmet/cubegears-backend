@@ -182,7 +182,6 @@ def _outside_job_locked(request, job_id):
 
 
 def _outside_record(job, purchase_id):
-    from django.http import Http404
     return next(
         (row for row in _state(job).get("outsideParts", [])
          if str(row.get("id")) == str(purchase_id)),
@@ -264,7 +263,6 @@ class OutsidePartDecisionView(APIView):
 
     @transaction.atomic
     def post(self, request, job_id, purchase_id):
-        from django.shortcuts import get_object_or_404
         job = _outside_job_locked(request, job_id)
         state = _state(job)
         record = next((item for item in state.get("outsideParts", [])

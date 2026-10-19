@@ -1,5 +1,4 @@
 from datetime import time
-from decimal import Decimal
 from django.db import models
 from common.models import CompanyOwnedModel
 

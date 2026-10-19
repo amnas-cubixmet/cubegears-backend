@@ -13,7 +13,7 @@ from apps.accounts.models import User
 from apps.accounts.permissions import user_has_permission
 from apps.companies.models import Company
 from apps.credits.models import (
-    CompanyPostpaidFeature, CreditLedger, CreditWallet,
+    CreditLedger, CreditWallet,
     FeatureCreditPrice, FeatureMeterPeriod, FeatureMeterReading,
     StorageCreditPolicy, StorageMeterPeriod, StorageMeterReading,
 )

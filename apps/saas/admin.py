@@ -1,7 +1,7 @@
 from django.contrib import admin
 from .models import (
     FeatureGroup, PlanFeature, SubscriptionPlan, PlanFeatureAccess,
-    PlanChangeRequest, CustomPlanRequest, RazorpayPlanPayment,
+    PlanChangeRequest, CustomPlanRequest,
 )
 
 @admin.register(FeatureGroup)

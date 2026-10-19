@@ -5,9 +5,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
-from apps.customers.models import Customer
 from apps.roles.models import Role
-from apps.vehicles.models import Vehicle
 from apps.jobs.models import Job, JobPhoto
 
 

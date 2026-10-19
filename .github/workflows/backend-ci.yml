@@ -1,7 +1,5 @@
 name: Backend CI
 
-# Validates the current full CubixGear backend integration.
-
 on:
   push:
     branches: [main]
@@ -14,68 +12,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
-      - run: pip install 'celery[redis]>=5.6,<5.8'
-      - run: python -m compileall -q .
+      - run: pip install -r requirements.txt 'ruff==0.17.1'
+      - name: Check unused code and duplicate definitions
+        run: ruff check . --select F401,F811,F841,F601,F602,F821,F822,F823,F901
+      - run: python -m compileall -q apps common config scripts
       - run: python manage.py check
-      - run: python manage.py test apps.accounts.test_celery_health apps.accounts.test_account_email_matrix --noinput
-      - name: Real Redis and Celery worker integration
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py migrate --noinput
+      - name: Backend regression suite
+        run: python manage.py test apps --noinput
+      - name: Deployment setup tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Real Redis, Celery worker and Beat integration
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y redis-server
           python scripts/smoke_celery_worker.py
-      - run: python manage.py test apps.roles.tests --noinput
-      - run: python manage.py test apps.credits.test_calendar_admin_settings apps.credits.test_calendar_billing --noinput
-      - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test apps.credits.test_calendar_billing apps.credits.test_billing_engine_isolation --noinput
-      - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test apps.credits.test_calendar_billing --noinput
-      - run: python manage.py test apps.credits.test_retired_credit_panel_pricing apps.control_panel.test_remaining_modules_ui --noinput
-      - run: python manage.py test apps.credits.test_free_core_modules --noinput
-      - run: python manage.py test apps.credits.test_module_pricing_panel apps.saas.test_feature_catalog_audit --noinput
-      - run: python manage.py test apps.credits.test_package_display_order --noinput
-      - run: python manage.py test apps.accounts.tests.PasswordAuthenticationFlowTests --noinput
-      # Verify strict Celery-only dispatch before the longer backend integration suite.
-      - run: python manage.py test apps.accounts.test_celery_email_delivery apps.accounts.test_rbac_email.DirectEmailTests apps.control_panel.test_auth_production apps.control_panel.test_staff_invite_creation apps.control_panel.test_platform_staff_invite apps.employees.test_staff_password_onboarding --noinput
-      # Verify label-only backend access and direct-API permission before other suites.
-      - run: python manage.py test apps.credits.test_label_only_access --noinput
-      - run: python manage.py test apps.credits.test_owner_onboarding --noinput
-      # Validate Feature Label form, per-user pricing and activation first.
-      - run: python manage.py test apps.credits.test_feature_bundles apps.credits.test_activation_readiness apps.control_panel.test_feature_catalog_cleanup --noinput
-      - run: python manage.py test apps.control_panel.test_role_permission_editor --noinput
-      # Block merged billing-model regressions before the slower full suite.
-      - run: python manage.py test apps.credits.test_integration_recovery --noinput
-      - run: python manage.py test apps.credits.test_billing_email_notices --noinput
-      # Validate login security, responsive dashboard templates, and company directory UI.
-      - run: python manage.py test apps.control_panel.test_login_ui apps.control_panel.test_csrf_origin apps.control_panel.test_auth_production apps.control_panel.test_company_dashboard_theme apps.control_panel.test_companies_directory_theme apps.control_panel.test_company_editor apps.control_panel.test_users_ui apps.control_panel.test_subscriptions_ui apps.control_panel.test_plans_ui apps.control_panel.test_plan_builder apps.control_panel.test_staff_ui apps.control_panel.test_invoices_ui apps.control_panel.test_stock_ui apps.control_panel.test_jobs_ui apps.control_panel.test_remaining_modules_ui apps.accounts.tests --noinput
-      # Invite onboarding and separate SaaS/workshop role boundaries.
-      - run: python manage.py test apps.control_panel.test_staff_invite_creation apps.control_panel.test_platform_staff_invite --noinput
-      # Guard production secrets setup: idempotent, private, no accidental rotation.
-      - run: python -m unittest discover -s tests -p 'test_pythonanywhere_setup.py' -v
-      # Verify account delivery stays on the Celery worker path.
-      - run: python manage.py test apps.accounts.test_rbac_email.DirectEmailTests apps.employees.test_staff_password_onboarding --noinput
-      # Exercise the full migration graph on a fresh SQLite database.
-      # Runtime model changes must not ship without their database tables.
-      - run: python manage.py makemigrations --check --dry-run
-      - run: python manage.py test apps.saas.test_storage_events --noinput
-      - run: python manage.py migrate --noinput
-      - run: python manage.py test apps.saas.test_razorpay_checkout --noinput
-      - run: python manage.py test apps.credits.test_razorpay_diagnostics --noinput
-      - run: python manage.py test apps.credits.test_gateway_api --noinput
-      - run: python manage.py test apps.credits.test_hosted_checkout --noinput
-      - run: python manage.py test apps.credits.test_feature_bundles --noinput
-      - run: python manage.py test apps.credits.test_activation_readiness --noinput
-      - run: python manage.py test apps.credits.test_celery_billing_tasks --noinput
-      - run: python manage.py test apps.credits.test_module_entitlements --noinput
-      - run: python manage.py test apps.credits.test_postpaid_monthly --noinput
-      - run: python manage.py test apps.accounts.test_celery_email_delivery --noinput
-      - run: python manage.py test apps.saas.test_feature_catalog_audit --noinput
-      - run: python manage.py test apps.control_panel.test_feature_catalog_cleanup --noinput
-      - run: python manage.py test apps.credits.test_metered_feature_pricing --noinput
-      - run: python manage.py test apps.credits.test_celery_monthly_schedule apps.credits.test_monthly_metered_billing --noinput
-      - run: python manage.py test apps.credits.test_billing_readiness --noinput
-      - run: python manage.py test apps.credits.test_monthly_metered_billing --noinput
-      - run: python manage.py test apps.control_panel.test_storage_per_gb_pricing --noinput
-      - run: python manage.py test apps.payroll.tests apps.payroll.test_daily_wage apps.attendance.test_no_paid_leave apps.jobs.test_outside_labour apps.jobs.test_quick_create apps.jobs.test_workflow apps.jobs.test_workflow_api apps.jobs.test_india_gst apps.invoices.test_india_gst apps.invoices.test_eway_reset_api apps.jobs.test_qc_login apps.jobs.test_cost_summary apps.invoices.test_invoice_pdf apps.jobs.test_outside_part_approval apps.jobs.test_work_photos apps.payments.test_payment_guards apps.inventory.test_stock_operations apps.saas.tests_account apps.saas.test_dynamic_plans --noinput
+          python scripts/smoke_runtime_billing.py

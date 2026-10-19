@@ -1,5 +1,4 @@
 """Production-facing SaaS Control Panel authentication regressions."""
-from urllib.parse import urlparse
 
 from django.contrib.auth.tokens import default_token_generator
 from django.core import mail

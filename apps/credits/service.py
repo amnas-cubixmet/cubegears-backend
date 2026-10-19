@@ -3,7 +3,6 @@ from datetime import timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.conf import settings
-from django.db.models import F
 from django.utils import timezone
 
 from apps.employees.models import Employee

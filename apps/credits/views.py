@@ -7,7 +7,7 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.throttling import UserRateThrottle
@@ -15,7 +15,7 @@ from rest_framework.throttling import UserRateThrottle
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from apps.saas.models import PlanFeature
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
-from .models import CreditWallet, CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
+from .models import CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
 from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
 from apps.saas.access import FREE_TENANT_MODULES
 from .monthly_features import activate_postpaid_feature, deactivate_postpaid_feature

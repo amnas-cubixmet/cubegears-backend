@@ -11,7 +11,6 @@ import json
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.utils.text import slugify
 
 from apps.accounts.permissions import MODEL_PERMISSION_PREFIX
 from apps.roles.permission_catalog import TENANT_PERMISSIONS

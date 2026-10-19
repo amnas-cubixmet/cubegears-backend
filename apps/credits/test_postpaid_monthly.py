@@ -1,7 +1,6 @@
 """Billing modes, prorated monthly usage, idempotency and no double debits."""
 from datetime import datetime, timedelta, timezone as utc
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -11,7 +10,7 @@ from apps.companies.models import Company
 from apps.roles.models import Role
 from apps.saas.models import FeatureGroup, PlanFeature, MediaFile
 from apps.credits.models import (
-    CompanyCreditFeature, CreditLedger, CreditWallet, FeatureCreditPrice,
+    CreditLedger, CreditWallet, FeatureCreditPrice,
     FeatureUsageSession, MonthlyUsageInvoice, StorageCreditPolicy, StorageUsageInterval,
 )
 from apps.credits.service import enable_paid_feature, disable_paid_feature, renew_feature

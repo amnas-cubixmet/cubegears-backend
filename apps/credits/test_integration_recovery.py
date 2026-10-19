@@ -8,8 +8,7 @@ from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.credits.models import (
     CompanyPostpaidFeature, CreditWallet, FeatureCreditPrice,
-    FeatureMeterPeriod, StorageCreditPolicy, StorageMeterCursor,
-    StorageMeterPeriod, StorageMeterReading, FeatureMeterReading,
+    StorageCreditPolicy,
 )
 from apps.credits.monthly_storage import _policy
 from apps.roles.models import Role

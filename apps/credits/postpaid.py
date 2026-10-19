@@ -4,7 +4,6 @@ Rates are wallet credits, NOT Indian rupees. Storage samples are a bounded
 approximation, not a perfect reconstruction of uploads during missing ticks.
 Never bill if a source has no verifiable records for its usage period.
 """
-import calendar
 import logging
 from datetime import datetime, timedelta, timezone as utc_timezone
 from decimal import Decimal, ROUND_HALF_UP

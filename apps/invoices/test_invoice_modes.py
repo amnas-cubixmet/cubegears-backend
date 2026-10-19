@@ -6,7 +6,6 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.roles.models import Role
-from .models import Invoice
 
 
 class CompanyInvoiceModesTests(TestCase):

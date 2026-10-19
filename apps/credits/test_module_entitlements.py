@@ -1,12 +1,10 @@
 """Feature visibility must match backend RBAC and purchased entitlement."""
-from decimal import Decimal
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.roles.models import Role
 from apps.saas.models import FeatureGroup, PlanFeature
-from apps.credits.models import CreditWallet, FeatureCreditPrice
 from apps.accounts.permissions import user_has_permission
 
 

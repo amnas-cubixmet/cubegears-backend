@@ -10,8 +10,7 @@ from apps.companies.models import Company
 from apps.employees.models import Employee
 from apps.roles.models import Role
 from .daily_wage_models import (
-    DailyWageEntry, DailyWageExtra, EmployeeDailyWageRate,
-    WageAdjustment, WageAuditLog, WagePayment, WagePaymentReversal,
+    DailyWageEntry, DailyWageExtra, WageAdjustment, WageAuditLog, WagePayment, WagePaymentReversal,
 )
 
 

@@ -3,7 +3,6 @@ from .hosted_views import HostedCreditCheckoutView, HostedCreditStatusView
 from .bundle_views import BundleListView, BundlePurchaseView, BundleDisableView
 from .access_views import TenantFeatureAccessView
 from .entitlement_views import CompanyModuleEntitlementsView
-from .access_views import TenantFeatureAccessView
 from .usage_views import CompanyUsageInvoicesView
 from .cycle_views import CreditCycleStatusView
 from .gateway_diagnostics import GatewayStatusView, GatewayTestView

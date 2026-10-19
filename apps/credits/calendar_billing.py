@@ -5,7 +5,7 @@ configured due day. One atomic wallet debit and one unique ledger reference
 settle a company/month, avoiding category-level partial payment. Legacy
 settlement tasks MUST be gated off while this policy is enabled.
 """
-from datetime import datetime, timedelta, time
+from datetime import time
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.db import transaction
@@ -14,7 +14,7 @@ from apps.companies.models import Company
 from apps.saas.access import FREE_TENANT_MODULES
 from .models import (
     BillingCyclePolicy, BillingCycleStatement, CreditLedger, CreditWallet,
-    FeatureMeterPeriod, FeatureMeterReading, CompanyPostpaidFeature,
+    FeatureMeterPeriod, CompanyPostpaidFeature,
     StorageMeterCursor, StorageMeterPeriod, StorageCreditPolicy,
 )
 from .service import wallet_for, change_balance

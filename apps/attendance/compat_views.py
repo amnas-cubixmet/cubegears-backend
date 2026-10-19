@@ -1,5 +1,5 @@
 from decimal import Decimal, InvalidOperation
-from datetime import datetime, time, timedelta
+from datetime import datetime, timedelta
 from django.db.models import Q
 from django.db import transaction
 from rest_framework.exceptions import ValidationError
@@ -310,7 +310,6 @@ class MyLeaveRequestsView(APIView):
 
         # All leave is unpaid. Leave Type selection and paid leave policies
         # have been removed; preserve the internal legacy column for history.
-        leave_name=UNPAID_LEAVE_NAME
 
         start_value=request.data.get("startDate") or request.data.get("start_date")
         end_value=request.data.get("endDate") or request.data.get("end_date") or start_value

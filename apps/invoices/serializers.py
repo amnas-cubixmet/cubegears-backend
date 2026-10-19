@@ -2,7 +2,6 @@ from rest_framework import serializers
 from apps.customers.models import Customer
 from apps.vehicles.models import Vehicle
 from apps.jobs.models import Job
-from apps.inventory.models import StockItem
 from .models import Invoice, InvoiceItem, EWayBill
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
@@ -311,7 +310,6 @@ class EWayBillSerializer(serializers.ModelSerializer):
         return super().to_internal_value(raw)
 
     def validate(self, attrs):
-        from .eway_validation import READONLY_PORTAL_FIELDS
         from .models import Invoice
         if self.instance and self.instance.status != "Draft":
             raise serializers.ValidationError({
@@ -329,7 +327,6 @@ class EWayBillSerializer(serializers.ModelSerializer):
         return attrs
 
     def to_representation(self, instance):
-        data = super().to_representation(instance)
         merged = dict(instance.payload or {})
         merged.update({
             "id": str(instance.id),
