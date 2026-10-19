@@ -21,10 +21,10 @@
 
   <section class="ref-kpis" aria-label="Live platform metrics">
     <article class="ref-kpi">
-      <div class="ref-kpi-top"><span> Total companies </span><span class="ref-kpi-icon tone-teal"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-top"><span> Total companies </span><span class="ref-kpi-icon tone-cobalt"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
       <div class="ref-kpi-value">{{ total_companies }}</div>
       <p><strong>{{ new_companies_month }} new</strong> this month</p>
-      <div class="ref-kpi-track"><span class="tone-teal" style="width:{{ active_company_percent }}%"></span></div>
+      <div class="ref-kpi-track"><span class="tone-cobalt" style="width:{{ active_company_percent }}%"></span></div>
       <small>{{ active_companies }} active companies</small>
     </article>
     <article class="ref-kpi">
@@ -35,10 +35,10 @@
       <small>{{ admin_users }} platform administrators</small>
     </article>
     <article class="ref-kpi">
-      <div class="ref-kpi-top"><span>Active companies</span><span class="ref-kpi-icon tone-lime"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-top"><span>Active companies</span><span class="ref-kpi-icon tone-sky"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
       <div class="ref-kpi-value">{{ active_companies }}</div>
       <p><strong>{{ active_company_percent }}%</strong> of all companies</p>
-      <div class="ref-kpi-track"><span class="tone-lime" style="width:{{ active_company_percent }}%"></span></div>
+      <div class="ref-kpi-track"><span class="tone-sky" style="width:{{ active_company_percent }}%"></span></div>
       <small>{{ inactive_companies }} disabled companies</small>
     </article>
     <article class="ref-kpi">
@@ -75,9 +75,9 @@
         <div class="ref-chart-key" aria-label="Chart legend"><span><i class="ref-dot ref-company-dot"></i> Companies</span><span><i class="ref-dot ref-user-dot"></i> Users</span></div>
       </div>
       <div class="ref-chart-area">
-        <svg class="ref-chart" viewBox="0 0 560 190" role="img" aria-label="Daily company registrations shown in teal and user registrations shown in blue over the last seven days">
+        <svg class="ref-chart" viewBox="0 0 560 190" role="img" aria-label="Daily company registrations shown in cobalt blue and user registrations shown in light blue over the last seven days">
           <defs>
-            <linearGradient id="ref-company-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#18aa96" stop-opacity=".20"/><stop offset="100%" stop-color="#18aa96" stop-opacity="0"/></linearGradient>
+            <linearGradient id="ref-company-gradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#2563eb" stop-opacity=".20"/><stop offset="100%" stop-color="#2563eb" stop-opacity="0"/></linearGradient>
           </defs>
           <path class="ref-gridline" d="M 24 30 H 534 M 24 71 H 534 M 24 113 H 534 M 24 154 H 534"/>
           <path d="{{ chart_company_area }}" fill="url(#ref-company-gradient)"/>
@@ -106,7 +106,7 @@
         {% if can_credits %}
           {% for item in recent_credits %}
           <div class="ref-feed-item">
-            <span class="ref-feed-avatar tone-{% cycle 'teal' 'blue' 'gold' 'purple' %}">{{ item.company.name|default:"C"|slice:":1"|upper }}</span>
+            <span class="ref-feed-avatar tone-{% cycle 'cobalt' 'blue' 'gold' 'purple' %}">{{ item.company.name|default:"C"|slice:":1"|upper }}</span>
             <div class="ref-feed-body">
               <strong>{{ item.company.name|default:"Company" }}</strong>
               <p>{{ item.description|default:item.kind }}</p>
