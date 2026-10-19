@@ -1,0 +1,68 @@
+/* User management enhancements, applied only to Users & Access routes.
+   Base visual system is shared with the Companies blue theme. */
+.cg-users,.cg-user-editor,.cg-user-profile,.cg-user-confirm{--cg-border:var(--line);--cg-blue:var(--brand);--cg-blue-pale:var(--brand-soft);color:var(--text);min-width:0}
+.cg-users-directory-top{align-items:flex-start}
+.cg-users-directory-top>div{flex:0 0 auto}
+.cg-user-filters{display:flex;flex:1;align-items:center;justify-content:flex-end;gap:8px;min-width:0;flex-wrap:wrap}
+.cg-user-filters label{min-width:0}
+.cg-user-filters>.cg-company-search{width:200px;flex:1 1 170px}
+.cg-user-filters select{min-height:37px;max-width:190px;min-width:115px;padding:8px 11px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);color:var(--text);font-size:12px}
+.cg-user-filters select:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.cg-user-filters .cg-filter-submit{min-height:37px}
+.cg-users-table table{min-width:1000px}
+.cg-user-verification{font-size:10px!important;color:var(--muted);font-weight:550}
+.cg-user-access{display:inline-flex;align-items:center;padding:5px 9px;border:1px solid var(--line);background:var(--surface-soft);color:var(--muted);border-radius:6px;font-size:11px;font-weight:750;white-space:nowrap}
+.cg-user-access.is-admin{background:var(--brand-soft);border-color:transparent;color:var(--brand-dark)}
+.cg-user-self{font-size:11px;color:var(--muted);font-weight:750}
+.cg-user-avatar{object-fit:cover}
+.cg-users-table .cg-company-actions{min-width:145px}
+.cg-users-table .cg-icon-action{font-size:18px;font-weight:650;line-height:1}
+.cg-user-editor-form .cg-editor-layout{grid-template-columns:minmax(0,1.65fr) minmax(290px,.85fr)}
+.cg-user-form-note{font-size:11px;color:var(--muted);line-height:1.55;padding:0 21px 19px;margin:0}
+.cg-user-settings{display:grid;padding:4px 20px 10px}
+.cg-user-setting{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:17px 0;border-bottom:1px solid var(--line)}
+.cg-user-setting:last-child{border-bottom:0}
+.cg-user-setting>div{flex:1 1 135px;min-width:0}
+.cg-user-setting strong{display:block;color:var(--text);font-size:12px;font-weight:750;line-height:1.35}
+.cg-user-setting small{display:block;font-size:11px;color:var(--muted);line-height:1.55;margin-top:3px}
+.cg-user-setting .field-error{flex-basis:100%}
+.cg-user-setting .cg-switch-control{flex:0 0 40px}
+.cg-switch-control input[type=checkbox]:disabled+.cg-switch-track{opacity:.45;cursor:not-allowed}
+.cg-user-password-box{display:grid;gap:16px;padding:20px}
+.cg-user-password-box>p{font-size:12px;line-height:1.65;color:var(--muted);margin:0}
+.cg-user-password-box .company-editor-field{min-width:0}
+.cg-user-password-box .company-editor-field label{font-size:12px;color:var(--text);font-weight:700}
+.cg-user-password-box .company-editor-field .form-control{width:100%;min-height:42px;background:var(--surface);border:1px solid var(--line-strong);border-radius:7px;color:var(--text)}
+.cg-user-password-box .company-editor-field .form-control:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.cg-user-profile .cg-profile-counts strong{font-size:14px}
+.cg-user-profile .cg-profile-title>p{overflow-wrap:anywhere}
+.cg-user-profile .cg-profile-actions{align-items:center}
+.cg-user-confirm .cg-confirm-card{margin:0}
+@media(max-width:1220px){
+  .cg-users-directory-top{display:grid;grid-template-columns:1fr}
+  .cg-user-filters{justify-content:start;width:100%}
+  .cg-user-filters>.cg-company-search{flex:1 1 100%;width:100%}
+}
+@media(max-width:1050px){
+  .cg-user-editor-form .cg-editor-layout{grid-template-columns:1fr}
+  .cg-users-table table{min-width:0}
+}
+@media(max-width:800px){
+  .cg-user-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cg-user-filters>.cg-company-search{grid-column:1/-1}
+  .cg-user-filters label:not(.cg-company-search){width:100%}
+  .cg-user-filters select{width:100%;max-width:100%;min-width:0}
+  .cg-user-filters .cg-clear-filter{align-self:center}
+  .cg-users-table .cg-company-actions{min-width:0}
+  .cg-users-table .cg-company-identity{min-width:0}
+  .cg-user-profile .cg-profile-actions{justify-content:flex-start}
+}
+@media(max-width:560px){
+  .cg-user-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .cg-user-filters>.cg-company-search{grid-column:1/-1}
+  .cg-user-filters label:nth-child(2){grid-column:1/-1}
+  .cg-user-filters .cg-filter-submit{min-width:0}
+  .cg-user-form-note{padding:0 16px 16px}
+  .cg-user-settings{padding:4px 16px 10px}
+  .cg-user-password-box{padding:16px}
+}
