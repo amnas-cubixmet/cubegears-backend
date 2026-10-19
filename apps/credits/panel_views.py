@@ -1,11 +1,15 @@
 """Platform credit package and wallet controls; legacy feature/storage price forms retired."""
 import uuid
 from django.contrib import messages
+from django.db.models import Exists, OuterRef
+from django.db.models.deletion import ProtectedError
+from django.db import transaction, IntegrityError
 from django.http import HttpResponseForbidden, HttpResponseGone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
+from apps.control_panel.audit import record_panel_event
 from apps.companies.models import Company
 from .forms import CreditPackageForm, CreditAdjustmentForm, MonthlyBillingPolicyForm
 from .models import CreditPackage, CreditWallet, CreditLedger, CreditPurchase, MonthlyBillingPolicy
@@ -31,6 +35,32 @@ def credits_control(request):
                 saved.save()
                 messages.success(request, 'Monthly collection policy saved. Issued deadlines are preserved.')
                 return redirect('panel:credits')
+        elif action == "delete_package":
+            if not panel_permission(request.user, "credits", "delete"):
+                return HttpResponseForbidden("Credit package delete permission is required.")
+            if request.POST.get("confirm_delete") != "yes":
+                messages.error(request, "Confirm deletion before removing the package.")
+            else:
+                pk = request.POST.get("package_id")
+                package = get_object_or_404(CreditPackage, pk=pk)
+                # Historical purchases permanently reference the package.
+                # Never delete packages used by any verified or pending order.
+                if CreditPurchase.objects.filter(package_id=package.pk).exists():
+                    messages.error(request, "This package has purchase history. Edit it and uncheck Published instead.")
+                else:
+                    package_id, package_name = package.pk, package.name
+                    try:
+                        with transaction.atomic():
+                            package.delete()
+                            record_panel_event(request, "CREDIT_PACKAGE_DELETED", {
+                                "package_id": package_id,
+                                "package_name": package_name,
+                            })
+                    except (ProtectedError, IntegrityError):
+                        messages.error(request, "This package is referenced by other records and cannot be deleted. Hide it instead.")
+                    else:
+                        messages.success(request, f"Credit package '{package_name}' deleted.")
+                        return redirect("panel:credits")
         elif action == "package":
             pk = request.POST.get("package_id") or None
             instance = get_object_or_404(CreditPackage, pk=pk) if pk else None
@@ -84,14 +114,19 @@ def credits_control(request):
         else:
             records = records.filter(company_id=company_id)
     wallets = CreditWallet.objects.select_related("company").order_by("company__name")
-    packages = CreditPackage.objects.all().order_by("sort_order", "id")
+    packages = CreditPackage.objects.annotate(
+        has_purchases=Exists(
+            CreditPurchase.objects.filter(package_id=OuterRef("pk"))
+        )
+    ).order_by("sort_order", "id")
     purchases = CreditPurchase.objects.select_related("company", "package").order_by("-created_at")[:25]
     return render(request, "control_panel/credits.html", {
         "monthly_billing_form": billing_form,
-        "page_title": "Credit Wallet Control",
+        "page_title": "Credit Wallet",
         "active": "credits",
         "packages": packages,
         "can_manage_packages": can_manage_packages,
+        "can_delete_packages": panel_permission(request.user, "credits", "delete"),
         "package_draft": package_draft,
         "wallets": wallets[:100],
         "companies": Company.objects.filter(is_active=True).order_by("name"),
