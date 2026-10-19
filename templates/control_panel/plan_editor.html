@@ -1,5 +1,5 @@
 {% extends "control_panel/base.html" %}
-{% load static %}
+{% load static panel_access %}
 {% block content %}
 <section class="plan-editor-page">
   <header class="plan-editor-header">
@@ -8,7 +8,13 @@
       <h2>{% if is_edit %}Edit Subscription Plan{% else %}Create Subscription Plan{% endif %}</h2>
       <p>Set prices, quotas, visibility and enabled feature permissions for your plan catalog.</p>
     </div>
-    <a class="btn" href="{% url 'panel:plans' %}">← Back to Plans</a>
+    <div class="cg-plan-editor-toolbar">
+      <a class="btn" href="{% url 'panel:plans' %}">← Back to Plans</a>
+      {% if is_edit %}
+        {% panel_can 'plan-delete' as can_delete_plan %}
+        {% if can_delete_plan %}<a class="btn cg-plan-toolbar-delete" href="{% url 'panel:plan-delete' form.instance.pk %}">Delete Plan</a>{% endif %}
+      {% endif %}
+    </div>
   </header>
 
   <form method="post" class="plan-editor-form" data-plan-editor novalidate>

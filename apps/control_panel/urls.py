@@ -40,6 +40,7 @@ urlpatterns = [
     path("plans/", views.plan_catalog, name="plans"),
     path("plans/add/", views.plan_create, name="plan-create"),
     path("plans/<int:pk>/edit/", views.plan_edit, name="plan-edit"),
+    path("plans/<int:pk>/delete/", views.plan_delete, name="plan-delete"),
     path("features/", views.feature_catalog, name="features"),
     path("features/pricing/", module_pricing, name="feature-pricing"),
     path("features/sync/", views.feature_sync, name="features-edit"),

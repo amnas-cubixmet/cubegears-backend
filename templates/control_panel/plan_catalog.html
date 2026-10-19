@@ -58,7 +58,14 @@
           <td data-label="Features"><span class="plan-feature-count">{{ plan.enabled_feature_count }} enabled</span>{% if plan.enabled_feature_count %}<div class="plan-feature-list">{% for item in plan.feature_access.all %}{% if item.enabled %}<span class="plan-feature-tag">{{ item.feature.label }}</span>{% endif %}{% endfor %}</div>{% endif %}</td>
           <td data-label="Visibility">{% if plan.is_public %}<span class="plan-state-pill is-public">Public</span>{% else %}<span class="plan-state-pill is-private">Private</span>{% endif %}</td>
           <td data-label="Status">{% if plan.is_active %}<span class="plan-state-pill is-active">Active</span>{% else %}<span class="plan-state-pill is-archived">Archived</span>{% endif %}</td>
-          <td data-label="Actions">{% panel_can 'plan-edit' as allowed %}{% if allowed %}<a class="plan-edit-link" href="{% url 'panel:plan-edit' plan.pk %}">Edit Plan</a>{% endif %}</td>
+          <td data-label="Actions">
+            <div class="plan-management-actions">
+              {% panel_can 'plan-edit' as can_edit_plan %}
+              {% panel_can 'plan-delete' as can_delete_plan %}
+              {% if can_edit_plan %}<a class="plan-edit-link" href="{% url 'panel:plan-edit' plan.pk %}">Edit</a>{% endif %}
+              {% if can_delete_plan %}<a class="plan-delete-link" href="{% url 'panel:plan-delete' plan.pk %}" aria-label="Delete {{ plan.name }}">Delete</a>{% endif %}
+            </div>
+          </td>
         </tr>
       {% empty %}<tr><td class="empty-cell" colspan="10">No plans match the selected filters. Create a plan or clear the search.</td></tr>
       {% endfor %}

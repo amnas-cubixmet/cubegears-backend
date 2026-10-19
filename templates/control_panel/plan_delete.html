@@ -1,0 +1,43 @@
+{% extends "control_panel/base.html" %}
+{% load panel_access %}
+{% block content %}
+<section class="cg-plan-delete-page" aria-labelledby="delete-plan-title">
+  <nav class="cg-plan-delete-breadcrumb" aria-label="Breadcrumb">
+    <a href="{% url 'panel:plans' %}">Plans</a> <span aria-hidden="true">/</span> Delete plan
+  </nav>
+  <div class="cg-plan-delete-card">
+    <span class="cg-plan-delete-icon" aria-hidden="true">!</span>
+    <p class="eyebrow">PLAN MANAGEMENT / PERMANENT ACTION</p>
+    <h2 id="delete-plan-title">Delete {{ object.name }}?</h2>
+    <p>Deleting an unused plan permanently removes its configuration and included feature links. This action cannot be undone.</p>
+    <dl class="cg-plan-delete-details">
+      <div><dt>Plan</dt><dd>{{ object.name }}</dd></div>
+      <div><dt>Key</dt><dd>{{ object.key }}</dd></div>
+      <div><dt>Linked subscriptions</dt><dd>{{ subscription_count }}</dd></div>
+      <div><dt>Plan-change requests</dt><dd>{{ request_count }}</dd></div>
+      <div><dt>Razorpay payment records</dt><dd>{{ payment_count }}</dd></div>
+    </dl>
+    {% if is_used %}
+      <div class="cg-plan-delete-warning" role="alert">
+        <strong>Deletion blocked — this plan is in use.</strong>
+        <p>Linked subscriptions, payment records and plan-change history must remain intact. Use Edit Plan to switch off Active Plan and archive it instead.</p>
+      </div>
+      <div class="cg-plan-delete-actions">
+        <a class="btn" href="{% url 'panel:plans' %}">Back to plans</a>
+        {% panel_can 'plan-edit' as can_edit_plan %}
+        {% if can_edit_plan %}<a class="btn btn-primary" href="{% url 'panel:plan-edit' object.pk %}">Edit / Archive plan</a>{% endif %}
+      </div>
+    {% else %}
+      <div class="cg-plan-delete-warning">
+        <strong>Review before deleting.</strong>
+        <p>No linked subscriptions, plan-change requests or payments were found. The server will recheck dependencies before deleting.</p>
+      </div>
+      <form method="post" class="cg-plan-delete-actions">
+        {% csrf_token %}
+        <a class="btn" href="{% url 'panel:plans' %}">Cancel</a>
+        <button class="btn btn-danger" type="submit">Delete plan permanently</button>
+      </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
