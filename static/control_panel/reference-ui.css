@@ -52,7 +52,7 @@ body,.main-area{background:var(--bg)}
 .sidebar .sidebar-toggle{color:#94a6bd}
 .sidebar .sidebar-toggle:hover{background:rgba(255,255,255,.08);color:white}
 .sidebar .nav-label{color:#73869e;font-size:10px;letter-spacing:.14em;font-weight:750}
-.sidebar .nav-item{border-radius:7px;color:var(--sidebar-text);font-weight:550;min-height:40px;box-shadow:none}
+.sidebar .nav-item{font-size:12.5px;border-radius:7px;color:var(--sidebar-text);font-weight:550;min-height:40px;box-shadow:none}
 .sidebar .nav-item:hover{color:#fff;background:rgba(255,255,255,.065)}
 .sidebar .nav-item.active{color:#d6fff7;background:rgba(24,183,162,.14);box-shadow:inset 3px 0 0 #1ec8b2!important;font-weight:750}
 .sidebar .nav-icon{color:inherit}
@@ -61,7 +61,7 @@ body,.main-area{background:var(--bg)}
 .sidebar .sidebar-theme-switch button{color:#a1b3c6}
 .sidebar .sidebar-theme-switch button[aria-pressed="true"]{background:var(--sidebar-soft);color:#68e3d1;box-shadow:none}
 .sidebar .avatar{background:#16aa99;color:#fff}
-.sidebar .account-copy strong{color:#fff}
+.sidebar .account-copy strong{color:#fff;font-size:12px}
 .sidebar .account-copy span,.sidebar .logout-link{color:#9eb0c4}
 .sidebar .logout-link:hover{color:#fff}
 .topbar{
