@@ -278,11 +278,18 @@ def companies(request):
 
 @panel_admin_required
 def company_toggle(request, pk):
-    if request.method != "POST":
-        return HttpResponseForbidden("POST required.")
     company = get_object_or_404(Company, pk=pk)
+    if request.method == "GET":
+        return render(request, "control_panel/company_toggle.html", {
+            "page_title": "Change Company Access",
+            "active": "companies",
+            "object": company,
+        })
+    if request.method != "POST":
+        return HttpResponseBadRequest("Only GET and POST are supported.")
     company.is_active = not company.is_active
     company.save(update_fields=["is_active", "updated_at"])
+    messages.success(request, f"{company.name} access {'enabled' if company.is_active else 'disabled'}.")
     return _safe_redirect(request, request.POST.get("next"), "panel:companies")
 
 
@@ -1018,7 +1025,7 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
     })
 
 
-def _delete_object(request, obj, *, title, active, cancel_url):
+def _delete_object(request, obj, *, title, active, cancel_url, template_name="control_panel/confirm_delete.html"):
     if not _can_manage_account(request.user, obj):
         return HttpResponseForbidden("You cannot manage an account or role with greater permissions.")
     if request.method == "POST":
@@ -1029,7 +1036,7 @@ def _delete_object(request, obj, *, title, active, cancel_url):
         except ProtectedError:
             messages.error(request, f"{title} cannot be deleted because other records depend on it.")
             return redirect(cancel_url)
-    return render(request, "control_panel/confirm_delete.html", {
+    return render(request, template_name, {
         "page_title": f"Delete {title}",
         "active": active,
         "object": obj,
@@ -1044,20 +1051,17 @@ def company_create(request):
 
 @panel_admin_required
 def company_detail(request, pk):
-    obj = get_object_or_404(Company, pk=pk)
-    return render(request, "control_panel/detail.html", {
+    obj = get_object_or_404(
+        Company.objects.select_related("owner").annotate(
+            user_count=Count("users", distinct=True),
+            branch_count=Count("branches", distinct=True),
+        ),
+        pk=pk,
+    )
+    return render(request, "control_panel/company_detail.html", {
         "page_title": "Company Details",
         "active": "companies",
         "object": obj,
-        "rows": _display_rows(obj, [
-            ("name", "Name"), ("legal_name", "Legal name"), ("slug", "Slug"),
-            ("email", "Email"), ("phone", "Phone"), ("gstin", "GSTIN"),
-            ("address", "Address"), ("city", "City"), ("state", "State"),
-            ("country", "Country"), ("pincode", "Pincode"), ("currency", "Currency"),
-            ("plan", "Plan"), ("is_active", "Active"), ("created_at", "Created"),
-        ]),
-        "edit_url": "panel:company-edit",
-        "delete_url": "panel:company-delete",
     })
 
 
@@ -1070,7 +1074,10 @@ def company_edit(request, pk):
 @panel_admin_required
 def company_delete(request, pk):
     obj = get_object_or_404(Company, pk=pk)
-    return _delete_object(request, obj, title="Company", active="companies", cancel_url="panel:companies")
+    return _delete_object(
+        request, obj, title="Company", active="companies", cancel_url="panel:companies",
+        template_name="control_panel/company_delete.html",
+    )
 
 
 @panel_admin_required

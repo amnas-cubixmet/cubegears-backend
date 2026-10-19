@@ -1,0 +1,19 @@
+{% extends "control_panel/base.html" %}
+{% block content %}
+<div class="cg-company-confirm">
+  <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span aria-current="page">Delete company</span></nav>
+  <section class="cg-confirm-card" aria-labelledby="cg-delete-heading">
+    <span class="cg-confirm-symbol cg-confirm-danger" aria-hidden="true">!</span>
+    <span class="cg-section-kicker">Permanent action</span>
+    <h2 id="cg-delete-heading">Delete this company?</h2>
+    <p>You are about to permanently delete <strong>{{ object.name }}</strong>. This action cannot be undone.</p>
+    <div class="cg-confirm-summary"><span>Company</span><strong>{{ object.name }}</strong></div>
+    <p class="cg-confirm-note">This may remove related company records. If protected records exist, deletion will be blocked.</p>
+    <form method="post" class="cg-confirm-actions">
+      {% csrf_token %}
+      <a class="btn cg-back-button" href="{% url 'panel:company-detail' object.pk %}">Keep company</a>
+      <button class="btn cg-danger-button" type="submit">Delete permanently</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

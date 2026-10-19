@@ -1,98 +1,108 @@
 {% extends "control_panel/base.html" %}
 {% load static %}
 {% block content %}
-<div class="company-form-page">
-  <header class="company-form-heading">
+<div class="cg-company-editor">
+  <header class="cg-page-heading cg-editor-page-heading">
     <div>
-      <div class="company-form-breadcrumb"><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit Company{% else %}Add Company{% endif %}</span></div>
-      <h2>{% if is_edit %}Edit Company{% else %}Create New Company{% endif %}</h2>
-      <p>{% if is_edit %}Update company identity, contact information, plan and branding.{% else %}Add a new tenant with contact information, workspace settings and a company logo.{% endif %}</p>
+      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span aria-current="page">{% if is_edit %}Edit company{% else %}Add company{% endif %}</span></nav>
+      <h2>{% if is_edit %}Edit company{% else %}Add company{% endif %}</h2>
+      <p>{% if is_edit %}Manage company information, workspace settings and access.{% else %}Create a new company workspace using verified business details.{% endif %}</p>
     </div>
-    <a class="btn" href="{% url cancel_url %}">← Back to Companies</a>
+    <a class="btn cg-back-button" href="{% url cancel_url %}">← Back to companies</a>
   </header>
 
-  <form method="post" enctype="multipart/form-data" class="company-editor-form" data-company-editor novalidate>
+  <form class="cg-editor-form" method="post" enctype="multipart/form-data" data-company-editor novalidate>
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="cg-editor-layout">
+      <div class="cg-editor-main">
+        <section class="cg-editor-card" aria-labelledby="cg-general-title">
+          <div class="cg-card-heading">
+            <div><span class="cg-section-kicker">01 / Overview</span><h3 id="cg-general-title">General information</h3><p>Business details used to identify this company across CubeGears.</p></div>
+          </div>
+          <div class="cg-form-grid">
+            {% include "control_panel/company_field.html" with field=form.name %}
+            {% include "control_panel/company_field.html" with field=form.legal_name %}
+            {% include "control_panel/company_field.html" with field=form.gstin %}
+            <div class="company-editor-field">
+              <label for="company-slug-preview">Workspace identifier <span class="auto-badge">Auto-generated</span></label>
+              <input id="company-slug-preview" class="form-control" type="text" value="{% if is_edit %}{{ form.instance.slug }}{% endif %}" {% if is_edit %}data-fixed-slug{% endif %} placeholder="Generated from company name" readonly aria-describedby="company-slug-help">
+              <small id="company-slug-help" class="field-hint">{% if is_edit %}The identifier stays unchanged to preserve company links.{% else %}Generated when the company is saved. Duplicate names receive a unique suffix.{% endif %}</small>
+            </div>
+          </div>
+        </section>
 
-    <section class="panel-card company-editor-section">
-      <header class="company-editor-section-head"><span class="company-editor-section-icon">01</span>
-        <div><h3>Company Information</h3><p>Basic company details and tenant identity.</p></div>
-      </header>
-      <div class="company-editor-grid">
-        {% include "control_panel/company_field.html" with field=form.name %}
-        {% include "control_panel/company_field.html" with field=form.legal_name %}
-        <div class="company-editor-field is-wide">
-          <label for="company-slug-preview">Company Slug <span class="auto-badge">Automatic</span></label>
-          <input id="company-slug-preview" type="text" class="form-control" value="{% if is_edit %}{{ form.instance.slug }}{% endif %}" {% if is_edit %}data-fixed-slug{% endif %} placeholder="Generated from company name" readonly aria-describedby="company-slug-help">
-          <small id="company-slug-help" class="field-hint">{% if is_edit %}The existing slug is preserved to prevent breaking company links.{% else %}Generated automatically when saved. Duplicate names receive a unique suffix.{% endif %}</small>
-        </div>
-        {% include "control_panel/company_field.html" with field=form.gstin %}
+        <section class="cg-editor-card" aria-labelledby="cg-contact-title">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">02 / Details</span><h3 id="cg-contact-title">Contact & address</h3><p>Official company contact and location information.</p></div></div>
+          <div class="cg-form-grid">
+            {% include "control_panel/company_field.html" with field=form.email %}
+            {% include "control_panel/company_field.html" with field=form.phone %}
+            {% include "control_panel/company_field.html" with field=form.address wide=True %}
+            {% include "control_panel/company_field.html" with field=form.city %}
+            {% include "control_panel/company_field.html" with field=form.state %}
+            {% include "control_panel/company_field.html" with field=form.country %}
+            {% include "control_panel/company_field.html" with field=form.pincode %}
+          </div>
+        </section>
       </div>
-    </section>
 
-    <section class="panel-card company-editor-section">
-      <header class="company-editor-section-head"><span class="company-editor-section-icon">02</span>
-        <div><h3>Contact & Address</h3><p>How customers and administrators reach this company.</p></div>
-      </header>
-      <div class="company-editor-grid">
-        {% include "control_panel/company_field.html" with field=form.email %}
-        {% include "control_panel/company_field.html" with field=form.phone %}
-        {% include "control_panel/company_field.html" with field=form.address wide=True %}
-        {% include "control_panel/company_field.html" with field=form.city %}
-        {% include "control_panel/company_field.html" with field=form.state %}
-        {% include "control_panel/company_field.html" with field=form.country %}
-        {% include "control_panel/company_field.html" with field=form.pincode %}
-      </div>
-    </section>
-
-    <section class="panel-card company-editor-section">
-      <header class="company-editor-section-head"><span class="company-editor-section-icon">03</span>
-        <div><h3>Branding & Workspace</h3><p>Upload a company logo and configure its default workspace.</p></div>
-      </header>
-      <div class="company-editor-brand-grid">
-        <div class="company-editor-logo-field">
-          <label for="{{ form.logo_image.id_for_label }}">Company Logo</label>
-          <div class="company-logo-uploader">
-            <div class="company-logo-preview">
+      <aside class="cg-editor-side" aria-label="Company logo and workspace settings">
+        <section class="cg-editor-card cg-logo-card" aria-labelledby="cg-logo-title">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">Brand identity</span><h3 id="cg-logo-title">Company logo</h3><p>Shown alongside company information.</p></div></div>
+          <div class="cg-logo-body">
+            <div class="company-logo-preview cg-logo-frame">
               {% if form.instance.logo_image %}
-                <img data-logo-preview src="{{ form.instance.logo_image.url }}" alt="Current company logo" />
+                <img data-logo-preview src="{{ form.instance.logo_image.url }}" alt="Current company logo">
               {% elif form.instance.logo %}
-                <img data-logo-preview src="{{ form.instance.logo }}" alt="Current company logo" />
+                <img data-logo-preview src="{{ form.instance.logo }}" alt="Current company logo">
               {% else %}
                 <span data-logo-placeholder aria-hidden="true">CG</span>
                 <img data-logo-preview alt="Selected company logo" hidden>
               {% endif %}
             </div>
-            <div class="company-logo-controls">
-              <p>Upload Company Logo</p>
-              <small>PNG, JPG or WebP · Max 2 MB · Recommended square image</small>
-              {{ form.logo_image }}
-              <button type="button" data-clear-logo class="btn company-logo-clear" hidden>Cancel selection</button>
-              <span class="field-hint" data-logo-message role="status" aria-live="polite"></span>
-              {% for error in form.logo_image.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-            </div>
+            <label class="cg-logo-upload-label" for="{{ form.logo_image.id_for_label }}">Upload a logo</label>
+            <div class="cg-logo-input">{{ form.logo_image }}</div>
+            <small class="field-hint">JPG, PNG or WebP. Maximum 2 MB.</small>
+            <button type="button" data-clear-logo class="btn cg-logo-clear" hidden>Cancel selection</button>
+            <div data-logo-message class="field-hint" role="status" aria-live="polite"></div>
+            {% for error in form.logo_image.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
           </div>
-        </div>
-        <div class="company-editor-workspace">
-          {% include "control_panel/company_field.html" with field=form.currency %}
-          {% include "control_panel/company_field.html" with field=form.plan %}
-          {% include "control_panel/company_field.html" with field=form.owner %}
-          {% include "control_panel/company_field.html" with field=form.require_paid_features %}
-          <p class="help-text">Only the selected owner can manage this company's SaaS wallet and feature purchases. Paid access locks workshop modules until activation. Tenant identifier: {{ form.instance.slug|default:"Generated on save" }}</p>
-          <div class="company-editor-field company-active-control">
-            <label for="{{ form.is_active.id_for_label }}">Company Access</label>
-            <label class="company-check-label">{{ form.is_active }} <span>Activate this company</span></label>
-            <small class="field-hint">Enabled companies can access their workspace, subject to user permissions.</small>
-            {% for error in form.is_active.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
-          </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
-    <div class="company-editor-actions">
-      <a href="{% url cancel_url %}" class="btn">Cancel</a>
-      <button type="submit" class="btn btn-primary">{% if is_edit %}Save Changes{% else %}Create Company{% endif %}</button>
+        <section class="cg-editor-card" aria-labelledby="cg-workspace-title">
+          <div class="cg-card-heading"><div><span class="cg-section-kicker">03 / Configuration</span><h3 id="cg-workspace-title">Workspace settings</h3><p>Company ownership and platform configuration.</p></div></div>
+          <div class="cg-workspace-fields">
+            {% include "control_panel/company_field.html" with field=form.currency %}
+            {% include "control_panel/company_field.html" with field=form.plan %}
+            {% include "control_panel/company_field.html" with field=form.owner %}
+            <div class="cg-switch-field">
+              <div class="cg-switch-copy">
+                <strong>Require paid features</strong>
+                <small>Limit workshop modules until features are activated.</small>
+              </div>
+              <label class="cg-switch-control" for="{{ form.require_paid_features.id_for_label }}">
+                {{ form.require_paid_features }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Require paid features</span>
+              </label>
+              {% for error in form.require_paid_features.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+            <div class="cg-switch-field">
+              <div class="cg-switch-copy">
+                <strong>Company access</strong>
+                <small>Only active companies can access their workspace, subject to permissions.</small>
+              </div>
+              <label class="cg-switch-control" for="{{ form.is_active.id_for_label }}">
+                {{ form.is_active }}<span class="cg-switch-track" aria-hidden="true"></span><span class="sr-only">Enable company access</span>
+              </label>
+              {% for error in form.is_active.errors %}<span class="field-error" role="alert">{{ error }}</span>{% endfor %}
+            </div>
+            <p class="cg-workspace-note">Only the company owner can manage the SaaS wallet and feature purchases. {% if is_edit %}Workspace ID: {{ form.instance.slug }}{% endif %}</p>
+          </div>
+        </section>
+      </aside>
+    </div>
+    <div class="cg-editor-footer">
+      <a href="{% url cancel_url %}" class="btn cg-back-button">Cancel</a>
+      <button type="submit" class="btn btn-primary">{% if is_edit %}Save changes{% else %}Create company{% endif %}</button>
     </div>
   </form>
 </div>
