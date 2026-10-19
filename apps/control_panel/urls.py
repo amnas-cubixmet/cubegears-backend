@@ -54,13 +54,7 @@ urlpatterns = [
     path("credits/", credits_panel.credits_control, name="credits"),
     path("credits/cycle/", cycle_policy_control, name="credit-cycle"),
     path("credits/calendar/", calendar_policy_control, name="calendar-credit-billing"),
-    path("subscriptions/", views.subscriptions, name="subscriptions"),
-    path("subscriptions/payments/", views.subscription_payments, name="subscription-payments"),
     path("payment-settings/", RedirectView.as_view(pattern_name="panel:credits", permanent=False), name="payment-settings"),
-    path("subscriptions/add/", views.subscription_create, name="subscription-create"),
-    path("subscriptions/<uuid:pk>/", views.subscription_detail, name="subscription-detail"),
-    path("subscriptions/<uuid:pk>/edit/", views.subscription_edit, name="subscription-edit"),
-    path("subscriptions/<uuid:pk>/delete/", views.subscription_delete, name="subscription-delete"),
 
     path("settings/", views.storage, name="billing-settings"),
     path("storage/", views.storage, name="storage"),
