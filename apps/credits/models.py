@@ -497,7 +497,10 @@ class BillingCyclePolicy(models.Model):
     event_tracking_enabled = models.BooleanField(default=False)
 
     enabled = models.BooleanField(default=False)
+    # Existing 'due_day' remains the first automatic payment-collection day.
     due_day = models.PositiveSmallIntegerField(default=5)
+    # Final grace day. Overdue access restrictions begin the following day.
+    due_end_day = models.PositiveSmallIntegerField(default=5)
     restrict_overdue = models.BooleanField(default=True)
     allow_zero_balance_usage = models.BooleanField(default=True)
     # Prevent charging periods that closed before policy activation.
@@ -513,6 +516,9 @@ class BillingCycleStatement(models.Model):
     )
     month = models.CharField(max_length=7)
     due_at = models.DateTimeField()
+    # Snapshot the grace deadline when the statement is issued, so later
+    # policy edits never retroactively shorten existing payment windows.
+    grace_end_at = models.DateTimeField(null=True, blank=True)
     feature_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     storage_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
     total_credits = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal("0"))
