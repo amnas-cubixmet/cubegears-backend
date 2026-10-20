@@ -148,8 +148,10 @@
       <button type="submit" class="btn btn-primary">Save price</button>
     </fieldset>
   </form>
-  {% if row.billing_type_locked or row.billing_model_locked %}
-    <p class="cg-module-billing-lock-info">Existing purchases or metered usage protect the billing period/model. Credits and publishing can still be updated for future availability.</p>
+  {% if row.has_purchases and not row.billing_type_locked %}
+    <p class="cg-module-billing-lock-info">Billing period can be changed anytime. If the period or billing model changes, existing purchases keep their original expiry and a new price version is published for future purchases.</p>
+  {% elif row.billing_type_locked or row.billing_model_locked %}
+    <p class="cg-module-billing-lock-info">Metered postpaid access locks the existing billing model. Monthly settlement must remain unchanged until the metered accounts are migrated safely.</p>
   {% endif %}
   {% if row.mapping %}<small class="cg-module-updated">Updated {{ row.mapping.updated_at|date:"d M Y" }}</small>{% endif %}
 </section>
