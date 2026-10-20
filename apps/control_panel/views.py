@@ -814,7 +814,9 @@ def company_detail(request, pk):
         pk=pk,
     )
     from apps.credits.storage_interval_logs import interval_log_page
+    from apps.credits.company_feature_pricing_logs import company_feature_pricing_report
 
+    feature_pricing = company_feature_pricing_report(obj, limit=50)
     storage_summary = MediaFile.objects.filter(company=obj).aggregate(
         total_bytes=Sum("size_bytes"), file_count=Count("pk"),
     )
@@ -841,6 +843,7 @@ def company_detail(request, pk):
 
     return render(request, "control_panel/company_detail.html", {
         "storage_intervals": storage_intervals,
+        "feature_pricing": feature_pricing,
         "current_storage_bytes": current_storage_bytes,
         "current_storage_gb": (Decimal(current_storage_bytes) / Decimal(1024 ** 3)).quantize(Decimal("0.001")),
         "current_file_count": storage_summary["file_count"] or 0,
