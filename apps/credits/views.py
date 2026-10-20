@@ -72,21 +72,24 @@ class CompanyCreditsView(APIView):
              for state in active if state.feature_id in prices),
             Decimal("0.00"),
         )
-        # Legacy time-weighted feature metering remains optional and distinct
-        # from the FeatureUsageSession billing engine.
+        # The amount already owed survives an OFF action. Metered rows
+        # remain unsettled regardless of how many modules are still enabled.
+        from .period_rates import PERIOD_SECONDS
         from django.db.models import Sum
-        postpaid = (
-            CompanyPostpaidFeature.objects.filter(
-                company=company, enabled=True, suspended=False,
-            ) if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False)
-            else CompanyPostpaidFeature.objects.none()
-        )
-        postpaid_count = postpaid.count()
-        pending_postpaid = (
-            FeatureMeterPeriod.objects.filter(
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            totals = FeatureMeterPeriod.objects.filter(
                 company=company, settled_at__isnull=True,
-            ).aggregate(total=Sum("accrued_credits"))["total"] or Decimal("0")
-        ) if postpaid_count else Decimal("0")
+            ).aggregate(usage=Sum("accrued_credits"), one_time=Sum("activation_credits"))
+            pending_postpaid = (totals["usage"] or Decimal("0")) + (totals["one_time"] or Decimal("0"))
+        else:
+            pending_postpaid = Decimal("0")
+        # Estimates assume uninterrupted operation for 30 days and are
+        # informational only: the ledger uses observed seconds, not estimates.
+        projected_postpaid = sum((
+            state.monthly_rate * Decimal(30 * 24 * 60 * 60)
+            / Decimal(state.rate_duration_seconds or PERIOD_SECONDS["monthly"])
+            for state in postpaid if state.billing_period != "permanent"
+        ), Decimal("0"))
 
         return Response({
             "balance": str(wallet.balance),
@@ -95,7 +98,7 @@ class CompanyCreditsView(APIView):
             "staffCount": count,
             "userCount": users,
             "activeFeatures": active.count() + postpaid_count,
-            "monthlyCredits": str(monthly + sum((p.monthly_rate for p in postpaid), Decimal("0.00"))),
+            "monthlyCredits": str(monthly + projected_postpaid),
             "postpaidAccruedCredits": str(pending_postpaid.quantize(Decimal("0.01"))),
             "checkoutAvailable": configured(),
             "canManage": user_has_permission(request.user, "billing.edit"),
