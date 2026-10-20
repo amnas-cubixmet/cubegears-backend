@@ -98,5 +98,42 @@
       </table>
     </div>
   </section>
+  <section class="cg-editor-card cg-company-interval-card" aria-labelledby="cg-company-feature-usage-heading">
+    <div class="cg-card-heading"><div>
+      <span class="cg-section-kicker">Read-only time-based billing</span>
+      <h3 id="cg-company-feature-usage-heading">Feature usage &amp; accrued credits</h3>
+      <p>Only this company's module ON/OFF time is metered. Historical credits remain due after modules are turned OFF.</p>
+    </div></div>
+    <div class="cg-company-table-wrap">
+      <table class="cg-company-detail-table cg-company-interval-table">
+        <thead><tr><th scope="col">Module</th><th scope="col">Access</th><th scope="col">Rate unit</th><th scope="col">Last checkpoint</th></tr></thead>
+        <tbody>
+          {% for state in feature_states %}
+          <tr>
+            <td>{{ state.feature.label }}</td>
+            <td>{% if state.suspended %}Suspended{% elif state.enabled %}ON{% else %}OFF{% endif %}</td>
+            <td>{{ state.get_billing_period_display }} · {{ state.monthly_rate }} credits</td>
+            <td>{{ state.sampled_at|date:"d M Y H:i:s"|default:"—" }}</td>
+          </tr>
+          {% empty %}<tr><td colspan="4">No time-metered modules have been activated for this company.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p style="margin:12px 18px;font-size:12px;color:var(--muted)">Unsettled feature usage including one-time rates: <strong>{{ feature_owed_credits|floatformat:2 }} credits</strong>. The configured monthly due date controls settlement, not each rate period.</p>
+    <div class="cg-company-table-wrap">
+      <table class="cg-company-detail-table cg-company-interval-table">
+        <thead><tr><th scope="col">Recorded at</th><th scope="col">Module</th><th scope="col">Used time</th><th scope="col">Rate</th><th scope="col">Accrued credits</th><th scope="col">Users</th></tr></thead>
+        <tbody>
+          {% for row in feature_intervals %}
+          <tr><td>{{ row.sampled_at|date:"d M Y H:i:s" }}</td><td>{{ row.feature.label }}</td>
+          <td>{{ row.covered_seconds }} sec</td><td>{{ row.monthly_rate }} / {{ row.get_billing_period_display }}</td>
+          <td>{{ row.accrued_credits|floatformat:6 }}</td><td>{{ row.users }}</td></tr>
+          {% empty %}<tr><td colspan="6">No module usage checkpoints have been recorded. Running the meter or switching a module OFF will create them.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 {% endblock %}
