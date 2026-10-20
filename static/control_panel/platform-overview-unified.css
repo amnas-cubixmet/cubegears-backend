@@ -81,3 +81,108 @@
  .cg-overview-page .cg-company-totals span{font-size:11px}
  .cg-overview-page .cg-module-summary-card{padding:12px}
 }
+
+
+/* v2: page-by-page layout refinements; no change to forms, data or actions. */
+.cg-overview-page{isolation:isolate}
+.cg-overview-page .cg-overview-helper{color:var(--muted);font-size:14px;line-height:1.55;max-width:760px;margin:5px 0 0}
+.cg-overview-page .cg-overview-filtered{display:inline-flex;margin-inline-start:9px;padding:3px 7px;border-radius:6px;background:var(--brand-soft);color:var(--brand);font-size:11px;font-weight:740;vertical-align:middle;white-space:nowrap}
+.cg-overview-page .cg-overview-section-intro{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;margin:6px 0 -7px}
+.cg-overview-page .cg-overview-section-intro .eyebrow{margin:0 0 5px;font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
+.cg-overview-page .cg-overview-section-intro h3{margin:0 0 5px;font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.25}
+.cg-overview-page .cg-overview-section-intro p:last-child{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.cg-overview-page .cg-overview-result-pill{display:inline-flex;align-items:center;min-height:30px;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:var(--surface);font-size:12px;color:var(--muted);font-weight:750;white-space:nowrap}
+.cg-overview-page :is(.cg-directory-panel,.credit-tab-panel,.cg-feature-management,.cg-module-toolbar){min-width:0}
+.cg-overview-page :is(.cg-company-totals>div,.cg-module-summary-card,.directory-stats>.user-stat-card){transition:border-color .18s ease,box-shadow .18s ease}
+.cg-overview-page :is(.cg-company-totals>div,.cg-module-summary-card,.directory-stats>.user-stat-card):hover{border-color:var(--line-strong)}
+.cg-overview-page :is(.cg-company-totals strong,.cg-module-summary-card>strong,.user-stat-value){font-variant-numeric:tabular-nums}
+.cg-overview-page .cg-directory-top{display:grid;grid-template-columns:minmax(0,1fr);align-items:stretch;gap:14px}
+.cg-overview-page .cg-directory-top>div:first-child{min-width:0}
+.cg-overview-page .cg-directory-top>form{box-sizing:border-box;min-width:0;width:100%;border-top:1px solid var(--line);padding-top:14px}
+.cg-overview-page .cg-company-filters,
+.cg-overview-page .cg-user-filters{display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:9px}
+.cg-overview-page .cg-company-filters>.cg-company-search{flex:1 1 250px;min-width:170px;max-width:none;width:auto}
+.cg-overview-page .cg-user-filters>.cg-company-search{flex:1 1 240px;min-width:170px;max-width:none;width:auto}
+.cg-overview-page .cg-company-filters>.cg-filter-select,
+.cg-overview-page .cg-user-filters>label:not(.cg-company-search){flex:0 1 170px;min-width:135px}
+.cg-overview-page .cg-company-filters select,
+.cg-overview-page .cg-user-filters select{width:100%;max-width:none;min-width:0;box-sizing:border-box}
+.cg-overview-page .cg-company-filters :is(input,select),
+.cg-overview-page .cg-user-filters :is(input,select){box-sizing:border-box;min-height:42px;font-size:14px;line-height:1.4}
+.cg-overview-page :is(.cg-company-filters,.cg-user-filters) :is(button,.cg-clear-filter){min-height:42px;display:inline-flex;align-items:center;justify-content:center;border-radius:8px}
+.cg-overview-page .cg-clear-filter{padding:8px 13px;font-size:13px;color:var(--brand);font-weight:700}
+.cg-overview-page :is(.cg-companies-table,.cg-users-table) td{overflow-wrap:anywhere}
+.cg-overview-page :is(.cg-companies-table,.cg-users-table) th{vertical-align:middle}
+.cg-overview-page :is(.cg-companies-table,.cg-users-table) tbody tr:hover{background:var(--surface-soft)}
+.cg-overview-page :is(.cg-companies-table,.cg-users-table) .cg-icon-action{display:inline-flex;align-items:center;justify-content:center;flex:0 0 34px;width:34px;height:34px;min-height:34px;min-width:34px;border-radius:8px}
+.cg-overview-page .cg-company-actions{display:flex;flex-wrap:wrap;gap:7px;min-width:0}
+.cg-overview-page .cg-company-identity{min-width:0;max-width:100%}
+.cg-overview-page .cg-company-name-group{min-width:0}
+.cg-overview-page .cg-company-name-group :is(strong,small){overflow-wrap:anywhere}
+.cg-overview-page .cg-companies-table .cg-cell-main{overflow-wrap:anywhere}
+.cg-overview-page .cg-module-grid{align-items:stretch}
+.cg-overview-page .module-pricing-card{min-width:0;display:flex;flex-direction:column;height:100%;box-sizing:border-box}
+.cg-overview-page .module-pricing-card .cg-module-card-form{margin-top:auto}
+.cg-overview-page .module-pricing-card :is(input,select){min-width:0;max-width:100%}
+.cg-overview-page .cg-module-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.cg-overview-page .cg-module-toolbar .cg-module-search{flex:1 1 230px;min-width:170px}
+.cg-overview-page .cg-module-toolbar nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cg-overview-page .cg-module-toolbar input{width:100%;min-height:42px;font-size:14px}
+.cg-overview-page .cg-module-card-fields label{line-height:1.4}
+.cg-overview-page .cg-module-card-form button[type=submit]{min-height:40px}
+.cg-overview-page .directory-stats.remaining-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}
+.cg-overview-page .credit-tab-navigation{max-width:100%;overflow:hidden}
+.cg-overview-page .credit-tab-list{display:flex;gap:5px;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-width:thin}
+.cg-overview-page .credit-tab-list>button{flex-shrink:0}
+.cg-overview-page .cg-package-workspace>*{min-width:0}
+.cg-overview-page .cg-package-fields-two{min-width:0}
+.cg-overview-page .cg-package-form :is(input:not([type=checkbox]),select){width:100%;min-width:0;max-width:100%;box-sizing:border-box;font-size:16px}
+.cg-overview-page .cg-package-card{min-width:0}
+.cg-overview-page .cg-package-card-actions{min-width:0;gap:7px}
+.cg-overview-page .cg-billing-settings-nav{display:flex;flex-wrap:wrap;gap:9px;align-items:center;min-width:0}
+.cg-overview-page .cg-billing-settings-nav a{min-height:42px;display:inline-flex;align-items:center;gap:7px}
+.cg-overview-page :is(#storage-pricing-title,#calendar-billing-title,#legacy-credit-cycle){scroll-margin-top:90px}
+.cg-overview-page .cg-settings-panels{min-width:0}
+.cg-overview-page .cg-settings-panels :is(input:not([type=checkbox]):not([type=radio]),select,textarea){max-width:100%;box-sizing:border-box;font-size:16px}
+.cg-overview-page .cg-settings-panels :is(.cg-storage-fields,.cg-storage-pricing-form){min-width:0}
+.cg-overview-page .cg-settings-hero-copy{min-width:0;max-width:760px}
+.cg-overview-page :is(.cg-settings-summary-card,.cg-module-summary-card,.cg-company-totals>div) strong{overflow-wrap:anywhere}
+.cg-overview-page :is(a,button,select,input,summary):focus-visible{outline:2px solid var(--brand);outline-offset:3px}
+@media(max-width:1200px){
+ .cg-overview-page .directory-stats.remaining-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .cg-overview-page .cg-user-filters>label:not(.cg-company-search){flex:1 1 140px}
+}
+@media(max-width:850px){
+ .cg-overview-page .cg-directory-top>form{padding-top:12px}
+ .cg-overview-page .cg-module-grid{gap:12px}
+ .cg-overview-page :is(.cg-companies-table,.cg-users-table) tbody tr:hover{background:var(--surface)}
+ .cg-overview-page .cg-company-actions{justify-content:flex-start}
+}
+@media(max-width:600px){
+ .cg-overview-page .cg-overview-section-intro{align-items:flex-start}
+ .cg-overview-page .cg-overview-section-intro h3{font-size:17px}
+ .cg-overview-page .cg-directory-top{gap:12px}
+ .cg-overview-page .cg-company-filters>.cg-company-search,
+ .cg-overview-page .cg-user-filters>.cg-company-search{flex-basis:100%;min-width:0}
+ .cg-overview-page .cg-company-filters>.cg-filter-select,
+ .cg-overview-page .cg-user-filters>label:not(.cg-company-search){flex:1 1 calc(50% - 5px);min-width:0}
+ .cg-overview-page :is(.cg-company-filters,.cg-user-filters) :is(input,select){font-size:16px}
+ .cg-overview-page :is(.cg-company-filters,.cg-user-filters)>button{flex:1 1 100px}
+ .cg-overview-page :is(.cg-company-filters,.cg-user-filters)>.cg-clear-filter{flex:1 1 100px}
+ .cg-overview-page .cg-module-toolbar .cg-module-search{flex-basis:100%;min-width:0}
+ .cg-overview-page .cg-module-toolbar nav{width:100%}
+ .cg-overview-page .cg-module-toolbar nav a{flex:1 1 135px}
+ .cg-overview-page .directory-stats.remaining-stats{gap:9px}
+ .cg-overview-page .cg-settings-hero-copy{max-width:100%}
+ .cg-overview-page .cg-billing-settings-nav a{flex:1 1 125px;justify-content:center}
+ .cg-overview-page .cg-settings-summary{min-width:0}
+}
+@media(max-width:380px){
+ .cg-overview-page .directory-stats.remaining-stats{grid-template-columns:1fr}
+ .cg-overview-page .cg-user-filters>label:not(.cg-company-search){flex:1 1 100%}
+ .cg-overview-page .cg-company-filters>.cg-filter-select{flex:1 1 100%}
+ .cg-overview-page .cg-billing-settings-nav a{flex:1 1 100%}
+}
+@media(prefers-reduced-motion:reduce){
+ .cg-overview-page :is(.cg-company-totals>div,.cg-module-summary-card,.directory-stats>.user-stat-card){transition:none}
+}
