@@ -1,6 +1,5 @@
 """Appearance validation, tenant boundaries and frozen invoice template resolution."""
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
 from rest_framework.exceptions import ValidationError
