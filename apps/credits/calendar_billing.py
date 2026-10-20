@@ -76,7 +76,7 @@ def _amounts(company, month):
                 storage += row.accrued_credits
                 breakdown.append({"kind": "storage", "coveredSeconds": row.covered_seconds,
                                   "credits": str(row.accrued_credits)})
-    if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED and not settings.CREDIT_LABEL_ONLY_ACCESS_ENABLED:
+    if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
         for row in FeatureMeterPeriod.objects.filter(
             company=company, period=month, settled_at__isnull=True,
         ).select_related("feature"):

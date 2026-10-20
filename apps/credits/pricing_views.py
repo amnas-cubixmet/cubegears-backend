@@ -60,8 +60,9 @@ def module_pricing(request):
         has_purchases = bool(mapping and mapping.bundle_id in purchased_bundle_ids)
         has_metered_access = bool(mapping and mapping.feature_id in metered_feature_ids)
         billing_model_locked = has_metered_access
-        # An active/historical metered postpaid feature must stay Monthly.
-        billing_type_locked = bool(has_metered_access and mapping.monthly_postpaid)
+        # Rate unit is editable at any time: ongoing metering is first
+        # checkpointed, preserving historical usage and then repriced.
+        billing_type_locked = False
         form = submitted if submitted is not None and request.POST.get('module') == module['key'] else ModulePriceForm(initial={
             'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 5,
             'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else True,

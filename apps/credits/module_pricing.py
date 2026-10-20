@@ -5,6 +5,7 @@ MIN_MODULE_USER_CREDITS = Decimal('5.00')
 from uuid import uuid4
 from django import forms
 from django.db import transaction
+from django.utils import timezone
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.models import FeatureGroup, PlanFeature
 from .models import FeatureBundle, ModulePriceLabel, FeatureCreditPrice, CompanyPostpaidFeature
@@ -24,8 +25,6 @@ class ModulePriceForm(forms.Form):
     def clean(self):
         data = super().clean()
         existing = ModulePriceLabel.objects.select_related('bundle').filter(feature__key=data.get('module')).first()
-        if data.get('monthly_postpaid') and data.get('billing_type') != 'monthly':
-            self.add_error('billing_type', 'Postpaid usage requires Monthly billing.')
         if existing and data.get('monthly_postpaid', False) != existing.monthly_postpaid:
             if CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
                 self.add_error('monthly_postpaid', 'A metered module must retain its billing model. Settle or migrate metered access separately.')
@@ -48,8 +47,23 @@ def save_module_price(data, actor):
         feature.is_active = True
         feature.save(update_fields=['is_active'])
     mapping = ModulePriceLabel.objects.select_related('bundle').filter(feature=feature).first()
-    if data.get('monthly_postpaid') and data['billing_type'] != 'monthly':
-        raise ValueError('Postpaid usage requires Monthly billing.')
+    # Finish all observed usage at the OLD rate before changing period/price.
+    # Checkpoint is forced at this explicit price-edit boundary, then snapshot
+    # new terms for future seconds (not for already-recorded usage).
+    metered = list(
+        CompanyPostpaidFeature.objects.select_for_update().filter(
+            feature=feature, enabled=True, suspended=False,
+        ).select_related('company')
+    )
+    checkpoint_at = timezone.now()
+    if metered:
+        from .monthly_features import meter_postpaid_feature
+        for active in metered:
+            status, _ = meter_postpaid_feature(active, at=checkpoint_at, force=True)
+            if status not in ('metered', 'already_metered'):
+                raise ValueError(
+                    f'Cannot change billing while company usage is unmetered ({status}).'
+                )
     if mapping:
         if data.get('monthly_postpaid', False) != mapping.monthly_postpaid and CompanyPostpaidFeature.objects.filter(feature=feature).exists():
             raise ValueError('A metered module must keep its billing model.')
@@ -93,8 +107,14 @@ def save_module_price(data, actor):
         FeatureCreditPrice.objects.update_or_create(feature=feature, defaults={
             'base_credits': Decimal('0'), 'activation_credits': Decimal('0'),
             'per_staff_credits': Decimal('0'), 'per_user_credits': data['per_user_credits'],
-            'billing_period': 'monthly', 'is_available': data['published'],
+            'billing_period': data['billing_type'], 'is_available': data['published'],
         })
     mapping.updated_by = actor
     mapping.save(update_fields=['bundle', 'monthly_postpaid', 'updated_by', 'updated_at'])
+    # New rates are effective immediately AFTER the checkpoint. Existing
+    # accrued month totals and earlier price snapshots remain unchanged.
+    if metered:
+        from .monthly_features import replace_postpaid_rate
+        for active in metered:
+            replace_postpaid_rate(active, at=checkpoint_at)
     return bundle

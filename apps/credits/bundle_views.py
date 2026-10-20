@@ -44,7 +44,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "REPLACED_BILLING_PERIOD"
         if bundle.is_retired and not can_resume
         else "POSTPAID_MONTHLY_ONLY"
-        if effective_policy() and bundle.billing_type != "monthly"
+        if effective_policy() and bundle.billing_type != "monthly" and not postpaid
         else "FEATURE_ENTITLEMENTS_NOT_ENABLED"
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
         else "METERED_OPERATION_NOT_READY"
@@ -160,8 +160,9 @@ class BundlePurchaseView(APIView):
         if mapping:
             from .monthly_features import activate_postpaid_feature
             from .monthly_policy import policy
-            if not policy():
-                return Response({'message': 'Monthly due-date collection must be configured first.'}, status=409)
+            from .calendar_billing import active_policy
+            if not (policy() or active_policy()):
+                return Response({'message': 'Monthly settlement policy must be configured first.'}, status=409)
             try:
                 state, charged = activate_postpaid_feature(request.user.company, mapping.feature)
             except ValueError as exc:

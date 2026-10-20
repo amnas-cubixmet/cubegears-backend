@@ -50,7 +50,7 @@ def active_label_modules(company):
     from django.utils import timezone
     from apps.credits.models import CompanyBundleAccess
     now = timezone.now()
-    return set(CompanyBundleAccess.objects.filter(
+    purchased = set(CompanyBundleAccess.objects.filter(
         company=company,
         enabled=True,
         bundle__is_active=True,
@@ -59,7 +59,19 @@ def active_label_modules(company):
         Q(billing_type_at_purchase="permanent", valid_until__isnull=True)
         | Q(billing_type_at_purchase__in=("ten_seconds", "hourly", "daily", "weekly", "monthly"),
             valid_until__gt=now)
-    ).values_list("bundle__features__key", flat=True).distinct()) - FREE_TENANT_MODULES
+    ).values_list("bundle__features__key", flat=True).distinct())
+    # Postpaid labels are valid paid access in strict label-only mode too.
+    # These are server-verified company states, never a client-side grant.
+    from django.conf import settings
+    if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+        from apps.credits.models import CompanyPostpaidFeature
+        purchased.update(CompanyPostpaidFeature.objects.filter(
+            company=company, enabled=True, suspended=False,
+            feature__is_active=True,
+            feature__module_price_label__monthly_postpaid=True,
+            feature__module_price_label__bundle__is_active=True,
+        ).values_list("feature__key", flat=True))
+    return purchased - FREE_TENANT_MODULES
 
 
 
@@ -104,8 +116,20 @@ def feature_allowed(user, permission):
     # Strict label-only mode is OPT-IN. Fail closed if it is enabled without
     # the paid-access enforcement switch; never treat a missing config as a grant.
     if getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False):
-        return bool((strict_company or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED)
-                    and module in active_label_modules(user.company))
+        if not (strict_company or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED):
+            return False
+        if module in active_label_modules(user.company):
+            return True
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
+            if ModulePriceLabel.objects.filter(
+                feature__key=module, monthly_postpaid=True, bundle__is_active=True,
+            ).exists():
+                return CompanyPostpaidFeature.objects.filter(
+                    company=user.company, feature__key=module,
+                    feature__is_active=True, enabled=True, suspended=False,
+                ).exists()
+        return False
 
     if not strict_company and not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
         return True
