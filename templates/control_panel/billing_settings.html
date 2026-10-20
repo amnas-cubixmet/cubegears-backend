@@ -125,36 +125,79 @@
       </div>
       <div class="cg-settings-panels">
         {% include "control_panel/_billing_settings_forms.html" with compact_billing_settings=True %}
-        <section class="panel-card cg-storage-settings" id="storage-monitoring" aria-labelledby="storage-interval-log-heading">
-          <header class="cg-storage-settings-header">
+        <section class="panel-card cg-storage-settings cg-settings-monitoring" id="storage-monitoring" aria-labelledby="storage-interval-log-heading">
+          <header class="cg-storage-settings-header cg-settings-monitoring-header">
             <div class="cg-storage-settings-title">
+              <span class="cg-settings-monitoring-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg>
+              </span>
               <div class="cg-storage-settings-heading">
                 <h2 id="storage-interval-log-heading">Interval Storage Logs</h2>
-                <p>Save an actual storage reading for each scheduled monitoring checkpoint, even when prepaid snapshot billing is selected. No wallet deduction occurs here.</p>
+                <p>Record actual company storage usage at each scheduled checkpoint. Monitoring is independent of billing and never deducts credits.</p>
               </div>
             </div>
+            <span class="cg-storage-settings-status {% if monitoring_policy.enabled %}is-active{% else %}is-inactive{% endif %}">
+              {% if monitoring_policy.enabled %}Monitoring enabled{% else %}Monitoring disabled{% endif %}
+            </span>
           </header>
-          <div class="cg-storage-settings-content">
-            <form method="post" class="cg-storage-pricing-form" aria-label="Configure storage interval monitoring">
+
+          <div class="cg-settings-monitoring-content">
+            {% if can_edit_storage_pricing %}
+            <form method="post" class="cg-settings-monitoring-form" aria-label="Configure storage interval monitoring">
               {% csrf_token %}
               <input type="hidden" name="action" value="storage_monitoring">
-              <div class="cg-storage-fields">
-                <div class="cg-storage-field">
-                  <label for="{{ monitoring_form.interval_seconds.id_for_label }}">Monitoring interval (hours)</label>
+              {% if monitoring_form.non_field_errors %}
+                <div class="cg-storage-errors cg-settings-monitoring-error" role="alert">{{ monitoring_form.non_field_errors }}</div>
+              {% endif %}
+              <div class="cg-settings-monitoring-grid">
+                <div class="cg-settings-monitoring-frequency">
+                  <label for="{{ monitoring_form.interval_seconds.id_for_label }}">Monitoring interval</label>
                   {{ monitoring_form.interval_seconds }}
+                  <small>Choose how often to capture a new reading (1–24 hours).</small>
                   {% for error in monitoring_form.interval_seconds.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
                 </div>
-                <div class="cg-storage-field">
-                  <label for="{{ monitoring_form.enabled.id_for_label }}">Enable interval logs</label>
-                  {{ monitoring_form.enabled }}
-                  <small>Stores a timestamped, company-specific observation each time a monitoring interval is due. Requires Celery worker and Beat.</small>
-                </div>
+                <label class="cg-settings-monitoring-toggle" for="{{ monitoring_form.enabled.id_for_label }}">
+                  <span class="cg-storage-toggle-control">
+                    {{ monitoring_form.enabled }}
+                    <span class="cg-storage-toggle-track" aria-hidden="true"></span>
+                  </span>
+                  <span class="cg-storage-toggle-copy">
+                    <strong>Enable interval logs</strong>
+                    <small>Save time-stamped readings for every active company at each due checkpoint.</small>
+                  </span>
+                </label>
               </div>
-              <div class="cg-storage-settings-actions">
-                {% if can_edit_storage_pricing %}<button type="submit" class="btn btn-primary cg-storage-save">Save Monitoring Schedule →</button>{% endif %}
+              <div class="cg-settings-monitoring-actions">
+                <p><span aria-hidden="true">ⓘ</span> Monitoring requires a Celery worker and Beat. Saving the schedule does not create a reading or charge a wallet.</p>
+                <button type="submit" class="btn btn-primary cg-storage-save">
+                  Save Monitoring Schedule <span aria-hidden="true">→</span>
+                </button>
               </div>
             </form>
-            <p class="cg-storage-monitor-hint">Last reading: {% if monitoring_policy.last_run_at %}{{ monitoring_policy.last_run_at|date:"d M Y, H:i" }}{% else %}Not recorded{% endif %}. Next due: {% if monitoring_next_due %}{{ monitoring_next_due|date:"d M Y, H:i" }}{% else %}Not scheduled{% endif %}. Scheduler: {% if monitoring_scheduler_ready %}Redis configured{% else %}Redis not configured{% endif %}.</p>
+            {% else %}
+              <div class="cg-settings-monitoring-readonly">
+                <strong>{% if monitoring_policy.enabled %}Monitoring is enabled{% else %}Monitoring is disabled{% endif %}</strong>
+                <p>Only platform staff with Storage Edit permission can change the monitoring schedule.</p>
+              </div>
+            {% endif %}
+
+            <div class="cg-settings-monitoring-status" aria-label="Storage monitoring schedule status">
+              <div class="cg-settings-monitoring-stat">
+                <span>Last reading</span>
+                <strong>{% if monitoring_policy.last_run_at %}{{ monitoring_policy.last_run_at|date:"d M Y, H:i" }}{% else %}Not recorded{% endif %}</strong>
+              </div>
+              <div class="cg-settings-monitoring-stat">
+                <span>Next due</span>
+                <strong>{% if monitoring_next_due %}{{ monitoring_next_due|date:"d M Y, H:i" }}{% else %}Not scheduled{% endif %}</strong>
+              </div>
+              <div class="cg-settings-monitoring-stat">
+                <span>Scheduler configuration</span>
+                <strong>{% if monitoring_scheduler_ready %}Redis URL configured{% else %}Redis not configured{% endif %}</strong>
+              </div>
+            </div>
+            <p class="cg-settings-monitoring-footnote">
+              Scheduler configuration does not confirm Celery worker or Beat availability. Readings appear after an actual successful checkpoint.
+            </p>
           </div>
         </section>
         {% include "control_panel/_legacy_credit_cycle_settings.html" with compact_billing_settings=True %}
