@@ -251,7 +251,23 @@ def replace_postpaid_rate(item, *, at=None):
     state = CompanyPostpaidFeature.objects.select_for_update().get(pk=item.pk)
     if not state.enabled or state.suspended:
         return state
-    price, rate, users, staff = _rate(state.company, state.feature)
+    try:
+        price, rate, users, staff = _rate(state.company, state.feature)
+    except ValueError:
+        # An administrator may unpublish a module after its old usage has
+        # been checkpointed. Stop future accrual without erasing that debt.
+        state.suspended = True
+        state.sampled_at = at
+        state.monthly_rate = ZERO
+        state.save(update_fields=["suspended", "sampled_at", "monthly_rate", "updated_at"])
+        FeatureMeterReading.objects.create(
+            company=state.company, feature=state.feature, sampled_at=at,
+            users=0, staff=0, monthly_rate=ZERO,
+            billing_period=state.billing_period,
+            rate_duration_seconds=state.rate_duration_seconds,
+            covered_seconds=0, accrued_credits=ZERO,
+        )
+        return state
     duration = period_seconds(price.billing_period)
     one_time = ZERO
     if price.billing_period == "permanent" and not FeatureMeterReading.objects.filter(
