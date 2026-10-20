@@ -1,7 +1,7 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<div class="cg-module-pricing-page">
+<div class="cg-module-pricing-page cg-overview-page">
   <header class="cg-module-page-heading">
     <div>
       <p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Feature Pricing</p>
@@ -16,13 +16,13 @@
 
   <section class="cg-module-summary-grid" aria-label="Feature pricing overview">
     <article class="cg-module-summary-card">
-      <span>Total modules</span><strong>{{ module_count }}</strong><small>Billable features</small>
+      <span class="cg-overview-metric-label">Total modules<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span><strong>{{ module_count }}</strong><small>Billable features</small>
     </article>
     <article class="cg-module-summary-card">
-      <span>Published</span><strong>{{ published_count }}</strong><small>Available for activation</small>
+      <span class="cg-overview-metric-label">Published<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><strong>{{ published_count }}</strong><small>Available for activation</small>
     </article>
     <article class="cg-module-summary-card">
-      <span>Configured</span><strong>{{ priced_count }}</strong><small>{{ unpriced_count }} unpriced</small>
+      <span class="cg-overview-metric-label">Configured<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span><strong>{{ priced_count }}</strong><small>{{ unpriced_count }} unpriced</small>
     </article>
   </section>
 <details class="cg-feature-management" id="feature-management">
