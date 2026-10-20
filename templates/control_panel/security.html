@@ -1,40 +1,104 @@
 {% extends "control_panel/base.html" %}
+{% load static %}
 {% block content %}
-<section class="directory-heading remaining-heading"><div><p class="eyebrow">Platform / Audit</p><h2>Security &amp; Audit Logs</h2><p>Review platform pricing and billing changes, sign-in activity, and security events by company, user and IP.</p></div></section>
-<section class="directory-stats remaining-stats" aria-label="Security overview">
-  <article class="user-stat-card"><div class="user-stat-top"><span>Recorded Events</span><span class="user-stat-icon" aria-hidden="true">E</span></div><strong class="user-stat-value">{{ total_events }}</strong><small class="user-stat-meta">All audit events</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Last 7 Days</span><span class="user-stat-icon" aria-hidden="true">7</span></div><strong class="user-stat-value">{{ recent_events }}</strong><small class="user-stat-meta">Recorded in the past seven days</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Companies Tracked</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ tracked_companies }}</strong><small class="user-stat-meta">Distinct companies in log</small></article>
-</section>
-<section class="panel-card remaining-directory" aria-labelledby="security-directory-title">
-  <header class="section-head directory-section-heading"><div><p class="eyebrow">Audit trail</p><h2 id="security-directory-title">Audit Log Events</h2><p>Read-only event history with platform permissions</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
-  <form class="remaining-filter-form" method="get" aria-label="Filter security history">
-    <label class="sr-only" for="security-search">Search events</label><input id="security-search" type="search" name="q" value="{{ q }}" placeholder="Event, user email or IP address">
-    <label class="sr-only" for="security-company">Company</label>
-    <select id="security-company" name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
-    <button class="btn btn-primary" type="submit">Filter</button>
-    {% if company_id or q %}<a class="btn" href="{% url 'panel:audit-logs' %}">Clear</a>{% endif %}
-  </form>
-  <div class="responsive-table remaining-table"><table>
-    <thead><tr><th>Time</th><th>Company</th><th>Account</th><th>Event</th><th>Details</th><th>IP Address</th><th>Device / Browser</th></tr></thead>
-    <tbody>{% for row in rows %}<tr>
-      <td data-label="Time">{{ row.created_at|date:"d M Y H:i" }}</td>
-      <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
-      <td data-label="Account">{{ row.user.email|default:"System" }}</td>
-      <td data-label="Event"><span class="remaining-chip">{{ row.event }}</span></td>
-      <td data-label="Details">
-        {% if row.event == 'FEATURE_PRICE_UPDATED' %}
-          {{ row.metadata.module }} · {{ row.metadata.credits }} credits/user · {{ row.metadata.billing_type }}
-        {% elif row.event == 'STORAGE_PRICE_UPDATED' %}
-          {{ row.metadata.credits_per_gb }} credits/GB · {{ row.metadata.included_gb }} GB free · {{ row.metadata.billing_mode }}
-        {% elif row.event == 'CALENDAR_BILLING_POLICY_UPDATED' %}
-          Due day {{ row.metadata.due_day }} at {{ row.metadata.due_time }} · feature {{ row.metadata.calculation_interval_seconds }}s · storage {{ row.metadata.storage_tracking_interval_seconds }}s
-        {% else %}—{% endif %}
-      </td>
-      <td data-label="IP"><span class="remaining-mono">{{ row.ip_address|default:"—" }}</span></td>
-      <td data-label="Device"><span class="table-sub">{{ row.user_agent|truncatechars:72|default:"—" }}</span></td>
-    </tr>{% empty %}<tr><td colspan="7" class="empty-cell">No security events match the selected filters.</td></tr>{% endfor %}</tbody>
-  </table></div>
-  <p class="remaining-note">Activity records are read-only. Counts reflect logged events, not a guarantee of real-time threat detection.</p>
-</section>
+<div class="ref-dashboard cg-team-page cg-audit-page">
+  <header class="ref-dashboard-heading cg-team-heading">
+    <div>
+      <p class="ref-overline">Platform / Security</p>
+      <h2>Security &amp; Audit Logs</h2>
+      <p>Review recorded security events, account activity, and billing changes across the platform.</p>
+    </div>
+    <div class="ref-heading-actions">
+      <span class="cg-audit-readonly"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg> Read-only history</span>
+    </div>
+  </header>
+
+  <section class="ref-kpis cg-team-kpis" aria-label="Security and audit overview">
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Total events</span><span class="ref-kpi-icon tone-cobalt"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_events }}</div>
+      <p>Recorded audit activity</p>
+      <div class="ref-kpi-track"><span class="tone-cobalt" style="width:100%"></span></div>
+      <small>All recorded events</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Last 7 days</span><span class="ref-kpi-icon tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#calendar-days"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ recent_events }}</div>
+      <p>Recent audit events</p>
+      <div class="ref-kpi-track"><span class="tone-blue" style="width:100%"></span></div>
+      <small>Rolling seven-day period</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Companies tracked</span><span class="ref-kpi-icon tone-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ tracked_companies }}</div>
+      <p>With recorded activity</p>
+      <div class="ref-kpi-track"><span class="tone-purple" style="width:100%"></span></div>
+      <small>Distinct company records</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Platform events</span><span class="ref-kpi-icon tone-sky"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ platform_events }}</div>
+      <p>No company assigned</p>
+      <div class="ref-kpi-track"><span class="tone-sky" style="width:100%"></span></div>
+      <small>System-wide audit scope</small>
+    </article>
+  </section>
+
+  <section class="ref-panel cg-team-panel cg-audit-panel" aria-labelledby="audit-events-heading">
+    <header class="ref-panel-head cg-team-panel-head">
+      <div>
+        <p class="ref-overline">Audit trail</p>
+        <h3 id="audit-events-heading">Recorded Events</h3>
+        <p>Most recent events first. Search by event, account email or IP.</p>
+      </div>
+      <span class="cg-team-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+    </header>
+
+    <form class="cg-team-filters cg-audit-filters" method="get" aria-label="Filter audit events">
+      <label class="sr-only" for="security-search">Search audit events</label>
+      <input id="security-search" type="search" name="q" value="{{ q }}" placeholder="Search event, email or IP address">
+      <label class="sr-only" for="security-company">Company</label>
+      <select id="security-company" name="company">
+        <option value="">All companies</option>
+        {% for c in companies %}
+          <option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-primary" type="submit">Filter</button>
+      {% if company_id or q %}<a class="btn ref-btn-secondary" href="{% url 'panel:audit-logs' %}">Clear</a>{% endif %}
+    </form>
+
+    <div class="responsive-table ref-table cg-team-table cg-audit-table">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Company</th><th>Account</th><th>Event</th><th>Details</th><th>IP Address</th><th>Device / Browser</th></tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td data-label="Time"><time datetime="{{ row.created_at|date:'c' }}">{{ row.created_at|date:"d M Y H:i" }}</time></td>
+              <td data-label="Company"><strong>{{ row.company.name|default:"Platform" }}</strong></td>
+              <td data-label="Account"><span class="cg-audit-account">{{ row.user.email|default:"System" }}</span></td>
+              <td data-label="Event"><span class="cg-team-neutral-pill cg-audit-event">{{ row.event }}</span></td>
+              <td data-label="Details" class="cg-audit-details">
+                {% if row.event == 'FEATURE_PRICE_UPDATED' %}
+                  {{ row.metadata.module }} · {{ row.metadata.credits }} credits/user · {{ row.metadata.billing_type }}
+                {% elif row.event == 'STORAGE_PRICE_UPDATED' %}
+                  {{ row.metadata.credits_per_gb }} credits/GB · {{ row.metadata.included_gb }} GB free · {{ row.metadata.billing_mode }}
+                {% elif row.event == 'CALENDAR_BILLING_POLICY_UPDATED' %}
+                  Due day {{ row.metadata.due_day }} at {{ row.metadata.due_time }} · feature {{ row.metadata.calculation_interval_seconds }}s · storage {{ row.metadata.storage_tracking_interval_seconds }}s
+                {% else %}—{% endif %}
+              </td>
+              <td data-label="IP Address"><span class="cg-audit-ip">{{ row.ip_address|default:"—" }}</span></td>
+              <td data-label="Device / Browser"><span class="cg-audit-device" title="{{ row.user_agent|default:'' }}">{{ row.user_agent|truncatechars:72|default:"—" }}</span></td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="7" class="empty-cell">No security or audit events match these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cg-team-footnote">Audit records are read-only. Counts represent logged events, not real-time threat detection or a complete activity guarantee.</p>
+  </section>
+</div>
 {% endblock %}

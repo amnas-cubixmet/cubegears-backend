@@ -585,6 +585,7 @@ def security(request):
         created_at__gte=timezone.now() - timedelta(days=7)
     ).count()
     tracked_companies = all_events.exclude(company__isnull=True).values("company_id").distinct().count()
+    platform_events = all_events.filter(company__isnull=True).count()
     qs = all_events.select_related("company", "user").order_by("-created_at")
     qs, company_id = _company_filter(request, qs)
     q = request.GET.get("q", "").strip()
@@ -598,7 +599,7 @@ def security(request):
         "rows": _paginate(request, qs),
         "company_id": company_id, "companies": _company_choices(), "q": q,
         "total_events": total_events, "recent_events": recent_events,
-        "tracked_companies": tracked_companies,
+        "tracked_companies": tracked_companies, "platform_events": platform_events,
     })
 
 
