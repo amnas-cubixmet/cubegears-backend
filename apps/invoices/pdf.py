@@ -6,6 +6,9 @@ data is used so draft form changes never leak into the official document.
 from decimal import Decimal
 from html import escape
 from io import BytesIO
+import base64
+
+from .template_settings import effective_template_for_invoice
 
 from django.http import HttpResponse
 from reportlab.lib import colors
@@ -52,6 +55,22 @@ def _snapshot(snapshot, fallback):
 
 def create_invoice_pdf(invoice):
     """Return PDF bytes for one saved, already-authorized invoice."""
+    appearance = effective_template_for_invoice(invoice)
+    selected = appearance["selectedTemplate"]
+    palette = {
+        "teal": ("#0B7997", "#EAF6F8"),
+        "blue": ("#2263D8", "#EEF4FE"),
+        "graphite": ("#293444", "#F2F4F6"),
+    }
+    highlight, tint = palette.get(appearance.get("accent"), palette["teal"])
+    blue = colors.HexColor(highlight)
+    pale = colors.HexColor(tint)
+    ink = colors.HexColor("#152437")
+    line = colors.HexColor("#DCE5EF")
+    if selected == "minimal":
+        pale = colors.white
+    elif selected == "classic":
+        ink = colors.HexColor("#273345")
     doc_buffer = BytesIO()
     doc = SimpleDocTemplate(
         doc_buffer, pagesize=A4,
@@ -65,23 +84,23 @@ def create_invoice_pdf(invoice):
     base = getSampleStyleSheet()
     styles = {
         "company": ParagraphStyle("cg-company", parent=base["Heading1"], fontName="Helvetica-Bold",
-                                  fontSize=16, leading=20, textColor=INK, spaceAfter=7),
+                                  fontSize=16, leading=20, textColor=ink, spaceAfter=7),
         "title": ParagraphStyle("cg-title", parent=base["Heading2"], fontName="Helvetica-Bold",
-                                fontSize=17, leading=20, textColor=BLUE, alignment=TA_RIGHT),
+                                fontSize=17, leading=20, textColor=blue, alignment=TA_RIGHT),
         "heading": ParagraphStyle("cg-heading", parent=base["Normal"], fontName="Helvetica-Bold",
-                                  fontSize=9, leading=13, spaceAfter=5, textColor=BLUE),
+                                  fontSize=9, leading=13, spaceAfter=5, textColor=blue),
         "body": ParagraphStyle("cg-body", parent=base["Normal"], fontName="Helvetica",
-                               fontSize=8.6, leading=12.5, textColor=INK, splitLongWords=True),
+                               fontSize=8.6, leading=12.5, textColor=ink, splitLongWords=True),
         "small": ParagraphStyle("cg-small", parent=base["Normal"], fontName="Helvetica",
-                                fontSize=7.5, leading=10.5, textColor=MUTED, splitLongWords=True),
+                                fontSize=7.5, leading=10.5, textColor=colors.HexColor('#587085'), splitLongWords=True),
         "thead": ParagraphStyle("cg-thead", parent=base["Normal"], fontName="Helvetica-Bold",
                                 fontSize=7.3, leading=10, textColor=colors.white),
         "td": ParagraphStyle("cg-td", parent=base["Normal"], fontName="Helvetica",
-                             fontSize=7.8, leading=11, textColor=INK, splitLongWords=True),
+                             fontSize=7.8, leading=11, textColor=ink, splitLongWords=True),
         "tdright": ParagraphStyle("cg-tdright", parent=base["Normal"], fontName="Helvetica",
-                                  fontSize=7.8, leading=11, textColor=INK, alignment=TA_RIGHT),
+                                  fontSize=7.8, leading=11, textColor=ink, alignment=TA_RIGHT),
         "total": ParagraphStyle("cg-total", parent=base["Normal"], fontName="Helvetica-Bold",
-                                fontSize=10.5, leading=14, textColor=BLUE, alignment=TA_RIGHT),
+                                fontSize=10.5, leading=14, textColor=blue, alignment=TA_RIGHT),
     }
     P = lambda value, name="body": _p(value, styles[name])
     fallback_seller = {
@@ -117,13 +136,33 @@ def create_invoice_pdf(invoice):
         ("SERVICE BILL / TAX INVOICE" if is_gst else "SERVICE BILL")
     )
     story = []
+    if appearance.get("showOriginal", True):
+        story.extend([P("ORIGINAL", "small"), Spacer(1, 4)])
+
+    seller_head = [
+        P(seller.get("name"), "company"),
+        P(", ".join(filter(None, [str(seller.get("address") or ""),
+                                  str(seller.get("state") or ""),
+                                  str(seller.get("pincode") or "")])), "small"),
+        P(f"Phone: {_txt(seller.get('phone'))}  |  Email: {_txt(seller.get('email'))}", "small"),
+        P(f"GSTIN: {_txt(seller.get('gstin'))}", "small") if seller.get("gstin") else P("", "small"),
+    ]
+    if appearance.get("showBusinessLogo", True) and appearance.get("businessLogo"):
+        try:
+            from reportlab.platypus import Image
+            from PIL import Image as PILImage
+            logo_data = base64.b64decode(appearance["businessLogo"].split(",", 1)[1], validate=True)
+            image_file = BytesIO(logo_data)
+            with PILImage.open(image_file) as img:
+                img.verify()
+            image_file.seek(0)
+            logo = Image(image_file, width=14 * mm, height=14 * mm, kind="proportional")
+            seller_head.insert(0, logo)
+        except (ValueError, IndexError, OSError, TypeError):
+            pass
+
     header = Table([[
-        [P(seller.get("name"), "company"),
-         P(", ".join(filter(None, [str(seller.get("address") or ""),
-                                   str(seller.get("state") or ""),
-                                   str(seller.get("pincode") or "")])), "small"),
-         P(f"Phone: {_txt(seller.get('phone'))}  |  Email: {_txt(seller.get('email'))}", "small"),
-         P(f"GSTIN: {_txt(seller.get('gstin'))}", "small") if seller.get("gstin") else P("", "small")],
+        seller_head,
         [P(title, "title"), P(f"{'Invoice No' if is_business else 'Bill No'}: {invoice.number}", "tdright"),
          P(f"Date: {invoice.date:%d %b %Y}", "tdright"),
          P(f"Status: {invoice.status}", "tdright")],
@@ -131,9 +170,12 @@ def create_invoice_pdf(invoice):
     header.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ("LINEBELOW", (0, 0), (-1, -1), 1, BLUE),
+        ("LINEBELOW", (0, 0), (-1, -1), 1, blue),
     ]))
     story.extend([header, Spacer(1, 10)])
+    if selected == "custom" and appearance.get("customHeader"):
+        story.extend([P(appearance["customHeader"], "heading"), Spacer(1, 5)])
+
 
     def block(heading, vals):
         cells = [P(heading, "heading")]
@@ -158,13 +200,13 @@ def create_invoice_pdf(invoice):
         ("VIN / Chassis", vehicle.get("vin")),
         ("Odometer", vehicle.get("odometer")),
         ("Advisor", invoice.staff_name),
-        ("Transport No.", transport.get("vehicleNo")),
-        ("Transporter", transport.get("transporterName")),
+        ("Transport No.", transport.get("vehicleNo") if appearance.get("customShowTransport", True) else None),
+        ("Transporter", transport.get("transporterName") if appearance.get("customShowTransport", True) else None),
     ])
     contacts = Table([[bill_to, vehicle_info]], colWidths=[doc.width / 2] * 2)
     contacts.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), PALE),
-        ("BOX", (0, 0), (-1, -1), .6, LINE),
+        ("BACKGROUND", (0, 0), (-1, -1), pale),
+        ("BOX", (0, 0), (-1, -1), .6, line),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 11),
         ("RIGHTPADDING", (0, 0), (-1, -1), 11),
@@ -203,12 +245,12 @@ def create_invoice_pdf(invoice):
 
     lines_table = Table(table_rows, colWidths=col_widths, repeatRows=1, hAlign="LEFT")
     lines_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), INK),
+        ("BACKGROUND", (0, 0), (-1, 0), ink if selected != "classic" else blue),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F6F9FC")]),
-        ("LINEBELOW", (0, 1), (-1, -1), .35, LINE),
-        ("TOPPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("LINEBELOW", (0, 1), (-1, -1), .35, line),
+        ("TOPPADDING", (0, 0), (-1, -1), 5 if appearance.get("compactTable") else 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5 if appearance.get("compactTable") else 8),
         ("LEFTPADDING", (0, 0), (-1, -1), 5),
         ("RIGHTPADDING", (0, 0), (-1, -1), 5),
     ]))
@@ -232,8 +274,8 @@ def create_invoice_pdf(invoice):
                   for label, value in sums]
     totals = Table(total_rows, colWidths=[doc.width * .40, doc.width * .22], hAlign="RIGHT")
     totals.setStyle(TableStyle([
-        ("LINEABOVE", (0, len(total_rows)-3), (-1, len(total_rows)-3), 1, BLUE),
-        ("BACKGROUND", (0, len(total_rows)-3), (-1, len(total_rows)-3), PALE),
+        ("LINEABOVE", (0, len(total_rows)-3), (-1, len(total_rows)-3), 1, blue),
+        ("BACKGROUND", (0, len(total_rows)-3), (-1, len(total_rows)-3), pale),
         ("TOPPADDING", (0, 0), (-1, -1), 6),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
@@ -253,13 +295,35 @@ def create_invoice_pdf(invoice):
         ("Payment method", invoice.payment_mode),
         ("Payment terms", invoice.payment_terms),
         ("Notes", invoice.notes),
-        ("Terms & conditions", invoice.terms_conditions),
+        ("Terms & conditions", invoice.terms_conditions if appearance.get("showTerms", True) else ""),
     ]
     for label, value in extra:
         if value:
             story.append(P(label.upper(), "heading"))
             story.append(P(value, "small"))
             story.append(Spacer(1, 7))
+
+    if appearance.get("showBankDetails", True):
+        bank = [
+            ("Bank", appearance.get("bankName")),
+            ("Account holder", appearance.get("bankAccountName")),
+            ("Account number", appearance.get("bankAccountNumber")),
+            ("IFSC", appearance.get("bankIfsc")),
+            ("UPI", appearance.get("bankUpi")),
+        ]
+        if any(value for _, value in bank):
+            story.extend([P("BANK & PAYMENT DETAILS", "heading")])
+            for label, value in bank:
+                if value:
+                    story.append(P(f"{label}: {value}", "small"))
+            story.append(Spacer(1, 10))
+    if selected == "custom" and appearance.get("customFooter"):
+        story.extend([P(appearance["customFooter"], "small"), Spacer(1, 9)])
+    if appearance.get("showSignature", True):
+        story.extend([
+            Spacer(1, 15),
+            P(f"For {seller.get('name')}: {_txt(appearance.get('authorizedSignatory'), 'Authorized signatory')}", "small"),
+        ])
 
     def footer(canvas, report):
         canvas.saveState()
