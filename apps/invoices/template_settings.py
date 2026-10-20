@@ -95,5 +95,6 @@ def effective_template_for_invoice(invoice):
     if invoice.template_snapshot:
         return template_for_document(invoice.company, invoice.kind, override=invoice.template_snapshot)
     if invoice.finalized_at:
-        return template_for_document(invoice.company, invoice.kind, override=STYLE_DEFAULTS)
+        # The original ReportLab layout used the blue palette.
+        return template_for_document(invoice.company, invoice.kind, override={**STYLE_DEFAULTS, "accent": "blue"})
     return template_for_document(invoice.company, invoice.kind)
