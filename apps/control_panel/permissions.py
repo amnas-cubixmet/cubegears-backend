@@ -16,6 +16,8 @@ def route_allowed(user, route):
         return panel_permission(user, 'credits', 'view')
     if route == 'feature-pricing':
         return panel_permission(user, 'features', 'view')
+    if route == 'company-saas-invoice-pdf':
+        return panel_permission(user, 'companies', 'view')
     if route == 'payment-settings':
         return panel_permission(user, 'credits', 'view')
     if route == 'logout':
