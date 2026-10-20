@@ -25,6 +25,8 @@ urlpatterns = [
     path("companies/", views.companies, name="companies"),
     path("companies/add/", views.company_create, name="company-create"),
     path("companies/<uuid:pk>/", views.company_detail, name="company-detail"),
+    path("companies/<uuid:pk>/saas-invoices/<str:source>/<int:invoice_id>/pdf/",
+         views.company_saas_invoice_pdf, name="company-saas-invoice-pdf"),
     path("companies/<uuid:pk>/edit/", views.company_edit, name="company-edit"),
     path("companies/<uuid:pk>/delete/", views.company_delete, name="company-delete"),
     path("companies/<uuid:pk>/toggle/", views.company_toggle, name="company-toggle"),
