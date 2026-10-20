@@ -102,6 +102,7 @@
     <a href="#company-workspace">Workspace</a>
     <a href="#company-storage-logs">Storage interval logs</a>
     <a href="#company-feature-logs">Feature Pricing Log</a>
+    <a href="#company-saas-invoices">SaaS Invoices</a>
   </nav>
 
   <div class="cg-company-detail-layout">
@@ -376,6 +377,95 @@
     <footer class="cg-company-logs-foot">
       <span>Read-only audit from existing database records. Saving or opening this page never charges the wallet.</span>
       <span class="cg-company-scroll-hint">Swipe horizontally to see all columns →</span>
+    </footer>
+  </section>
+
+  <section class="cg-company-panel cg-company-saas-invoices" id="company-saas-invoices" aria-labelledby="cg-company-saas-invoices-title">
+    <header class="cg-company-panel-head cg-company-logs-head">
+      <span class="cg-company-panel-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg>
+      </span>
+      <div>
+        <span class="cg-section-kicker">PLATFORM BILLING</span>
+        <h3 id="cg-company-saas-invoices-title">SaaS Invoices</h3>
+        <p>Issued credit-billing records for this company — calendar, monthly usage, and legacy cycle billing.</p>
+      </div>
+      <span class="cg-company-saas-invoice-count">{{ saas_invoices|length }} recent record{{ saas_invoices|length|pluralize }}</span>
+    </header>
+    <div class="cg-company-saas-invoice-note">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg>
+      <p>Amounts are <strong>wallet credits, not rupees</strong>. Downloaded documents are usage statements, not GST tax invoices. Only issued database records appear here; downloading does not charge the wallet.</p>
+    </div>
+    <div class="cg-company-table-scroll cg-company-logs-scroll" role="region" tabindex="0" aria-label="SaaS company billing invoice history">
+      <table class="cg-company-logs-table cg-company-saas-invoices-table">
+        <thead>
+          <tr>
+            <th scope="col">Reference</th>
+            <th scope="col">Billing period</th>
+            <th scope="col">Category</th>
+            <th scope="col">Issued at</th>
+            <th scope="col">Due at</th>
+            <th scope="col">Feature credits</th>
+            <th scope="col">Storage credits</th>
+            <th scope="col">Total credits</th>
+            <th scope="col">Status</th>
+            <th scope="col">Document</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for invoice in saas_invoices %}
+          <tr>
+            <td>
+              <strong class="cg-company-saas-invoice-reference">{{ invoice.reference }}</strong>
+              <small>{{ invoice.source|title }} billing</small>
+            </td>
+            <td>{{ invoice.period }}</td>
+            <td>{{ invoice.category }}</td>
+            <td>
+              <span class="cg-company-log-date">{{ invoice.issued_at|date:"d M Y" }}</span>
+              <span class="cg-company-log-time">{{ invoice.issued_at|date:"h:i A" }}</span>
+            </td>
+            <td>
+              {% if invoice.due_at %}
+                <span class="cg-company-log-date">{{ invoice.due_at|date:"d M Y" }}</span>
+                <span class="cg-company-log-time">{{ invoice.due_at|date:"h:i A" }}</span>
+              {% else %}
+                <span class="cg-company-unbilled">Not recorded</span>
+              {% endif %}
+            </td>
+            <td>{% if invoice.feature_credits == None %}—{% else %}{{ invoice.feature_credits }}{% endif %}</td>
+            <td>{% if invoice.storage_credits == None %}—{% else %}{{ invoice.storage_credits }}{% endif %}</td>
+            <td><strong>{{ invoice.total_credits }} credits</strong></td>
+            <td>
+              <span class="cg-company-invoice-status {% if invoice.status == 'paid' %}is-paid{% elif invoice.is_overdue %}is-overdue{% else %}is-pending{% endif %}">{{ invoice.status_label }}</span>
+              {% if invoice.paid_at %}<small>Settled {{ invoice.paid_at|date:"d M Y" }}</small>{% endif %}
+            </td>
+            <td>
+              <a class="cg-company-invoice-download" href="{% url 'panel:company-saas-invoice-pdf' object.pk invoice.source invoice.pk %}" aria-label="Download PDF credit statement {{ invoice.reference }}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg>
+                Download PDF
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="10">
+              <div class="cg-company-logs-empty">
+                <span class="cg-company-logs-empty-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#receipt"></use></svg>
+                </span>
+                <strong>No SaaS invoices recorded</strong>
+                <p>When the backend finalizes a company credit-billing period, the issued record and its PDF statement will appear here. No invoices are generated simply by opening this page.</p>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <footer class="cg-company-logs-foot">
+      <span>Latest 40 persisted records across billing engines; historical records remain unchanged.</span>
+      <span class="cg-company-scroll-hint">Swipe horizontally to view all columns →</span>
     </footer>
   </section>
 </div>
