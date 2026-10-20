@@ -4,6 +4,8 @@ No inferred history: catalog prices may change, while recorded usage sessions,
 activation events and ledger debits retain their historical amounts. Never
 sum different event sources as if they were independent charges.
 """
+from django.utils import timezone
+
 from apps.credits.models import (
     CompanyBundleAccess, CompanyPostpaidFeature, CompanyCreditFeature,
     FeatureCreditPrice, CreditLedger,
@@ -43,18 +45,25 @@ def company_feature_pricing_report(company, *, limit=50):
         .select_related("bundle").prefetch_related("bundle__features")
         .order_by("-updated_at", "-pk")[:100]
     )
+    cycle_bundle_ids = set(
+        CycleLabelSession.objects.filter(company=company)
+        .values_list("bundle_id", flat=True)
+    )
+    at = timezone.now()
     access_names = {}
     for access in accesses:
         access_names[access.bundle_id] = access.bundle.name
+        is_cycle = access.bundle_id in cycle_bundle_ids
         entitlement_rows.append({
             "name": access.bundle.name,
             "modules": ", ".join(f.label for f in access.bundle.features.all()) or "—",
-            "billing_period": access.get_billing_type_at_purchase_display(),
-            "recorded_price": access.last_price_credits,
+            "billing_period": "Monthly postpaid cycle" if is_cycle else access.get_billing_type_at_purchase_display(),
+            "recorded_price": None if is_cycle else access.last_price_credits,
             # A bundle's catalog rate can change after purchase. This is
             # explicitly current, NOT a historical per-user price snapshot.
             "current_per_user_price": access.bundle.per_user_credits,
-            "enabled": access.enabled,
+            "enabled": bool(access.enabled and access.bundle.is_active and
+                            (access.valid_until is None or access.valid_until > at)),
             "valid_until": access.valid_until,
             "updated_at": access.updated_at,
         })
