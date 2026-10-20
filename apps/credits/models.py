@@ -33,7 +33,10 @@ class FeatureCreditPrice(models.Model):
     per_staff_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     activation_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    billing_period = models.CharField(max_length=8, choices=[("daily", "Daily"), ("weekly", "Weekly"), ("monthly", "30 days")], default="monthly")
+    billing_period = models.CharField(max_length=15, choices=[
+        ("ten_seconds", "10 Seconds"), ("hourly", "Hourly"), ("daily", "Daily"),
+        ("weekly", "Weekly"), ("monthly", "30 days"), ("permanent", "Permanent"),
+    ], default="monthly")
     is_available = models.BooleanField(default=True)
 
 
@@ -379,6 +382,7 @@ class CompanyPostpaidFeature(models.Model):
     suspended = models.BooleanField(default=False)
     sampled_at = models.DateTimeField(null=True, blank=True)
     monthly_rate = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    billing_period = models.CharField(max_length=15, default="monthly", choices=FeatureBundle.PERIODS)
     rate_duration_seconds = models.PositiveIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -419,6 +423,8 @@ class FeatureMeterReading(models.Model):
     users = models.PositiveIntegerField(default=0)
     staff = models.PositiveIntegerField(default=0)
     monthly_rate = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    billing_period = models.CharField(max_length=15, default="monthly", choices=FeatureBundle.PERIODS)
+    rate_duration_seconds = models.PositiveIntegerField(default=0)
     covered_seconds = models.PositiveIntegerField(default=0)
     accrued_credits = models.DecimalField(max_digits=22, decimal_places=8, default=Decimal("0"))
 
