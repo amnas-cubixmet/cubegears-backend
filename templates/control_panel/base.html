@@ -19,6 +19,7 @@
     <link rel="stylesheet" href="{% static 'control_panel/billing-settings-ui.css' %}?v=20261019settings3">
   {% endif %}
   <link rel="stylesheet" href="{% static 'control_panel/reference-ui.css' %}?v=20261019b">
+  {% if active == 'roles' or active == 'staff' %}<link rel="stylesheet" href="{% static 'control_panel/team-dashboard-ui.css' %}?v=20261020team1">{% endif %}
   {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-reference-ui.css' %}?v=20261019matchdash1">{% endif %}
   {% if active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/credit-packages-ui.css' %}?v=20261019a">{% endif %}
   {% if active == 'features' %}<link rel="stylesheet" href="{% static 'control_panel/features-management-ui.css' %}?v=20261019a">{% endif %}
