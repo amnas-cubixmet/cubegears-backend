@@ -142,6 +142,7 @@ class StorageSummaryView(APIView):
                 'period': policy.billing_period if policy else 'monthly',
                 'meterIntervalSeconds': (settings.STORAGE_METER_INTERVAL_SECONDS if settings.STORAGE_MONTHLY_METERED_ENABLED and not collection_policy() else policy.meter_interval_seconds) if policy else None,
                 'active': bool(policy and policy.is_active),
+                'meterIntervalHours': round(((settings.STORAGE_METER_INTERVAL_SECONDS if settings.STORAGE_MONTHLY_METERED_ENABLED and not collection_policy() else policy.meter_interval_seconds) / 3600), 4) if policy else None,
             },
             "quotaGb": active_sub.plan_definition.included_storage_gb if active_sub and active_sub.plan_definition_id else None,
             "usedGb":round(used/(1024**3),3),
@@ -291,6 +292,34 @@ class StorageEventsView(APIView):
             "count": count,
             "results": [as_dict(event) for event in events[offset:offset + limit]],
         })
+
+
+class StorageIntervalLogsView(APIView):
+    """Actual read-only interval readings from monitoring and billing meters."""
+    permission_classes = [StorageAccountReadPermission]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        from django.utils.dateparse import parse_date
+        from apps.credits.storage_interval_logs import interval_log_page
+
+        query = request.query_params
+        start, end = query.get("from", ""), query.get("to", "")
+        if (start and not parse_date(start)) or (end and not parse_date(end)):
+            return response.Response({"message": "Dates must use YYYY-MM-DD."}, status=400)
+        if start and end and start > end:
+            return response.Response({"message": "Invalid date range."}, status=400)
+        try:
+            limit = int(query.get("limit", "50"))
+            offset = int(query.get("offset", "0"))
+        except (ValueError, TypeError):
+            return response.Response({"message": "Invalid pagination."}, status=400)
+        if not 1 <= limit <= 100 or not 0 <= offset <= 5000:
+            return response.Response({"message": "Use limit 1-100 and offset 0-5000."}, status=400)
+        return response.Response(interval_log_page(
+            request.user.company, from_date=start, to_date=end,
+            limit=limit, offset=offset,
+        ))
 
 
 class StorageHistoryListView(APIView):
