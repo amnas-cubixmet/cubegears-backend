@@ -52,3 +52,14 @@
 @media(max-width:820px){.cg-module-pricing-page .cg-module-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.cg-module-pricing-page .cg-module-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.cg-module-pricing-page .cg-module-summary-grid{grid-template-columns:1fr}.cg-module-pricing-page .cg-module-grid{grid-template-columns:1fr}.cg-module-pricing-page .cg-module-summary-card{padding:15px;gap:4px}.cg-module-pricing-page .cg-module-toolbar nav{width:100%}.cg-module-pricing-page .cg-module-toolbar nav a{flex:1}.cg-module-pricing-page .cg-module-card-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:350px){.cg-module-pricing-page .cg-module-card-fields{grid-template-columns:1fr}}
+
+/* Existing purchased/metered entitlements: expose immutable billing controls
+   as read-only values; hidden original values are submitted with price edits. */
+.cg-module-pricing-page .cg-module-locked-value{display:flex;align-items:center;justify-content:space-between;gap:9px;min-height:43px;padding:10px 12px;border-radius:9px;border:1px solid var(--module-line);background:var(--module-subtle);color:var(--module-fg);font-size:13px;font-weight:730;line-height:1.4}
+.cg-module-pricing-page .cg-module-locked-value svg{width:17px;height:17px;flex:0 0 17px;fill:none;stroke:var(--module-muted);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cg-module-pricing-page .cg-module-lock-note{display:block;margin-top:6px;color:var(--module-muted);font-size:11px;line-height:1.5}
+.cg-module-pricing-page .cg-module-locked-model{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;min-width:0;font-size:11px;color:var(--module-muted);line-height:1.5}
+.cg-module-pricing-page .cg-module-locked-pill{display:inline-flex;align-items:center;min-height:29px;padding:6px 9px;border:1px solid var(--module-line);border-radius:8px;background:var(--module-subtle);color:var(--module-fg);font-size:11px;font-weight:760}
+.cg-module-pricing-page .cg-module-billing-lock-info{padding:10px 12px;margin:0 0 3px;border-top:1px solid var(--module-line);color:var(--module-muted);font-size:11px;line-height:1.5}
+.cg-module-pricing-page .cg-module-form-errors{overflow-wrap:anywhere}
+@media(max-width:680px){.cg-module-pricing-page .cg-module-locked-value{min-height:44px}.cg-module-pricing-page .cg-module-billing-lock-info{font-size:12px}}
