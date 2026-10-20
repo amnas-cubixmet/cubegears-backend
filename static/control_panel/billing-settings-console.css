@@ -137,3 +137,242 @@ html[data-theme="dark"] .cg-settings-console .cg-settings-console-state.is-enabl
  .cg-settings-console .cg-settings-console-nav a{min-height:50px;align-items:center}
 }
 @media(prefers-reduced-motion:reduce){.cg-settings-console .cg-settings-console-nav a{transition:none}}
+
+
+/* Interval Storage Logs: purpose-built, accessible monitoring settings.
+   Scope carefully to avoid changing Storage Pricing or Calendar Billing. */
+.cg-settings-console .cg-settings-monitoring .cg-settings-monitoring-header{
+  align-items:center;
+  gap:16px;
+}
+.cg-settings-console .cg-settings-monitoring .cg-storage-settings-title{
+  min-width:0;
+  flex:1 1 340px;
+}
+.cg-settings-console .cg-settings-monitoring-icon{
+  width:42px;
+  height:42px;
+  flex:0 0 42px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:var(--brand-soft,#edf3ff);
+  color:var(--brand,#315fdf);
+}
+.cg-settings-console .cg-settings-monitoring-icon svg{
+  width:21px;
+  height:21px;
+}
+.cg-settings-console .cg-settings-monitoring .cg-storage-settings-heading h2{
+  font-size:18px!important;
+  line-height:1.35;
+  margin:0 0 5px;
+}
+.cg-settings-console .cg-settings-monitoring .cg-storage-settings-heading p{
+  max-width:620px;
+  font-size:13px;
+  line-height:1.55;
+  margin:0;
+  color:var(--muted,#64748b);
+}
+.cg-settings-console .cg-settings-monitoring-content{
+  padding:22px;
+  display:grid;
+  gap:0;
+  min-width:0;
+}
+.cg-settings-console .cg-settings-monitoring-form{
+  display:grid;
+  gap:0;
+  margin:0;
+  min-width:0;
+}
+.cg-settings-console .cg-settings-monitoring-error{
+  margin:0 0 14px;
+}
+.cg-settings-console .cg-settings-monitoring-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;
+  gap:16px;
+  min-width:0;
+}
+.cg-settings-console .cg-settings-monitoring-frequency,
+.cg-settings-console .cg-settings-monitoring-toggle{
+  min-width:0;
+  padding:17px;
+  border-radius:11px;
+  border:1px solid var(--line,#e2e8f0);
+  background:var(--surface,#fff);
+}
+.cg-settings-console .cg-settings-monitoring-frequency{
+  display:grid;
+  align-content:start;
+  gap:9px;
+}
+.cg-settings-console .cg-settings-monitoring-frequency>label{
+  margin:0;
+  color:var(--text,#0f172a);
+  font-size:14px;
+  font-weight:750;
+  line-height:1.4;
+}
+.cg-settings-console .cg-settings-monitoring-frequency>select{
+  display:block;
+  width:100%;
+  max-width:100%;
+  height:46px;
+  min-height:46px;
+  padding:9px 12px;
+  font-size:15px;
+  font-weight:650;
+  color:var(--text,#0f172a);
+  background:var(--surface,#fff);
+  border:1px solid var(--line-strong,#cbd5e1);
+  border-radius:9px;
+  box-sizing:border-box;
+}
+.cg-settings-console .cg-settings-monitoring-frequency>small{
+  display:block;
+  margin:0;
+  font-size:12px;
+  line-height:1.5;
+  color:var(--muted,#64748b);
+}
+.cg-settings-console .cg-settings-monitoring-toggle{
+  display:flex;
+  align-items:center;
+  gap:15px;
+  cursor:pointer;
+}
+.cg-settings-console .cg-settings-monitoring-toggle .cg-storage-toggle-control{
+  flex:0 0 46px;
+  width:46px;
+  height:26px;
+  margin:0;
+  align-self:center;
+}
+.cg-settings-console .cg-settings-monitoring-toggle .cg-storage-toggle-copy{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
+.cg-settings-console .cg-settings-monitoring-toggle .cg-storage-toggle-copy strong{
+  margin:0;
+  font-size:14px;
+  line-height:1.4;
+  font-weight:760;
+  color:var(--text,#0f172a);
+}
+.cg-settings-console .cg-settings-monitoring-toggle .cg-storage-toggle-copy small{
+  max-width:unset;
+  font-size:12px;
+  line-height:1.55;
+  color:var(--muted,#64748b);
+}
+.cg-settings-console .cg-settings-monitoring-actions{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  padding:19px 0 20px;
+  margin:0;
+}
+.cg-settings-console .cg-settings-monitoring-actions p{
+  display:flex;
+  align-items:flex-start;
+  flex:1 1 260px;
+  gap:9px;
+  max-width:510px;
+  margin:0;
+  color:var(--muted,#64748b);
+  font-size:12px;
+  line-height:1.55;
+}
+.cg-settings-console .cg-settings-monitoring-actions p span{
+  color:var(--brand,#315fdf);
+  font-weight:800;
+}
+.cg-settings-console .cg-settings-monitoring-actions .cg-storage-save{
+  margin:0 0 0 auto;
+  white-space:normal;
+  min-height:44px;
+  padding:10px 16px;
+  font-size:13px;
+  font-weight:750;
+  border-radius:9px;
+}
+.cg-settings-console .cg-settings-monitoring-status{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  min-width:0;
+  padding-top:16px;
+  border-top:1px solid var(--line,#e2e8f0);
+}
+.cg-settings-console .cg-settings-monitoring-stat{
+  display:grid;
+  align-content:start;
+  gap:8px;
+  min-width:0;
+  padding:13px 14px;
+  border:1px solid var(--line,#e2e8f0);
+  border-radius:10px;
+  background:var(--surface-soft,#f8fafc);
+}
+.cg-settings-console .cg-settings-monitoring-stat span{
+  color:var(--muted,#64748b);
+  font-size:12px;
+  line-height:1.35;
+  font-weight:650;
+}
+.cg-settings-console .cg-settings-monitoring-stat strong{
+  color:var(--text,#0f172a);
+  font-size:14px;
+  line-height:1.4;
+  font-weight:780;
+  overflow-wrap:anywhere;
+}
+.cg-settings-console .cg-settings-monitoring-footnote{
+  margin:11px 0 0;
+  color:var(--muted,#64748b);
+  font-size:12px;
+  line-height:1.55;
+}
+.cg-settings-console .cg-settings-monitoring-readonly{
+  display:grid;
+  gap:6px;
+  margin-bottom:17px;
+  padding:14px 16px;
+  border-radius:10px;
+  border:1px solid var(--line,#e2e8f0);
+  background:var(--surface-soft,#f8fafc);
+}
+.cg-settings-console .cg-settings-monitoring-readonly strong{
+  font-size:14px;
+}
+.cg-settings-console .cg-settings-monitoring-readonly p{
+  margin:0;
+  font-size:12px;
+  color:var(--muted,#64748b);
+}
+.cg-settings-console .cg-settings-monitoring :is(select,input):focus-visible{
+  outline:2px solid var(--brand,#315fdf);
+  outline-offset:3px;
+}
+@media(max-width:720px){
+  .cg-settings-console .cg-settings-monitoring-content{padding:17px}
+  .cg-settings-console .cg-settings-monitoring-grid{grid-template-columns:minmax(0,1fr)}
+  .cg-settings-console .cg-settings-monitoring-status{grid-template-columns:minmax(0,1fr)}
+  .cg-settings-console .cg-settings-monitoring-toggle{min-height:82px}
+  .cg-settings-console .cg-settings-monitoring-actions{align-items:stretch}
+  .cg-settings-console .cg-settings-monitoring-actions .cg-storage-save{width:100%;margin:0}
+}
+@media(max-width:400px){
+  .cg-settings-console .cg-settings-monitoring-content{padding:13px}
+  .cg-settings-console .cg-settings-monitoring-frequency,
+  .cg-settings-console .cg-settings-monitoring-toggle{padding:14px}
+  .cg-settings-console .cg-settings-monitoring-icon{display:none}
+}
