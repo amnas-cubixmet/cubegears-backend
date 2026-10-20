@@ -28,6 +28,7 @@
   {% if active == 'companies' or active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/companies-reference.css' %}?v=20261019icons">{% endif %}
   {% if active == 'users' %}<link rel="stylesheet" href="{% static 'control_panel/users-reference.css' %}?v=20261019icons">{% endif %}
   {% if active == 'billing-settings' or pricing_page or active == 'credits' or active == 'users' or active == 'companies' %}<link rel="stylesheet" href="{% static 'control_panel/platform-overview-unified.css' %}?v=20261020overview2">{% endif %}
+  {% if active == 'billing-settings' %}<link rel="stylesheet" href="{% static 'control_panel/billing-settings-console.css' %}?v=20261020console1">{% endif %}
 </head>
 <body class="panel-body">
   <div class="app-shell">
