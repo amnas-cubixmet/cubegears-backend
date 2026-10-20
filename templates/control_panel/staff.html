@@ -1,121 +1,123 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<section class="directory-heading staff-heading">
-  <div>
-    <p class="eyebrow">Team / Platform Administration</p>
-    <h2>SaaS Admin Staff</h2>
-    <p>Manage authorized CubeGears Control Panel staff and their access roles.</p>
-  </div>
-  {% if can_add_platform_staff %}
-    <nav class="staff-create-actions" aria-label="SaaS Admin Staff actions">
-      <a class="staff-create-btn staff-create-btn-primary" href="{% url 'panel:staff-create' %}?type=platform">
-        <span class="staff-create-btn-icon" aria-hidden="true">+</span>
-        <span>Add SaaS Admin Staff</span>
-      </a>
-    </nav>
-  {% endif %}
-</section>
-
-<section class="directory-stats staff-stats" aria-label="SaaS administration team overview">
-  <article class="user-stat-card">
-    <div class="user-stat-top"><span>SaaS Admin Staff</span><span class="user-stat-icon" aria-hidden="true">S</span></div>
-    <strong class="user-stat-value">{{ total_staff }}</strong>
-    <small class="user-stat-meta">Platform staff accounts</small>
-  </article>
-  <article class="user-stat-card">
-    <div class="user-stat-top"><span>Active Accounts</span><span class="user-stat-icon" aria-hidden="true">✓</span></div>
-    <strong class="user-stat-value">{{ active_staff }}</strong>
-    <small class="user-stat-meta">Enabled SaaS administrators</small>
-  </article>
-  <article class="user-stat-card">
-    <div class="user-stat-top"><span>Assigned Roles</span><span class="user-stat-icon" aria-hidden="true">R</span></div>
-    <strong class="user-stat-value">{{ assigned_roles }}</strong>
-    <small class="user-stat-meta">Accounts with a platform role</small>
-  </article>
-  <article class="user-stat-card">
-    <div class="user-stat-top"><span>Disabled Accounts</span><span class="user-stat-icon" aria-hidden="true">–</span></div>
-    <strong class="user-stat-value">{{ inactive_staff }}</strong>
-    <small class="user-stat-meta">Platform staff without active access</small>
-  </article>
-</section>
-
-<section class="panel-card staff-directory" aria-labelledby="saas-admin-staff-title">
-  <header class="section-head directory-section-heading">
+<div class="ref-dashboard cg-team-page cg-team-staff">
+  <header class="ref-dashboard-heading cg-team-heading">
     <div>
-      <p class="eyebrow">Platform Team</p>
-      <h2 id="saas-admin-staff-title">Staff Directory</h2>
-      <p>Companyless platform administrators only.</p>
+      <p class="ref-overline">Team / Platform administration</p>
+      <h2>SaaS Admin Staff</h2>
+      <p>Manage platform administrators, roles and secure account invitations.</p>
     </div>
-    <span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+    <div class="ref-heading-actions">
+      {% if can_add_platform_staff %}
+        <a class="btn btn-primary" href="{% url 'panel:staff-create' %}?type=platform">+ Add SaaS Admin Staff</a>
+      {% endif %}
+    </div>
   </header>
 
-  {% if can_view_saas_staff %}
-    <form class="staff-filter-form saas-staff-filter" method="get" aria-label="Filter SaaS Admin Staff">
-      <label class="sr-only" for="saas-staff-search">Search SaaS staff</label>
-      <input id="saas-staff-search" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone or role">
-      <label class="sr-only" for="saas-staff-status">Account status</label>
-      <select id="saas-staff-status" name="status">
-        <option value="">All statuses</option>
-        <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
-        <option value="disabled" {% if status == "disabled" %}selected{% endif %}>Disabled</option>
-      </select>
-      <button class="btn btn-primary" type="submit">Filter</button>
-      {% if q or status %}<a class="btn" href="{% url 'panel:staff' %}">Clear</a>{% endif %}
-    </form>
+  <nav class="cg-team-tabs" aria-label="Team management pages">
+    <a href="{% url 'panel:staff' %}" aria-current="page">SaaS Admin Staff</a>
+    {% panel_can 'roles' as can_view_roles %}
+    {% if can_view_roles %}<a href="{% url 'panel:roles' %}">Roles &amp; Permissions</a>{% endif %}
+  </nav>
 
-    <div class="responsive-table staff-directory-table saas-staff-table">
-      <table>
-        <thead>
-          <tr><th>Staff Member</th><th>Role</th><th>Account</th><th>Access</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-        {% for member in rows %}
-          <tr>
-            <td data-label="Staff Member">
-              <div class="staff-person">
-                <span class="staff-avatar" aria-hidden="true">{{ member.name|default:member.email|slice:":1"|upper }}</span>
-                <div class="staff-person-copy">
-                  <strong>{{ member.name|default:"Unnamed staff" }}</strong>
-                  <span class="table-sub">{{ member.email }}</span>
+  <section class="ref-kpis cg-team-kpis" aria-label="SaaS Admin Staff overview">
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Total staff</span><span class="ref-kpi-icon tone-cobalt"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_staff }}</div>
+      <p>SaaS Admin accounts</p>
+      <div class="ref-kpi-track"><span class="tone-cobalt" style="width:100%"></span></div>
+      <small>Company-independent team</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Active staff</span><span class="ref-kpi-icon tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ active_staff }}</div>
+      <p>Enabled accounts</p>
+      <div class="ref-kpi-track"><span class="tone-blue" style="width:100%"></span></div>
+      <small>Platform staff only</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Assigned roles</span><span class="ref-kpi-icon tone-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ assigned_roles }}</div>
+      <p>Accounts with a role</p>
+      <div class="ref-kpi-track"><span class="tone-purple" style="width:100%"></span></div>
+      <small>Role-based permissions</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Disabled staff</span><span class="ref-kpi-icon tone-gold"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#user-round"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ inactive_staff }}</div>
+      <p>Inactive accounts</p>
+      <div class="ref-kpi-track"><span class="tone-gold" style="width:100%"></span></div>
+      <small>Sign-in disabled</small>
+    </article>
+  </section>
+
+  <section class="ref-panel cg-team-panel" aria-labelledby="team-staff-directory">
+    <header class="ref-panel-head cg-team-panel-head">
+      <div>
+        <p class="ref-overline">Directory</p>
+        <h3 id="team-staff-directory">Platform team</h3>
+        <p>SaaS Admin Staff accounts only.</p>
+      </div>
+      <span class="cg-team-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+    </header>
+
+    {% if can_view_saas_staff %}
+      <form class="cg-team-filters" method="get" aria-label="Search and filter SaaS Admin Staff">
+        <label class="sr-only" for="saas-staff-search">Search SaaS Admin Staff</label>
+        <input id="saas-staff-search" type="search" name="q" value="{{ q }}" placeholder="Search name, email, phone or role">
+        <label class="sr-only" for="saas-staff-status">Status</label>
+        <select id="saas-staff-status" name="status">
+          <option value="">All statuses</option>
+          <option value="active" {% if status == "active" %}selected{% endif %}>Active</option>
+          <option value="disabled" {% if status == "disabled" %}selected{% endif %}>Disabled</option>
+        </select>
+        <button class="btn btn-primary" type="submit">Filter</button>
+        {% if q or status %}<a class="btn ref-btn-secondary" href="{% url 'panel:staff' %}">Clear</a>{% endif %}
+      </form>
+
+      <div class="responsive-table ref-table cg-team-table cg-team-staff-table">
+        <table>
+          <thead><tr><th>Staff Member</th><th>Role</th><th>Status</th><th>Login</th><th>Actions</th></tr></thead>
+          <tbody>
+          {% for member in rows %}
+            <tr>
+              <td data-label="Staff Member">
+                <div class="ref-table-identity cg-team-identity">
+                  <span class="ref-letter-avatar">{{ member.name|default:member.email|slice:":1"|upper }}</span>
+                  <span><strong>{{ member.name|default:"Unnamed staff" }}</strong><small>{{ member.email }}</small></span>
                 </div>
-              </div>
-            </td>
-            <td data-label="Role">{{ member.role.name|default:"No role assigned" }}</td>
-            <td data-label="Account">
-              {% if member.is_active %}
-                <span class="staff-login-pill is-linked">Active</span>
-              {% else %}
-                <span class="staff-status-pill is-inactive">Disabled</span>
-              {% endif %}
-            </td>
-            <td data-label="Access">
-              {% if member.has_usable_password %}Login configured{% else %}Setup pending{% endif %}
-            </td>
-            <td data-label="Actions">
-              <div class="row-actions staff-row-actions">
-                {% panel_can 'panel:user-edit' as can_edit_user %}
-                {% if can_edit_user %}
-                  <a href="{% url 'panel:user-edit' member.pk %}">Edit Account / Role</a>
-                  {% if member.is_active %}
-                    <form method="post" action="{% url 'panel:user-invite' member.pk %}">
-                      {% csrf_token %}
-                      <button type="submit" aria-label="Resend login email to {{ member.name }}">Resend Login Email</button>
-                    </form>
+              </td>
+              <td data-label="Role">{{ member.role.name|default:"No role assigned" }}</td>
+              <td data-label="Status">
+                <span class="ref-status {% if member.is_active %}is-active{% else %}is-disabled{% endif %}">{% if member.is_active %}Active{% else %}Disabled{% endif %}</span>
+              </td>
+              <td data-label="Login">{% if member.has_usable_password %}Configured{% else %}Setup pending{% endif %}</td>
+              <td data-label="Actions">
+                <div class="cg-team-actions">
+                  {% panel_can 'panel:user-edit' as can_edit_user %}
+                  {% if can_edit_user %}
+                    <a href="{% url 'panel:user-edit' member.pk %}">Edit Account</a>
+                    {% if member.is_active %}
+                      <form method="post" action="{% url 'panel:user-invite' member.pk %}">
+                        {% csrf_token %}
+                        <button type="submit" aria-label="Resend login email to {{ member.name|default:member.email }}">Resend Invite</button>
+                      </form>
+                    {% endif %}
                   {% endif %}
-                {% endif %}
-              </div>
-            </td>
-          </tr>
-        {% empty %}
-          <tr><td colspan="5" class="empty-cell">No SaaS Admin Staff match your filters.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="staff-directory-footnote">Only SaaS platform staff appear here. Workshop employee accounts remain managed within their companies.</p>
-  {% else %}
-    <div class="staff-directory-footnote">Users &amp; Access view permission is required to see SaaS Admin Staff accounts.</div>
-  {% endif %}
-</section>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="empty-cell">No SaaS Admin Staff match the selected filters.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="cg-team-footnote">Workshop employee accounts are managed within their companies. An invitation requires a working email delivery setup.</p>
+    {% else %}
+      <p class="cg-team-footnote">Users &amp; Access view permission is required to see SaaS Admin Staff accounts.</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}
