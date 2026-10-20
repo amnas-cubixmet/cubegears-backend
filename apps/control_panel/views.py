@@ -815,7 +815,11 @@ def company_detail(request, pk):
         pk=pk,
     )
     from apps.credits.storage_interval_logs import interval_log_page
+    from apps.credits.company_feature_pricing_logs import company_feature_pricing_report
+    from apps.credits.company_saas_invoices import company_saas_invoices
 
+    feature_pricing = company_feature_pricing_report(obj, limit=50)
+    saas_invoices = company_saas_invoices(obj, limit=40)
     storage_summary = MediaFile.objects.filter(company=obj).aggregate(
         total_bytes=Sum("size_bytes"), file_count=Count("pk"),
     )
@@ -842,6 +846,8 @@ def company_detail(request, pk):
 
     return render(request, "control_panel/company_detail.html", {
         "storage_intervals": storage_intervals,
+        "feature_pricing": feature_pricing,
+        "saas_invoices": saas_invoices,
         "current_storage_bytes": current_storage_bytes,
         "current_storage_gb": (Decimal(current_storage_bytes) / Decimal(1024 ** 3)).quantize(Decimal("0.001")),
         "current_file_count": storage_summary["file_count"] or 0,
@@ -850,6 +856,18 @@ def company_detail(request, pk):
         "active": "companies",
         "object": obj,
     })
+
+
+@panel_admin_required
+@require_http_methods(["GET"])
+def company_saas_invoice_pdf(request, pk, source, invoice_id):
+    """Download one existing tenant billing record as a wallet-credit PDF."""
+    from apps.credits.company_saas_invoices import get_company_saas_invoice
+    from apps.credits.saas_invoice_pdf import pdf_download_response
+
+    company = get_object_or_404(Company, pk=pk)
+    invoice = get_company_saas_invoice(company, source, invoice_id)
+    return pdf_download_response(company, invoice)
 
 
 @panel_admin_required

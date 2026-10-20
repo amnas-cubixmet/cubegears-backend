@@ -197,3 +197,76 @@ html[data-theme="dark"] .cg-company-status.is-disabled, html[data-theme="dark"] 
 @media (prefers-reduced-motion: reduce) {
   .cg-company-profile-v2 * { scroll-behavior: auto !important; transition: none !important; }
 }
+
+/* Company Feature Pricing Log: inherits company profile table tokens. */
+.cg-company-profile-v2 .cg-company-feature-logs { margin-top: 17px; }
+.cg-company-profile-v2 .cg-company-feature-section-head {
+  padding: 17px 20px 13px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--profile-border);
+}
+.cg-company-profile-v2 .cg-company-feature-section-head h4 {
+  font-size: 15px; color: var(--text); font-weight: 800; margin: 0 0 5px;
+  line-height: 1.3;
+}
+.cg-company-profile-v2 .cg-company-feature-section-head p {
+  color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0;
+}
+.cg-company-profile-v2 .cg-company-feature-history-head { border-top: 1px solid var(--profile-border); }
+.cg-company-profile-v2 .cg-company-feature-table { min-width: 940px; }
+.cg-company-profile-v2 .cg-company-feature-table th,
+.cg-company-profile-v2 .cg-company-feature-table td { padding: 14px 16px; }
+.cg-company-profile-v2 .cg-company-feature-table th { white-space: nowrap; }
+.cg-company-profile-v2 .cg-company-feature-table td { max-width: 320px; overflow-wrap: anywhere; }
+.cg-company-profile-v2 .cg-company-feature-name { display: block; font-weight: 780; color: var(--text); }
+.cg-company-profile-v2 .cg-company-feature-details { max-width: 330px; overflow-wrap: anywhere; }
+.cg-company-profile-v2 .cg-company-feature-empty {
+  padding: 34px 18px; text-align: center; color: var(--muted); font-size: 13px;
+}
+.cg-company-profile-v2 .cg-company-feature-table .cg-company-source { white-space: nowrap; }
+.cg-company-profile-v2 .cg-company-feature-table td small { line-height: 1.45; }
+@media (max-width: 720px) {
+  .cg-company-profile-v2 .cg-company-feature-section-head { padding: 15px 16px 12px; }
+}
+
+/* Company SaaS credit billing documents. No workshop sales invoice styles changed. */
+.cg-company-profile-v2 .cg-company-saas-invoices { margin-top: 17px; }
+.cg-company-profile-v2 .cg-company-saas-invoices-table { min-width: 1240px; }
+.cg-company-profile-v2 .cg-company-saas-invoices-table th,
+.cg-company-profile-v2 .cg-company-saas-invoices-table td { padding: 14px 16px; }
+.cg-company-profile-v2 .cg-company-saas-invoice-count {
+  border: 1px solid var(--profile-border); color: var(--muted);
+  background: var(--profile-subtle); border-radius: 999px;
+  padding: 7px 11px; font-size: 12px; font-weight: 750; white-space: nowrap;
+}
+.cg-company-profile-v2 .cg-company-saas-invoice-note {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 12px 18px; border-bottom: 1px solid var(--profile-border);
+  background: var(--profile-subtle); color: var(--muted);
+}
+.cg-company-profile-v2 .cg-company-saas-invoice-note svg { width: 17px; height: 17px; color: var(--brand); flex-shrink: 0; }
+.cg-company-profile-v2 .cg-company-saas-invoice-note p { margin: 0; line-height: 1.55; font-size: 12px; }
+.cg-company-profile-v2 .cg-company-saas-invoice-reference {
+  display: block; font-size: 13px; color: var(--text); white-space: nowrap;
+}
+.cg-company-profile-v2 .cg-company-invoice-status {
+  display: inline-flex; align-items: center; border-radius: 999px;
+  padding: 5px 10px; line-height: 1.4; font-weight: 780; font-size: 12px; white-space: nowrap;
+}
+.cg-company-profile-v2 .cg-company-invoice-status.is-paid { background: #e8f9f1; color: #047857; }
+.cg-company-profile-v2 .cg-company-invoice-status.is-pending { background: #eff4fc; color: #315a96; }
+.cg-company-profile-v2 .cg-company-invoice-status.is-overdue { background: #fff3e7; color: #b45309; }
+.cg-company-profile-v2 .cg-company-invoice-download {
+  display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px;
+  border: 1px solid var(--profile-border); border-radius: 8px; font-size: 12px;
+  color: var(--brand); font-weight: 780; text-decoration: none; white-space: nowrap;
+}
+.cg-company-profile-v2 .cg-company-invoice-download:hover { background: var(--brand-soft); border-color: var(--brand); }
+.cg-company-profile-v2 .cg-company-invoice-download svg { width: 16px; height: 16px; }
+html[data-theme="dark"] .cg-company-profile-v2 .cg-company-invoice-status.is-paid { background: #064e3b; color: #6ee7b7; }
+html[data-theme="dark"] .cg-company-profile-v2 .cg-company-invoice-status.is-pending { background: #24364d; color: #a2c3fa; }
+html[data-theme="dark"] .cg-company-profile-v2 .cg-company-invoice-status.is-overdue { background: #452810; color: #fcd34d; }
+@media (max-width: 720px) {
+  .cg-company-profile-v2 .cg-company-saas-invoice-note { padding: 12px 15px; }
+  .cg-company-profile-v2 .cg-company-saas-invoice-count { margin-left: 52px; }
+}
