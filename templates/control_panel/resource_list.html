@@ -1,65 +1,114 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<section class="directory-heading remaining-heading">
-  <div>
-    <p class="eyebrow">Team / SaaS administration</p>
-    <h2>SaaS Admin Roles</h2>
-    <p>Manage permissions for CubeGears platform administrators.</p>
-  </div>
-  {% panel_can create_url as allowed %}
-  {% if allowed %}
-    <a class="btn btn-primary" href="{% url 'panel:role-saas-create' %}">+ Add SaaS Admin Staff Role</a>
-  {% endif %}
-</section>
-
-<section class="directory-stats remaining-stats" aria-label="SaaS role overview">
-  <article class="user-stat-card"><div class="user-stat-top"><span>Total Roles</span><span class="user-stat-icon" aria-hidden="true">T</span></div><strong class="user-stat-value">{{ total_records }}</strong><small class="user-stat-meta">Platform roles</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Active Roles</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_records }}</strong><small class="user-stat-meta">Active SaaS roles</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>System Roles</span><span class="user-stat-icon" aria-hidden="true">#</span></div><strong class="user-stat-value">{{ special_records }}</strong><small class="user-stat-meta">System-managed roles</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Scope</span><span class="user-stat-icon" aria-hidden="true">S</span></div><strong class="user-stat-value">SaaS</strong><small class="user-stat-meta">Platform administration only</small></article>
-</section>
-
-<section class="panel-card remaining-directory" aria-labelledby="resource-directory-title">
-  <header class="section-head directory-section-heading">
-    <div><p class="eyebrow">Directory</p><h2 id="resource-directory-title">SaaS Admin Roles</h2><p>Search and filter platform roles</p></div>
-    <span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+<div class="ref-dashboard cg-team-page cg-team-roles">
+  <header class="ref-dashboard-heading cg-team-heading">
+    <div>
+      <p class="ref-overline">Team / Access management</p>
+      <h2>SaaS Admin Roles</h2>
+      <p>Create platform roles and manage Control Panel permissions.</p>
+    </div>
+    <div class="ref-heading-actions">
+      {% panel_can create_url as can_add_role %}
+      {% if can_add_role %}
+        <a class="btn btn-primary" href="{% url 'panel:role-saas-create' %}">+ Add SaaS Admin Staff Role</a>
+      {% endif %}
+    </div>
   </header>
-  <form class="remaining-filter-form" method="get" aria-label="Search and filter SaaS roles">
-    <label class="sr-only" for="role-search">Search roles</label>
-    <input id="role-search" type="search" name="q" value="{{ q }}" placeholder="Search role name or code">
-    <label class="sr-only" for="role-status">Status</label>
-    <select id="role-status" name="status">
-      <option value="">All statuses</option>
-      <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
-      <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
-    </select>
-    <button class="btn btn-primary" type="submit">Filter</button>
-    {% if q or status %}<a class="btn" href="{% url 'panel:roles' %}">Clear</a>{% endif %}
-  </form>
-  <div class="responsive-table remaining-table">
-    <table>
-      <thead><tr><th>Role</th><th>Scope</th><th>Code</th><th>Permissions</th><th>Type</th><th>Status</th><th>Actions</th></tr></thead>
-      <tbody>
-      {% for row in rows %}
-        <tr>
-          <td data-label="Role"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">R</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.code }}</span></div></div></td>
-          <td data-label="Scope">SaaS platform</td>
-          <td data-label="Code"><span class="remaining-chip">{{ row.code }}</span></td>
-          <td data-label="Permissions">{{ row.permissions|length }} permissions</td>
-          <td data-label="Type">{% if row.is_system %}<span class="remaining-chip">System</span>{% else %}Custom{% endif %}</td>
-          <td data-label="Status"><span class="remaining-state {% if row.is_active %}is-good{% else %}is-neutral{% endif %}">{% if row.is_active %}Active{% else %}Inactive{% endif %}</span></td>
-          <td data-label="Actions"><div class="row-actions remaining-actions">
-            {% panel_can detail_url as allowed %}{% if allowed %}<a href="{% url detail_url row.pk %}">View</a>{% endif %}
-            {% panel_can edit_url as allowed %}{% if allowed %}<a href="{% url edit_url row.pk %}">Edit</a>{% endif %}
-            {% panel_can delete_url as allowed %}{% if allowed %}<a class="danger-link" href="{% url delete_url row.pk %}">Delete</a>{% endif %}
-          </div></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="7" class="empty-cell">No SaaS roles match the selected filters.</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+
+  <nav class="cg-team-tabs" aria-label="Team management pages">
+    {% panel_can 'staff' as can_view_staff %}
+    {% if can_view_staff %}<a href="{% url 'panel:staff' %}">SaaS Admin Staff</a>{% endif %}
+    <a href="{% url 'panel:roles' %}" aria-current="page">Roles &amp; Permissions</a>
+  </nav>
+
+  <section class="ref-kpis cg-team-kpis" aria-label="SaaS Admin role overview">
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Total roles</span><span class="ref-kpi-icon tone-cobalt"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ total_records }}</div>
+      <p>Platform permissions</p>
+      <div class="ref-kpi-track"><span class="tone-cobalt" style="width:100%"></span></div>
+      <small>SaaS Control Panel</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Active roles</span><span class="ref-kpi-icon tone-blue"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ active_records }}</div>
+      <p>Available for assignment</p>
+      <div class="ref-kpi-track"><span class="tone-blue" style="width:100%"></span></div>
+      <small>Enabled platform roles</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>Custom roles</span><span class="ref-kpi-icon tone-purple"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ custom_records }}</div>
+      <p>Created for your team</p>
+      <div class="ref-kpi-track"><span class="tone-purple" style="width:100%"></span></div>
+      <small>Company-independent roles</small>
+    </article>
+    <article class="ref-kpi">
+      <div class="ref-kpi-top"><span>System roles</span><span class="ref-kpi-icon tone-sky"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span></div>
+      <div class="ref-kpi-value">{{ special_records }}</div>
+      <p>Platform-defined roles</p>
+      <div class="ref-kpi-track"><span class="tone-sky" style="width:100%"></span></div>
+      <small>Protected by backend rules</small>
+    </article>
+  </section>
+
+  <section class="ref-panel cg-team-panel" aria-labelledby="team-roles-directory">
+    <header class="ref-panel-head cg-team-panel-head">
+      <div>
+        <p class="ref-overline">Directory</p>
+        <h3 id="team-roles-directory">Roles &amp; Permissions</h3>
+        <p>Platform roles only. Workshop roles stay company-scoped.</p>
+      </div>
+      <span class="cg-team-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span>
+    </header>
+
+    <form class="cg-team-filters" method="get" aria-label="Search and filter SaaS roles">
+      <label class="sr-only" for="role-search">Search roles</label>
+      <input id="role-search" type="search" name="q" value="{{ q }}" placeholder="Search role name or code">
+      <label class="sr-only" for="role-status">Status</label>
+      <select id="role-status" name="status">
+        <option value="">All statuses</option>
+        <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+        <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option>
+      </select>
+      <button class="btn btn-primary" type="submit">Filter</button>
+      {% if q or status %}<a class="btn ref-btn-secondary" href="{% url 'panel:roles' %}">Clear</a>{% endif %}
+    </form>
+
+    <div class="responsive-table ref-table cg-team-table cg-team-role-table">
+      <table>
+        <thead>
+          <tr><th>Role</th><th>Scope</th><th>Permissions</th><th>Type</th><th>Status</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+          {% for role in rows %}
+            <tr>
+              <td data-label="Role">
+                <div class="ref-table-identity cg-team-identity">
+                  <span class="ref-letter-avatar">{{ role.name|slice:":1"|upper }}</span>
+                  <span><strong>{{ role.name }}</strong><small>{{ role.code }}</small></span>
+                </div>
+              </td>
+              <td data-label="Scope">SaaS platform</td>
+              <td data-label="Permissions"><span class="cg-team-neutral-pill">{{ role.permissions|length }} permissions</span></td>
+              <td data-label="Type">{% if role.is_system %}System{% else %}Custom{% endif %}</td>
+              <td data-label="Status"><span class="ref-status {% if role.is_active %}is-active{% else %}is-disabled{% endif %}">{% if role.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+              <td data-label="Actions">
+                <div class="cg-team-actions">
+                  {% panel_can detail_url as can_view_role %}{% if can_view_role %}<a href="{% url detail_url role.pk %}">View</a>{% endif %}
+                  {% panel_can edit_url as can_edit_role %}{% if can_edit_role %}<a href="{% url edit_url role.pk %}">Edit</a>{% endif %}
+                  {% panel_can delete_url as can_delete_role %}{% if can_delete_role %}<a class="cg-team-danger" href="{% url delete_url role.pk %}">Delete</a>{% endif %}
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6" class="empty-cell">No SaaS Admin roles match the selected filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cg-team-footnote">Role permissions are enforced by the Django backend. Creating a role does not grant access to an account until it is assigned.</p>
+  </section>
+</div>
 {% endblock %}
