@@ -64,7 +64,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
             disabled_reason = 'POSTPAID_ENGINE_DISABLED'
     return {
         'billingMode': 'monthly_postpaid' if postpaid else 'prepaid',
-        "id": bundle.pk, "key": bundle.key, "name": bundle.name,
+        "id": bundle.pk, "key": bundle.key,
+        "name": f"{bundle.name} (Previous period)" if bundle.is_retired else bundle.name,
         "description": bundle.description,
         "perUserCredits": str(bundle.per_user_credits),
         "userCount": user_count,
