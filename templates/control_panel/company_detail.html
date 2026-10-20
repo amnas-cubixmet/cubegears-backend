@@ -1,139 +1,246 @@
 {% extends "control_panel/base.html" %}
-{% load panel_access %}
+{% load static panel_access %}
 {% block content %}
-<div class="cg-company-profile">
-  <header class="cg-page-heading">
-    <div>
-      <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><a href="{% url 'panel:companies' %}">Companies</a><span aria-hidden="true">/</span><span aria-current="page">Company profile</span></nav>
-      <h2>Company details</h2>
-      <p>Business information, workspace details and access settings.</p>
+<div class="cg-company-profile cg-company-profile-v2" aria-labelledby="cg-company-page-heading">
+  <header class="cg-company-page-header">
+    <nav class="cg-breadcrumb" aria-label="Breadcrumb">
+      <a href="{% url 'panel:dashboard' %}">Dashboard</a>
+      <span aria-hidden="true">/</span>
+      <a href="{% url 'panel:companies' %}">Companies</a>
+      <span aria-hidden="true">/</span>
+      <span aria-current="page">{{ object.name }}</span>
+    </nav>
+    <div class="cg-company-heading-row">
+      <div>
+        <span class="cg-section-kicker">COMPANY MANAGEMENT</span>
+        <h2 id="cg-company-page-heading">Company overview</h2>
+        <p>Company information, workspace access and recorded storage activity.</p>
+      </div>
+      <a class="btn cg-back-button cg-company-back" href="{% url 'panel:companies' %}">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#chevron-left"></use></svg>
+        Back to companies
+      </a>
     </div>
-    <a class="btn cg-back-button" href="{% url 'panel:companies' %}">← Back to companies</a>
   </header>
 
-  <section class="cg-profile-banner" aria-label="Company summary">
-    <div class="cg-profile-company">
-      {% if object.logo_image %}<img src="{{ object.logo_image.url }}" class="cg-profile-avatar" alt="{{ object.name }} logo">
-      {% elif object.logo %}<img src="{{ object.logo }}" class="cg-profile-avatar" alt="{{ object.name }} logo">
-      {% else %}<span class="cg-profile-avatar cg-company-letter" aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>{% endif %}
-      <div class="cg-profile-title"><span class="cg-section-kicker">Registered company</span><h3>{{ object.name }}</h3><p>{{ object.legal_name|default:object.slug }}</p><span class="cg-company-state {% if object.is_active %}is-on{% else %}is-off{% endif %}">{% if object.is_active %}Active workspace{% else %}Workspace disabled{% endif %}</span></div>
+  <section class="cg-company-hero" aria-label="Company summary">
+    <div class="cg-company-hero-identity">
+      <div class="cg-company-hero-logo">
+        {% if object.logo_image %}
+          <img src="{{ object.logo_image.url }}" alt="{{ object.name }} logo">
+        {% elif object.logo %}
+          <img src="{{ object.logo }}" alt="{{ object.name }} logo">
+        {% else %}
+          <span aria-hidden="true">{{ object.name|slice:":1"|upper }}</span>
+        {% endif %}
+      </div>
+      <div class="cg-company-hero-copy">
+        <span class="cg-company-overline">REGISTERED WORKSPACE</span>
+        <h3>{{ object.name }}</h3>
+        <p class="cg-company-hero-subtitle">{{ object.legal_name|default:object.slug }}</p>
+        <div class="cg-company-hero-meta">
+          <span class="cg-company-status {% if object.is_active %}is-active{% else %}is-disabled{% endif %}">
+            <span class="cg-company-status-dot" aria-hidden="true"></span>
+            {% if object.is_active %}Active workspace{% else %}Workspace disabled{% endif %}
+          </span>
+          <span class="cg-company-plan">{{ object.plan|title }} plan</span>
+          <span class="cg-company-created">Joined {{ object.created_at|date:"d M Y" }}</span>
+        </div>
+      </div>
     </div>
-    <div class="cg-profile-actions">
-      {% panel_can 'panel:company-edit' as can_edit %}{% if can_edit %}<a class="btn btn-primary" href="{% url 'panel:company-edit' object.pk %}">Edit company</a>{% endif %}
-      {% panel_can 'panel:company-toggle' as can_toggle %}{% if can_toggle %}<a class="btn cg-back-button" href="{% url 'panel:company-toggle' object.pk %}">{% if object.is_active %}Disable access{% else %}Enable access{% endif %}</a>{% endif %}
-      {% panel_can 'panel:company-delete' as can_delete %}{% if can_delete %}<a class="btn cg-danger-outline" href="{% url 'panel:company-delete' object.pk %}">Delete</a>{% endif %}
+    <div class="cg-company-hero-actions">
+      {% panel_can 'panel:company-edit' as can_edit %}
+      {% if can_edit %}
+        <a class="btn btn-primary cg-company-action-primary" href="{% url 'panel:company-edit' object.pk %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#action-edit"></use></svg>
+          Edit company
+        </a>
+      {% endif %}
+      {% panel_can 'panel:company-toggle' as can_toggle %}
+      {% if can_toggle %}
+        <a class="btn cg-back-button" href="{% url 'panel:company-toggle' object.pk %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#{% if object.is_active %}action-eye-off{% else %}action-eye{% endif %}"></use></svg>
+          {% if object.is_active %}Disable access{% else %}Enable access{% endif %}
+        </a>
+      {% endif %}
+      {% panel_can 'panel:company-delete' as can_delete %}
+      {% if can_delete %}
+        <a class="btn cg-danger-outline cg-company-delete" href="{% url 'panel:company-delete' object.pk %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#action-trash"></use></svg>
+          Delete
+        </a>
+      {% endif %}
     </div>
   </section>
 
-  <div class="cg-profile-counts" aria-label="Company activity">
-    <div><span>Users</span><strong>{{ object.user_count }}</strong></div>
-    <div><span>Branches</span><strong>{{ object.branch_count }}</strong></div>
-    <div><span>Plan</span><strong>{{ object.plan|title }}</strong></div>
-    <div><span>Joined</span><strong>{{ object.created_at|date:"d M Y" }}</strong></div>
+  <div class="cg-company-metrics" aria-label="Company statistics">
+    <article class="cg-company-metric">
+      <div class="cg-company-metric-head"><span>Users</span><span class="cg-company-metric-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span></div>
+      <strong>{{ object.user_count }}</strong>
+      <small>Company accounts</small>
+    </article>
+    <article class="cg-company-metric">
+      <div class="cg-company-metric-head"><span>Branches</span><span class="cg-company-metric-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#git-branch"></use></svg></span></div>
+      <strong>{{ object.branch_count }}</strong>
+      <small>Registered locations</small>
+    </article>
+    <article class="cg-company-metric">
+      <div class="cg-company-metric-head"><span>Current storage</span><span class="cg-company-metric-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span></div>
+      <strong>{{ current_storage_gb }} <span class="cg-company-metric-unit">GB</span></strong>
+      <small>{{ current_storage_bytes|filesizeformat }} across {{ current_file_count }} files</small>
+    </article>
+    <article class="cg-company-metric">
+      <div class="cg-company-metric-head"><span>Current plan</span><span class="cg-company-metric-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span></div>
+      <strong class="cg-company-metric-plan">{{ object.plan|title }}</strong>
+      <small>{{ object.currency }} · company currency</small>
+    </article>
   </div>
 
-  <div class="cg-profile-layout">
-    <div class="cg-profile-main">
-      <section class="cg-editor-card" aria-labelledby="cg-profile-general">
-        <div class="cg-card-heading"><div><span class="cg-section-kicker">Business details</span><h3 id="cg-profile-general">General information</h3></div></div>
-        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
-          <tr><th scope="row">Company name</th><td>{{ object.name }}</td></tr>
-          <tr><th scope="row">Legal name</th><td>{{ object.legal_name|default:"—" }}</td></tr>
-          <tr><th scope="row">GSTIN</th><td>{{ object.gstin|default:"—" }}</td></tr>
-          <tr><th scope="row">Workspace ID</th><td class="cg-breakable">{{ object.slug }}</td></tr>
-        </tbody></table></div>
+  <nav class="cg-company-section-nav" aria-label="Company detail sections">
+    <a href="#company-general">General</a>
+    <a href="#company-contact">Contact &amp; address</a>
+    <a href="#company-workspace">Workspace</a>
+    <a href="#company-storage-logs">Storage interval logs</a>
+  </nav>
+
+  <div class="cg-company-detail-layout">
+    <div class="cg-company-detail-main">
+      <section class="cg-company-panel" id="company-general" aria-labelledby="company-general-title">
+        <header class="cg-company-panel-head">
+          <span class="cg-company-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span>
+          <div>
+            <span class="cg-section-kicker">BUSINESS PROFILE</span>
+            <h3 id="company-general-title">General information</h3>
+            <p>Registered business and workspace identifiers</p>
+          </div>
+        </header>
+        <div class="cg-company-table-scroll">
+          <table class="cg-company-info-table">
+            <tbody>
+              <tr><th scope="row">Company name</th><td>{{ object.name }}</td></tr>
+              <tr><th scope="row">Legal name</th><td>{{ object.legal_name|default:"—" }}</td></tr>
+              <tr><th scope="row">GSTIN</th><td>{{ object.gstin|default:"—" }}</td></tr>
+              <tr><th scope="row">Workspace ID</th><td class="cg-company-wrap-text">{{ object.slug }}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
-      <section class="cg-editor-card" aria-labelledby="cg-profile-contact">
-        <div class="cg-card-heading"><div><span class="cg-section-kicker">Contact</span><h3 id="cg-profile-contact">Contact & address</h3></div></div>
-        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
-          <tr><th scope="row">Company email</th><td class="cg-breakable">{{ object.email|default:"—" }}</td></tr>
-          <tr><th scope="row">Phone</th><td>{{ object.phone|default:"—" }}</td></tr>
-          <tr><th scope="row">Address</th><td>{{ object.address|default:"—"|linebreaksbr }}</td></tr>
-          <tr><th scope="row">City</th><td>{{ object.city|default:"—" }}</td></tr>
-          <tr><th scope="row">State</th><td>{{ object.state|default:"—" }}</td></tr>
-          <tr><th scope="row">Country</th><td>{{ object.country|default:"—" }}</td></tr>
-          <tr><th scope="row">Postal code</th><td>{{ object.pincode|default:"—" }}</td></tr>
-        </tbody></table></div>
+
+      <section class="cg-company-panel" id="company-contact" aria-labelledby="company-contact-title">
+        <header class="cg-company-panel-head">
+          <span class="cg-company-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#message-square"></use></svg></span>
+          <div>
+            <span class="cg-section-kicker">COMMUNICATION</span>
+            <h3 id="company-contact-title">Contact &amp; address</h3>
+            <p>Official contact and business location</p>
+          </div>
+        </header>
+        <div class="cg-company-table-scroll">
+          <table class="cg-company-info-table">
+            <tbody>
+              <tr><th scope="row">Email address</th><td class="cg-company-wrap-text">{% if object.email %}<a href="mailto:{{ object.email }}">{{ object.email }}</a>{% else %}—{% endif %}</td></tr>
+              <tr><th scope="row">Phone number</th><td>{% if object.phone %}<a href="tel:{{ object.phone }}">{{ object.phone }}</a>{% else %}—{% endif %}</td></tr>
+              <tr><th scope="row">Street address</th><td>{{ object.address|default:"—"|linebreaksbr }}</td></tr>
+              <tr><th scope="row">City</th><td>{{ object.city|default:"—" }}</td></tr>
+              <tr><th scope="row">State</th><td>{{ object.state|default:"—" }}</td></tr>
+              <tr><th scope="row">Country</th><td>{{ object.country|default:"—" }}</td></tr>
+              <tr><th scope="row">Postal code</th><td>{{ object.pincode|default:"—" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
-    <aside class="cg-profile-side" aria-label="Workspace overview">
-      <section class="cg-editor-card" aria-labelledby="cg-profile-workspace">
-        <div class="cg-card-heading"><div><span class="cg-section-kicker">Settings</span><h3 id="cg-profile-workspace">Workspace</h3></div></div>
-        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
-          <tr><th scope="row">Company owner</th><td>{{ object.owner.name|default:object.owner.email|default:"Not assigned" }}</td></tr>
-          <tr><th scope="row">Currency</th><td>{{ object.currency }}</td></tr>
-          <tr><th scope="row">Plan</th><td>{{ object.plan|title }}</td></tr>
-          <tr><th scope="row">Feature access mode</th><td>{% if object.require_paid_features %}Paid features required{% else %}Standard existing access{% endif %}</td></tr>
-          <tr><th scope="row">Company access</th><td>{% if object.is_active %}Enabled{% else %}Disabled{% endif %}</td></tr>
-          <tr><th scope="row">Last updated</th><td>{{ object.updated_at|date:"d M Y, g:i A" }}</td></tr>
-        </tbody></table></div>
+
+    <aside class="cg-company-detail-side" aria-label="Workspace overview">
+      <section class="cg-company-panel" id="company-workspace" aria-labelledby="company-workspace-title">
+        <header class="cg-company-panel-head">
+          <span class="cg-company-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span>
+          <div>
+            <span class="cg-section-kicker">ACCESS &amp; SETTINGS</span>
+            <h3 id="company-workspace-title">Workspace</h3>
+            <p>Ownership and access configuration</p>
+          </div>
+        </header>
+        <div class="cg-company-table-scroll">
+          <table class="cg-company-info-table">
+            <tbody>
+              <tr><th scope="row">Company owner</th><td class="cg-company-wrap-text">{{ object.owner.name|default:object.owner.email|default:"Not assigned" }}</td></tr>
+              <tr><th scope="row">Currency</th><td>{{ object.currency }}</td></tr>
+              <tr><th scope="row">Plan</th><td>{{ object.plan|title }}</td></tr>
+              <tr><th scope="row">Feature access</th><td>{% if object.require_paid_features %}Paid features required{% else %}Standard existing access{% endif %}</td></tr>
+              <tr><th scope="row">Account status</th><td><span class="cg-company-inline-status {% if object.is_active %}is-active{% else %}is-disabled{% endif %}">{% if object.is_active %}Enabled{% else %}Disabled{% endif %}</span></td></tr>
+              <tr><th scope="row">Last updated</th><td>{{ object.updated_at|date:"d M Y, g:i A" }}</td></tr>
+            </tbody>
+          </table>
+        </div>
       </section>
+      <div class="cg-company-access-note">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg>
+        <p>Changes to workspace access require administrator permissions. Storage observations are read-only and do not directly debit credits.</p>
+      </div>
     </aside>
   </div>
-  <section class="cg-editor-card cg-company-interval-card" aria-labelledby="cg-company-interval-heading">
-    <div class="cg-card-heading">
+
+  <section class="cg-company-panel cg-company-logs-panel" id="company-storage-logs" aria-labelledby="company-storage-title">
+    <header class="cg-company-panel-head cg-company-logs-head">
+      <span class="cg-company-panel-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span>
       <div>
-        <span class="cg-section-kicker">Saved observations</span>
-        <h3 id="cg-company-interval-heading">Storage interval logs</h3>
-        <p>Actual checkpoints and accrued billing readings for this company only. Monitoring logs do not charge credits.</p>
+        <span class="cg-section-kicker">USAGE HISTORY</span>
+        <h3 id="company-storage-title">Storage interval logs</h3>
+        <p>Latest 30 actual recorded observations and billing meter readings · monitoring never charges the wallet</p>
       </div>
-    </div>
-    <div class="cg-company-table-wrap">
-      <table class="cg-company-detail-table cg-company-interval-table">
-        <thead><tr><th scope="col">Recorded at</th><th scope="col">Source</th><th scope="col">Storage</th><th scope="col">Files</th><th scope="col">Covered</th><th scope="col">Accrued credits</th></tr></thead>
+      {% panel_can 'panel:storage' as can_view_storage %}
+      {% if can_view_storage %}
+        <a class="cg-company-view-all" href="{% url 'panel:storage' %}?company={{ object.pk }}">
+          View storage
+          <span aria-hidden="true">↗</span>
+        </a>
+      {% endif %}
+    </header>
+    <div class="cg-company-table-scroll cg-company-logs-scroll" role="region" aria-label="Recent company storage interval records" tabindex="0">
+      <table class="cg-company-logs-table">
+        <thead>
+          <tr>
+            <th scope="col">Recorded at</th>
+            <th scope="col">Log source</th>
+            <th scope="col">Storage used</th>
+            <th scope="col">Files</th>
+            <th scope="col">Interval / covered</th>
+            <th scope="col">Accrued credits</th>
+          </tr>
+        </thead>
         <tbody>
           {% for row in storage_intervals %}
             <tr>
-              <td>{{ row.sampledAt|slice:":19" }}</td>
-              <td>{% if row.source == "monitoring" %}Monitoring{% elif row.source == "monthly_meter" %}Monthly meter{% else %}Legacy meter{% endif %}</td>
-              <td>{{ row.usedGb }} GB</td>
+              <td><span class="cg-company-log-date">{{ row.sampled_datetime|date:"d M Y" }}</span><span class="cg-company-log-time">{{ row.sampled_datetime|date:"h:i A" }}</span></td>
+              <td>
+                <span class="cg-company-source {% if row.source == 'monitoring' %}is-monitoring{% else %}is-billing{% endif %}">
+                  {% if row.source == "monitoring" %}Monitoring{% elif row.source == "monthly_meter" %}Monthly meter{% else %}Legacy meter{% endif %}
+                </span>
+              </td>
+              <td><strong>{{ row.usedGb }} GB</strong><small>{{ row.usedBytes|filesizeformat }}</small></td>
               <td>{{ row.fileCount|default_if_none:"—" }}</td>
-              <td>{% if row.coveredSeconds != None %}{{ row.coveredSeconds }} sec{% elif row.intervalSeconds != None %}{{ row.intervalSeconds }} sec interval{% else %}—{% endif %}</td>
-              <td>{{ row.accruedCredits|default_if_none:"Not billed" }}</td>
+              <td>{{ row.duration_label }}</td>
+              <td>{% if row.accruedCredits == None %}<span class="cg-company-unbilled">Not billed</span>{% else %}<strong>{{ row.accruedCredits }}</strong><small>credits accrued</small>{% endif %}</td>
             </tr>
           {% empty %}
-            <tr><td colspan="6">No interval readings have been recorded yet. Enable monitoring in Billing Settings and run the scheduler.</td></tr>
+            <tr><td colspan="6">
+              <div class="cg-company-logs-empty">
+                <span class="cg-company-logs-empty-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#database"></use></svg></span>
+                <strong>No storage interval logs yet</strong>
+                <p>Enable storage monitoring in Billing Settings and run the scheduled worker to start saving observations.</p>
+                {% panel_can 'panel:billing-settings' as can_view_billing_settings %}
+                {% if can_view_billing_settings %}<a href="{% url 'panel:billing-settings' %}#storage-monitoring">Open Billing Settings →</a>{% endif %}
+              </div>
+            </td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-  </section>
-  <section class="cg-editor-card cg-company-interval-card" aria-labelledby="cg-company-feature-usage-heading">
-    <div class="cg-card-heading"><div>
-      <span class="cg-section-kicker">Read-only time-based billing</span>
-      <h3 id="cg-company-feature-usage-heading">Feature usage &amp; accrued credits</h3>
-      <p>Only this company's module ON/OFF time is metered. Historical credits remain due after modules are turned OFF.</p>
-    </div></div>
-    <div class="cg-company-table-wrap">
-      <table class="cg-company-detail-table cg-company-interval-table">
-        <thead><tr><th scope="col">Module</th><th scope="col">Access</th><th scope="col">Rate unit</th><th scope="col">Last checkpoint</th></tr></thead>
-        <tbody>
-          {% for state in feature_states %}
-          <tr>
-            <td>{{ state.feature.label }}</td>
-            <td>{% if state.suspended %}Suspended{% elif state.enabled %}ON{% else %}OFF{% endif %}</td>
-            <td>{{ state.get_billing_period_display }} · {{ state.monthly_rate }} credits</td>
-            <td>{{ state.sampled_at|date:"d M Y H:i:s"|default:"—" }}</td>
-          </tr>
-          {% empty %}<tr><td colspan="4">No time-metered modules have been activated for this company.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p style="margin:12px 18px;font-size:12px;color:var(--muted)">Unsettled feature usage including one-time rates: <strong>{{ feature_owed_credits|floatformat:2 }} credits</strong>. The configured monthly due date controls settlement, not each rate period.</p>
-    <div class="cg-company-table-wrap">
-      <table class="cg-company-detail-table cg-company-interval-table">
-        <thead><tr><th scope="col">Recorded at</th><th scope="col">Module</th><th scope="col">Used time</th><th scope="col">Rate</th><th scope="col">Accrued credits</th><th scope="col">Users</th></tr></thead>
-        <tbody>
-          {% for row in feature_intervals %}
-          <tr><td>{{ row.sampled_at|date:"d M Y H:i:s" }}</td><td>{{ row.feature.label }}</td>
-          <td>{{ row.covered_seconds }} sec</td><td>{{ row.monthly_rate }} / {{ row.get_billing_period_display }}</td>
-          <td>{{ row.accrued_credits|floatformat:6 }}</td><td>{{ row.users }}</td></tr>
-          {% empty %}<tr><td colspan="6">No module usage checkpoints have been recorded. Running the meter or switching a module OFF will create them.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <footer class="cg-company-logs-foot">
+      <span>Records are linked to this company only.</span>
+      <span class="cg-company-scroll-hint">Swipe horizontally to see all columns →</span>
+    </footer>
   </section>
 </div>
 {% endblock %}
