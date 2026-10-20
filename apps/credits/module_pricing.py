@@ -27,8 +27,8 @@ class ModulePriceForm(forms.Form):
         if data.get('monthly_postpaid') and data.get('billing_type') != 'monthly':
             self.add_error('billing_type', 'Postpaid usage requires Monthly billing.')
         if existing and data.get('monthly_postpaid', False) != existing.monthly_postpaid:
-            if existing.bundle.company_access.exists() or CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
-                self.add_error('monthly_postpaid', 'A module with purchased or metered access must retain its billing model.')
+            if CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
+                self.add_error('monthly_postpaid', 'A metered module must retain its billing model. Settle or migrate metered access separately.')
         return data
 
 
