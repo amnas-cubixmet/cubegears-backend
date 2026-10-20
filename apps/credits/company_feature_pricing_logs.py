@@ -4,8 +4,6 @@ No inferred history: catalog prices may change, while recorded usage sessions,
 activation events and ledger debits retain their historical amounts. Never
 sum different event sources as if they were independent charges.
 """
-from decimal import Decimal
-
 from apps.credits.models import (
     CompanyBundleAccess,
     CreditLedger,
@@ -26,12 +24,6 @@ FEATURE_LEDGER_KINDS = (
     "bundle_charge", "feature_charge", "feature_disabled",
     "feature_suspended", "bundle_use",
 )
-
-
-def _money(value):
-    if value is None:
-        return None
-    return str(value)
 
 
 def company_feature_pricing_report(company, *, limit=50):
