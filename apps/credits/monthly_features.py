@@ -176,7 +176,11 @@ def meter_postpaid_feature(item, *, at=None, force=False):
     if old:
         elapsed = int((at - old).total_seconds())
         max_gap = interval * 2
-        tracked = bool(runtime and runtime.event_tracking_enabled)
+        # A trusted server-side OFF or admin price-change checkpoint is an
+        # explicit endpoint for the ON interval. Meter its full duration even
+        # if Celery was stopped; a routine scheduler gap without such a
+        # checkpoint is still excluded unless event tracking was enabled.
+        tracked = bool(force or (runtime and runtime.event_tracking_enabled))
         start = old if tracked or elapsed <= max_gap else at
         if elapsed > max_gap and not tracked:
             LOG.warning(
