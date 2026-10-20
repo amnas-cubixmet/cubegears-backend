@@ -117,3 +117,9 @@ class StorageMonitoringPolicyForm(forms.ModelForm):
     class Meta:
         model = StorageMonitoringPolicy
         fields = ["enabled", "interval_seconds"]
+        # Other settings forms also expose an `enabled` field on /settings/.
+        # Keep the existing POST parameter name but give this switch a unique
+        # DOM ID so clicking its label never toggles a different billing policy.
+        widgets = {
+            "enabled": forms.CheckboxInput(attrs={"id": "id_storage_monitoring_enabled"}),
+        }

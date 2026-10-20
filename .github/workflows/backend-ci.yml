@@ -19,6 +19,8 @@ jobs:
         run: ruff check . --select F401,F811,F841,F601,F602,F821,F822,F823,F901
       - run: python -m compileall -q apps common config scripts
       - run: python manage.py check
+      - name: Check billing settings templates compile
+        run: python manage.py shell -c "from django.template.loader import get_template; [get_template(name) for name in ['control_panel/billing_settings.html', 'control_panel/_billing_settings_forms.html']]"
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
       # Automated test suites and smoke-test scripts were removed by request.
