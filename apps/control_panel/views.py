@@ -1022,6 +1022,10 @@ PANEL_RESOURCES = {
 def resource_list(request, resource):
     form_class, title, singular, search_fields = PANEL_RESOURCES[resource]
     all_records = form_class._meta.model.objects.all()
+    # Platform Team manages only companyless SaaS Control Panel roles.
+    # Workshop roles remain in the database for tenant permissions.
+    if resource == "roles":
+        all_records = all_records.filter(company__isnull=True)
     total_records = all_records.count()
     companies_count = all_records.exclude(company__isnull=True).values("company_id").distinct().count()
     if resource in {"branches", "roles"}:
@@ -1036,16 +1040,13 @@ def resource_list(request, resource):
 
     queryset = all_records.select_related("company")
     queryset = queryset.order_by("-created_at", "pk")
-    queryset, company_id = _company_filter(request, queryset)
-    role_scope_filter = ""
     if resource == "roles":
-        role_scope_filter = request.GET.get("scope", "").strip().lower()
-        if role_scope_filter == "platform":
-            queryset = queryset.filter(company__isnull=True)
-        elif role_scope_filter == "workshop":
-            queryset = queryset.filter(company__isnull=False)
-        else:
-            role_scope_filter = ""
+        # Never honor a company/scope query parameter to expose workshop roles.
+        company_id = ""
+        role_scope_filter = "platform"
+    else:
+        queryset, company_id = _company_filter(request, queryset)
+        role_scope_filter = ""
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip().lower()
     if query:
@@ -1061,15 +1062,15 @@ def resource_list(request, resource):
     else:
         status = ""
     return render(request, "control_panel/resource_list.html", {
-        "page_title": title, "active": resource,
+        "page_title": "SaaS Admin Roles" if resource == "roles" else title, "active": resource,
         "rows": _paginate(request, queryset),
         "companies": _company_choices(), "company_id": company_id, "q": query,
         "status": status, "total_records": total_records,
         "active_records": active_records, "special_records": special_records,
         "companies_count": companies_count,
         "role_scope_filter": role_scope_filter,
-        "platform_roles_count": all_records.filter(company__isnull=True).count() if resource == "roles" else 0,
-        "workshop_roles_count": all_records.filter(company__isnull=False).count() if resource == "roles" else 0,
+        "platform_roles_count": all_records.count() if resource == "roles" else 0,
+        "workshop_roles_count": 0,
         "create_url": f"panel:{singular}-create", "detail_url": f"panel:{singular}-detail",
         "edit_url": f"panel:{singular}-edit", "delete_url": f"panel:{singular}-delete",
     })
@@ -1079,8 +1080,12 @@ def resource_list(request, resource):
 def resource_action(request, resource, action, pk=None, role_scope=None):
     form_class, title, singular, _ = PANEL_RESOURCES[resource]
     if resource == "roles" and action == "create":
-        role_scope = role_scope or "workshop"
-    obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
+        # All Control Panel role creation is now SaaS-only.
+        role_scope = "platform"
+    if resource == "roles" and pk:
+        obj = get_object_or_404(form_class._meta.model, pk=pk, company__isnull=True)
+    else:
+        obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
     cancel_url = f'panel:{resource}'
     if action == 'detail':
         return render(request, 'control_panel/detail.html', {
@@ -1091,12 +1096,14 @@ def resource_action(request, resource, action, pk=None, role_scope=None):
     if action == 'delete':
         return _delete_object(request, obj, title=title, active=resource, cancel_url=cancel_url)
     editor_title = ('Edit ' if obj else 'Add ') + title
+    if resource == "roles" and obj:
+        editor_title = "Edit SaaS Admin Staff Role"
     if resource == "roles" and action == "create":
         editor_title = "Add SaaS Admin Staff Role" if role_scope == "platform" else "Add Workshop Role"
     return _save_form(
         request, form_class, instance=obj, title=editor_title,
         active=resource, cancel_url=cancel_url,
-        form_kwargs={"scope": role_scope} if resource == "roles" and action == "create" else None,
+        form_kwargs={"scope": "platform"} if resource == "roles" else None,
     )
 
 
