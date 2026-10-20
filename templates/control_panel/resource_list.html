@@ -3,46 +3,37 @@
 {% block content %}
 <section class="directory-heading remaining-heading">
   <div>
-    <p class="eyebrow">Platform / Workshop records</p>
-    <h2>{% if active == 'branches' %}Branch Management{% else %}Roles &amp; Permissions{% endif %}</h2>
-    <p>{% if active == 'branches' %}Review workshop locations, contact details and head-office settings.{% else %}Create separate SaaS Admin Staff and Workshop roles with scoped permissions.{% endif %}</p>
+    <p class="eyebrow">{% if active == 'roles' %}Team / SaaS administration{% else %}Team / Branches{% endif %}</p>
+    <h2>{% if active == 'branches' %}Branch Management{% else %}SaaS Admin Roles{% endif %}</h2>
+    <p>{% if active == 'branches' %}Review workshop locations, contact details and head-office settings.{% else %}Manage permissions for CubeGears platform administrators.{% endif %}</p>
   </div>
   {% panel_can create_url as allowed %}
   {% if allowed %}
     {% if active == 'roles' %}
-      <nav class="remaining-head-actions role-directory-actions" aria-label="Create a role">
-        <a class="btn" href="{% url 'panel:role-create' %}">+ Add Workshop Role</a>
-        <a class="btn btn-primary" href="{% url 'panel:role-saas-create' %}">+ Add SaaS Admin Staff Role</a>
-      </nav>
+      <a class="btn btn-primary" href="{% url 'panel:role-saas-create' %}">+ Add SaaS Admin Staff Role</a>
     {% else %}
       <a class="btn btn-primary" href="{% url create_url %}">+ Add Branch</a>
     {% endif %}
   {% endif %}
 </section>
-{% if active == 'roles' %}
-<nav class="role-scope-tabs" aria-label="Filter roles by account type">
-  <a href="{% url 'panel:roles' %}" {% if not role_scope_filter %}aria-current="page"{% endif %}>All Roles <span>{{ total_records }}</span></a>
-  <a href="{% url 'panel:roles' %}?scope=platform" {% if role_scope_filter == 'platform' %}aria-current="page"{% endif %}>SaaS Admin Staff Roles <span>{{ platform_roles_count }}</span></a>
-  <a href="{% url 'panel:roles' %}?scope=workshop" {% if role_scope_filter == 'workshop' %}aria-current="page"{% endif %}>Workshop Roles <span>{{ workshop_roles_count }}</span></a>
-</nav>
-{% endif %}
 <section class="directory-stats remaining-stats" aria-label="Module overview">
   <article class="user-stat-card"><div class="user-stat-top"><span>Total {% if active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">T</span></div><strong class="user-stat-value">{{ total_records }}</strong><small class="user-stat-meta">All saved records</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>Active {% if active == 'branches' %}Branches{% else %}Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ active_records }}</strong><small class="user-stat-meta">Active records</small></article>
   <article class="user-stat-card"><div class="user-stat-top"><span>{% if active == 'branches' %}Head Offices{% else %}System Roles{% endif %}</span><span class="user-stat-icon" aria-hidden="true">#</span></div><strong class="user-stat-value">{{ special_records }}</strong><small class="user-stat-meta">According to saved data</small></article>
-  <article class="user-stat-card"><div class="user-stat-top"><span>Companies</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{{ companies_count }}</strong><small class="user-stat-meta">With module records</small></article>
+  <article class="user-stat-card"><div class="user-stat-top"><span>{% if active == 'roles' %}Account scope{% else %}Companies{% endif %}</span><span class="user-stat-icon" aria-hidden="true">C</span></div><strong class="user-stat-value">{% if active == 'roles' %}SaaS{% else %}{{ companies_count }}{% endif %}</strong><small class="user-stat-meta">{% if active == 'roles' %}Platform administration only{% else %}With module records{% endif %}</small></article>
 </section>
 <section class="panel-card remaining-directory" aria-labelledby="resource-directory-title">
   <header class="section-head directory-section-heading"><div><p class="eyebrow">Directory</p><h2 id="resource-directory-title">{{ page_title }}</h2><p>Search and filter saved platform records</p></div><span class="directory-result-count">{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</span></header>
   <form class="remaining-filter-form" method="get" aria-label="Search and filter records">
     <label class="sr-only" for="resource-search">Search records</label><input id="resource-search" type="search" name="q" value="{{ q }}" placeholder="Search name, code or workshop">
-    <label class="sr-only" for="resource-company">Company</label>
-    <select id="resource-company" name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    {% if active == 'branches' %}
+      <label class="sr-only" for="resource-company">Company</label>
+      <select id="resource-company" name="company"><option value="">All companies</option>{% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select>
+    {% endif %}
     <label class="sr-only" for="resource-status">Status</label>
     <select id="resource-status" name="status"><option value="">All statuses</option><option value="active" {% if status == 'active' %}selected{% endif %}>Active</option><option value="inactive" {% if status == 'inactive' %}selected{% endif %}>Inactive</option></select>
     <button class="btn btn-primary" type="submit">Filter</button>
-    {% if active == 'roles' and role_scope_filter %}<input type="hidden" name="scope" value="{{ role_scope_filter }}">{% endif %}
-    {% if q or company_id or status %}<a class="btn" href="{% if active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% if role_scope_filter %}?scope={{ role_scope_filter }}{% endif %}{% endif %}">Clear</a>{% endif %}
+    {% if q or company_id or status %}<a class="btn" href="{% if active == 'branches' %}{% url 'panel:branches' %}{% else %}{% url 'panel:roles' %}{% endif %}">Clear</a>{% endif %}
   </form>
   <div class="responsive-table remaining-table">
     <table>
@@ -50,7 +41,7 @@
         {% if active == 'branches' %}
           <th>Branch</th><th>Company</th><th>City</th><th>Email</th><th>Head Office</th><th>Status</th>
         {% else %}
-          <th>Role</th><th>Company</th><th>Code</th><th>Permissions</th><th>Type</th><th>Status</th>
+          <th>Role</th><th>Scope</th><th>Code</th><th>Permissions</th><th>Type</th><th>Status</th>
         {% endif %}<th>Actions</th>
       </tr></thead>
       <tbody>{% for row in rows %}<tr>
@@ -63,7 +54,7 @@
           <td data-label="Status"><span class="remaining-state {% if row.is_active %}is-good{% else %}is-neutral{% endif %}">{% if row.is_active %}Active{% else %}Inactive{% endif %}</span></td>
         {% else %}
           <td data-label="Role"><div class="remaining-identity"><span class="remaining-avatar" aria-hidden="true">R</span><div><strong>{{ row.name }}</strong><span class="table-sub">{{ row.code }}</span></div></div></td>
-          <td data-label="Company">{{ row.company.name|default:"Platform" }}</td>
+          <td data-label="Scope">SaaS platform</td>
           <td data-label="Code"><span class="remaining-chip">{{ row.code }}</span></td>
           <td data-label="Permissions">{{ row.permissions|length }} permissions</td>
           <td data-label="Type">{% if row.is_system %}<span class="remaining-chip">System</span>{% else %}Custom{% endif %}</td>
