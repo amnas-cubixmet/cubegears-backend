@@ -82,14 +82,44 @@ class MonthlyStatementsView(APIView):
                 })
                 item[category] = part['credits'].quantize(Decimal('0.01'))
                 item['statuses'].extend(part['statuses'])
+        # The calendar statement, once issued, is the only authoritative
+        # invoice. Meter rows for an open month are provisional estimates.
+        from .calendar_billing import active_policy, deadline_for
+        from .models import BillingCycleStatement
+        active_calendar = active_policy()
+        issued = {
+            row.month: row for row in BillingCycleStatement.objects.filter(
+                company=request.user.company,
+            ).order_by("-month")[:48]
+        } if active_calendar else {}
+        for month, row in issued.items():
+            months.setdefault(month, {
+                'id': month, 'period': month, 'featureCredits': Decimal('0'),
+                'storageCredits': Decimal('0'), 'statuses': [],
+            })
         result = []
         for _, item in sorted(months.items(), reverse=True):
             statuses = item.pop('statuses')
-            item['status'] = 'paid' if all(s == 'paid' for s in statuses) else 'insufficient' if 'insufficient' in statuses else 'pending'
-            from .monthly_policy import deadline, overdue
-            cycle = deadline(item['period'])
-            item['dueAt'] = cycle.due_at.isoformat() if cycle else None
-            item['overdue'] = bool(cycle and item['status'] != 'paid' and overdue(cycle, timezone.now()))
+            statement = issued.get(item['period'])
+            if statement:
+                item['featureCredits'] = statement.feature_credits
+                item['storageCredits'] = statement.storage_credits
+                item['status'] = statement.status
+                item['dueAt'] = statement.due_at.isoformat()
+                item['overdue'] = bool(statement.status != 'paid' and
+                    timezone.localdate() > timezone.localtime(statement.due_at).date())
+            else:
+                item['status'] = 'paid' if statuses and all(s == 'paid' for s in statuses) else 'insufficient' if 'insufficient' in statuses else 'pending'
+                if active_calendar:
+                    item['dueAt'] = deadline_for(
+                        item['period'], active_calendar.due_day, active_calendar.due_time,
+                    ).isoformat()
+                    item['overdue'] = False  # Not an issued invoice yet.
+                else:
+                    from .monthly_policy import deadline, overdue
+                    cycle = deadline(item['period'])
+                    item['dueAt'] = cycle.due_at.isoformat() if cycle else None
+                    item['overdue'] = bool(cycle and item['status'] != 'paid' and overdue(cycle, timezone.now()))
             item['totalCredits'] = str(item['featureCredits'] + item['storageCredits'])
             item['featureCredits'] = str(item['featureCredits'])
             item['storageCredits'] = str(item['storageCredits'])
