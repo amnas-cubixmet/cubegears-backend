@@ -281,6 +281,17 @@ def purchase_feature_bundle(company, bundle, actor):
     if effective_policy():
         raise ValueError("Postpaid cycle enabled: use the cycle label activation API.")
     bundle = FeatureBundle.objects.get(pk=bundle.pk, is_active=True)
+    # Retired versions remain attached to historical access only.
+    # Permit a free, unexpired resume but never another charge on retired terms.
+    if bundle.is_retired:
+        previous = CompanyBundleAccess.objects.filter(company=company, bundle=bundle).first()
+        may_resume = bool(
+            previous and not previous.enabled and previous.last_price_credits > ZERO
+            and (previous.billing_type_at_purchase == "permanent"
+                 or (previous.valid_until and previous.valid_until > timezone.now()))
+        )
+        if not may_resume:
+            raise ValueError("This billing period was replaced. Choose the current feature label.")
     from django.conf import settings
     if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
         from .models import CompanyPostpaidFeature
@@ -305,7 +316,7 @@ def purchase_feature_bundle(company, bundle, actor):
 
     if (not access.enabled and access.last_price_credits > ZERO and access.purchased_at and
         (access.billing_type_at_purchase == "permanent" or
-         (access.billing_type_at_purchase in {"hourly", "daily", "weekly", "monthly"}
+         (access.billing_type_at_purchase in {"ten_seconds", "hourly", "daily", "weekly", "monthly"}
           and access.valid_until and access.valid_until > now))):
         access.enabled = True
         access.save(update_fields=["enabled", "updated_at"])
@@ -334,8 +345,9 @@ def purchase_feature_bundle(company, bundle, actor):
         access.uses_remaining = 0
         access.valid_until = None
     else:
-        periods = {"hourly": timedelta(hours=1), "daily": timedelta(days=1),
-                   "weekly": timedelta(days=7), "monthly": timedelta(days=30)}
+        periods = {"ten_seconds": timedelta(seconds=10), "hourly": timedelta(hours=1),
+                   "daily": timedelta(days=1), "weekly": timedelta(days=7),
+                   "monthly": timedelta(days=30)}
         if bundle.billing_type not in periods:
             raise ValueError("Invalid billing period.")
         start = max(now, access.valid_until) if access.enabled and access.valid_until else now
