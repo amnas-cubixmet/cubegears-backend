@@ -27,14 +27,14 @@ def calendar_policy_control(request):
         with transaction.atomic():
             saved = form.save()
             record_panel_event(request, 'CALENDAR_BILLING_POLICY_UPDATED', {
-                'enabled': saved.enabled, 'due_day': saved.due_day,
+                'enabled': saved.enabled, 'due_day': saved.due_day, 'due_end_day': saved.due_end_day,
                 'due_time': saved.due_time.strftime('%H:%M'),
                 'calculation_interval_seconds': saved.calculation_interval_seconds,
                 'storage_tracking_interval_seconds': saved.storage_tracking_interval_seconds,
             })
         messages.success(
             request,
-            "Calendar month billing settings saved. New usage settles only on the due day.",
+            "Calendar billing saved. Collection starts on the payment start day; overdue restriction starts after the payment end day.",
         )
         return redirect("panel:calendar-credit-billing")
 

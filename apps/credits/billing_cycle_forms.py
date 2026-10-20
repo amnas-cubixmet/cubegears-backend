@@ -6,11 +6,20 @@ from .models import BillingCyclePolicy
 
 
 class BillingCyclePolicyForm(forms.ModelForm):
-    due_day = forms.IntegerField(min_value=1, max_value=28, help_text="Deduct credits on this day of the following month.")
+    due_day = forms.IntegerField(
+        min_value=1, max_value=28, label="Payment start day (1–28)",
+        help_text="Start automatic collection on this day of the following month.",
+        widget=forms.NumberInput(attrs={"min": 1, "max": 28, "inputmode": "numeric"}),
+    )
+    due_end_day = forms.IntegerField(
+        min_value=1, max_value=28, label="Payment end day (1–28)",
+        help_text="Last grace day; unpaid accounts may be restricted starting the next day.",
+        widget=forms.NumberInput(attrs={"min": 1, "max": 28, "inputmode": "numeric"}),
+    )
 
     class Meta:
         model = BillingCyclePolicy
-        fields = ["enabled", "due_day", "due_time", "calculation_interval_seconds",
+        fields = ["enabled", "due_day", "due_end_day", "due_time", "calculation_interval_seconds",
                   "storage_tracking_interval_seconds", "rate_duration_seconds",
                   "event_tracking_enabled", "restrict_overdue", "allow_zero_balance_usage"]
         widgets = {"due_time": forms.TimeInput(format="%H:%M", attrs={"type": "time"})}
@@ -54,6 +63,9 @@ class BillingCyclePolicyForm(forms.ModelForm):
 
     def clean(self):
         result = super().clean()
+        start_day, end_day = result.get("due_day"), result.get("due_end_day")
+        if start_day is not None and end_day is not None and end_day < start_day:
+            self.add_error("due_end_day", "Payment end day must be on or after the start day.")
         if result.get("enabled"):
             # The 5th-to-5th engine must never run alongside calendar billing.
             from .cycle_billing import effective_policy

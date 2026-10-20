@@ -36,7 +36,7 @@ def active_policy():
 
 
 def deadline_for(month, due_day, due_time=None):
-    """5th 00:05 local is debit time; overdue starts on the 6th local."""
+    """Collection opens on the configured day of the month after usage closes."""
     _, end = _month_bounds(month)
     local = timezone.localtime(end, timezone.get_default_timezone())
     due_time = due_time or time(0, 5)
@@ -111,7 +111,9 @@ def finalize_month(company, month, *, at=None):
         return "awaiting_meter", None
     feature, storage, details = _amounts(company, month)
     statement = BillingCycleStatement.objects.create(
-        company=company, month=month, due_at=deadline_for(month, policy.due_day, policy.due_time),
+        company=company, month=month,
+        due_at=deadline_for(month, policy.due_day, policy.due_time),
+        grace_end_at=deadline_for(month, policy.due_end_day, policy.due_time),
         feature_credits=feature, storage_credits=storage, total_credits=feature + storage,
         details={"items": details}, finalized_at=at,
     )
@@ -200,11 +202,13 @@ def overdue_statements(company, *, at=None):
     if not policy or not policy.restrict_overdue:
         return []
     at = at or timezone.now()
-    # Grace extends to end-of-day on the configured due day (local time).
+    # Existing finalized statements keep their original single-day grace.
+    # New statements freeze a separate payment-window end date at issuance.
     today = timezone.localtime(at, timezone.get_default_timezone()).date()
     result = []
     for row in BillingCycleStatement.objects.filter(company=company).exclude(status="paid").order_by("month"):
-        if today > timezone.localtime(row.due_at, timezone.get_default_timezone()).date():
+        end_at = row.grace_end_at or row.due_at
+        if today > timezone.localtime(end_at, timezone.get_default_timezone()).date():
             if row.total_credits > ZERO:
                 result.append(row)
     return result
@@ -219,6 +223,7 @@ def billing_status(company, *, at=None):
     pending_total = sum((s.total_credits for s in rows if s.status != "paid"), ZERO)
     return {
         "enabled": bool(policy), "dueDay": policy.due_day if policy else 5,
+        "dueEndDay": policy.due_end_day if policy else 5,
         "dayOfMonth": 1,
         "dueTime": policy.due_time.strftime("%H:%M") if policy else "00:05",
         "calculationIntervalSeconds": policy.calculation_interval_seconds if policy else 300,
@@ -231,10 +236,16 @@ def billing_status(company, *, at=None):
             default=deadline_for(_period_for(at), policy.due_day if policy else 5, policy.due_time if policy else None),
         ).isoformat(),
         "amountDue": str(pending_total),
+        "paymentWindowEndAt": min(
+            (s.grace_end_at or s.due_at for s in rows if s.status != "paid"),
+            default=deadline_for(_period_for(at), policy.due_end_day if policy else 5, policy.due_time if policy else None),
+        ).isoformat(),
         "overdue": bool(overdue),
         "invoices": [{
             "id": s.pk, "startsOn": s.month + "-01",
-            "dueAt": s.due_at.isoformat(), "category": "combined",
+            "dueAt": s.due_at.isoformat(),
+            "paymentEndAt": (s.grace_end_at or s.due_at).isoformat(),
+            "category": "combined",
             "creditsDue": str(s.total_credits), "status": s.status,
             "details": s.details,
         } for s in rows],
@@ -245,6 +256,7 @@ def billing_status(company, *, at=None):
         "currentMonth": _period_for(at),
         "statements": [{
             "id": s.pk, "month": s.month, "dueAt": s.due_at.isoformat(),
+            "paymentEndAt": (s.grace_end_at or s.due_at).isoformat(),
             "featureCredits": str(s.feature_credits),
             "storageCredits": str(s.storage_credits),
             "totalCredits": str(s.total_credits), "status": s.status,

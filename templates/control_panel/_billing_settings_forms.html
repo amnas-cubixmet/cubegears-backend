@@ -138,9 +138,15 @@
           <input type="hidden" name="action" value="billing_cycle">
           {% if billing_cycle_form.non_field_errors %}<div class="cg-storage-errors" role="alert">{{ billing_cycle_form.non_field_errors }}</div>{% endif %}
           <div class="cg-storage-fields">
-            <label class="cg-storage-field">{% if compact_billing_settings %}Payment due day (1–28){% else %}Payment due day (next month, 1–28){% endif %}
+            <label class="cg-storage-field">Payment Start Day (1–28)
               {{ billing_cycle_form.due_day }}
-              {% for error in billing_cycle_form.due_day.errors %}<small role="alert">{{ error }}</small>{% endfor %}
+              <small>First day of next month’s automatic payment collection.</small>
+              {% for error in billing_cycle_form.due_day.errors %}<small role="alert" class="cg-storage-errors">{{ error }}</small>{% endfor %}
+            </label>
+            <label class="cg-storage-field">Payment End Day (1–28)
+              {{ billing_cycle_form.due_end_day }}
+              <small>Last payment grace day. Overdue restrictions start the day after.</small>
+              {% for error in billing_cycle_form.due_end_day.errors %}<small role="alert" class="cg-storage-errors">{{ error }}</small>{% endfor %}
             </label>
             {% for field in billing_cycle_form %}
               {% if field.name == 'due_time' or field.name == 'calculation_interval_seconds' or field.name == 'storage_tracking_interval_seconds' or field.name == 'rate_duration_seconds' %}
@@ -160,7 +166,7 @@
           </div>
         </form>
       {% else %}
-        <p>Billing cycle: calendar month · Due day: {{ billing_cycle_policy.due_day|default:5 }} · Overdue restriction: {{ billing_cycle_policy.restrict_overdue|yesno:"On,Off" }}. Editing requires Credits Edit permission.</p>
+        <p>Billing cycle: calendar month · Payment window: day {{ billing_cycle_policy.due_day|default:5 }}–{{ billing_cycle_policy.due_end_day|default:5 }} next month · Overdue restriction: {{ billing_cycle_policy.restrict_overdue|yesno:"On,Off" }}. Editing requires Credits Edit permission.</p>
       {% endif %}
     </div>
     {% if not compact_billing_settings %}
@@ -168,8 +174,8 @@
       <h3>Settlement timeline</h3>
       <ol class="cg-storage-steps">
         <li>Month end: freeze recorded feature seconds and storage GB-time.</li>
-        <li>Next month {{ billing_cycle_policy.due_day|default:5 }}: automatically deduct credits if balance covers the entire statement.</li>
-        <li>After due day: unpaid companies retain sign-in, account, recharge and storage audit; workshop pages are denied if restriction is enabled.</li>
+        <li>Next month day {{ billing_cycle_policy.due_day|default:5 }}: automatically start credit collection. Retries remain idempotent.</li>
+        <li>After day {{ billing_cycle_policy.due_end_day|default:5 }}: unpaid companies retain sign-in, account, recharge and storage audit; workshop pages are denied if restriction is enabled.</li>
       </ol>
       <p>Activation month: {{ billing_cycle_policy.effective_month|default:"Set on first enable" }}. No pre-activation period is automatically charged.</p>
       <p>Run <code>python manage.py settle_calendar_credits --dry-run</code> for a read-only preview. The regular Celery schedule settles exactly once by ledger reference.</p>
