@@ -41,6 +41,7 @@ urlpatterns=[
     path("storage/settings",StorageSettingsView.as_view(),name="storage-settings"),
     path("storage/history",StorageHistoryListView.as_view(),name="storage-history-list"),
     path("storage/events",StorageEventsView.as_view(),name="storage-events"),
+    path("storage/interval-logs",StorageIntervalLogsView.as_view(),name="storage-interval-logs"),
     path("storage/history/<str:date>",StorageHistoryDateView.as_view(),name="storage-history-date"),
     path("settings",SettingsView.as_view(),name="settings-all"),
     path("settings/<str:category>",SettingsView.as_view(),name="settings-category"),
