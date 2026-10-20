@@ -7,7 +7,7 @@ from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.models import PlanFeature, FeatureGroup
-from .models import ModulePriceLabel, FeatureBundle
+from .models import ModulePriceLabel, FeatureBundle, CompanyPostpaidFeature
 from .module_pricing import ModulePriceForm, save_module_price
 from apps.control_panel.audit import record_panel_event
 
@@ -37,17 +37,41 @@ def module_pricing(request):
                 messages.success(request, 'Module price saved. Company features remain OFF until the owner activates them.')
                 return redirect('panel:feature-pricing')
     configured = {m.feature.key: m for m in ModulePriceLabel.objects.select_related('feature', 'bundle', 'updated_by')}
+    # Locks are informational UI affordances; ModulePriceForm and save_module_price
+    # continue to enforce the same purchase/metering invariants server-side.
+    mapped_feature_ids = [mapping.feature_id for mapping in configured.values()]
+    metered_feature_ids = set(
+        CompanyPostpaidFeature.objects.filter(feature_id__in=mapped_feature_ids)
+        .values_list('feature_id', flat=True)
+    )
+    purchased_bundle_ids = set(
+        FeatureBundle.objects.filter(
+            pk__in=[mapping.bundle_id for mapping in configured.values()],
+            company_access__isnull=False,
+        ).values_list('pk', flat=True)
+    )
     rows = []
     for module in module_inventory():
         if not module['billable']:
             continue
         mapping = configured.get(module['key'])
         bundle = mapping.bundle if mapping else None
+        has_purchases = bool(mapping and mapping.bundle_id in purchased_bundle_ids)
+        has_metered_access = bool(mapping and mapping.feature_id in metered_feature_ids)
+        billing_model_locked = has_purchases or has_metered_access
+        # A metered postpaid module must remain Monthly; purchased periods are immutable.
+        billing_type_locked = has_purchases or bool(
+            has_metered_access and mapping.monthly_postpaid
+        )
         form = submitted if submitted is not None and request.POST.get('module') == module['key'] else ModulePriceForm(initial={
             'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 5,
             'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else True,
         }, auto_id='id_' + module['key'] + '_%s')
-        rows.append({'module':module, 'form':form, 'mapping':mapping, 'bundle':bundle})
+        rows.append({
+            'module': module, 'form': form, 'mapping': mapping, 'bundle': bundle,
+            'billing_type_locked': billing_type_locked,
+            'billing_model_locked': billing_model_locked,
+        })
     priced_count = sum(1 for row in rows if row['mapping'])
     published_count = sum(1 for row in rows if (
         row['bundle'] is not None and row['bundle'].is_active
@@ -61,4 +85,6 @@ def module_pricing(request):
         'catalog_groups': FeatureGroup.objects.select_related('parent').order_by('sort_order', 'label'),
         'catalog_bundles': FeatureBundle.objects.order_by('name'),
         'submission_errors': submitted.errors if submitted is not None and request.POST.get('module') not in [r['module']['key'] for r in rows] else None,
-    }, status=400 if submitted is not None and submitted.errors else 200)
+    })
+    # Normal Django form handling: show per-field validation errors on this page.
+    # An invalid edit never writes pricing or entitlement data.

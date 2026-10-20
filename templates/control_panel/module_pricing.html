@@ -120,17 +120,37 @@
           {{ row.form.per_user_credits }}
         </div>
         <div class="cg-module-field">
-          <label for="{{ row.form.billing_type.id_for_label }}">Billing period</label>
-          {{ row.form.billing_type }}
+          <label {% if not row.billing_type_locked %}for="{{ row.form.billing_type.id_for_label }}"{% endif %}>Billing period</label>
+          {% if row.billing_type_locked %}
+            <div class="cg-module-locked-value" aria-label="Locked billing period">
+              <span>{{ row.bundle.get_billing_type_display }}</span>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg>
+            </div>
+            <input type="hidden" name="billing_type" value="{{ row.bundle.billing_type }}">
+            <small class="cg-module-lock-note">Locked: companies already purchased or metered this module.</small>
+          {% else %}
+            {{ row.form.billing_type }}
+          {% endif %}
         </div>
       </div>
       <div class="cg-module-card-toggles">
         <label class="cg-module-checkbox">{{ row.form.published }} <span>Published</span></label>
-        <label class="cg-module-checkbox">{{ row.form.monthly_postpaid }} <span>Pay next month</span></label>
+        {% if row.billing_model_locked %}
+          <div class="cg-module-locked-model" aria-label="Locked billing model">
+            <span class="cg-module-locked-pill">{% if row.mapping.monthly_postpaid %}Pay next month{% else %}Prepaid{% endif %}</span>
+            <span>Billing model locked by existing access.</span>
+          </div>
+          {% if row.mapping.monthly_postpaid %}<input type="hidden" name="monthly_postpaid" value="on">{% endif %}
+        {% else %}
+          <label class="cg-module-checkbox">{{ row.form.monthly_postpaid }} <span>Pay next month</span></label>
+        {% endif %}
       </div>
       <button type="submit" class="btn btn-primary">Save price</button>
     </fieldset>
   </form>
+  {% if row.billing_type_locked or row.billing_model_locked %}
+    <p class="cg-module-billing-lock-info">Existing purchases or metered usage protect the billing period/model. Credits and publishing can still be updated for future availability.</p>
+  {% endif %}
   {% if row.mapping %}<small class="cg-module-updated">Updated {{ row.mapping.updated_at|date:"d M Y" }}</small>{% endif %}
 </section>
 {% endfor %}
