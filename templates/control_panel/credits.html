@@ -4,11 +4,10 @@
 <div class="credit-panel-wrap cg-overview-page">
   <div class="credit-summary-title directory-heading">
     <div><p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Credit Wallet</p><h2>Credit Wallet</h2><p>Manage credit packages, company wallet balances and transaction activity.</p></div>
-  </div>
-
-  <div class="cg-credit-shortcuts">
-    {% panel_can 'billing-settings' as can_billing_settings %}
-    {% if can_billing_settings %}<a class="btn btn-primary" href="{% url 'panel:billing-settings' %}#calendar-billing-title">Billing Settings</a>{% endif %}
+    <div class="cg-credit-shortcuts">
+      {% panel_can 'billing-settings' as can_billing_settings %}
+      {% if can_billing_settings %}<a class="btn btn-primary" href="{% url 'panel:billing-settings' %}#calendar-billing-title">Billing Settings</a>{% endif %}
+    </div>
   </div>
   <section class="directory-stats remaining-stats" aria-label="Credit wallet overview">
     <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#package"></use></svg></span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
