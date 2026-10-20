@@ -435,11 +435,12 @@ def storage(request):
                 record_panel_event(request, 'CALENDAR_BILLING_POLICY_UPDATED', {
                     'enabled': policy_record.enabled,
                     'due_day': policy_record.due_day,
+                    'due_end_day': policy_record.due_end_day,
                     'due_time': policy_record.due_time.strftime('%H:%M'),
                     'calculation_interval_seconds': policy_record.calculation_interval_seconds,
                     'storage_tracking_interval_seconds': policy_record.storage_tracking_interval_seconds,
                 })
-            messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original due date.")
+            messages.success(request, "Calendar billing policy saved. Existing finalized invoices keep their original payment windows.")
             return redirect(save_destination)
     policy_form = StorageCreditPolicyForm(
         request.POST if request.method == "POST" and action == "storage_pricing" else None, instance=policy,
