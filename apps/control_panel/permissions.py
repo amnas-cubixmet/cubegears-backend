@@ -1,8 +1,8 @@
 from apps.accounts.permissions import panel_permission
 
-RESOURCES = ['dashboard', 'companies', 'users', 'branches', 'roles', 'credits',
+RESOURCES = ['dashboard', 'companies', 'users', 'roles', 'credits',
              'storage', 'security', 'plans', 'features', 'requests', 'staff']
-SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 'featurebundle': 'features', 'company': 'companies', 'user': 'users', 'branch': 'branches', 'role': 'roles', 'role-saas': 'roles',
+SINGULAR = {'plan': 'plans', 'feature': 'features', 'featuregroup': 'features', 'featurebundle': 'features', 'company': 'companies', 'user': 'users', 'role': 'roles', 'role-saas': 'roles',
             'staff': 'staff'}
 
 
