@@ -84,3 +84,16 @@ def template_for_document(company, kind, *, override=None):
     template_id = result.get("estimateTemplate" if kind == "estimate" else "invoiceTemplate")
     result["selectedTemplate"] = template_id if template_id in CHOICES else "modern"
     return result
+
+
+def effective_template_for_invoice(invoice):
+    """Current design for drafts, frozen design for issued documents.
+
+    Pre-migration finalized documents did not snapshot appearance: retain
+    their legacy Modern PDF instead of applying future company changes.
+    """
+    if invoice.template_snapshot:
+        return template_for_document(invoice.company, invoice.kind, override=invoice.template_snapshot)
+    if invoice.finalized_at:
+        return template_for_document(invoice.company, invoice.kind, override=STYLE_DEFAULTS)
+    return template_for_document(invoice.company, invoice.kind)
