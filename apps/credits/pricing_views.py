@@ -37,8 +37,9 @@ def module_pricing(request):
                 messages.success(request, 'Module price saved. Company features remain OFF until the owner activates them.')
                 return redirect('panel:feature-pricing')
     configured = {m.feature.key: m for m in ModulePriceLabel.objects.select_related('feature', 'bundle', 'updated_by')}
-    # Locks are informational UI affordances; ModulePriceForm and save_module_price
-    # continue to enforce the same purchase/metering invariants server-side.
+    # Purchased prepaid pricing may be changed at any time: existing entitlement
+    # periods are preserved through automatically versioned FeatureBundle records.
+    # Only genuinely metered postpaid activity keeps its billing model locked.
     mapped_feature_ids = [mapping.feature_id for mapping in configured.values()]
     metered_feature_ids = set(
         CompanyPostpaidFeature.objects.filter(feature_id__in=mapped_feature_ids)
@@ -58,11 +59,9 @@ def module_pricing(request):
         bundle = mapping.bundle if mapping else None
         has_purchases = bool(mapping and mapping.bundle_id in purchased_bundle_ids)
         has_metered_access = bool(mapping and mapping.feature_id in metered_feature_ids)
-        billing_model_locked = has_purchases or has_metered_access
-        # A metered postpaid module must remain Monthly; purchased periods are immutable.
-        billing_type_locked = has_purchases or bool(
-            has_metered_access and mapping.monthly_postpaid
-        )
+        billing_model_locked = has_metered_access
+        # An active/historical metered postpaid feature must stay Monthly.
+        billing_type_locked = bool(has_metered_access and mapping.monthly_postpaid)
         form = submitted if submitted is not None and request.POST.get('module') == module['key'] else ModulePriceForm(initial={
             'module':module['key'], 'monthly_postpaid':bool(mapping and mapping.monthly_postpaid), 'per_user_credits':bundle.per_user_credits if bundle else 5,
             'billing_type':bundle.billing_type if bundle else 'monthly', 'published':bundle.is_active if bundle else True,
@@ -71,6 +70,8 @@ def module_pricing(request):
             'module': module, 'form': form, 'mapping': mapping, 'bundle': bundle,
             'billing_type_locked': billing_type_locked,
             'billing_model_locked': billing_model_locked,
+            'has_purchases': has_purchases,
+            'has_metered_access': has_metered_access,
         })
     priced_count = sum(1 for row in rows if row['mapping'])
     published_count = sum(1 for row in rows if (
