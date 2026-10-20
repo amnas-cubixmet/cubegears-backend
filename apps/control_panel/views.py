@@ -814,9 +814,25 @@ def company_detail(request, pk):
         pk=pk,
     )
     from apps.credits.storage_interval_logs import interval_log_page
+    from apps.credits.models import CompanyPostpaidFeature, FeatureMeterReading, FeatureMeterPeriod
     storage_intervals = interval_log_page(obj, limit=30)["results"]
+    feature_intervals = FeatureMeterReading.objects.filter(
+        company=obj,
+    ).select_related("feature").order_by("-sampled_at", "-pk")[:40]
+    feature_states = CompanyPostpaidFeature.objects.filter(
+        company=obj,
+    ).select_related("feature").order_by("feature__label")
+    feature_pending = FeatureMeterPeriod.objects.filter(
+        company=obj, settled_at__isnull=True,
+    ).aggregate(usage=Sum("accrued_credits"), activation=Sum("activation_credits"))
+    feature_owed_credits = (feature_pending["usage"] or Decimal("0")) + (
+        feature_pending["activation"] or Decimal("0")
+    )
     return render(request, "control_panel/company_detail.html", {
         "storage_intervals": storage_intervals,
+        "feature_intervals": feature_intervals,
+        "feature_states": feature_states,
+        "feature_owed_credits": feature_owed_credits,
         "page_title": "Company Details",
         "active": "companies",
         "object": obj,
