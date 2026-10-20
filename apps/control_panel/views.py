@@ -387,15 +387,10 @@ def storage(request):
     cycle_action = action == "billing_cycle"
     legacy_action = action == "legacy_credit_cycle"
     monitoring_action = action == "storage_monitoring"
-    monitoring_policy = (
-        StorageMonitoringPolicy.objects.filter(singleton=1).first()
-        if not is_settings_page else None
-    )
-    monitoring_form = (
-        StorageMonitoringPolicyForm(
-            request.POST if monitoring_action else None,
-            instance=monitoring_policy or StorageMonitoringPolicy(singleton=1),
-        ) if not is_settings_page else None
+    monitoring_policy = StorageMonitoringPolicy.objects.filter(singleton=1).first()
+    monitoring_form = StorageMonitoringPolicyForm(
+        request.POST if monitoring_action else None,
+        instance=monitoring_policy or StorageMonitoringPolicy(singleton=1),
     )
     cycle_form = BillingCyclePolicyForm(
         request.POST if cycle_action else None, instance=cycle_policy,
@@ -407,8 +402,6 @@ def storage(request):
     if request.method == "POST":
         if action not in ("storage_pricing", "billing_cycle", "legacy_credit_cycle", "storage_monitoring"):
             return HttpResponseBadRequest("Unknown billing settings action.")
-        if monitoring_action and is_settings_page:
-            return HttpResponseBadRequest("Storage monitoring is managed on the Storage page.")
         if monitoring_action and not can_edit_pricing:
             return HttpResponseForbidden("Storage Edit permission required.")
         if (cycle_action or legacy_action) and not can_edit_cycle:
@@ -423,7 +416,7 @@ def storage(request):
             "interval_seconds": updated_monitoring.interval_seconds,
         })
         messages.success(request, "Storage snapshot schedule saved. This does not charge wallets.")
-        return redirect(reverse("panel:storage") + "#storage-monitoring")
+        return redirect(reverse(save_destination) + "#storage-monitoring")
 
     if legacy_action:
         if legacy_cycle_form.is_valid():
@@ -477,6 +470,14 @@ def storage(request):
             "active": "billing-settings",
             "storage_policy": policy,
             "storage_policy_form": policy_form,
+            "monitoring_form": monitoring_form,
+            "monitoring_policy": monitoring_policy,
+            "monitoring_next_due": (
+                monitoring_policy.last_run_at + timedelta(seconds=monitoring_policy.interval_seconds)
+                if monitoring_policy and monitoring_policy.enabled and monitoring_policy.last_run_at
+                else None
+            ),
+            "monitoring_scheduler_ready": django_settings.CELERY_BROKER_URL.startswith(("redis://", "rediss://")),
             "billing_cycle_policy": cycle_policy,
             "billing_cycle_form": cycle_form,
             "legacy_cycle_form": legacy_cycle_form,
@@ -812,7 +813,10 @@ def company_detail(request, pk):
         ),
         pk=pk,
     )
+    from apps.credits.storage_interval_logs import interval_log_page
+    storage_intervals = interval_log_page(obj, limit=30)["results"]
     return render(request, "control_panel/company_detail.html", {
+        "storage_intervals": storage_intervals,
         "page_title": "Company Details",
         "active": "companies",
         "object": obj,

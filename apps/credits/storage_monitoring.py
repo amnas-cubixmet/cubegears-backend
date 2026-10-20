@@ -13,10 +13,10 @@ from django.utils import timezone
 
 from apps.companies.models import Company
 from apps.saas.models import MediaFile, StorageUsage
-from .models import StorageMonitoringPolicy
+from .models import StorageMonitoringPolicy, StorageMonitoringReading
 
 logger = logging.getLogger(__name__)
-VALID_INTERVALS = (21600, 43200, 86400)
+VALID_INTERVALS = (3600, 7200, 21600, 43200, 86400)
 
 
 @transaction.atomic
@@ -69,6 +69,16 @@ def snapshot_due_storage(*, at=None, force=False):
                 company_id=company_id, date=date, category="auto_monitor",
                 **values,
             )
+        # A separate timestamped reading preserves every actual checkpoint.
+        # Updating the legacy daily row must not erase within-day observations.
+        StorageMonitoringReading.objects.get_or_create(
+            company_id=company_id, sampled_at=at,
+            defaults={
+                "interval_seconds": policy.interval_seconds,
+                "bytes_used": values["bytes_used"],
+                "file_count": values["file_count"],
+            },
+        )
         written += 1
 
     policy.last_run_at = at

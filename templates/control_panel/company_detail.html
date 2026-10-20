@@ -36,39 +36,67 @@
     <div class="cg-profile-main">
       <section class="cg-editor-card" aria-labelledby="cg-profile-general">
         <div class="cg-card-heading"><div><span class="cg-section-kicker">Business details</span><h3 id="cg-profile-general">General information</h3></div></div>
-        <dl class="cg-detail-grid">
-          <div><dt>Company name</dt><dd>{{ object.name }}</dd></div>
-          <div><dt>Legal name</dt><dd>{{ object.legal_name|default:"—" }}</dd></div>
-          <div><dt>GSTIN</dt><dd>{{ object.gstin|default:"—" }}</dd></div>
-          <div><dt>Workspace ID</dt><dd class="cg-breakable">{{ object.slug }}</dd></div>
-        </dl>
+        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
+          <tr><th scope="row">Company name</th><td>{{ object.name }}</td></tr>
+          <tr><th scope="row">Legal name</th><td>{{ object.legal_name|default:"—" }}</td></tr>
+          <tr><th scope="row">GSTIN</th><td>{{ object.gstin|default:"—" }}</td></tr>
+          <tr><th scope="row">Workspace ID</th><td class="cg-breakable">{{ object.slug }}</td></tr>
+        </tbody></table></div>
       </section>
       <section class="cg-editor-card" aria-labelledby="cg-profile-contact">
         <div class="cg-card-heading"><div><span class="cg-section-kicker">Contact</span><h3 id="cg-profile-contact">Contact & address</h3></div></div>
-        <dl class="cg-detail-grid">
-          <div><dt>Company email</dt><dd class="cg-breakable">{{ object.email|default:"—" }}</dd></div>
-          <div><dt>Phone</dt><dd>{{ object.phone|default:"—" }}</dd></div>
-          <div class="cg-detail-wide"><dt>Address</dt><dd>{{ object.address|default:"—"|linebreaksbr }}</dd></div>
-          <div><dt>City</dt><dd>{{ object.city|default:"—" }}</dd></div>
-          <div><dt>State</dt><dd>{{ object.state|default:"—" }}</dd></div>
-          <div><dt>Country</dt><dd>{{ object.country|default:"—" }}</dd></div>
-          <div><dt>Postal code</dt><dd>{{ object.pincode|default:"—" }}</dd></div>
-        </dl>
+        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
+          <tr><th scope="row">Company email</th><td class="cg-breakable">{{ object.email|default:"—" }}</td></tr>
+          <tr><th scope="row">Phone</th><td>{{ object.phone|default:"—" }}</td></tr>
+          <tr><th scope="row">Address</th><td>{{ object.address|default:"—"|linebreaksbr }}</td></tr>
+          <tr><th scope="row">City</th><td>{{ object.city|default:"—" }}</td></tr>
+          <tr><th scope="row">State</th><td>{{ object.state|default:"—" }}</td></tr>
+          <tr><th scope="row">Country</th><td>{{ object.country|default:"—" }}</td></tr>
+          <tr><th scope="row">Postal code</th><td>{{ object.pincode|default:"—" }}</td></tr>
+        </tbody></table></div>
       </section>
     </div>
     <aside class="cg-profile-side" aria-label="Workspace overview">
       <section class="cg-editor-card" aria-labelledby="cg-profile-workspace">
         <div class="cg-card-heading"><div><span class="cg-section-kicker">Settings</span><h3 id="cg-profile-workspace">Workspace</h3></div></div>
-        <dl class="cg-detail-grid cg-detail-stack">
-          <div><dt>Company owner</dt><dd>{{ object.owner.name|default:object.owner.email|default:"Not assigned" }}</dd></div>
-          <div><dt>Currency</dt><dd>{{ object.currency }}</dd></div>
-          <div><dt>Plan</dt><dd>{{ object.plan|title }}</dd></div>
-          <div><dt>Feature access mode</dt><dd>{% if object.require_paid_features %}Paid features required{% else %}Standard existing access{% endif %}</dd></div>
-          <div><dt>Company access</dt><dd>{% if object.is_active %}Enabled{% else %}Disabled{% endif %}</dd></div>
-          <div><dt>Last updated</dt><dd>{{ object.updated_at|date:"d M Y, g:i A" }}</dd></div>
-        </dl>
+        <div class="cg-company-table-wrap"><table class="cg-company-detail-table"><tbody>
+          <tr><th scope="row">Company owner</th><td>{{ object.owner.name|default:object.owner.email|default:"Not assigned" }}</td></tr>
+          <tr><th scope="row">Currency</th><td>{{ object.currency }}</td></tr>
+          <tr><th scope="row">Plan</th><td>{{ object.plan|title }}</td></tr>
+          <tr><th scope="row">Feature access mode</th><td>{% if object.require_paid_features %}Paid features required{% else %}Standard existing access{% endif %}</td></tr>
+          <tr><th scope="row">Company access</th><td>{% if object.is_active %}Enabled{% else %}Disabled{% endif %}</td></tr>
+          <tr><th scope="row">Last updated</th><td>{{ object.updated_at|date:"d M Y, g:i A" }}</td></tr>
+        </tbody></table></div>
       </section>
     </aside>
   </div>
+  <section class="cg-editor-card cg-company-interval-card" aria-labelledby="cg-company-interval-heading">
+    <div class="cg-card-heading">
+      <div>
+        <span class="cg-section-kicker">Saved observations</span>
+        <h3 id="cg-company-interval-heading">Storage interval logs</h3>
+        <p>Actual checkpoints and accrued billing readings for this company only. Monitoring logs do not charge credits.</p>
+      </div>
+    </div>
+    <div class="cg-company-table-wrap">
+      <table class="cg-company-detail-table cg-company-interval-table">
+        <thead><tr><th scope="col">Recorded at</th><th scope="col">Source</th><th scope="col">Storage</th><th scope="col">Files</th><th scope="col">Covered</th><th scope="col">Accrued credits</th></tr></thead>
+        <tbody>
+          {% for row in storage_intervals %}
+            <tr>
+              <td>{{ row.sampledAt|slice:":19" }}</td>
+              <td>{% if row.source == "monitoring" %}Monitoring{% elif row.source == "monthly_meter" %}Monthly meter{% else %}Legacy meter{% endif %}</td>
+              <td>{{ row.usedGb }} GB</td>
+              <td>{{ row.fileCount|default_if_none:"—" }}</td>
+              <td>{% if row.coveredSeconds != None %}{{ row.coveredSeconds }} sec{% elif row.intervalSeconds != None %}{{ row.intervalSeconds }} sec interval{% else %}—{% endif %}</td>
+              <td>{{ row.accruedCredits|default_if_none:"Not billed" }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="6">No interval readings have been recorded yet. Enable monitoring in Billing Settings and run the scheduler.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 </div>
 {% endblock %}

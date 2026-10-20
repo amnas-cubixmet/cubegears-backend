@@ -86,7 +86,7 @@
       <div><span>Next calculation</span><strong>{% if monitoring_next_due %}{{ monitoring_next_due|date:"d M Y, H:i" }}{% elif monitoring_policy.enabled %}When scheduler starts{% else %}Disabled{% endif %}</strong></div>
       <div><span>Scheduler</span><strong>{% if monitoring_scheduler_ready %}Redis configured{% else %}Redis not configured{% endif %}</strong></div>
     </footer>
-    {% if not monitoring_scheduler_ready %}<p class="cg-storage-monitor-hint">Configure Redis and run a Celery worker + Beat to start automated checks.</p>{% else %}<p class="cg-storage-monitor-hint">Requires a running Celery worker and one Beat instance. Snapshots update daily history; billing remains separate.</p>{% endif %}
+    {% if not monitoring_scheduler_ready %}<p class="cg-storage-monitor-hint">Configure Redis and run a Celery worker + Beat to start automated checks.</p>{% else %}<p class="cg-storage-monitor-hint">Requires a running Celery worker and one Beat instance. Each checkpoint is now saved as an interval log; billing remains separate.</p>{% endif %}
   </section>
 
   <nav class="cg-storage-ref-nav" aria-label="Storage sections">
