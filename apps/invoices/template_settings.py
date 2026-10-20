@@ -5,6 +5,9 @@ Never trust client-requested prices or untrusted external image URLs in PDF.
 """
 import base64
 import binascii
+from io import BytesIO
+
+from PIL import Image, UnidentifiedImageError
 from rest_framework import serializers
 from apps.saas.models import CompanySetting
 
@@ -65,6 +68,15 @@ def validated_settings(payload):
                 raise serializers.ValidationError({key: ["Invalid image payload."]})
             if len(raw) > 250 * 1024 or len(raw) < 8:
                 raise serializers.ValidationError({key: ["Logo must be at most 250 KB."]})
+            try:
+                with Image.open(BytesIO(raw)) as image:
+                    if image.format not in {"PNG", "JPEG", "WEBP"}:
+                        raise serializers.ValidationError({key: ["Unsupported image format."]})
+                    if image.width > 2048 or image.height > 2048 or image.width < 1 or image.height < 1:
+                        raise serializers.ValidationError({key: ["Logo dimensions must be at most 2048 × 2048."]})
+                    image.verify()
+            except (UnidentifiedImageError, OSError, ValueError):
+                raise serializers.ValidationError({key: ["Unable to read the uploaded image."]})
         result[key] = value
     return result
 
