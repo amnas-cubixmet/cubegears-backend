@@ -1,6 +1,7 @@
 """Tenant-scoped prepaid feature label catalog and activation API."""
 from decimal import Decimal
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers
@@ -32,9 +33,17 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
     mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).first()
     postpaid = bool(mapping)
     postpaid_state = CompanyPostpaidFeature.objects.filter(company=company, feature=mapping.feature).first() if mapping and company else None
+    can_resume = bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
+        access.billing_type_at_purchase == "permanent" or (
+            access.billing_type_at_purchase in {"ten_seconds", "hourly", "daily", "weekly", "monthly"}
+            and access.valid_until and access.valid_until > timezone.now()
+        )
+    ))
     # Expose the platform's real readiness state, not a browser-only toggle.
     disabled_reason = (
-        "POSTPAID_MONTHLY_ONLY"
+        "REPLACED_BILLING_PERIOD"
+        if bundle.is_retired and not can_resume
+        else "POSTPAID_MONTHLY_ONLY"
         if effective_policy() and bundle.billing_type != "monthly"
         else "FEATURE_ENTITLEMENTS_NOT_ENABLED"
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or (company and company.require_paid_features))
@@ -55,7 +64,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
             disabled_reason = 'POSTPAID_ENGINE_DISABLED'
     return {
         'billingMode': 'monthly_postpaid' if postpaid else 'prepaid',
-        "id": bundle.pk, "key": bundle.key, "name": bundle.name,
+        "id": bundle.pk, "key": bundle.key,
+        "name": f"{bundle.name} (Previous period)" if bundle.is_retired else bundle.name,
         "description": bundle.description,
         "perUserCredits": str(bundle.per_user_credits),
         "userCount": user_count,
@@ -64,12 +74,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "features": active_features,
         "freeModules": [feature["key"] for feature in active_features if feature["key"] in FREE_TENANT_MODULES],
         "active": bool(postpaid_state and postpaid_state.enabled and not postpaid_state.suspended) if postpaid else (bundle_is_usable(access) if access else False),
-        "canResume": bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
-            access.billing_type_at_purchase == "permanent" or (
-                access.billing_type_at_purchase in {"hourly", "daily", "weekly", "monthly"}
-                and access.valid_until and access.valid_until > timezone.now()
-            )
-        )),
+        "canResume": can_resume,
+        "retired": bundle.is_retired,
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
         "meteredReady": bundle.billing_type != "per_use",
@@ -91,7 +97,9 @@ class BundleListView(APIView):
         # presenting free core access as an activation or renewal product.
         bundles = [
             bundle
-            for bundle in FeatureBundle.objects.filter(is_active=True).prefetch_related("features")
+            for bundle in FeatureBundle.objects.filter(is_active=True).filter(
+                Q(is_retired=False) | Q(company_access__company=request.user.company)
+            ).distinct().prefetch_related("features")
             if not bundle.features.all() or any(
                 feature.key not in FREE_TENANT_MODULES
                 for feature in bundle.features.all()

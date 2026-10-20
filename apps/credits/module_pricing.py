@@ -24,13 +24,11 @@ class ModulePriceForm(forms.Form):
     def clean(self):
         data = super().clean()
         existing = ModulePriceLabel.objects.select_related('bundle').filter(feature__key=data.get('module')).first()
-        if (existing and existing.bundle.company_access.exists() and data.get('billing_type') != existing.bundle.billing_type):
-            self.add_error('billing_type', 'A purchased module must keep its billing period. Create a separate feature label for a new period.')
         if data.get('monthly_postpaid') and data.get('billing_type') != 'monthly':
             self.add_error('billing_type', 'Postpaid usage requires Monthly billing.')
         if existing and data.get('monthly_postpaid', False) != existing.monthly_postpaid:
-            if existing.bundle.company_access.exists() or CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
-                self.add_error('monthly_postpaid', 'A module with purchased or metered access must retain its billing model.')
+            if CompanyPostpaidFeature.objects.filter(feature=existing.feature).exists():
+                self.add_error('monthly_postpaid', 'A metered module must retain its billing model. Settle or migrate metered access separately.')
         return data
 
 
@@ -53,11 +51,26 @@ def save_module_price(data, actor):
     if data.get('monthly_postpaid') and data['billing_type'] != 'monthly':
         raise ValueError('Postpaid usage requires Monthly billing.')
     if mapping:
-        if data.get('monthly_postpaid', False) != mapping.monthly_postpaid and (mapping.bundle.company_access.exists() or CompanyPostpaidFeature.objects.filter(feature=feature).exists()):
-            raise ValueError('A purchased or metered module must keep its billing model.')
-        bundle = FeatureBundle.objects.select_for_update().get(pk=mapping.bundle_id)
-        if bundle.company_access.exists() and data['billing_type'] != bundle.billing_type:
-            raise ValueError('Cannot change the billing period of a purchased module.')
+        if data.get('monthly_postpaid', False) != mapping.monthly_postpaid and CompanyPostpaidFeature.objects.filter(feature=feature).exists():
+            raise ValueError('A metered module must keep its billing model.')
+        previous_bundle = FeatureBundle.objects.select_for_update().get(pk=mapping.bundle_id)
+        has_purchases = previous_bundle.company_access.exists()
+        changed_terms = (
+            data['billing_type'] != previous_bundle.billing_type
+            or data.get('monthly_postpaid', False) != mapping.monthly_postpaid
+        )
+        if has_purchases and changed_terms:
+            # Version rather than overwriting an entitlement's purchased period.
+            # Old bundles stay active for existing buyers but are retired for
+            # new orders. They retain their original period, rate and features.
+            previous_bundle.is_retired = True
+            previous_bundle.save(update_fields=['is_retired'])
+            bundle = FeatureBundle(
+                key='module-' + uuid4().hex, name=feature.label,
+                price_credits=Decimal('0'),
+            )
+        else:
+            bundle = previous_bundle
     else:
         bundle = FeatureBundle(key='module-' + uuid4().hex, name=feature.label, price_credits=Decimal('0'))
     bundle.name = feature.label
@@ -69,7 +82,13 @@ def save_module_price(data, actor):
     bundle.save()
     bundle.features.set([feature])
     mapping, _ = ModulePriceLabel.objects.get_or_create(feature=feature, defaults={'bundle':bundle})
+    mapping.bundle = bundle
+    previous_postpaid = mapping.monthly_postpaid
     mapping.monthly_postpaid = data.get('monthly_postpaid', False)
+    if previous_postpaid and not mapping.monthly_postpaid:
+        # The old metered rate must not remain independently purchasable after
+        # switching this feature to a prepaid price version.
+        FeatureCreditPrice.objects.filter(feature=feature).update(is_available=False)
     if mapping.monthly_postpaid:
         FeatureCreditPrice.objects.update_or_create(feature=feature, defaults={
             'base_credits': Decimal('0'), 'activation_credits': Decimal('0'),
@@ -77,5 +96,5 @@ def save_module_price(data, actor):
             'billing_period': 'monthly', 'is_available': data['published'],
         })
     mapping.updated_by = actor
-    mapping.save(update_fields=['monthly_postpaid', 'updated_by', 'updated_at'])
+    mapping.save(update_fields=['bundle', 'monthly_postpaid', 'updated_by', 'updated_at'])
     return bundle

@@ -90,11 +90,12 @@ class CreditWebhookEvent(models.Model):
 class FeatureBundle(models.Model):
     """One paid label that reuses multiple existing platform features."""
     PERIODS = [
-        ("permanent", "Permanent"),
+        ("ten_seconds", "10 Seconds"),
+        ("hourly", "Hourly (1 hour)"),
+        ("daily", "Daily (24 hours)"),
         ("weekly", "Weekly (7 days)"),
         ("monthly", "Monthly (30 days)"),
-        ("daily", "Daily (24 hours)"),
-        ("hourly", "Hourly (1 hour)"),
+        ("permanent", "Permanent"),
         ("per_use", "Per use (one prepaid operation)"),
     ]
     key = models.SlugField(max_length=100, unique=True)
@@ -106,6 +107,9 @@ class FeatureBundle(models.Model):
     per_user_credits = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     billing_type = models.CharField(max_length=15, choices=PERIODS, default="weekly")
     is_active = models.BooleanField(default=True)
+    # Historical price versions must remain usable for already-paid entitlements,
+    # but may not be newly purchased after a SaaS admin changes the period.
+    is_retired = models.BooleanField(default=False)
     sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:
