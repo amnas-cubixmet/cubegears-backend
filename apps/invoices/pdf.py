@@ -174,7 +174,10 @@ def create_invoice_pdf(invoice):
     ]))
     story.extend([header, Spacer(1, 10)])
     if selected == "custom" and appearance.get("customHeader"):
-        story.extend([P(appearance["customHeader"], "heading"), Spacer(1, 5)])
+        custom_heading = str(appearance["customHeader"]).strip()
+        # A visual subtitle must not turn a regular invoice/estimate into a tax invoice.
+        if (invoice.kind == "invoice" and is_gst) or "tax invoice" not in custom_heading.lower():
+            story.extend([P(custom_heading, "heading"), Spacer(1, 5)])
 
 
     def block(heading, vals):
