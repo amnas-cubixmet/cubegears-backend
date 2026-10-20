@@ -405,6 +405,9 @@ class SettingsView(APIView):
     permission_map={"GET":"settings.view","PUT":"settings.manage"}
     def get(self,request,category=None):
         qs=CompanySetting.objects.filter(company=request.user.company)
+        if category == "document_templates":
+            from apps.invoices.template_settings import get_template_settings
+            return response.Response(get_template_settings(request.user.company))
         if category:
             obj=qs.filter(category=category).first()
             result={**DEFAULTS.get(category,{}),**(obj.data if obj else {})}
@@ -425,6 +428,9 @@ class SettingsView(APIView):
         payload = request.data
         if not isinstance(payload, dict):
             return response.Response({"message": "A settings object is required."}, status=400)
+        if category == "document_templates":
+            from apps.invoices.template_settings import validated_settings
+            payload = validated_settings(payload)
         if category == "company":
             # Reject unknown keys rather than silently saving shadow company data.
             allowed = set(CompanyAccountSettingsSerializer().fields) | {"timezone", "dateFormat"}
