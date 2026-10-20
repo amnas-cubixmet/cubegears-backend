@@ -51,7 +51,7 @@
   </header>
 
   {% if can_view_saas_staff %}
-    <form class="staff-filter-form" method="get" aria-label="Filter SaaS Admin Staff">
+    <form class="staff-filter-form saas-staff-filter" method="get" aria-label="Filter SaaS Admin Staff">
       <label class="sr-only" for="saas-staff-search">Search SaaS staff</label>
       <input id="saas-staff-search" type="search" name="q" value="{{ q }}" placeholder="Name, email, phone or role">
       <label class="sr-only" for="saas-staff-status">Account status</label>
@@ -64,7 +64,7 @@
       {% if q or status %}<a class="btn" href="{% url 'panel:staff' %}">Clear</a>{% endif %}
     </form>
 
-    <div class="responsive-table staff-directory-table">
+    <div class="responsive-table staff-directory-table saas-staff-table">
       <table>
         <thead>
           <tr><th>Staff Member</th><th>Role</th><th>Account</th><th>Access</th><th>Actions</th></tr>
