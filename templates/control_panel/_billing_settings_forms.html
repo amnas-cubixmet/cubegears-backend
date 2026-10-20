@@ -52,10 +52,10 @@
               {% for error in storage_policy_form.billing_mode.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field">
-              <label for="{{ storage_policy_form.meter_interval_seconds.id_for_label }}">Meter interval (seconds)</label>
-              {{ storage_policy_form.meter_interval_seconds }}
-              {% if compact_billing_settings %}{% if time_weighted_storage_enabled %}<small>Configured in Calendar Billing.</small>{% endif %}{% else %}<small>{% if time_weighted_storage_enabled %}Monthly time-weighted storage uses the Calendar Billing tracking interval below; this legacy interval is not used.{% else %}60–86400 seconds. Applies only when the legacy metered monthly engine is selected.{% endif %}</small>{% endif %}
-              {% for error in storage_policy_form.meter_interval_seconds.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
+              <label for="{{ storage_policy_form.meter_interval_hours.id_for_label }}">Meter interval (hours)</label>
+              {{ storage_policy_form.meter_interval_hours }}
+              <small>{% if time_weighted_storage_enabled %}Time-weighted billing uses the Calendar Billing tracking interval. This setting remains saved for the legacy meter.{% else %}1 hour = 3600 seconds. This controls legacy monthly metering, not prepaid snapshot charges. Storage monitoring logs use their own schedule.{% endif %}</small>
+              {% for error in storage_policy_form.meter_interval_hours.errors %}<small class="cg-storage-errors" role="alert">{{ error }}</small>{% endfor %}
             </div>
             <div class="cg-storage-field cg-storage-field-period">
               <label for="{{ storage_policy_form.billing_period.id_for_label }}">Billing period</label>
