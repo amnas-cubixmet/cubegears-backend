@@ -17,21 +17,7 @@
   search.addEventListener('input', update);
   update();
 
-  // Prevent an invalid Weekly/Daily/etc. + Monthly Postpaid combination
-  // before POST. Server validation remains authoritative.
-  for (const card of cards) {
-    const period = card.querySelector('select[name="billing_type"]');
-    const postpaid = card.querySelector('input[type="checkbox"][name="monthly_postpaid"]');
-    if (!period || !postpaid) continue; // Purchased/metered fields are read-only.
-    const validatePeriod = () => {
-      const incompatible = postpaid.checked && period.value !== 'monthly';
-      period.setCustomValidity(
-        incompatible ? 'Pay next month requires Monthly billing. Choose Monthly or turn off Pay next month.' : ''
-      );
-    };
-    period.addEventListener('change', validatePeriod);
-    postpaid.addEventListener('change', validatePeriod);
-    card.querySelector('form')?.addEventListener('submit', validatePeriod);
-    validatePeriod();
-  }
+  // Module billing periods are rate units, not collection dates.
+  // All published periods can be used with monthly settlement; the server
+  // continues to validate permissions and prevent conflicting billing engines.
 })();
