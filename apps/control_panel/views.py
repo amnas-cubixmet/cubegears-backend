@@ -1040,6 +1040,7 @@ def resource_list(request, resource):
         "companies": _company_choices(), "company_id": company_id, "q": query,
         "status": status, "total_records": total_records,
         "active_records": active_records, "special_records": special_records,
+        "custom_records": total_records - special_records,
         "companies_count": companies_count,
         "role_scope_filter": role_scope_filter,
         "platform_roles_count": all_records.count() if resource == "roles" else 0,
