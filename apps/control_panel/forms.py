@@ -8,7 +8,6 @@ from django.contrib.auth.password_validation import validate_password
 
 from apps.accounts.models import User
 from apps.accounts.permissions import can_delegate
-from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.employees.models import Employee
 from apps.roles.models import Role
@@ -364,11 +363,6 @@ class StaffInviteForm(EmployeeForm):
             self.save_m2m()
         return employee
 
-
-class BranchForm(AdminModelForm):
-    class Meta:
-        model = Branch
-        fields = ['company', 'name', 'code', 'phone', 'email', 'address', 'city', 'state', 'pincode', 'is_head_office', 'is_active']
 
 
 class RoleForm(AdminModelForm):
