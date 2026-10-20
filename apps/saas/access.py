@@ -104,8 +104,20 @@ def feature_allowed(user, permission):
     # Strict label-only mode is OPT-IN. Fail closed if it is enabled without
     # the paid-access enforcement switch; never treat a missing config as a grant.
     if getattr(settings, "CREDIT_LABEL_ONLY_ACCESS_ENABLED", False):
-        return bool((strict_company or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED)
-                    and module in active_label_modules(user.company))
+        if not (strict_company or settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED):
+            return False
+        if module in active_label_modules(user.company):
+            return True
+        if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
+            from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
+            if ModulePriceLabel.objects.filter(
+                feature__key=module, monthly_postpaid=True, bundle__is_active=True,
+            ).exists():
+                return CompanyPostpaidFeature.objects.filter(
+                    company=user.company, feature__key=module,
+                    feature__is_active=True, enabled=True, suspended=False,
+                ).exists()
+        return False
 
     if not strict_company and not settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED:
         return True
