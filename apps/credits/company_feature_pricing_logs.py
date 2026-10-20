@@ -5,8 +5,8 @@ activation events and ledger debits retain their historical amounts. Never
 sum different event sources as if they were independent charges.
 """
 from apps.credits.models import (
-    CompanyBundleAccess,
-    CreditLedger,
+    CompanyBundleAccess, CompanyPostpaidFeature,
+    FeatureCreditPrice, CreditLedger,
     CycleLabelSession,
     FeatureMeterReading,
     FeatureUsageSession,
@@ -55,6 +55,30 @@ def company_feature_pricing_report(company, *, limit=50):
             "enabled": access.enabled,
             "valid_until": access.valid_until,
             "updated_at": access.updated_at,
+        })
+
+    # Metered monthly modules may be activated without a prepaid access row.
+    # Show their CURRENT state/rates but never invent an activation payment.
+    postpaid_states = (
+        CompanyPostpaidFeature.objects.filter(company=company)
+        .select_related("feature").order_by("-updated_at", "-pk")[:100]
+    )
+    feature_rates = {
+        rate.feature_id: rate.per_user_credits
+        for rate in FeatureCreditPrice.objects.filter(
+            feature_id__in=[item.feature_id for item in postpaid_states]
+        )
+    }
+    for state in postpaid_states:
+        entitlement_rows.append({
+            "name": state.feature.label,
+            "modules": state.feature.label,
+            "billing_period": "Monthly postpaid",
+            "recorded_price": None,
+            "current_per_user_price": feature_rates.get(state.feature_id),
+            "enabled": state.enabled and not state.suspended,
+            "valid_until": None,
+            "updated_at": state.updated_at,
         })
 
     history = []
