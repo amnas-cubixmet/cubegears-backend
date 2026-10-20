@@ -42,7 +42,7 @@ from apps.accounts.permissions import can_delegate, panel_permission
 from apps.roles.models import Role
 from .audit import record_panel_event
 from .forms import (
-    BranchForm, CompanyForm, EmployeeForm, RoleForm,
+    CompanyForm, EmployeeForm, RoleForm,
     PanelLoginForm, UserForm, StaffInviteForm,
     PlatformStaffInviteForm,
     PlanBuilderForm, FeatureGroupForm, PlanFeatureForm, FeatureBundleForm,
@@ -748,7 +748,7 @@ def _save_form(request, form_class, *, instance=None, title, active, cancel_url,
         else "control_panel/staff_form.html" if isinstance(form, (StaffInviteForm, EmployeeForm))
         and active == "staff"
         else "control_panel/feature_editor.html" if isinstance(form, (PlanFeatureForm, FeatureGroupForm, FeatureBundleForm)) and active == "features"
-        else "control_panel/remaining_form.html" if active in {"branches", "roles", "features"}
+        else "control_panel/remaining_form.html" if active in {"roles", "features"}
         else "control_panel/form.html"
     )
     return render(request, template, {
@@ -997,7 +997,6 @@ def staff_delete(request, pk):
 
 # Supporting records needed to configure companies and create job cards.
 PANEL_RESOURCES = {
-    'branches': (BranchForm, 'Branches', 'branch', ['name', 'code', 'company__name']),
     'roles': (RoleForm, 'Roles & Permissions', 'role', ['name', 'code', 'company__name']),
 }
 
@@ -1012,15 +1011,8 @@ def resource_list(request, resource):
         all_records = all_records.filter(company__isnull=True)
     total_records = all_records.count()
     companies_count = all_records.exclude(company__isnull=True).values("company_id").distinct().count()
-    if resource in {"branches", "roles"}:
-        active_records = all_records.filter(is_active=True).count()
-        special_records = (
-            all_records.filter(is_head_office=True).count()
-            if resource == "branches" else all_records.filter(is_system=True).count()
-        )
-    else:
-        active_records = all_records.filter(status__iexact="active").count()
-        special_records = all_records.filter(status__iexact="inactive").count()
+    active_records = all_records.filter(is_active=True).count()
+    special_records = all_records.filter(is_system=True).count()
 
     queryset = all_records.select_related("company")
     queryset = queryset.order_by("-created_at", "pk")
@@ -1039,10 +1031,7 @@ def resource_list(request, resource):
             condition |= Q(**{field + "__icontains": query})
         queryset = queryset.filter(condition)
     if status in {"active", "inactive"}:
-        if resource in {"branches", "roles"}:
-            queryset = queryset.filter(is_active=(status == "active"))
-        else:
-            queryset = queryset.filter(status__iexact=status)
+        queryset = queryset.filter(is_active=(status == "active"))
     else:
         status = ""
     return render(request, "control_panel/resource_list.html", {

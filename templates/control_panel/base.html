@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="{% static 'control_panel/unified-platform-ui.css' %}">
   {% if active == 'plans' %}<link rel="stylesheet" href="{% static 'control_panel/plans-ui.css' %}">{% endif %}
   {% if active == 'staff' %}<link rel="stylesheet" href="{% static 'control_panel/staff-ui.css' %}?v=20261020saasadmin">{% endif %}
-  {% if active == 'roles' or active == 'branches' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
+  {% if active == 'roles' or active == 'security' or active == 'storage' or active == 'features' or active == 'credits' %}<link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">{% endif %}
   {% if active == 'storage' %}<link rel="stylesheet" href="{% static 'control_panel/storage-settings-ui.css' %}?v=20261019dashboard1">{% endif %}
   {% if active == 'billing-settings' %}
     <link rel="stylesheet" href="{% static 'control_panel/platform-modules-ui.css' %}">
@@ -56,7 +56,6 @@
         {% panel_can 'security' as allowed %}{% if allowed %}<a href="{% url 'panel:audit-logs' %}" class="nav-item {% if active == 'security' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><span class="nav-text">Security &amp; Audit Logs</span></a>{% endif %}
 
         <p class="nav-label">Team</p>
-        {% panel_can 'branches' as allowed %}{% if allowed %}<a href="{% url 'panel:branches' %}" class="nav-item {% if active == 'branches' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#git-branch"></use></svg></span><span class="nav-text">Branches</span></a>{% endif %}
         {% panel_can 'roles' as allowed %}{% if allowed %}<a href="{% url 'panel:roles' %}" class="nav-item {% if active == 'roles' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span><span class="nav-text">SaaS Admin Roles</span></a>{% endif %}
         {% panel_can 'staff' as allowed %}{% if allowed %}<a href="{% url 'panel:staff' %}" class="nav-item {% if active == 'staff' %}active{% endif %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#briefcase"></use></svg></span><span class="nav-text">SaaS Admin Staff</span></a>{% endif %}
       </nav>

@@ -5,7 +5,7 @@
   <header class="remaining-editor-header">
     <div><nav class="user-editor-breadcrumb" aria-label="Breadcrumb"><a href="{% url cancel_url %}">{{ page_title }}</a><span aria-hidden="true">/</span><span>{% if is_edit %}Edit{% else %}Create{% endif %}</span></nav>
     <h2>{{ page_title }}</h2>
-    <p>{% if active == 'roles' %}{% if role_scope == 'platform' %}Create a company-independent SaaS Admin Staff role and select its Control Panel permissions.{% else %}Define workshop access with company-scoped permissions.{% endif %}{% elif active == 'branches' %}Configure workshop location and office settings.{% else %}Configure feature labels and groups for the platform catalog.{% endif %}</p></div>
+    <p>{% if active == 'roles' %}Create a company-independent SaaS Admin Staff role and select its Control Panel permissions.{% else %}Configure feature labels and groups for the platform catalog.{% endif %}</p></div>
     <a class="btn" href="{% url cancel_url %}">← Back</a>
   </header>
   {% if active == 'roles' %}
@@ -18,7 +18,7 @@
   <form class="remaining-editor-form" method="post" novalidate>{% csrf_token %}
     {% if form.non_field_errors %}<div class="form-error-block" role="alert">{{ form.non_field_errors }}</div>{% endif %}
     <section class="panel-card remaining-editor-section">
-      <header class="remaining-editor-section-header"><span class="remaining-section-number">01</span><div><h3>{% if active == 'roles' %}Role &amp; Permissions{% elif active == 'branches' %}Branch Details{% else %}Feature Configuration{% endif %}</h3><p>Required fields are validated on the server; all existing model fields are preserved.</p></div></header>
+      <header class="remaining-editor-section-header"><span class="remaining-section-number">01</span><div><h3>{% if active == 'roles' %}Role &amp; Permissions{% else %}Feature Configuration{% endif %}</h3><p>Required fields are validated on the server; all existing model fields are preserved.</p></div></header>
       <div class="remaining-editor-grid">
         {% for field in form %}
         {% if active != 'roles' or field.name != 'permissions' %}
