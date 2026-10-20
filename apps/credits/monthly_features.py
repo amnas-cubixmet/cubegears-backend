@@ -124,7 +124,7 @@ def activate_postpaid_feature(company, feature, *, at=None):
     item.sampled_at = at
     item.billing_period = price.billing_period
     item.rate_duration_seconds = period_seconds(price.billing_period)
-    item.monthly_rate = ZERO if price.billing_period == "permanent" else rate
+    item.monthly_rate = rate  # Permanent stores the quote; duration=0 prevents repeat accrual.
     item.save(update_fields=[
         "enabled", "suspended", "sampled_at", "monthly_rate",
         "billing_period", "rate_duration_seconds", "updated_at",
@@ -229,7 +229,7 @@ def meter_postpaid_feature(item, *, at=None, force=False):
     state.sampled_at = at
     state.billing_period = next_period
     state.rate_duration_seconds = next_seconds
-    state.monthly_rate = ZERO if next_period == "permanent" else next_rate
+    state.monthly_rate = next_rate  # Permanent duration=0 means no recurring usage.
     state.save(update_fields=[
         "sampled_at", "monthly_rate", "billing_period",
         "rate_duration_seconds", "suspended", "updated_at",
@@ -288,7 +288,7 @@ def replace_postpaid_rate(item, *, at=None):
     state.sampled_at = at
     state.billing_period = price.billing_period
     state.rate_duration_seconds = duration
-    state.monthly_rate = ZERO if price.billing_period == "permanent" else rate
+    state.monthly_rate = rate  # A permanent price is charged once via activation_credits.
     state.save(update_fields=[
         "sampled_at", "billing_period", "rate_duration_seconds",
         "monthly_rate", "updated_at",
