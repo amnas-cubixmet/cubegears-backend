@@ -604,61 +604,49 @@ def security(request):
 
 @panel_admin_required
 def staff(request):
-    # Summary cards represent all workshop staff, not a filtered subset.
-    all_staff = Employee.objects.all()
-    total_staff = all_staff.count()
-    active_staff = all_staff.filter(status__iexact="active").count()
-    linked_staff = all_staff.filter(user__isnull=False).count()
-    staff_companies = all_staff.values("company_id").distinct().count()
-    status_options = sorted(
-        (value for value in all_staff.order_by().values_list("status", flat=True).distinct() if value),
-        key=str.casefold,
-    )
-
-    qs = all_staff.select_related("company", "branch", "team", "shift", "user").order_by("company__name", "name")
-    qs, company_id = _company_filter(request, qs)
-    q = request.GET.get("q", "").strip()
-    status = request.GET.get("status", "").strip()
-    login = request.GET.get("login", "").strip().lower()
-    if q:
-        qs = qs.filter(
-            Q(name__icontains=q)
-            | Q(employee_code__icontains=q)
-            | Q(phone__icontains=q)
-            | Q(email__icontains=q)
-            | Q(designation__icontains=q)
-            | Q(company__name__icontains=q)
-        )
-    if status:
-        if any(value.casefold() == status.casefold() for value in status_options):
-            qs = qs.filter(status__iexact=status)
-        else:
-            status = ""
-    if login == "linked":
-        qs = qs.filter(user__isnull=False)
-    elif login == "unlinked":
-        qs = qs.filter(user__isnull=True)
+    """SaaS Team: list companyless platform administrators, never tenant employees."""
+    if panel_permission(request.user, "users", "view"):
+        staff_members = User.objects.filter(
+            company__isnull=True, is_staff=True, is_superuser=False,
+        ).select_related("role")
     else:
-        login = ""
+        # Access to the Team page must not bypass Users & Access permissions.
+        staff_members = User.objects.none()
+
+    total_staff = staff_members.count()
+    active_staff = staff_members.filter(is_active=True).count()
+    inactive_staff = total_staff - active_staff
+    assigned_roles = staff_members.filter(role__isnull=False).count()
+
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip().lower()
+    queryset = staff_members.order_by("name", "email")
+    if q:
+        queryset = queryset.filter(
+            Q(name__icontains=q) | Q(email__icontains=q)
+            | Q(phone__icontains=q) | Q(role__name__icontains=q)
+        )
+    if status == "active":
+        queryset = queryset.filter(is_active=True)
+    elif status == "disabled":
+        queryset = queryset.filter(is_active=False)
+    else:
+        status = ""
 
     return render(request, "control_panel/staff.html", {
-        "page_title": "All Workshop Staff",
+        "page_title": "SaaS Admin Staff",
         "active": "staff",
-        "rows": _paginate(request, qs),
+        "rows": _paginate(request, queryset),
         "q": q,
         "status": status,
-        "login": login,
-        "status_options": status_options,
-        "company_id": company_id,
-        "companies": _company_choices(),
         "total_staff": total_staff,
         "active_staff": active_staff,
-        "linked_staff": linked_staff,
-        "staff_companies": staff_companies,
-        "platform_staff": (
-            User.objects.filter(company__isnull=True, is_staff=True, is_superuser=False)
-            .select_related("role").order_by("name", "email")
-            if panel_permission(request.user, "users", "view") else User.objects.none()
+        "inactive_staff": inactive_staff,
+        "assigned_roles": assigned_roles,
+        "can_view_saas_staff": panel_permission(request.user, "users", "view"),
+        "can_add_platform_staff": (
+            panel_permission(request.user, "staff", "create")
+            and panel_permission(request.user, "users", "create")
         ),
     })
 
@@ -883,18 +871,14 @@ def user_delete(request, pk):
 
 @panel_admin_required
 def staff_create(request):
-    # One entry point for workshop staff and companyless SaaS administration.
+    # The platform Team page manages companyless SaaS Admin Staff only.
+    # Workshop employee records and login accounts are not deleted or migrated.
     account_type = (
         request.POST.get("account_type") if request.method == "POST"
         else request.GET.get("type")
-    ) or "workshop"
-    if account_type not in {"workshop", "platform"}:
-        return HttpResponseBadRequest("Invalid staff account type.")
-    if account_type == "workshop":
-        return _save_form(
-            request, StaffInviteForm, title="Add Staff",
-            active="staff", cancel_url="panel:staff",
-        )
+    ) or "platform"
+    if account_type != "platform":
+        return HttpResponseForbidden("Use the workshop company panel to manage workshop staff.")
 
     # Platform accounts are privileged: staff.create alone is NOT sufficient.
     if not panel_permission(request.user, "users", "create"):
@@ -1022,6 +1006,10 @@ PANEL_RESOURCES = {
 def resource_list(request, resource):
     form_class, title, singular, search_fields = PANEL_RESOURCES[resource]
     all_records = form_class._meta.model.objects.all()
+    # Platform Team manages only companyless SaaS Control Panel roles.
+    # Workshop roles remain in the database for tenant permissions.
+    if resource == "roles":
+        all_records = all_records.filter(company__isnull=True)
     total_records = all_records.count()
     companies_count = all_records.exclude(company__isnull=True).values("company_id").distinct().count()
     if resource in {"branches", "roles"}:
@@ -1036,16 +1024,13 @@ def resource_list(request, resource):
 
     queryset = all_records.select_related("company")
     queryset = queryset.order_by("-created_at", "pk")
-    queryset, company_id = _company_filter(request, queryset)
-    role_scope_filter = ""
     if resource == "roles":
-        role_scope_filter = request.GET.get("scope", "").strip().lower()
-        if role_scope_filter == "platform":
-            queryset = queryset.filter(company__isnull=True)
-        elif role_scope_filter == "workshop":
-            queryset = queryset.filter(company__isnull=False)
-        else:
-            role_scope_filter = ""
+        # Never honor a company/scope query parameter to expose workshop roles.
+        company_id = ""
+        role_scope_filter = "platform"
+    else:
+        queryset, company_id = _company_filter(request, queryset)
+        role_scope_filter = ""
     query = request.GET.get("q", "").strip()
     status = request.GET.get("status", "").strip().lower()
     if query:
@@ -1061,15 +1046,15 @@ def resource_list(request, resource):
     else:
         status = ""
     return render(request, "control_panel/resource_list.html", {
-        "page_title": title, "active": resource,
+        "page_title": "SaaS Admin Roles" if resource == "roles" else title, "active": resource,
         "rows": _paginate(request, queryset),
         "companies": _company_choices(), "company_id": company_id, "q": query,
         "status": status, "total_records": total_records,
         "active_records": active_records, "special_records": special_records,
         "companies_count": companies_count,
         "role_scope_filter": role_scope_filter,
-        "platform_roles_count": all_records.filter(company__isnull=True).count() if resource == "roles" else 0,
-        "workshop_roles_count": all_records.filter(company__isnull=False).count() if resource == "roles" else 0,
+        "platform_roles_count": all_records.count() if resource == "roles" else 0,
+        "workshop_roles_count": 0,
         "create_url": f"panel:{singular}-create", "detail_url": f"panel:{singular}-detail",
         "edit_url": f"panel:{singular}-edit", "delete_url": f"panel:{singular}-delete",
     })
@@ -1079,8 +1064,12 @@ def resource_list(request, resource):
 def resource_action(request, resource, action, pk=None, role_scope=None):
     form_class, title, singular, _ = PANEL_RESOURCES[resource]
     if resource == "roles" and action == "create":
-        role_scope = role_scope or "workshop"
-    obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
+        # All Control Panel role creation is now SaaS-only.
+        role_scope = "platform"
+    if resource == "roles" and pk:
+        obj = get_object_or_404(form_class._meta.model, pk=pk, company__isnull=True)
+    else:
+        obj = get_object_or_404(form_class._meta.model, pk=pk) if pk else None
     cancel_url = f'panel:{resource}'
     if action == 'detail':
         return render(request, 'control_panel/detail.html', {
@@ -1091,12 +1080,14 @@ def resource_action(request, resource, action, pk=None, role_scope=None):
     if action == 'delete':
         return _delete_object(request, obj, title=title, active=resource, cancel_url=cancel_url)
     editor_title = ('Edit ' if obj else 'Add ') + title
+    if resource == "roles" and obj:
+        editor_title = "Edit SaaS Admin Staff Role"
     if resource == "roles" and action == "create":
         editor_title = "Add SaaS Admin Staff Role" if role_scope == "platform" else "Add Workshop Role"
     return _save_form(
         request, form_class, instance=obj, title=editor_title,
         active=resource, cancel_url=cancel_url,
-        form_kwargs={"scope": role_scope} if resource == "roles" and action == "create" else None,
+        form_kwargs={"scope": "platform"} if resource == "roles" else None,
     )
 
 

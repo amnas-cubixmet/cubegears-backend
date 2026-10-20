@@ -4,7 +4,7 @@
   <header class="staff-editor-heading">
     <div>
       <nav class="user-editor-breadcrumb" aria-label="Breadcrumb">
-        <a href="{% url 'panel:staff' %}">Staff Management</a>
+        <a href="{% url 'panel:staff' %}">SaaS Admin Staff</a>
         <span aria-hidden="true">/</span><span>Add SaaS Admin Staff</span>
       </nav>
       <h2>Add SaaS Admin Staff</h2>
@@ -12,11 +12,6 @@
     </div>
     <a href="{% url 'panel:staff' %}" class="btn">← Back to Staff</a>
   </header>
-
-  <nav class="staff-editor-actions" aria-label="Choose staff account type">
-    <a class="btn" href="{% url 'panel:staff-create' %}">Workshop Staff</a>
-    <span class="btn btn-primary" aria-current="page">SaaS Admin Staff</span>
-  </nav>
 
   <form method="post" class="staff-editor-form" novalidate>
     {% csrf_token %}

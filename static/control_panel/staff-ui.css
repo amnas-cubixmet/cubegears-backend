@@ -164,3 +164,14 @@ html[data-theme="dark"] .staff-status-pill.is-inactive{background:#452810;color:
   .staff-filter-form #staff-search{grid-column:auto}
   .staff-filter-form>.btn{width:100%}
 }
+
+/* SaaS-only platform staff directory; workshop forms remain independently styled. */
+.staff-directory .saas-staff-filter{grid-template-columns:minmax(190px,2fr) minmax(130px,1fr) auto auto}
+.staff-directory .saas-staff-table table{min-width:780px}
+.staff-directory .saas-staff-table th,.staff-directory .saas-staff-table td{vertical-align:middle}
+.staff-directory .saas-staff-table .staff-row-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.staff-directory .saas-staff-table .staff-row-actions form{margin:0}
+.staff-directory .saas-staff-table .staff-row-actions button{font:inherit;cursor:pointer}
+@media(max-width:920px){.staff-directory .saas-staff-filter{grid-template-columns:minmax(175px,1fr) minmax(130px,1fr) auto auto}}
+@media(max-width:680px){.staff-directory .saas-staff-filter{grid-template-columns:minmax(0,1fr) minmax(110px,.75fr)}.staff-directory .saas-staff-filter>.btn{min-height:40px}.staff-directory .saas-staff-table table{min-width:720px}}
+@media(max-width:430px){.staff-directory .saas-staff-filter{grid-template-columns:minmax(0,1fr)}.staff-directory .saas-staff-filter>.btn{width:100%}}
