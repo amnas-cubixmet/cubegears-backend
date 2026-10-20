@@ -62,8 +62,8 @@
           <span class="cg-settings-console-state {% if billing_cycle_policy.enabled %}is-enabled{% endif %}">{% if billing_cycle_policy.enabled %}Enabled{% else %}Disabled{% endif %}</span>
         </div>
         <span class="cg-settings-console-kpi-label">Calendar billing</span>
-        <strong>Day {{ billing_cycle_policy.due_day|default:5 }}</strong>
-        <p>Payment due date next month</p>
+        <strong>Day {{ billing_cycle_policy.due_day|default:5 }}–{{ billing_cycle_policy.due_end_day|default:5 }}</strong>
+        <p>Payment start – grace end, next month</p>
       </article>
       <article class="cg-settings-console-kpi">
         <div class="cg-settings-console-kpi-head">
