@@ -5,7 +5,7 @@ activation events and ledger debits retain their historical amounts. Never
 sum different event sources as if they were independent charges.
 """
 from apps.credits.models import (
-    CompanyBundleAccess, CompanyPostpaidFeature,
+    CompanyBundleAccess, CompanyPostpaidFeature, CompanyCreditFeature,
     FeatureCreditPrice, CreditLedger,
     CycleLabelSession,
     FeatureMeterReading,
@@ -19,6 +19,8 @@ FEATURE_EVENT_NAMES = {
     "feature_label_resumed": "Feature resumed",
     "feature_label_disabled": "Feature disabled",
     "feature_label_cycle_activated": "Cycle activation",
+    "feature_activated": "Module activated",
+    "feature_disabled": "Module disabled",
 }
 FEATURE_LEDGER_KINDS = (
     "bundle_charge", "feature_charge", "feature_disabled",
@@ -80,6 +82,30 @@ def company_feature_pricing_report(company, *, limit=50):
             "valid_until": None,
             "updated_at": state.updated_at,
         })
+
+    # Older standalone module entitlements also have tenant-owned state.
+    standalone_states = (
+        CompanyCreditFeature.objects.filter(company=company)
+        .select_related("feature").order_by("-updated_at", "-pk")[:100]
+    )
+    standalone_rates = {
+        rate.feature_id: rate.per_user_credits
+        for rate in FeatureCreditPrice.objects.filter(
+            feature_id__in=[state.feature_id for state in standalone_states]
+        )
+    }
+    for state in standalone_states:
+        entitlement_rows.append({
+            "name": state.feature.label,
+            "modules": state.feature.label,
+            "billing_period": "Legacy standalone",
+            "recorded_price": None,
+            "current_per_user_price": standalone_rates.get(state.feature_id),
+            "enabled": state.enabled,
+            "valid_until": state.next_charge_at,
+            "updated_at": state.updated_at,
+        })
+    entitlement_rows.sort(key=lambda item: item["updated_at"], reverse=True)
 
     history = []
 
@@ -173,7 +199,7 @@ def company_feature_pricing_report(company, *, limit=50):
             bundle_name = None
         history.append({
             "occurred_at": item.created_at,
-            "name": str(metadata.get("name") or bundle_name or "Feature label"),
+            "name": str(metadata.get("name") or bundle_name or metadata.get("feature") or "Feature label"),
             "activity": FEATURE_EVENT_NAMES[item.event],
             "period": str(metadata.get("billingType") or "—").replace("_", " ").title(),
             "users": metadata.get("userCount") if isinstance(metadata.get("userCount"), int) else None,
