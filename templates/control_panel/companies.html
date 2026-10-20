@@ -1,11 +1,11 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<div class="cg-companies">
+<div class="cg-companies cg-overview-page">
   <header class="cg-page-heading">
     <div>
       <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><span aria-current="page">Companies</span></nav>
-      <h2>Companies’ List</h2>
+      <h2>Companies</h2>
       <p>Manage your registered companies and their workspace access.</p>
     </div>
     {% panel_can 'panel:company-create' as can_create %}
@@ -18,10 +18,10 @@
   </header>
 
   <div class="cg-company-totals" aria-label="Company statistics">
-    <div><span>All companies</span><strong>{{ total_companies }}</strong></div>
-    <div><span>Active</span><strong>{{ active_companies }}</strong></div>
-    <div><span>Disabled</span><strong>{{ inactive_companies }}</strong></div>
-    <div><span>Added this month</span><strong>{{ new_companies_month }}</strong></div>
+    <div><span class="cg-overview-metric-label">All companies<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#building"></use></svg></span><strong>{{ total_companies }}</strong></div>
+    <div><span class="cg-overview-metric-label">Active<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><strong>{{ active_companies }}</strong></div>
+    <div><span class="cg-overview-metric-label">Disabled<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#action-eye-off"></use></svg></span><strong>{{ inactive_companies }}</strong></div>
+    <div><span class="cg-overview-metric-label">Added this month<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#calendar-days"></use></svg></span><strong>{{ new_companies_month }}</strong></div>
   </div>
 
   <section class="cg-directory-panel" aria-labelledby="cg-company-directory-title">

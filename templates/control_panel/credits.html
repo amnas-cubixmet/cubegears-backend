@@ -1,19 +1,18 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<div class="credit-panel-wrap">
+<div class="credit-panel-wrap cg-overview-page">
   <div class="credit-summary-title directory-heading">
     <div><p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Credit Wallet</p><h2>Credit Wallet</h2><p>Manage credit packages, company wallet balances and transaction activity.</p></div>
-  </div>
-
-  <div class="cg-credit-shortcuts">
-    {% panel_can 'billing-settings' as can_billing_settings %}
-    {% if can_billing_settings %}<a class="btn btn-primary" href="{% url 'panel:billing-settings' %}#calendar-billing-title">Billing Settings</a>{% endif %}
+    <div class="cg-credit-shortcuts">
+      {% panel_can 'billing-settings' as can_billing_settings %}
+      {% if can_billing_settings %}<a class="btn btn-primary" href="{% url 'panel:billing-settings' %}#calendar-billing-title">Billing Settings</a>{% endif %}
+    </div>
   </div>
   <section class="directory-stats remaining-stats" aria-label="Credit wallet overview">
-    <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true">P</span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
-    <article class="user-stat-card"><div class="user-stat-top"><span>Published Packages</span><span class="user-stat-icon" aria-hidden="true">✓</span></div><strong class="user-stat-value">{{ published_packages }}</strong><small class="user-stat-meta">Packages available to purchase</small></article>
-    <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true">W</span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Credit Packages</span><span class="user-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#package"></use></svg></span></div><strong class="user-stat-value">{{ package_total }}</strong><small class="user-stat-meta">All configured packages</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Published Packages</span><span class="user-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span></div><strong class="user-stat-value">{{ published_packages }}</strong><small class="user-stat-meta">Packages available to purchase</small></article>
+    <article class="user-stat-card"><div class="user-stat-top"><span>Wallets</span><span class="user-stat-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#credit-card"></use></svg></span></div><strong class="user-stat-value">{{ wallet_total }}</strong><small class="user-stat-meta">Company wallets in the database</small></article>
   </section>
 
   <nav class="credit-tab-navigation" aria-label="Credit management navigation" data-credit-tab-navigation hidden>

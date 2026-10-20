@@ -1,11 +1,11 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<div class="cg-users">
+<div class="cg-users cg-overview-page">
   <header class="cg-page-heading">
     <div>
       <nav class="cg-breadcrumb" aria-label="Breadcrumb"><a href="{% url 'panel:dashboard' %}">Dashboard</a><span aria-hidden="true">/</span><span aria-current="page">Users</span></nav>
-      <h2>Users’ List</h2>
+      <h2>Users & Access</h2>
       <p>Manage staff accounts, company assignments, roles and access.</p>
     </div>
     {% panel_can 'panel:user-create' as can_create %}
@@ -13,10 +13,10 @@
   </header>
 
   <div class="cg-company-totals" aria-label="Live user statistics">
-    <div><span>Total users</span><strong>{{ total_users }}</strong></div>
-    <div><span>Active accounts</span><strong>{{ active_users }}</strong></div>
-    <div><span>Admin accounts</span><strong>{{ admin_users }}</strong></div>
-    <div><span>Verified emails</span><strong>{{ verified_users }}</strong></div>
+    <div><span class="cg-overview-metric-label">Total users<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#users"></use></svg></span><strong>{{ total_users }}</strong></div>
+    <div><span class="cg-overview-metric-label">Active accounts<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><strong>{{ active_users }}</strong></div>
+    <div><span class="cg-overview-metric-label">Admin accounts<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#key-round"></use></svg></span><strong>{{ admin_users }}</strong></div>
+    <div><span class="cg-overview-metric-label">Verified emails<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#action-mail"></use></svg></span><strong>{{ verified_users }}</strong></div>
   </div>
 
   <section class="cg-directory-panel" aria-labelledby="cg-users-list-title">

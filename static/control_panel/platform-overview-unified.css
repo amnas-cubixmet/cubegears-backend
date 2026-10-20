@@ -1,0 +1,83 @@
+/* Dashboard-consistent, visual-only refinements for five SaaS Control Panel overview pages.
+   All selectors are scoped to listing/overview wrappers; forms retain backend behavior. */
+.cg-overview-page{min-width:0}
+.cg-overview-page :is(.cg-page-heading,.cg-module-page-heading,.cg-settings-hero,.credit-summary-title){min-width:0;gap:14px}
+.cg-overview-page :is(.cg-page-heading,.cg-module-page-heading,.cg-settings-hero) h2,
+.cg-overview-page .credit-summary-title h2{font-size:clamp(22px,2.2vw,26px);line-height:1.2;font-weight:800;letter-spacing:-.033em;color:var(--text)}
+.cg-overview-page :is(.cg-page-heading,.cg-module-page-heading,.cg-settings-hero) p,
+.cg-overview-page .credit-summary-title p:not(.eyebrow){font-size:13px;line-height:1.5;color:var(--muted)}
+.cg-overview-page :is(.cg-breadcrumb,.eyebrow,.cg-settings-breadcrumb){font-size:11px}
+.cg-overview-page :is(.cg-create-button,.cg-filter-submit,.cg-credit-shortcuts .btn){display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:39px;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:750;letter-spacing:0;text-transform:none;white-space:normal}
+.cg-overview-page :is(.cg-company-totals,.cg-module-summary-grid,.cg-settings-summary,.directory-stats){gap:13px}
+.cg-overview-page .cg-company-totals>div,
+.cg-overview-page .cg-module-summary-card,
+.cg-overview-page .directory-stats>.user-stat-card,
+.cg-overview-page .cg-settings-summary-card{min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+.cg-overview-page .cg-company-totals>div{padding:16px 17px;gap:9px;min-height:132px}
+.cg-overview-page .cg-company-totals>div>strong{font-size:27px;line-height:1.18;font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.035em}
+.cg-overview-page .cg-module-summary-card{border-radius:10px;padding:17px;min-height:137px}
+.cg-overview-page .cg-module-summary-card>strong{font-variant-numeric:tabular-nums;font-size:27px;line-height:1.2;font-weight:800}
+.cg-overview-page .directory-stats>.user-stat-card{padding:16px 17px;min-height:135px}
+.cg-overview-page .directory-stats .user-stat-value{font-size:27px;font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+.cg-overview-page .directory-stats .user-stat-icon{width:33px;height:33px;border-radius:9px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand);font-size:13px}
+.cg-overview-page .directory-stats .user-stat-icon svg,
+.cg-overview-page .cg-overview-metric-label svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cg-overview-page .cg-overview-metric-label{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0;width:100%;font-weight:720}
+.cg-overview-page .cg-overview-metric-label svg{flex:0 0 33px;width:33px;height:33px;padding:8px;border-radius:9px;background:var(--brand-soft);color:var(--brand)}
+.cg-overview-page .cg-directory-panel{border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow)}
+.cg-overview-page .cg-directory-top{gap:12px;padding:18px}
+.cg-overview-page .cg-directory-top h3{color:var(--text);font-size:15px;font-weight:800;letter-spacing:-.015em}
+.cg-overview-page .cg-directory-top p{color:var(--muted);font-size:11px}
+.cg-overview-page :is(.cg-company-filters,.cg-user-filters) input,
+.cg-overview-page :is(.cg-company-filters,.cg-user-filters) select{border-radius:8px;min-height:39px;color:var(--text);background:var(--surface);font-size:12px}
+.cg-overview-page .cg-companies-table th{font-size:11px;font-weight:800;letter-spacing:.04em;padding:13px 14px;color:var(--muted);background:var(--surface-soft)}
+.cg-overview-page .cg-companies-table td{font-size:12px;line-height:1.5;padding:13px 14px;vertical-align:middle}
+.cg-overview-page .cg-companies-table .cg-company-name-group strong{font-weight:770;font-size:12px}
+.cg-overview-page .cg-companies-table .cg-company-name-group small{font-size:11px}
+.cg-overview-page .cg-users-table td{overflow-wrap:anywhere}
+.cg-overview-page .cg-module-base-rate{border-radius:9px;box-shadow:var(--shadow)}
+.cg-overview-page .cg-feature-management,
+.cg-overview-page .cg-module-toolbar,
+.cg-overview-page .credit-tab-panel{border-radius:10px}
+.cg-overview-page .credit-summary-title{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px}
+.cg-overview-page .cg-credit-shortcuts{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap}
+.cg-overview-page .credit-summary-title .eyebrow{font-size:11px;line-height:1.5}
+.cg-overview-page .credit-summary-title p:not(.eyebrow){max-width:680px}
+.cg-overview-page .credit-tab-navigation{min-width:0}
+.cg-overview-page .cg-package-editor,
+.cg-overview-page .cg-package-card{border-radius:10px}
+.cg-overview-page .cg-settings-hero{padding:0}
+.cg-overview-page .cg-settings-hero h2{margin-top:3px}
+.cg-overview-page .cg-settings-summary-card{border-radius:10px}
+.cg-overview-page .cg-settings-summary-icon{border-radius:9px}
+.cg-overview-page :is(input,select,textarea):focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+@media(max-width:1250px){
+ .cg-overview-page .cg-company-totals{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .cg-overview-page .cg-company-totals>div{min-height:121px}
+}
+@media(max-width:850px){
+ .cg-overview-page .cg-directory-top{padding:15px}
+ .cg-overview-page .cg-company-totals>div{min-height:115px}
+ .cg-overview-page .credit-summary-title{align-items:flex-start}
+ .cg-overview-page .cg-credit-shortcuts{justify-content:flex-start}
+}
+@media(max-width:650px){
+ .cg-overview-page :is(.cg-page-heading,.cg-module-page-heading,.cg-settings-hero,.credit-summary-title) h2{font-size:21px}
+ .cg-overview-page .cg-company-totals{gap:9px}
+ .cg-overview-page .cg-company-totals>div{padding:13px 12px;min-height:105px}
+ .cg-overview-page .cg-company-totals>div>strong{font-size:23px}
+ .cg-overview-page .cg-module-summary-card{min-height:125px;padding:14px}
+ .cg-overview-page .cg-module-summary-card>strong{font-size:23px}
+ .cg-overview-page .directory-stats>.user-stat-card{padding:13px;min-height:124px}
+ .cg-overview-page .directory-stats .user-stat-value{font-size:23px}
+ .cg-overview-page .cg-companies-table td{font-size:12px;padding:8px 0}
+ .cg-overview-page .cg-companies-table td::before{font-size:11px}
+ .cg-overview-page .cg-credit-shortcuts{width:100%}
+ .cg-overview-page .cg-credit-shortcuts .btn{flex:1;min-width:160px}
+ .cg-overview-page .cg-overview-metric-label svg{width:30px;height:30px;flex-basis:30px}
+}
+@media(max-width:380px){
+ .cg-overview-page .cg-company-totals>div{padding:11px 10px}
+ .cg-overview-page .cg-company-totals span{font-size:11px}
+ .cg-overview-page .cg-module-summary-card{padding:12px}
+}
