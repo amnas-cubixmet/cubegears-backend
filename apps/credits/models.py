@@ -90,12 +90,12 @@ class CreditWebhookEvent(models.Model):
 class FeatureBundle(models.Model):
     """One paid label that reuses multiple existing platform features."""
     PERIODS = [
-        ("permanent", "Permanent"),
         ("ten_seconds", "10 Seconds"),
+        ("hourly", "Hourly (1 hour)"),
+        ("daily", "Daily (24 hours)"),
         ("weekly", "Weekly (7 days)"),
         ("monthly", "Monthly (30 days)"),
-        ("daily", "Daily (24 hours)"),
-        ("hourly", "Hourly (1 hour)"),
+        ("permanent", "Permanent"),
         ("per_use", "Per use (one prepaid operation)"),
     ]
     key = models.SlugField(max_length=100, unique=True)
