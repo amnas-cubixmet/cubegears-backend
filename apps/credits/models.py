@@ -183,6 +183,31 @@ class StorageMonitoringPolicy(models.Model):
         return "Storage usage monitoring schedule"
 
 
+class StorageMonitoringReading(models.Model):
+    """Immutable company usage at one observed checkpoint; never debits credits."""
+
+    company = models.ForeignKey(
+        "companies.Company", on_delete=models.CASCADE,
+        related_name="storage_monitoring_readings",
+    )
+    sampled_at = models.DateTimeField()
+    interval_seconds = models.PositiveIntegerField()
+    bytes_used = models.PositiveBigIntegerField(default=0)
+    file_count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-sampled_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "sampled_at"], name="credits_monitor_company_tick",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["company", "sampled_at"], name="storage_mon_company_at"),
+        ]
+
+
 class CreditCyclePolicy(models.Model):
     """Opt-in global day-of-month wallet billing, independent of old plans.
 
