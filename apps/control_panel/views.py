@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from functools import wraps
 
@@ -814,9 +814,37 @@ def company_detail(request, pk):
         pk=pk,
     )
     from apps.credits.storage_interval_logs import interval_log_page
+
+    storage_summary = MediaFile.objects.filter(company=obj).aggregate(
+        total_bytes=Sum("size_bytes"), file_count=Count("pk"),
+    )
+    current_storage_bytes = max(0, int(storage_summary["total_bytes"] or 0))
     storage_intervals = interval_log_page(obj, limit=30)["results"]
+    for row in storage_intervals:
+        # Dates in API responses are ISO strings; convert to aware datetimes so
+        # Django's date filter displays the admin's configured local timezone.
+        row["sampled_datetime"] = datetime.fromisoformat(row["sampledAt"])
+        is_covered = row["coveredSeconds"] is not None
+        seconds = row["coveredSeconds"] if is_covered else row["intervalSeconds"]
+        if seconds is None:
+            row["duration_label"] = "—"
+        elif seconds and seconds % 3600 == 0:
+            row["duration_label"] = f"{seconds // 3600} h"
+        elif seconds and seconds % 60 == 0:
+            row["duration_label"] = f"{seconds // 60} min"
+        else:
+            row["duration_label"] = f"{seconds} sec"
+        if is_covered:
+            row["duration_label"] += " covered"
+        elif seconds is not None:
+            row["duration_label"] += " interval"
+
     return render(request, "control_panel/company_detail.html", {
         "storage_intervals": storage_intervals,
+        "current_storage_bytes": current_storage_bytes,
+        "current_storage_gb": (Decimal(current_storage_bytes) / Decimal(1024 ** 3)).quantize(Decimal("0.001")),
+        "current_file_count": storage_summary["file_count"] or 0,
+        "company_profile_page": True,
         "page_title": "Company Details",
         "active": "companies",
         "object": obj,
