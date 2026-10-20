@@ -21,7 +21,7 @@
 
   <section class="cg-directory-panel" aria-labelledby="cg-users-list-title">
     <header class="cg-directory-top cg-users-directory-top">
-      <div><h3 id="cg-users-list-title">User directory</h3><p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}</p></div>
+      <div><h3 id="cg-users-list-title">User directory</h3><p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}{% if q or company_id or status or access %}<span class="cg-overview-filtered">Filters applied</span>{% endif %}</p></div>
       <form class="cg-user-filters" method="get" role="search" aria-label="Search and filter users">
         <label class="cg-company-search">
           <span class="sr-only">Search users</span>

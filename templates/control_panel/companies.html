@@ -28,7 +28,7 @@
     <header class="cg-directory-top">
       <div>
         <h3 id="cg-company-directory-title">Company directory</h3>
-        <p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}{% if q %} for “{{ q }}”{% endif %}</p>
+        <p>{{ rows.paginator.count }} result{{ rows.paginator.count|pluralize }}{% if q %} for “{{ q }}”{% endif %}{% if q or status %}<span class="cg-overview-filtered">Filters applied</span>{% endif %}</p>
       </div>
       <form method="get" class="cg-company-filters" role="search" aria-label="Search and filter companies">
         <label class="cg-company-search">
