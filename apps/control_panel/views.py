@@ -812,7 +812,10 @@ def company_detail(request, pk):
         ),
         pk=pk,
     )
+    from apps.credits.storage_interval_logs import interval_log_page
+    storage_intervals = interval_log_page(obj, limit=30)["results"]
     return render(request, "control_panel/company_detail.html", {
+        "storage_intervals": storage_intervals,
         "page_title": "Company Details",
         "active": "companies",
         "object": obj,
