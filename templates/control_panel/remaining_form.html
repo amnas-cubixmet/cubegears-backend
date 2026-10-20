@@ -9,12 +9,6 @@
     <a class="btn" href="{% url cancel_url %}">← Back</a>
   </header>
   {% if active == 'roles' %}
-    {% if not is_edit %}
-      <nav class="role-editor-type-switch" aria-label="Choose role account type">
-        <a href="{% url 'panel:role-create' %}" {% if role_scope == 'workshop' %}aria-current="page"{% endif %}>Workshop Role</a>
-        <a href="{% url 'panel:role-saas-create' %}" {% if role_scope == 'platform' %}aria-current="page"{% endif %}>SaaS Admin Staff Role</a>
-      </nav>
-    {% endif %}
     {% if role_scope == 'platform' %}
       <p class="role-platform-info"><strong>SaaS platform role:</strong> This role has no workshop company. Selected permissions control access to SaaS Admin pages only. You can assign it when adding SaaS Admin Staff.</p>
     {% else %}
