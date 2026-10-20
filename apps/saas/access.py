@@ -57,7 +57,7 @@ def active_label_modules(company):
         bundle__features__is_active=True,
     ).filter(
         Q(billing_type_at_purchase="permanent", valid_until__isnull=True)
-        | Q(billing_type_at_purchase__in=("hourly", "daily", "weekly", "monthly"),
+        | Q(billing_type_at_purchase__in=("ten_seconds", "hourly", "daily", "weekly", "monthly"),
             valid_until__gt=now)
     ).values_list("bundle__features__key", flat=True).distinct()) - FREE_TENANT_MODULES
 
@@ -159,6 +159,6 @@ def feature_allowed(user, permission):
         bundle__features__key=module, bundle__features__is_active=True,
     ).filter(
         Q(billing_type_at_purchase="permanent", valid_until__isnull=True) |
-        Q(billing_type_at_purchase__in=["hourly", "daily", "weekly", "monthly"],
+        Q(billing_type_at_purchase__in=["ten_seconds", "hourly", "daily", "weekly", "monthly"],
           valid_until__gt=timezone.now())
     ).exists()
