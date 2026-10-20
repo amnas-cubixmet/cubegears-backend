@@ -156,7 +156,11 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
                 StockMovement.objects.create(company=obj.company,branch=obj.branch,item=item,movement_type="sale",quantity=-line.quantity,reference=obj.number,created_by=request.user)
             obj.status="Paid" if obj.balance<=0 else "Finalized"
         else: obj.status="Issued"
-        obj.finalized_at=timezone.now(); obj.save(update_fields=["status","finalized_at","updated_at"])
+        from .template_settings import template_for_document
+        if not obj.template_snapshot:
+            obj.template_snapshot = template_for_document(obj.company, obj.kind)
+        obj.finalized_at=timezone.now()
+        obj.save(update_fields=["status","finalized_at","template_snapshot","updated_at"])
         if obj.job_id:
             record_job_event(obj.job, request.user, "Invoice Finalized",
                              f"{obj.number} {obj.status.lower()}", {"invoiceId": str(obj.pk)})
@@ -182,6 +186,9 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             number=f"INV-{timezone.now().year}-{Invoice.objects.filter(company=src.company,kind='invoice').count()+1:04d}",kind="invoice",invoice_type=src.invoice_type,status="Draft",date=timezone.localdate(),customer=src.customer,vehicle=src.vehicle,job=src.job,notes=src.notes,discount=src.discount,adjustment=src.adjustment,payment_mode=src.payment_mode,payment_terms=src.payment_terms,source_estimate=src)
         for line in src.items.all():
             line.pk=None; line.invoice=invoice; line.save()
+        # Converted estimates start as new draft invoices and use the active
+        # invoice design when finalized, not the source estimate's appearance.
+        invoice.template_snapshot = {}
         self._recalculate(invoice); src.status="Converted"; src.save(update_fields=["status","updated_at"])
         if invoice.job_id:
             record_job_event(invoice.job, request.user, "Estimate Converted",
