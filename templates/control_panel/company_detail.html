@@ -1,7 +1,7 @@
 {% extends "control_panel/base.html" %}
 {% load static panel_access %}
 {% block content %}
-<main class="cg-company-profile cg-company-profile-v2" aria-labelledby="cg-company-page-heading">
+<div class="cg-company-profile cg-company-profile-v2" aria-labelledby="cg-company-page-heading">
   <header class="cg-company-page-header">
     <nav class="cg-breadcrumb" aria-label="Breadcrumb">
       <a href="{% url 'panel:dashboard' %}">Dashboard</a>
@@ -242,5 +242,5 @@
       <span class="cg-company-scroll-hint">Swipe horizontally to see all columns →</span>
     </footer>
   </section>
-</main>
+</div>
 {% endblock %}
