@@ -1,5 +1,6 @@
 from datetime import timedelta
 from celery import shared_task
+from django.conf import settings
 from django.utils import timezone
 
 from apps.notifications.models import Notification
@@ -14,6 +15,8 @@ from .services import (
 
 @shared_task
 def auto_close_attendance_sessions():
+    if not getattr(settings, "ATTENDANCE_AUTO_CHECKOUT_ENABLED", False):
+        return {"disabled": True, "closed": 0}
     now=timezone.now()
     closed=0
 

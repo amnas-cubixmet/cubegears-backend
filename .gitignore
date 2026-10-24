@@ -45,6 +45,9 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# Private uploaded job files must never be tracked (including historical uploads)
+private_job_media/
+
 # Local files
 local_settings.py
 

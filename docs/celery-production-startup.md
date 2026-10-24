@@ -37,7 +37,11 @@ cannot keep a background process alive. The launch script intentionally leaves
 billing feature flags unchanged.
 
 The worker concurrency defaults to 1 because the repository currently uses
-SQLite. If services are in different containers with separate local SQLite
+SQLite. Production launcher refuses SQLite automation unless
+`CELERY_ALLOW_SQLITE_AUTOMATION=True` has been set explicitly after verifying
+that a **single-host** Django process and Worker use the exact same durable
+SQLite file with working locking. This setting must NOT be used to bless
+isolated Railway container filesystem copies. If services are in different containers with separate local SQLite
 files, business data will be inconsistent. Use shared durable storage with
 careful locking or migrate to an appropriate shared production DB before
 running multi-service billing.
@@ -68,3 +72,12 @@ another supported host.
 References:
 - https://help.pythonanywhere.com/pages/AsyncInWebApps
 - https://help.pythonanywhere.com/pages/AlwaysOnTasks
+
+
+## Attendance schedule
+
+Set `ATTENDANCE_AUTO_CHECKOUT_ENABLED=True` only after reviewing time and
+missing-punch policies. A single Beat will enqueue
+`apps.attendance.tasks.auto_close_attendance_sessions` every five minutes.
+Leave the flag False by default. Do not also schedule
+`python manage.py process_auto_checkout --run` on the same database.

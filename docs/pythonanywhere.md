@@ -1,78 +1,134 @@
-# PythonAnywhere deployment (without Celery)
+# PythonAnywhere deployment: supported non-Celery operation
 
-The Django WSGI app starts without importing Celery. Password setup, reset,
-and magic-link emails are delivered by Django's SMTP backend directly (no
-Celery/Redis worker). **Attendance auto-checkout scheduled by Celery Beat will
-not run automatically** until a scheduler is installed and configured.
+This is the live implementation guide for `config/settings.py` and
+`apps/accounts/email.py`. PythonAnywhere does not officially support
+Celery/Beat; do not launch a background worker in WSGI or `AppConfig.ready()`.
+Use **direct SMTP** for account emails and, if your plan permits it,
+a PythonAnywhere **Scheduled Task** for attendance auto-checkout.
 
-## First deployment
+## Critical: preserve production database, keys and uploaded photos
 
-Open a PythonAnywhere Bash console:
+Before updating a checkout that contains historical tracked `private_job_media/`,
+log into PythonAnywhere and make a safe standalone copy:
+
+```bash
+cd /home/cardflow/cubegears-backend
+mkdir -p /home/cardflow/private_job_media
+cp -an private_job_media/. /home/cardflow/private_job_media/
+# Verify copies before changing .env or pulling the cleanup PR.
+find /home/cardflow/private_job_media -type f | wc -l
+```
+
+Set `PRIVATE_JOB_MEDIA_ROOT=/home/cardflow/private_job_media` in the
+private `.env`. The original tracked photo is **removed from the current Git
+tree** by the security cleanup, so `git pull` may delete the checkout copy.
+Its copies in Git **history still exist**; coordinate a separate history purge
+with repository collaborators if the photo contained private information.
+Do not publish private files or turn on public static routes for these images.
+
+Back up the live SQLite database with the SQLite online backup API (do not
+blindly copy `db.sqlite3` while Django is writing). Do not change the
+existing `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `SQLITE_DATABASE_PATH`,
+or payment keys as part of this update.
+
+## Setup and configuration
 
 ```bash
 cd /home/cardflow/cubegears-backend
 source /home/cardflow/.virtualenvs/cubegears-env/bin/activate
-git pull origin main
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+python manage.py check
+python manage.py migrate --plan
 ```
 
-## Fix DJANGO_SECRET_KEY safely (recommended)
-
-Run the production setup helper from the project directory. It creates
-`.env` with restricted permissions, generates high-entropy secret keys when
-needed, preserves any existing valid keys (to avoid breaking sessions), and
-sets `DJANGO_DEBUG=False`, the backend hostname and CSRF origins. It does
-**not** print secret values or require Celery:
-
-```bash
-python scripts/setup_pythonanywhere.py --host cardflow.pythonanywhere.com --frontend-url https://cubegears-company-panel.vercel.app
-```
-
-Replace the frontend URL with your **actual** deployed frontend HTTPS origin.
-Running this script more than once is safe: existing valid keys stay the same.
-If an old shell/WSGI environment variable overrides the secret in `.env`,
-the script warns you. Fix or unset the old exported value before running
-management commands, and ensure the PythonAnywhere WSGI process uses the same
-keys. Do **not** disable the production security validation to bypass errors.
-
-The following is an example of the values stored in the private
-`/home/cardflow/cubegears-backend/.env`; **do not overwrite** generated keys.
-The `.env` file is gitignored and must never be committed or pasted in chat.
+Recommended private `.env` values for PythonAnywhere (replace all example
+hosts and SMTP values; keep existing signing keys and credentials):
 
 ```dotenv
 DJANGO_DEBUG=False
-DJANGO_SECRET_KEY=<PASTE_YOUR_GENERATED_SECRET_KEY>
-JWT_SIGNING_KEY=<PASTE_ANOTHER_RANDOM_SECRET_KEY>
 DJANGO_ALLOWED_HOSTS=cardflow.pythonanywhere.com
 DJANGO_TIME_ZONE=Asia/Kolkata
-FRONTEND_URL=https://your-frontend-domain.example
-CORS_ALLOWED_ORIGINS=https://your-frontend-domain.example
+SQLITE_DATABASE_PATH=/home/cardflow/cubegears-backend/db.sqlite3
+PRIVATE_JOB_MEDIA_ROOT=/home/cardflow/private_job_media
+DJANGO_MEDIA_ROOT=/home/cardflow/cubegears-backend/media
+FRONTEND_URL=https://YOUR-REAL-FRONTEND.example
+CORS_ALLOWED_ORIGINS=https://YOUR-REAL-FRONTEND.example
 CSRF_TRUSTED_ORIGINS=https://cardflow.pythonanywhere.com
-
-# Django sends email through SMTP (not Celery):
+ACCOUNT_EMAIL_DELIVERY_MODE=smtp
+EMAIL_CELERY_ENABLED=False
+CREDIT_BILLING_CELERY_ENABLED=False
+ATTENDANCE_AUTO_CHECKOUT_ENABLED=False
 EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
-EMAIL_HOST=smtp.your-provider.example
+EMAIL_HOST=YOUR-REACHABLE-SMTP-SERVER
 EMAIL_PORT=587
+EMAIL_HOST_USER=YOUR-ACCOUNT
+EMAIL_HOST_PASSWORD=YOUR-PRIVATE-APP-PASSWORD
 EMAIL_USE_TLS=True
-EMAIL_HOST_USER=your-smtp-username
-EMAIL_HOST_PASSWORD=your-smtp-password
-DEFAULT_FROM_EMAIL=CubixGear <verified-sender@your-domain.example>
+EMAIL_USE_SSL=False
+DEFAULT_FROM_EMAIL=verified-sender@your-domain.example
 ```
 
-Choose an SMTP provider that is accessible from your PythonAnywhere plan and
-supports the configured sender. Do not set the sample host or credentials
-literally. If your provider requires port 465 (implicit SSL), use `EMAIL_PORT=465`,
-`EMAIL_USE_TLS=False`, and `EMAIL_USE_SSL=True`. Never enable both TLS and
-SSL together.
+`ACCOUNT_EMAIL_DELIVERY_MODE=smtp` sends signup, reset, login links
+synchronously through Django's SMTP backend **after the database transaction
+commits**. SMTP delivery is slower than Celery and can fail if the provider
+is blocked by your PythonAnywhere plan; no secret is logged and public
+recovery endpoints remain non-enumerating. This mode is opt-in and has **no
+silent fallback** from a failed Celery dispatch.
 
-The WSGI file, `/var/www/cardflow_pythonanywhere_com_wsgi.py`, should
-activate the same virtualenv configured in the PythonAnywhere **Web** tab,
-make your backend importable, then load Django:
+Do not use Django's console backend for real account links.
+Check the provider's outbound access policies for your PythonAnywhere plan.
+
+## Verify email from an authorized mailbox
+
+```bash
+python manage.py check_email_delivery
+python manage.py check_email_delivery --to you@your-owned-domain.example
+```
+
+The `--to` form sends one harmless test only when explicitly requested.
+Acceptance by SMTP is not proof of inbox delivery. Review inbox/spam.
+Do not print `.env`, passwords or generated account action links in tickets.
+
+## Schedule automatic attendance without Celery
+
+The repository includes `python manage.py process_auto_checkout --run`.
+**It modifies attendance records** when auto or hybrid shift policies are due.
+Keep the opt-in off until attendance rules are reviewed in staging.
+
+On a PythonAnywhere plan with Scheduled Tasks, set:
+
+```dotenv
+ATTENDANCE_AUTO_CHECKOUT_ENABLED=True
+```
+
+Then schedule the task (in PythonAnywhere **Tasks**, at the cadence your plan
+supports) with:
+
+```bash
+cd /home/cardflow/cubegears-backend && /home/cardflow/.virtualenvs/cubegears-env/bin/python manage.py process_auto_checkout --run
+```
+
+This command runs on the host's existing persistent SQLite database
+**without Redis**. A daily-only task is NOT equivalent to five-minute
+auto-checkout; it may run much later than shift end. Never use both this
+scheduled task and a Celery Beat checkout task simultaneously.
+
+For a safe configuration-only check:
+
+```bash
+python manage.py process_auto_checkout
+```
+
+## Django web deployment
+
+PythonAnywhere Web tab virtualenv path:
+`/home/cardflow/.virtualenvs/cubegears-env`
+
+WSGI entry: `/var/www/cardflow_pythonanywhere_com_wsgi.py`:
 
 ```python
 import os
 import sys
-
 project_path = "/home/cardflow/cubegears-backend"
 if project_path not in sys.path:
     sys.path.insert(0, project_path)
@@ -81,47 +137,23 @@ from django.core.wsgi import get_wsgi_application
 application = get_wsgi_application()
 ```
 
-The project already loads `BASE_DIR/.env` in `config/settings.py`. Do not
-hardcode the secret key in your WSGI file or your repository.
+The settings module reads the private `.env`. Run
+`python manage.py check --deploy`, check the existing migrations
+(`python manage.py migrate --plan`), then `collectstatic --noinput`,
+configure PythonAnywhere static mapping for `/static/` and reload via
+the **Web** tab. Test authentication, password reset, company access and
+billing safely in staging.
 
-Once configured, verify the real production environment (if you previously
-exported an old `DJANGO_SECRET_KEY`, remove that override first):
+## Celery-compatible hosting
 
-```bash
-python manage.py check
-python manage.py check --deploy
-python manage.py migrate --noinput
-python manage.py collectstatic --noinput
-```
+Use `ACCOUNT_EMAIL_DELIVERY_MODE=celery` and
+`EMAIL_CELERY_ENABLED=True` **only** after Redis and an independent worker
+are running. Enable `ATTENDANCE_AUTO_CHECKOUT_ENABLED=True` when a single
+Beat scheduler is running; the Beat job runs every five minutes.
+Do not enable `CREDIT_BILLING_CELERY_ENABLED` until billing policies and
+existing tenant entitlement migrations have been audited.
 
-In PythonAnywhere **Web**, set the virtualenv to
-`/home/cardflow/.virtualenvs/cubegears-env`, configure static file mapping
-`/static/` to `/home/cardflow/cubegears-backend/staticfiles`, and click
-**Reload**. Inspect the **error log** if WSGI still fails.
-
-Verify outbound SMTP with a **mailbox you control**:
-
-```bash
-python manage.py shell -c "from django.core.mail import send_mail; from django.conf import settings; send_mail('CubixGear SMTP test', 'Django email without Celery', settings.DEFAULT_FROM_EMAIL, ['you@your-domain.example'], fail_silently=False)"
-```
-
-Replace `you@your-domain.example` with your own email address; the return
-value `1` indicates the message was accepted by the SMTP backend, not
-guaranteed inbox delivery. Check the inbox/spam folder.
-
-If `EMAIL_BACKEND` is missing in production, Django now defaults to SMTP;
-configure real `EMAIL_HOST`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`,
-and a verified sender before testing email endpoints.
-
-## Re-enable Celery later
-
-When using a supported Redis broker and Celery worker, uncomment:
-
-- `celery[redis]` in `requirements.txt`
-- the import/export in `config/__init__.py`
-- the Celery settings in `config/settings.py`
-
-The original `config/celery.py`, `apps/accounts/tasks.py`, and
-`apps/attendance/tasks.py` remain in the repository. Reconfigure the
-application to dispatch tasks only after workers, queues and scheduling are
-operational. Email requests currently use direct Django delivery by design.
+This project uses SQLite. A Worker or Beat in a different container will
+not share Django's local SQLite file automatically. Do not point an external
+worker at a separate copy of the database or attempt cross-container billing
+without a supported shared durable database design.

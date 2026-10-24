@@ -36,6 +36,16 @@ if not broker.startswith(("redis://", "rediss://")):
     )
 if getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False):
     raise SystemExit("Disable CELERY_TASK_ALWAYS_EAGER for production workers.")
+# SQLite does not become shared storage just because services use one repo.
+# Prevent accidental worker execution against an independent local file.
+if not settings.DEBUG and settings.DATABASES["default"]["ENGINE"].endswith("sqlite3"):
+    if os.getenv("CELERY_ALLOW_SQLITE_AUTOMATION", "").lower() not in {"1", "true", "yes"}:
+        raise SystemExit(
+            "SQLite Celery automation blocked. Ensure web and workers use the "
+            "SAME durable writable DB path, and explicitly set "
+            "CELERY_ALLOW_SQLITE_AUTOMATION=True only for a single-host setup. "
+            "Separate containers must migrate to a shared server database."
+        )
 print(
     "Celery configuration validated; "
     f"Beat schedules registered: {len(settings.CELERY_BEAT_SCHEDULE)}",
