@@ -23,5 +23,14 @@ jobs:
         run: python manage.py shell -c "from django.template.loader import get_template; [get_template(name) for name in ['control_panel/billing_settings.html', 'control_panel/_billing_settings_forms.html']]"
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py migrate --noinput
-      # Automated test suites and smoke-test scripts were removed by request.
-      # Retain static analysis, Django checks, migration consistency and migrate.
+      - name: Run email, attendance, tenant, billing, and invoice regressions
+        run: |
+          python manage.py test \
+            apps.accounts.tests_email_delivery \
+            apps.attendance.tests_auto_checkout_scheduler \
+            apps.credits.tests_company_saas_invoices \
+            apps.credits.tests_storage_interval_monitoring \
+            apps.invoices.tests_template_appearance \
+            --noinput
+      # Staging/live broker and SMTP verification must be done on hosting.
+
