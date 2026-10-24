@@ -205,6 +205,11 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "CubixGear <no-reply@cubixgear.co
 # All application email is Celery-only. When disabled or broker is missing,
 # account links and notifications cannot be sent; there is no SMTP fallback.
 EMAIL_CELERY_ENABLED = env_bool("EMAIL_CELERY_ENABLED", False)
+# Explicit optional synchronous SMTP transport for hosts without background workers.
+# Keep disabled by default; enable only after verified SMTP configuration.
+ACCOUNT_EMAIL_DELIVERY_MODE = env("ACCOUNT_EMAIL_DELIVERY_MODE", "disabled").strip().lower()
+if ACCOUNT_EMAIL_DELIVERY_MODE not in {"disabled", "smtp", "celery"}:
+    raise ImproperlyConfigured("ACCOUNT_EMAIL_DELIVERY_MODE must be disabled, smtp or celery.")
 
 FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173")
 MAGIC_LINK_EXPIRY_MINUTES = int(env("MAGIC_LINK_EXPIRY_MINUTES", 15))
@@ -248,6 +253,8 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_BEAT_SCHEDULE = {}
+# Both Beat and the broker-free Scheduled Task runner share this opt-in flag.
+ATTENDANCE_AUTO_CHECKOUT_ENABLED = env_bool("ATTENDANCE_AUTO_CHECKOUT_ENABLED", False)
 if CREDIT_BILLING_CELERY_ENABLED:
     if not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
         from django.core.exceptions import ImproperlyConfigured
@@ -390,4 +397,13 @@ if CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
     CELERY_BEAT_SCHEDULE["cubegear-storage-monitoring-snapshots"] = {
         "task": "cubegear.storage.monitoring.snapshot_due",
         "schedule": monitoring_crontab(minute="*"),
+    }
+
+# Only a single scheduler may execute automatic attendance checkout. If using
+# PythonAnywhere scheduled management commands, do NOT run this Beat schedule.
+if ATTENDANCE_AUTO_CHECKOUT_ENABLED and CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    from celery.schedules import crontab as attendance_crontab
+    CELERY_BEAT_SCHEDULE["cubegear-attendance-auto-checkout"] = {
+        "task": "apps.attendance.tasks.auto_close_attendance_sessions",
+        "schedule": attendance_crontab(minute="*/5"),
     }
