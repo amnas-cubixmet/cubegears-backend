@@ -98,8 +98,8 @@ class ForgotPasswordView(APIView):
             token = default_token_generator.make_token(user)
             reset_url = password_action_url(request, user, uid, token)
             queue_email(
-                subject="Reset your CubixGear password",
-                message="A request was received to reset the password for your CubixGear account. This link expires according to the account security policy.",
+                subject="Reset your CubeGears password",
+                message="A request was received to reset the password for your CubeGears account. This link expires according to the account security policy.",
                 recipient_list=[user.email],
                 action_url=reset_url, action_label="Reset password",
             )
@@ -166,10 +166,10 @@ class MagicLinkRequestView(APIView):
             raw_token = MagicLink.issue(user)
             url = magic_action_url(request, user, raw_token)
             queue_email(
-                subject="Your CubixGear magic login link",
+                subject="Your CubeGears magic login link",
                 message="Use the button below to securely sign in without entering a password. This single-use link expires in 15 minutes.",
                 recipient_list=[user.email],
-                action_url=url, action_label="Sign in to CubixGear",
+                action_url=url, action_label="Sign in to CubeGears",
             )
 
         return Response({"message": "If the account exists, a magic link has been sent."})
@@ -281,8 +281,8 @@ class PublicWorkshopSignupView(APIView):
         token = default_token_generator.make_token(user)
         setup_url = password_action_url(request, user, uid, token, setup=True)
         queue_email(
-            subject="Set up your CubixGear password",
-            message="Welcome to CubixGear. Your workshop account has been created. Set your password before signing in.",
+            subject="Set up your CubeGears password",
+            message="Welcome to CubeGears. Your workshop account has been created. Set your password before signing in.",
             recipient_list=[user.email],
             action_url=setup_url, action_label="Set up password",
         )
