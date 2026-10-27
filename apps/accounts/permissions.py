@@ -95,21 +95,27 @@ def user_has_permission(user, permission_code):
         if not role or not role.is_active or role.company_id != user.company_id:
             return False
 
+    # The verified company account owner is the canonical tenant administrator.
+    # Stored role permissions can become incomplete after catalog migrations; they
+    # must not remove the owner's authority. Feature entitlements, debt holds
+    # and cross-company restrictions below still apply to the owner.
+    verified_owner = is_company_owner(user) if user.company_id else False
     # Ownership cannot be delegated through a wildcard or billing role permission.
     if permission_code.startswith("billing."):
-        return is_company_owner(user)
+        return verified_owner
 
     if user.company_id:
         from apps.credits.monthly_policy import billing_status
         if billing_status(user.company)['blocked']:
             return False
 
-    permissions = role.permissions or []
-    if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
-        return False
-    role_allows = "*" in permissions or permission_code in permissions
-    if not role_allows:
-        return False
+    if not verified_owner:
+        permissions = role.permissions or []
+        if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
+            return False
+        role_allows = "*" in permissions or permission_code in permissions
+        if not role_allows:
+            return False
     if not permission_code.startswith("panel."):
         # A persisted, past-due invoice locks paid/workshop APIs server-side;
         # hiding React navigation alone would be an authorization bypass.
