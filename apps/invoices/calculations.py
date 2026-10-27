@@ -109,3 +109,14 @@ def persisted_invoice_amounts(invoice):
         items=lines, discount=invoice.discount,
         adjustment=invoice.adjustment, paid=invoice.paid,
     )
+
+
+def serialize_amounts(value):
+    """Convert Decimal amounts to exact JSON-safe strings (not binary floats)."""
+    if isinstance(value, Decimal):
+        return str(value.quantize(CENT, rounding=ROUND_HALF_UP))
+    if isinstance(value, dict):
+        return {key: serialize_amounts(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [serialize_amounts(item) for item in value]
+    return value
