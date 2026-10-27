@@ -13,6 +13,10 @@ from apps.saas.models import CompanySetting
 
 
 class InvoiceTemplateValidationTests(SimpleTestCase):
+    def test_empty_appearance_uses_no_sample_field_values(self):
+        for key in ("customName", "customHeader", "customFooter", "businessName", "termsText"):
+            self.assertEqual(STYLE_DEFAULTS[key], "", key)
+
     def test_named_styles_and_bounded_text(self):
         self.assertEqual(
             validated_settings({"invoiceTemplate": "classic", "accent": "blue", "showTerms": False}),
