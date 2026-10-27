@@ -4,9 +4,9 @@
 <div class="cg-module-pricing-page cg-overview-page">
   <header class="cg-module-page-heading">
     <div>
-      <p class="eyebrow"><a href="{% url 'panel:dashboard' %}">Dashboard</a> / Feature Pricing</p>
-      <h2>Feature Pricing</h2>
-      <p>Manage prices and availability for workshop modules.</p>
+      <p class="eyebrow">SAAS CONTROL / SETTINGS</p>
+      <h2>Feature Pricing Settings</h2>
+      <p>Configure per-user credit rates, billing periods, and publication for workshop modules.</p>
     </div>
     <span class="cg-module-base-rate">5 credits <small>/ active user · minimum</small></span>
   </header>
@@ -14,73 +14,10 @@
   {% if submission_errors %}<div class="cg-module-error" role="alert">{{ submission_errors }}</div>{% endif %}
   {% if not can_edit %}<p class="cg-module-readonly">View only · Features Edit permission required.</p>{% endif %}
 
-  <section class="cg-module-summary-grid" aria-label="Feature pricing overview">
-    <article class="cg-module-summary-card">
-      <span class="cg-overview-metric-label">Total modules<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#layers"></use></svg></span><strong>{{ module_count }}</strong><small>Billable features</small>
-    </article>
-    <article class="cg-module-summary-card">
-      <span class="cg-overview-metric-label">Published<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#shield"></use></svg></span><strong>{{ published_count }}</strong><small>Available for activation</small>
-    </article>
-    <article class="cg-module-summary-card">
-      <span class="cg-overview-metric-label">Configured<svg aria-hidden="true" viewBox="0 0 24 24"><use href="{% static 'control_panel/icons.svg' %}#list-checks"></use></svg></span><strong>{{ priced_count }}</strong><small>{{ unpriced_count }} unpriced</small>
-    </article>
-  </section>
-<details class="cg-feature-management" id="feature-management">
-  <summary>
-    <span class="cg-feature-management-title">Feature catalog &amp; label management</span>
-    <span class="cg-feature-management-summary">Manage catalog <span aria-hidden="true">⌄</span></span>
-  </summary>
-  <div class="cg-feature-management-content">
-    {% if can_edit %}
-    <div class="cg-feature-management-actions">
-      <a class="btn btn-primary" href="{% url 'panel:feature-create' %}">+ Add feature</a>
-      <a class="btn cg-feature-btn-secondary" href="{% url 'panel:featuregroup-create' %}">+ Add group</a>
-      <a class="btn cg-feature-btn-secondary" href="{% url 'panel:featurebundle-create' %}">+ Add paid label</a>
-      <form method="post" action="{% url 'panel:features-edit' %}" class="cg-feature-sync-form">
-        {% csrf_token %}
-        <button type="submit" class="btn cg-feature-btn-secondary" title="Discover new backend modules without changing prices or access">Sync backend modules</button>
-      </form>
-    </div>
-    {% endif %}
-    <div class="cg-feature-management-grids">
-      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-modules-title">
-        <header><h3 id="cg-feature-modules-title">Catalog features</h3><span>{{ catalog_features|length }}</span></header>
-        <div class="cg-feature-list-scroll">
-          {% for item in catalog_features %}
-          <div class="cg-feature-catalog-row">
-            <div><strong>{{ item.label }}</strong><small>{{ item.key }} · {{ item.group.label }}</small></div>
-            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Active{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:feature-edit' item.pk %}" aria-label="Edit {{ item.label }}">Edit</a>{% endif %}</div>
-          </div>
-          {% empty %}<p class="cg-feature-list-empty">No catalog features yet.</p>{% endfor %}
-        </div>
-      </section>
-      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-groups-title">
-        <header><h3 id="cg-feature-groups-title">Feature groups</h3><span>{{ catalog_groups|length }}</span></header>
-        <div class="cg-feature-list-scroll">
-          {% for item in catalog_groups %}
-          <div class="cg-feature-catalog-row">
-            <div><strong>{{ item.label }}</strong><small>{{ item.key }}{% if item.parent %} · Under {{ item.parent.label }}{% endif %}</small></div>
-            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Active{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:featuregroup-edit' item.pk %}" aria-label="Edit {{ item.label }}">Edit</a>{% endif %}</div>
-          </div>
-          {% empty %}<p class="cg-feature-list-empty">No feature groups yet.</p>{% endfor %}
-        </div>
-      </section>
-      <section class="cg-feature-catalog-list" aria-labelledby="cg-feature-bundles-title">
-        <header><h3 id="cg-feature-bundles-title">Paid feature labels</h3><span>{{ catalog_bundles|length }}</span></header>
-        <div class="cg-feature-list-scroll">
-          {% for item in catalog_bundles %}
-          <div class="cg-feature-catalog-row">
-            <div><strong>{{ item.name }}</strong><small>{{ item.per_user_credits }} credits / user · {{ item.get_billing_type_display }}</small></div>
-            <div><span class="cg-feature-state {% if item.is_active %}is-enabled{% endif %}">{% if item.is_active %}Published{% else %}Inactive{% endif %}</span>{% if can_edit %}<a href="{% url 'panel:featurebundle-edit' item.pk %}" aria-label="Edit {{ item.name }}">Edit</a>{% endif %}</div>
-          </div>
-          {% empty %}<p class="cg-feature-list-empty">No paid feature labels yet.</p>{% endfor %}
-        </div>
-      </section>
-    </div>
-  </div>
-</details>
+
+
 <section class="cg-overview-section-intro" aria-labelledby="cg-module-list-heading">
-  <div><p class="eyebrow">WORKSHOP MODULES</p><h3 id="cg-module-list-heading">Module pricing</h3><p>Search modules, review publishing status and save each module separately.</p></div>
+  <div><p class="eyebrow">WORKSHOP MODULES</p><h3 id="cg-module-list-heading">Module pricing</h3><p>Search and save each module configuration separately. Published modules become available for company activation.</p></div>
   <span class="cg-overview-result-pill">{{ module_count }} module{{ module_count|pluralize }}</span>
 </section>
 <section class="cg-module-toolbar" aria-label="Module pricing tools">
@@ -88,10 +25,7 @@
     <label for="cg-module-search" class="sr-only">Search modules</label>
     <input id="cg-module-search" type="search" placeholder="Search modules..." autocomplete="off">
   </div>
-  <nav aria-label="Related settings">
-    {% panel_can "billing-settings" as billing_allowed %}{% if billing_allowed %}<a class="btn" href="{% url 'panel:billing-settings' %}#storage-pricing-title">Billing Settings</a>{% endif %}
-    {% panel_can "security" as audit_allowed %}{% if audit_allowed %}<a class="btn" href="{% url 'panel:audit-logs' %}">Audit Logs</a>{% endif %}
-  </nav>
+
 </section>
 <div id="cg-module-no-results" class="cg-module-empty" role="status" hidden>No matching modules.</div>
 <div class="cg-module-grid" id="cg-module-grid">
