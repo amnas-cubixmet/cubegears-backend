@@ -17,7 +17,7 @@ def send_account_email(subject, message, recipient_list, from_email=None,
             "body": message,
             "action_url": action_url,
             "action_label": action_label or "Open CubixGear",
-            "brand": "CubixGear",
+            "brand": "CubeGears",
         }
         plain = render_to_string("accounts/email/action.txt", context)
         html = render_to_string("accounts/email/action.html", context)

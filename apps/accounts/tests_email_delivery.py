@@ -1,9 +1,11 @@
 """Email dispatch regressions; no live SMTP or Redis needed."""
 from unittest.mock import patch
 
+from django.core import mail
 from django.test import TestCase, override_settings
 
 from apps.accounts.email import email_delivery_mode, queue_email
+from apps.accounts.email_transport import send_account_email
 
 
 class EmailDeliveryModeTests(TestCase):
@@ -61,3 +63,57 @@ class EmailDeliveryModeTests(TestCase):
     )
     def test_smtp_mode_fails_closed_with_console_backend(self):
         self.assertEqual(email_delivery_mode(), "disabled")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class BrandedEmailTemplateTests(TestCase):
+    """HTML + plaintext messages render correctly without network access."""
+
+    def test_responsive_action_email_has_branded_button_and_text_fallback(self):
+        url = "https://example.test/setup?token=abc&next=1"
+        result = send_account_email(
+            subject="Set up your CubeGears password",
+            message="Welcome to your new account.\nChoose a secure password.",
+            recipient_list=["member@example.test"],
+            from_email="notifications@example.test",
+            action_url=url,
+            action_label="Set up password",
+        )
+
+        self.assertEqual(result, {"acceptedByProvider": True})
+        self.assertEqual(len(mail.outbox), 1)
+        message = mail.outbox[0]
+        self.assertEqual(message.content_subtype, "plain")
+        self.assertEqual(len(message.alternatives), 1)
+        html = message.alternatives[0][0]
+        self.assertIn("CubeGears", html)
+        self.assertIn("Set up password", html)
+        self.assertIn("href=\"https://example.test/setup?token=abc&amp;next=1\"", html)
+        self.assertIn("@media screen and (max-width:620px)", html)
+        self.assertIn("prefers-reduced-motion", html)
+        self.assertIn("Never share login or password-reset links", html)
+        self.assertIn(url, message.body)
+        self.assertIn("CubeGears · Secure account notifications", message.body)
+
+    def test_html_escapes_dynamic_content(self):
+        send_account_email(
+            subject="Welcome <script>alert(1)</script>",
+            message="Hi <img src=x onerror=alert(1)>",
+            recipient_list=["member@example.test"],
+            action_url="https://example.test/setup?token=123",
+            action_label="Open link",
+        )
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertNotIn("<script>alert(1)</script>", html)
+        self.assertNotIn("<img src=x onerror=alert(1)>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("&lt;img", html)
+
+    def test_non_action_email_remains_plain_text(self):
+        send_account_email(
+            subject="Account update",
+            message="Your profile was changed.",
+            recipient_list=["member@example.test"],
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].alternatives, [])
