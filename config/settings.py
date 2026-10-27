@@ -117,7 +117,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 # For a persistent deployment, mount a writable volume and point this variable
 # to an absolute filename, e.g. /var/lib/cubixgear/db.sqlite3.
 SQLITE_DATABASE_PATH = Path(
-    env("SQLITE_DATABASE_PATH", str(BASE_DIR / "db.sqlite3"))
+    (env("SQLITE_DATABASE_PATH") or str(BASE_DIR / "db.sqlite3"))
 ).expanduser()
 if not SQLITE_DATABASE_PATH.is_absolute():
     SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
