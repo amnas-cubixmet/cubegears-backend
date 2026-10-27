@@ -6,7 +6,6 @@ from django.views.decorators.http import require_http_methods
 from apps.accounts.permissions import panel_permission
 from apps.control_panel.views import panel_admin_required
 from apps.saas.feature_discovery import module_inventory
-from apps.saas.models import PlanFeature, FeatureGroup
 from .models import ModulePriceLabel, FeatureBundle, CompanyPostpaidFeature
 from .module_pricing import ModulePriceForm, save_module_price
 from apps.control_panel.audit import record_panel_event
@@ -74,18 +73,9 @@ def module_pricing(request):
             'has_purchases': has_purchases,
             'has_metered_access': has_metered_access,
         })
-    priced_count = sum(1 for row in rows if row['mapping'])
-    published_count = sum(1 for row in rows if (
-        row['bundle'] is not None and row['bundle'].is_active
-        and row['mapping'].feature.is_active
-    ))
     return render(request, 'control_panel/module_pricing.html', {
-        'page_title':'Feature Pricing', 'active':'features', 'pricing_page':True, 'rows':rows, 'can_edit':can_edit,
-        'module_count': len(rows), 'priced_count': priced_count, 'published_count': published_count,
-        'unpriced_count': len(rows) - priced_count, 'min_user_credits': 5,
-        'catalog_features': PlanFeature.objects.select_related('group').order_by('group__label', 'sort_order', 'label'),
-        'catalog_groups': FeatureGroup.objects.select_related('parent').order_by('sort_order', 'label'),
-        'catalog_bundles': FeatureBundle.objects.order_by('name'),
+        'page_title':'Feature Pricing Settings', 'active':'features', 'pricing_page':True, 'rows':rows, 'can_edit':can_edit,
+        'module_count': len(rows), 'min_user_credits': 5,
         'submission_errors': submitted.errors if submitted is not None and request.POST.get('module') not in [r['module']['key'] for r in rows] else None,
     })
     # Normal Django form handling: show per-field validation errors on this page.
