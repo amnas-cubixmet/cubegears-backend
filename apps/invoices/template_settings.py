@@ -14,8 +14,8 @@ from apps.saas.models import CompanySetting
 STYLE_DEFAULTS = {
     "invoiceTemplate": "modern", "estimateTemplate": "modern",
     "accent": "teal", "showOriginal": True, "showSellerMark": True,
-    "compactTable": False, "customName": "My Custom Template",
-    "customHeader": "Tax Invoice", "customFooter": "Thank you for your business.",
+    "compactTable": False, "customName": "",
+    "customHeader": "", "customFooter": "",
     "customShowTransport": True, "customShowTaxTable": True,
     "businessLogo": "", "businessName": "", "businessLegalName": "",
     "businessGstin": "", "businessPhone": "", "businessEmail": "",
@@ -71,7 +71,7 @@ def validated_settings(payload):
             try:
                 with Image.open(BytesIO(raw)) as image:
                     if image.format not in {"PNG", "JPEG", "WEBP"}:
-                        raise serializers.ValidationError({key: ["Unsupported image format."]})
+                        raise serializers.ValidationError({key: ["Image could not be processed."]})
                     if image.width > 2048 or image.height > 2048 or image.width < 1 or image.height < 1:
                         raise serializers.ValidationError({key: ["Logo dimensions must be at most 2048 × 2048."]})
                     image.verify()
