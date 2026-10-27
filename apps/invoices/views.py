@@ -20,6 +20,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         "cancel": "invoices.edit",
         "convert": "invoices.create",
         "gst_context": "invoices.view",
+        "preview": "invoices.view",
     }
 
     @decorators.action(detail=False, methods=["get"], url_path="gst-context")
@@ -40,6 +41,35 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             "companyEmail": company.email,
             "invoiceType": "gst" if gstin else "regular",
         })
+    @decorators.action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        """Return authoritative totals without writing customer, invoice or stock."""
+        from .calculations import calculate_invoice_amounts, serialize_amounts
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        customer = payload.get("customer") or {}
+        if not isinstance(customer, dict):
+            raise ValidationError({"customer": "Customer details must be an object."})
+        items = payload.get("items") or []
+        if not isinstance(items, list) or len(items) > 200:
+            raise ValidationError({"items": "Send up to 200 invoice line items."})
+        if not all(isinstance(item, dict) for item in items):
+            raise ValidationError({"items": "Invoice items must be objects."})
+        company = request.user.company
+        invoice_type = payload.get("invoiceType") or ("gst" if company.gstin else "regular")
+        amounts = calculate_invoice_amounts(
+            company=company,
+            branch=request.user.branch,
+            invoice_type=invoice_type,
+            place_of_supply=customer.get("placeOfSupply") or
+                            customer.get("stateCode") or customer.get("state") or "",
+            items=items,
+            discount=payload.get("discount", 0),
+            adjustment=payload.get("adjustment", 0),
+            paid=payload.get("paid", 0),
+        )
+        return response.Response(serialize_amounts(amounts))
+
     def get_queryset(self):
         qs = super().get_queryset()
         kind = self.request.query_params.get("kind")
@@ -83,48 +113,17 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
                              f'{obj.number} updated', {'invoiceId': str(obj.pk)})
 
     def _recalculate(self,obj):
-        """Recompute totals from saved lines; client-provided CGST/SGST/IGST are never trusted."""
-        from apps.jobs.india_gst import gst_context, gst_rate, calculate_tax
-        from decimal import ROUND_HALF_UP
+        """Persist the same Decimal arithmetic returned by POST /preview."""
+        from .calculations import persisted_invoice_amounts
 
-        # GST supply state derives from the workshop's registration and legal POS,
-        # not a client tax-mode dropdown or vehicle registration number.
-        if obj.invoice_type == "gst":
-            customer = obj.customer
-            pos = (obj.customer_snapshot or {}).get("placeOfSupply") or (
-                obj.customer_snapshot or {}
-            ).get("stateCode") or customer.state
-            ctx = gst_context(
-                company=obj.company, branch=obj.branch, customer=customer,
-                config={"mode": "gst", "placeOfSupply": pos},
-            )
-            tax_mode = ctx["taxMode"]
-        else:
-            tax_mode = "none"
-
-        rows = []
-        for item in obj.items.all():
-            if item.quantity <= 0 or item.rate < 0:
-                raise ValidationError({"items": "Item quantity must be positive and rate cannot be negative."})
-            gross = (item.quantity * item.rate).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
-            if item.discount < 0 or item.discount > gross:
-                raise ValidationError({"items": "Item discount cannot exceed its amount."})
-            rate = gst_rate(item.tax_rate) if tax_mode != "none" else Decimal("0")
-            rows.append({
-                "total": str(gross - item.discount), "taxRate": str(rate),
-            })
-        result = calculate_tax(rows, obj.discount, tax_mode)
-        obj.tax_mode = tax_mode
+        result = persisted_invoice_amounts(obj)
+        obj.tax_mode = result["taxMode"]
         obj.taxable = result["taxable"]
         obj.cgst = result["cgst"]
         obj.sgst = result["sgst"]
         obj.igst = result["igst"]
-        obj.total = result["total"] + obj.adjustment
-        if obj.total < 0:
-            raise ValidationError({"adjustment": "Adjustment cannot make the invoice total negative."})
-        obj.balance = max(Decimal("0"), obj.total - obj.paid)
+        obj.total = result["total"]
+        obj.balance = result["balance"]
         obj.save(update_fields=[
             "tax_mode", "taxable", "cgst", "sgst", "igst",
             "total", "balance", "updated_at",
