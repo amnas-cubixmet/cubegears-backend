@@ -96,10 +96,13 @@ def calculate_invoice_amounts(*, company, branch=None, invoice_type="regular",
 
 def persisted_invoice_amounts(invoice):
     """Calculate line display amounts for persisted invoices with saved inputs."""
+    # Reload rows from the database so PUT requests never reuse an object's
+    # prefetched pre-edit item cache after the serializer deletes/recreates them.
+    from .models import InvoiceItem
     lines = [
         {"qty": item.quantity, "rate": item.rate, "discount": item.discount,
          "taxRate": item.tax_rate}
-        for item in invoice.items.all()
+        for item in InvoiceItem.objects.filter(invoice=invoice).order_by("pk")
     ]
     customer = invoice.customer_snapshot or {}
     return calculate_invoice_amounts(
