@@ -43,15 +43,9 @@ urlpatterns = [
     path("plans/add/", views.plan_create, name="plan-create"),
     path("plans/<int:pk>/edit/", views.plan_edit, name="plan-edit"),
     path("plans/<int:pk>/delete/", views.plan_delete, name="plan-delete"),
-    path("features/", views.feature_catalog, name="features"),
+    # Feature catalog, groups and published labels are managed through one
+    # administrator settings page; legacy editor/sync pages are retired.
     path("features/pricing/", module_pricing, name="feature-pricing"),
-    path("features/sync/", views.feature_sync, name="features-edit"),
-    path("features/bundles/add/", views.feature_bundle_create, name="featurebundle-create"),
-    path("features/bundles/<int:pk>/edit/", views.feature_bundle_edit, name="featurebundle-edit"),
-    path("features/add/", views.feature_create, name="feature-create"),
-    path("features/<int:pk>/edit/", views.feature_edit, name="feature-edit"),
-    path("features/groups/add/", views.feature_group_create, name="featuregroup-create"),
-    path("features/groups/<int:pk>/edit/", views.feature_group_edit, name="featuregroup-edit"),
     path("requests/", views.plan_requests, name="requests"),
     path("credits/", credits_panel.credits_control, name="credits"),
     path("credits/cycle/", cycle_policy_control, name="credit-cycle"),
