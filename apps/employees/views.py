@@ -197,20 +197,20 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             # never reset an existing password while resending an invite.
             magic_token = MagicLink.issue(user)
             url = magic_action_url(self.request, user, magic_token)
-            subject = "Sign in to your CubixGear workshop"
+            subject = "Sign in to your CubeGears workshop"
             instruction = "Use the button below to sign in securely."
         else:
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             url = password_action_url(self.request, user, uid, token, setup=True)
-            subject = "Create your CubixGear staff password"
+            subject = "Create your CubeGears staff password"
             instruction = "Use the button below to create your account password."
 
         delivery = queue_email(
             subject=subject,
             message=(
                 f"Hi {employee.name},\n\n"
-                f"You have been invited to {employee.company.name} on CubixGear.\n"
+                f"You have been invited to {employee.company.name} on CubeGears.\n"
                 f"{instruction}\n\n"
                 f"Login email: {user.email}\n"
                 f"Assigned role: {user.role.name}\n"
@@ -220,7 +220,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 "If you weren't expecting this email, ignore it."
             ),
             recipient_list=[user.email],
-            action_url=url, action_label="Open CubixGear staff access",
+            action_url=url, action_label="Open CubeGears staff access",
         )
         # Serializer and owner-facing invite endpoint see this state after commit.
         # No setup token or SMTP secrets are returned to the browser.
