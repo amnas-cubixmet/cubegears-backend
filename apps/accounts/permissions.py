@@ -107,7 +107,11 @@ def user_has_permission(user, permission_code):
     permissions = role.permissions or []
     if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
         return False
-    role_allows = "*" in permissions or permission_code in permissions
+    # The verified company owner is its tenant administrator. An accidental
+    # restrictive role edit must not lock the owner out of their own company.
+    # This bypasses only role grants, NEVER feature entitlements, overdue
+    # restrictions, tenant boundaries, or ownership-only billing checks.
+    role_allows = is_company_owner(user) or "*" in permissions or permission_code in permissions
     if not role_allows:
         return False
     if not permission_code.startswith("panel."):

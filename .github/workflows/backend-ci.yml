@@ -27,6 +27,7 @@ jobs:
         run: |
           python manage.py test \
             apps.accounts.tests_email_delivery \
+            apps.accounts.tests_owner_permissions \
             apps.control_panel.tests_feature_pricing_routes \
             apps.attendance.tests_auto_checkout_scheduler \
             apps.credits.tests_company_saas_invoices \
