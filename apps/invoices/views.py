@@ -1,4 +1,3 @@
-from decimal import Decimal
 from uuid import UUID
 from django.db.models import Q
 from django.db import transaction
