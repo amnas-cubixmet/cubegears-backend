@@ -4,7 +4,8 @@ from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
+from apps.accounts.permissions import user_has_permission
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Invoice,EWayBill
 from apps.jobs.audit import record_job_event
@@ -14,7 +15,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
     queryset=Invoice.objects.select_related("customer","vehicle","job").prefetch_related("items").all()
     serializer_class=InvoiceSerializer
     action_permission_map = {
-        "finalize": ["invoices.edit", "stock.edit"],
+        "finalize": "invoices.edit",
         "pdf": "invoices.view",
         "cancel": "invoices.edit",
         "convert": "invoices.create",
@@ -136,6 +137,10 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         obj=self.get_object()
         if obj.status in {"Finalized","Paid","Issued","Converted"}: return response.Response(InvoiceSerializer(obj).data)
         if obj.kind=="invoice":
+            # A service-only invoice must not require buying the Stock module.
+            # If real inventory is consumed, enforce stock.edit before any mutation.
+            if obj.items.filter(stock_item__isnull=False).exists() and not user_has_permission(request.user, "stock.edit"):
+                raise PermissionDenied("Stock edit permission is required to finalize invoices containing stock items.")
             expected_type = "gst" if str(obj.company.gstin or "").strip() else "regular"
             if obj.invoice_type != expected_type:
                 raise ValidationError({
