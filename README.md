@@ -34,6 +34,52 @@ New
 
 ## Local setup
 
+### One-command local development (Windows)
+
+After installing Python dependencies and creating a **local** `.env` (not the
+production PythonAnywhere values), start Django, Celery Worker, Celery Beat and
+Redis together:
+
+```powershell
+# In the backend repository; first-time setup only
+py -3 -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# Every development session
+.\start-all.bat
+```
+
+The launcher uses `venv` or `.venv`, runs `python manage.py check`, then
+starts Django (`http://127.0.0.1:8000`), Celery (Windows-safe solo pool) and
+Beat. It detects a running Redis instance, or starts/reuses the
+`cubegears-redis` Docker container when Docker Desktop is available.
+Press **Ctrl+C** in the launcher to stop all three processes. If the launcher
+started the Docker container, it stops that container too. Ordinary
+`python manage.py runserver` still starts **only Django**.
+
+Suggested values in the local `.env`:
+
+```env
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+SECURE_SSL_REDIRECT=False
+SESSION_COOKIE_SECURE=False
+CSRF_COOKIE_SECURE=False
+SQLITE_DATABASE_PATH=
+CELERY_BROKER_URL=redis://127.0.0.1:6379/0
+CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/1
+CELERY_TASK_ALWAYS_EAGER=False
+# Enable scheduled features only when ready to test them:
+ATTENDANCE_AUTO_CHECKOUT_ENABLED=False
+CREDIT_BILLING_CELERY_ENABLED=False
+```
+
+The launcher never enables billing, attendance, or email automation flags.
+It rejects `DJANGO_DEBUG=False` or local HTTPS redirects; use dedicated
+worker/Beat deployments, not this launcher, in production. Run migrations
+separately before first use: `python manage.py migrate`.
+
+
 ### Windows
 
 ```powershell
