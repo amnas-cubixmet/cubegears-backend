@@ -276,6 +276,27 @@ class InvoiceSerializer(serializers.ModelSerializer):
         data["termsAndConditions"] = instance.terms_conditions
         data["staff"] = instance.staff_name
         data["sourceJobId"] = instance.source_job_id
+        # Detail/Save responses carry server-authoritative line totals for
+        # invoice display. List pages rely on persisted summary fields and
+        # avoid recomputing every invoice.
+        view = self.context.get("view")
+        if getattr(view, "action", None) != "list":
+            from rest_framework.exceptions import ValidationError
+            from .calculations import persisted_invoice_amounts, serialize_amounts
+            try:
+                data["calculation"] = serialize_amounts(persisted_invoice_amounts(instance))
+            except ValidationError:
+                # Historical invoices can have missing/legacy supply states.
+                # Keep the saved official totals instead of losing the record.
+                data["calculation"] = {
+                    "taxMode": instance.tax_mode,
+                    "taxable": str(instance.taxable),
+                    "cgst": str(instance.cgst),
+                    "sgst": str(instance.sgst),
+                    "igst": str(instance.igst),
+                    "total": str(instance.total),
+                    "balance": str(instance.balance),
+                }
         return data
 
 class EWayBillSerializer(serializers.ModelSerializer):

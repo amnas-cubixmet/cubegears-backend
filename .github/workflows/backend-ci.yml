@@ -34,6 +34,7 @@ jobs:
             apps.credits.tests_bundle_purchase_throttle \
             apps.credits.tests_storage_interval_monitoring \
             apps.invoices.tests_template_appearance \
+            apps.invoices.tests_calculations \
             --noinput
       # Staging/live broker and SMTP verification must be done on hosting.
 
