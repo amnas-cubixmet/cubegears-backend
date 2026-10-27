@@ -18,7 +18,9 @@ from .cycle_billing import effective_policy, activate_cycle_label
 
 
 class BundlePurchaseThrottle(UserRateThrottle):
-    rate = "12/hour"
+    # An owner may need to activate more than 12 separately priced modules in
+    # one setup session. Keep a bounded per-user purchase limit (not unlimited).
+    rate = "30/hour"
 
 
 class BundleInput(serializers.Serializer):
