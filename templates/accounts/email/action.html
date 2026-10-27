@@ -1,16 +1,111 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:32px 12px;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#152238;">
-<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;margin:0 auto;background:white;border:1px solid #e0e8f0;border-radius:16px;">
-<tr><td style="padding:26px 30px 14px;border-bottom:1px solid #e0e8f0;font-size:19px;font-weight:700;color:#1677ff;">CubixGear</td></tr>
-<tr><td style="padding:26px 30px 30px;">
-<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;">{{ subject }}</h1>
-<p style="font-size:14px;line-height:1.8;white-space:pre-line;">{{ body }}</p>
-<p style="padding:12px 0;"><a href="{{ action_url }}" style="display:inline-block;background:#1677ff;color:white;border-radius:8px;padding:13px 20px;text-decoration:none;font-size:14px;font-weight:700;">{{ action_label }}</a></p>
-<p style="font-size:12px;color:#63738a;line-height:1.6;">If the button is not working, copy this address into your browser:</p>
-<p style="font-size:12px;overflow-wrap:anywhere;word-break:break-all;"><a href="{{ action_url }}" style="color:#1677ff;">{{ action_url }}</a></p>
-<p style="font-size:12px;color:#63738a;line-height:1.6;">If you did not request this email, you can safely ignore it. Never share a sign-in or password link.</p>
-</td></tr>
-<tr><td style="padding:18px 30px;background:#f8fafc;border-top:1px solid #e0e8f0;font-size:11px;color:#63738a;">CubixGear · Secure account notifications</td></tr>
-</table></body></html>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="supported-color-schemes" content="light">
+  <title>{{ subject }}</title>
+  <!--[if mso]><style>body,table,td,a,h1,p {font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->
+  <style>
+    body { margin:0 !important; padding:0 !important; width:100% !important; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+    table { border-collapse:collapse; border-spacing:0; mso-table-lspace:0pt; mso-table-rspace:0pt; }
+    img { border:0; outline:none; text-decoration:none; }
+    a { text-decoration:none; }
+    .email-card { animation:card-enter 450ms ease-out both; }
+    .action-link { transition:background-color 180ms ease, transform 180ms ease; }
+    .action-link:hover { background-color:#164dc2 !important; transform:translateY(-1px); }
+    @keyframes card-enter { from {opacity:0.98; transform:translateY(6px);} to {opacity:1; transform:translateY(0);} }
+    @media screen and (max-width:620px) {
+      .outer-space { padding:20px 12px !important; }
+      .card-column { width:100% !important; }
+      .header-cell { padding:23px 23px !important; }
+      .body-cell { padding:32px 24px 28px !important; }
+      .footer-cell { padding:23px 24px !important; }
+      .headline { font-size:25px !important; line-height:34px !important; }
+      .brand-name { font-size:20px !important; }
+      .responsive-button { width:100% !important; }
+      .responsive-button a { display:block !important; text-align:center !important; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      .email-card,.action-link { animation:none !important; transition:none !important; transform:none !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;width:100%;background-color:#f3f6fb;color:#17243c;font-family:Arial,Helvetica,sans-serif;">
+  <!-- Hidden inbox preview text. Never include action URLs or secret tokens here. -->
+  <div style="display:none !important;font-size:1px;line-height:1px;color:#f3f6fb;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">
+    {{ subject }} — a secure {{ brand }} account notification.
+  </div>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;background-color:#f3f6fb;">
+    <tr>
+      <td class="outer-space" align="center" style="padding:46px 16px;">
+        <!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td><![endif]-->
+        <table class="email-card card-column" role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #e4eaf3;border-radius:20px;overflow:hidden;">
+
+          <!-- Branded masthead. Text-only logo displays even when images are blocked. -->
+          <tr>
+            <td class="header-cell" bgcolor="#111b30" style="background-color:#111b30;padding:26px 36px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td width="46" valign="middle" style="width:46px;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td width="39" height="39" align="center" valign="middle" bgcolor="#3478f6" style="width:39px;height:39px;background-color:#3478f6;border-radius:12px;color:#ffffff;font-weight:800;font-size:14px;letter-spacing:-0.5px;">CG</td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td valign="middle" class="brand-name" style="font-size:21px;line-height:27px;font-weight:800;letter-spacing:-0.7px;color:#ffffff;">
+                    {{ brand }}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr><td bgcolor="#3478f6" height="4" style="height:4px;background-color:#3478f6;font-size:0;line-height:0;">&nbsp;</td></tr>
+
+          <tr>
+            <td class="body-cell" style="padding:43px 44px 37px;">
+              <p style="margin:0 0 14px;color:#2864cf;font-size:11px;line-height:17px;font-weight:800;letter-spacing:1.8px;text-transform:uppercase;">ACCOUNT NOTIFICATION</p>
+              <h1 class="headline" style="margin:0 0 19px;color:#111b30;font-size:29px;line-height:38px;font-weight:800;letter-spacing:-0.7px;">{{ subject }}</h1>
+              <p style="margin:0 0 29px;color:#4e5e75;font-size:15px;line-height:25px;font-weight:400;">{{ body|linebreaksbr }}</p>
+
+              <table class="responsive-button" role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 31px;">
+                <tr>
+                  <td align="center" bgcolor="#2469e8" style="background-color:#2469e8;border-radius:11px;">
+                    <a class="action-link" href="{{ action_url }}" target="_blank" style="display:inline-block;padding:16px 29px;border-radius:11px;background-color:#2469e8;color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:21px;font-weight:800;text-align:center;text-decoration:none;mso-padding-alt:0;">
+                      <!--[if mso]><i style="letter-spacing:29px;mso-font-width:-100%;mso-text-raise:24pt">&nbsp;</i><![endif]-->
+                      {{ action_label }}
+                      <!--[if mso]><i style="letter-spacing:29px;mso-font-width:-100%">&nbsp;</i><![endif]-->
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;border-top:1px solid #e6ebf2;">
+                <tr><td style="padding:25px 0 0;">
+                  <p style="margin:0 0 9px;font-size:12px;line-height:19px;font-weight:700;color:#4e5e75;">Button not working?</p>
+                  <p style="margin:0 0 2px;font-size:12px;line-height:20px;color:#67758a;">Copy the secure link below and paste it into your browser:</p>
+                  <p style="margin:0;font-size:12px;line-height:21px;overflow-wrap:anywhere;word-break:break-all;">
+                    <a href="{{ action_url }}" target="_blank" style="color:#1d58c5;text-decoration:underline;word-break:break-all;">{{ action_url }}</a>
+                  </p>
+                </td></tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td class="footer-cell" bgcolor="#f8fafc" style="padding:25px 44px;background-color:#f8fafc;border-top:1px solid #e6ebf2;">
+              <p style="margin:0 0 9px;color:#33445e;font-size:12px;line-height:20px;font-weight:700;">Your account. Your security.</p>
+              <p style="margin:0 0 16px;color:#69788d;font-size:12px;line-height:20px;">If you didn’t request this action, you can ignore this message. Never share login or password-reset links with anyone.</p>
+              <p style="margin:0;color:#8a96a7;font-size:11px;line-height:18px;">&copy; {% now "Y" %} {{ brand }}. Automated account notification — please do not reply.</p>
+            </td>
+          </tr>
+        </table>
+        <!--[if mso]></td></tr></table><![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
