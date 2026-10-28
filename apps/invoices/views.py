@@ -212,6 +212,15 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 class EWayBillViewSet(CompanyScopedModelViewSet):
     queryset = EWayBill.objects.select_related("invoice").all()
     serializer_class = EWayBillSerializer
+
+    @decorators.action(detail=False, methods=["get"], url_path="from-context")
+    def from_context(self, request):
+        """Authenticated workshop dispatch party used for new OUTWARD drafts."""
+        from .eway_validation import workshop_supply_party
+        return response.Response({
+            "from": workshop_supply_party(request.user.company, request.user.branch),
+            "branchId": str(request.user.branch.pk) if request.user.branch else "",
+        })
     action_permission_map = {
         "generate": "invoices.edit",
         "reset_draft": "invoices.edit",
@@ -246,7 +255,14 @@ class EWayBillViewSet(CompanyScopedModelViewSet):
         obj = self.get_object()
         if obj.number or obj.status not in {"Draft", "Ready for API"}:
             raise ValidationError({"status": "This E-Way Bill cannot be prepared again."})
-        validate_preparation(obj.payload or {})
+        payload = dict(obj.payload or {})
+        if payload.get("supplyType", "Outward") == "Outward":
+            from .eway_validation import workshop_supply_party
+            payload["from"] = workshop_supply_party(obj.company, obj.branch)
+        validate_preparation(payload)
+        if payload != (obj.payload or {}):
+            obj.payload = payload
+            obj.save(update_fields=["payload", "updated_at"])
         if obj.status == "Draft":
             obj.status = "Ready for API"
             obj.save(update_fields=["status", "updated_at"])
