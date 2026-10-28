@@ -224,7 +224,15 @@ class EWayBillViewSet(CompanyScopedModelViewSet):
     action_permission_map = {
         "generate": "invoices.edit",
         "reset_draft": "invoices.edit",
+        "pdf": "invoices.view",
     }
+
+    @decorators.action(detail=True, methods=["get"], url_path="pdf",
+                       renderer_classes=[JSONRenderer, InvoicePDFRenderer])
+    def pdf(self, request, pk=None):
+        """Tenant-scoped saved E-Way Bill PDF, with correct PDF Accept handling."""
+        from .eway_pdf import eway_pdf_response
+        return eway_pdf_response(self.get_object())
 
     def destroy(self, request, *args, **kwargs):
         obj = self.get_object()
