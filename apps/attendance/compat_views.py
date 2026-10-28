@@ -374,27 +374,28 @@ class CancelLeaveRequestView(APIView):
         obj.status="Cancelled"; obj.save(update_fields=["status","updated_at"])
         return response.Response(LeaveRequestSerializer(obj).data)
 
+def approval_review_fields(employee, reviewer, rule):
+    """Return UI hints only; ManagerApprovalDetailView still enforces policy."""
+    is_own=bool(employee.user_id and employee.user_id==reviewer.id)
+    blocked=is_own and not rule.allow_self_approval
+    return {
+        "canReview":not blocked,
+        "reviewBlockReason":(
+            "Your own request must be reviewed by another authorized manager."
+            if blocked else ""
+        ),
+    }
+
+
 class ManagerApprovalsView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.manage"
     def get(self,request):
         company=request.user.company
         rule=get_attendance_rule(company,request.user.branch)
-        def review_fields(employee):
-            # The POST endpoint remains authoritative. This simply tells the
-            # UI which buttons are unavailable to the logged-in reviewer.
-            is_own=bool(employee.user_id and employee.user_id==request.user.id)
-            blocked=is_own and not rule.allow_self_approval
-            return {
-                "canReview":not blocked,
-                "reviewBlockReason":(
-                    "Your own request must be reviewed by another authorized manager."
-                    if blocked else ""
-                ),
-            }
         rows=[]
         for x in PunchCorrection.objects.filter(company=company,status="Pending").select_related("employee__user"):
-            rows.append({"id":str(x.id),"type":"Punch Correction","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.attendance.date,**review_fields(x.employee)})
+            rows.append({"id":str(x.id),"type":"Punch Correction","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.attendance.date,**approval_review_fields(x.employee,request.user,rule)})
         for x in LeaveRequest.objects.filter(company=company,status="Pending").select_related("employee__user"):
             total_days=0.5 if x.half_day else max(1,(x.end_date-x.start_date).days+1)
             rows.append({
@@ -411,7 +412,7 @@ class ManagerApprovalsView(APIView):
                 "totalDays":total_days,
                 "halfDay":x.half_day,
                 "managerNote":x.manager_note,
-                **review_fields(x.employee),
+                **approval_review_fields(x.employee,request.user,rule),
             })
         for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee__user"):
             rows.append({
@@ -428,7 +429,7 @@ class ManagerApprovalsView(APIView):
                 "overtimeHours":round(x.minutes/60,2),
                 "rate":float(x.rate or 0),
                 "amount":float(x.amount or 0),
-                **review_fields(x.employee),
+                **approval_review_fields(x.employee,request.user,rule),
             })
         return response.Response(rows)
 
