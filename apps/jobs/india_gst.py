@@ -22,8 +22,7 @@ def gst_dropdown_presets():
         "cgst": list(GST_CGST_SGST_COMPONENT_PRESETS),
         "sgst": list(GST_CGST_SGST_COMPONENT_PRESETS),
         "igst": list(GST_IGST_PRESETS),
-        "intraTotal": [str(Decimal(value) * 2).rstrip("0").rstrip(".")
-                       for value in GST_CGST_SGST_COMPONENT_PRESETS],
+        "intraTotal": [str(int(Decimal(value) * 2)) for value in GST_CGST_SGST_COMPONENT_PRESETS],
     }
 
 CENT = Decimal("0.01")
