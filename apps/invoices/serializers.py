@@ -316,6 +316,11 @@ class EWayBillSerializer(serializers.ModelSerializer):
         allowed = {"invoiceId", "vehicle_no", "transporter_name",
                    "transporter_id", "distance_km", "payload"}
         raw = {k: v for k, v in data.items() if k in allowed}
+        # The manual E-Way Bill editor does not require a linked invoice.
+        # React historically sends invoiceId: ""; DRF UUIDField accepts
+        # None, not an empty string. Keep real UUIDs strictly validated.
+        if raw.get("invoiceId") == "":
+            raw["invoiceId"] = None
         payload = dict(self.instance.payload or {}) if self.instance else {}
         payload.update(dict(raw.get("payload") or {}))
         payload.update({k: v for k, v in data.items() if k not in allowed
