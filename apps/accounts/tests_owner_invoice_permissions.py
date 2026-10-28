@@ -45,7 +45,8 @@ class CompanyOwnerInvoicePermissionsTests(SimpleTestCase):
     ):
         self.assertFalse(user_has_permission(user_fixture(), "invoices.view"))
 
-    def test_nonowner_with_empty_role_cannot_view_invoices(self):
+    @patch("apps.credits.monthly_policy.billing_status", return_value={"blocked": False})
+    def test_nonowner_with_empty_role_cannot_view_invoices(self, _billing):
         self.assertFalse(user_has_permission(user_fixture(owner=False), "invoices.view"))
 
     def test_finalizing_invoice_does_not_automatically_require_stock_permission(self):
