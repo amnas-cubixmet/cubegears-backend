@@ -27,7 +27,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False, methods=["get"], url_path="gst-context")
     def gst_context(self, request):
-        from apps.jobs.india_gst import registration_state_diagnostics
+        from apps.jobs.india_gst import registration_state_diagnostics, gst_dropdown_presets
         company = request.user.company
         branch = request.user.branch
         gstin = str(company.gstin or "").strip().upper()
@@ -52,6 +52,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             "companyEmail": company.email,
             "invoiceType": "gst" if gstin else "regular",
             "gstRateOptions": gst_rate_options(),
+            "gstDropdownPresets": gst_dropdown_presets(),
         })
     @decorators.action(detail=False, methods=["post"], url_path="preview")
     def preview(self, request):
