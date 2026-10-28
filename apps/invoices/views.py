@@ -24,13 +24,22 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False, methods=["get"], url_path="gst-context")
     def gst_context(self, request):
-        from apps.jobs.india_gst import state_code
+        from apps.jobs.india_gst import registration_state_diagnostics
         company = request.user.company
+        branch = request.user.branch
         gstin = str(company.gstin or "").strip().upper()
+        registration = registration_state_diagnostics(company=company, branch=branch)
         return response.Response({
             "registered": bool(gstin),
             "gstin": gstin,
-            "supplierState": state_code(gstin[:2] if len(gstin) == 15 else ""),
+            "supplierState": registration["gstinStateCode"],
+            "branchId": str(branch.pk) if branch else "",
+            "branchName": str(branch.name) if branch else "",
+            "branchState": str(branch.state or "") if branch else "",
+            "supplyingState": registration["supplyingState"],
+            "supplyingStateCode": registration["supplyingStateCode"],
+            "stateSource": registration["stateSource"],
+            "registrationStateMismatch": registration["registrationStateMismatch"],
             "companyName": company.legal_name or company.name,
             "companyState": company.state,
             "companyAddress": company.address,

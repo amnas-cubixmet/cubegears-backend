@@ -36,6 +36,27 @@ def state_code(value):
     return STATE_NAMES.get(label.lower(), "")
 
 
+
+def registration_state_diagnostics(*, company, branch=None):
+    """Describe the effective supplying state's mismatch without weakening GST checks.
+
+    A blank branch.state inherits the company state, consistent with invoice
+    calculation. The company GSTIN remains the only registered seller identity.
+    """
+    gstin = str(getattr(company, "gstin", "") or "").strip().upper()
+    supplier_code = gstin[:2] if re.fullmatch(r"\d{2}[A-Z0-9]{13}", gstin) and gstin[:2] in STATE_CODES else ""
+    branch_value = str(getattr(branch, "state", "") or "").strip()
+    company_value = str(getattr(company, "state", "") or "").strip()
+    effective = branch_value or company_value
+    effective_code = state_code(effective)
+    return {
+        "gstinStateCode": supplier_code,
+        "supplyingState": effective,
+        "supplyingStateCode": effective_code,
+        "stateSource": "branch" if branch_value else "company",
+        "registrationStateMismatch": bool(supplier_code and effective_code and supplier_code != effective_code),
+    }
+
 def gst_context(*, company, branch, customer, config):
     if not isinstance(config, dict) or config.get("mode") not in {"gst", "non_gst"}:
         raise ValidationError({"gst": "Choose a valid GST billing mode."})
@@ -47,8 +68,8 @@ def gst_context(*, company, branch, customer, config):
     if not re.fullmatch(r"\d{2}[A-Z0-9]{13}", gstin) or gstin[:2] not in STATE_CODES:
         raise ValidationError({"gst": "Configure a valid 15-character workshop GSTIN in Company Settings."})
     supplier = gstin[:2]
-    branch_state = state_code(getattr(branch, "state", "") or company.state)
-    if branch_state and branch_state != supplier:
+    diagnostics = registration_state_diagnostics(company=company, branch=branch)
+    if diagnostics["registrationStateMismatch"]:
         raise ValidationError({"gst": "Workshop branch state differs from company GSTIN. Configure the supplying GST registration."})
     pos = state_code(config.get("placeOfSupply") or getattr(customer, "state", ""))
     if not pos:
