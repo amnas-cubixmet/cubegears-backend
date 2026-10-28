@@ -26,7 +26,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
     seller = serializers.JSONField(source="seller_snapshot", required=False)
     templateSnapshot = serializers.JSONField(source="template_snapshot", read_only=True)
     transportation = serializers.JSONField(source="transport", required=False)
-    taxMode = serializers.CharField(source="tax_mode", required=False)
+    # Django determines intra-state versus inter-state tax mode from supplier
+    # GST registration and legal place of supply. Clients must not set it.
+    taxMode = serializers.CharField(source="tax_mode", read_only=True)
     cgstRate = serializers.DecimalField(source="cgst_rate", max_digits=5, decimal_places=2, required=False)
     sgstRate = serializers.DecimalField(source="sgst_rate", max_digits=5, decimal_places=2, required=False)
     igstRate = serializers.DecimalField(source="igst_rate", max_digits=5, decimal_places=2, required=False)
