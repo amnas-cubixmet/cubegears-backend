@@ -854,16 +854,57 @@ class JobViewSet(CompanyScopedModelViewSet):
         job = self.get_object()  # Company-scoped; never expose another workshop's records.
         return response.Response(JobActivitySerializer(job.activities.select_related('actor'), many=True).data)
 
-    @decorators.action(detail=True,methods=["post"],url_path="issue-part")
+    @decorators.action(detail=True, methods=["post"], url_path="issue-part")
     @transaction.atomic
-    def issue_part(self,request,pk=None):
-        from apps.inventory.models import StockItem,StockMovement
-        job=self.get_object(); item=StockItem.objects.select_for_update().get(pk=request.data.get("item"),company=job.company)
-        qty=Decimal(str(request.data.get("quantity",0)))
-        if qty<=0 or item.available_quantity<qty: raise ValidationError("Insufficient stock.")
-        item.on_hand=item.on_hand-qty; item.save(update_fields=["on_hand","updated_at"])
-        part=JobPart.objects.create(company=job.company,branch=job.branch,job=job,item=item,quantity=qty,unit_price=item.selling_price,issued=True)
-        StockMovement.objects.create(company=job.company,branch=job.branch,item=item,movement_type="job_issue",quantity=-qty,unit_cost=item.cost_price,reference=job.job_number,job=job,created_by=request.user)
+    def issue_part(self, request, pk=None):
+        """Atomic Job Card issue: validate branch, quantity and available stock.
+
+        Selecting stock in Work is read-only; only this endpoint deducts stock,
+        creates the issued JobPart and its immutable stock ledger movement.
+        """
+        from decimal import InvalidOperation
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.inventory.models import StockItem, StockMovement
+
+        job = self.get_object()  # Company scoped; permissions also require jobs.edit + stock.edit.
+        item_id = request.data.get("item")
+        if not item_id:
+            raise ValidationError({"item": "Select a valid stock item."})
+        try:
+            qty = Decimal(str(request.data.get("quantity", "")))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValidationError({"quantity": "Enter a valid numeric quantity."})
+        if (not qty.is_finite() or qty <= 0 or
+                qty.as_tuple().exponent < -2 or qty > Decimal("99999999.99")):
+            raise ValidationError({
+                "quantity": "Enter a positive quantity with at most two decimal places."
+            })
+        try:
+            item = StockItem.objects.select_for_update().get(
+                pk=item_id, company=job.company
+            )
+        except (StockItem.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+            raise ValidationError({"item": "Stock item not found in this workshop."})
+
+        expected_branch_id = job.branch_id or getattr(request.user, "branch_id", None)
+        if item.branch_id and item.branch_id != expected_branch_id:
+            raise ValidationError({"item": "This stock item belongs to another branch."})
+        if item.available_quantity < qty:
+            raise ValidationError({"quantity": "Insufficient available stock."})
+
+        item.on_hand -= qty
+        item.save(update_fields=["on_hand", "updated_at"])
+        part = JobPart.objects.create(
+            company=job.company, branch=job.branch or request.user.branch,
+            job=job, item=item, quantity=qty, unit_price=item.selling_price, issued=True,
+        )
+        StockMovement.objects.create(
+            company=job.company, branch=item.branch or job.branch or request.user.branch,
+            item=item, movement_type="job_issue", quantity=-qty,
+            unit_cost=item.cost_price, reference=job.job_number,
+            job=job, created_by=request.user,
+        )
         record_job_event(job, request.user, "Part Issued",
                          f"{item.name} × {qty}", {"partId": str(part.pk)})
-        return response.Response(JobPartSerializer(part).data,status=status.HTTP_201_CREATED)
+        return response.Response(JobPartSerializer(part).data,
+                                 status=status.HTTP_201_CREATED)
