@@ -23,7 +23,7 @@ class RequestedGstRateTests(SimpleTestCase):
         self.assertEqual(gst_dropdown_presets(), {
             "cgst": ["2.5", "5", "9", "18"],
             "sgst": ["2.5", "5", "9", "18"],
-            "igst": ["5"],
+            "igst": ["5", "18"],
             "intraTotal": ["5", "10", "18", "36"],
         })
 
