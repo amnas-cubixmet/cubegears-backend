@@ -2,7 +2,8 @@
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import User
-from apps.accounts.permissions import user_has_permission
+from apps.accounts.permissions import IsCompanyAdmin, user_has_permission
+from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.companies.models import Company
 from apps.roles.models import Role
 
@@ -66,3 +67,32 @@ class CompanyOwnerPermissionTests(TestCase):
         self.company.save(update_fields=["require_paid_features"])
         self.assertTrue(user_has_permission(self.owner, "settings.manage"))
         self.assertFalse(user_has_permission(self.owner, "invoices.view"))
+
+    def test_company_owner_has_all_authorized_tenant_role_codes(self):
+        # No special routes need to guess owner authority from a role name.
+        # The entitlement layer still governs paid module access.
+        for code in TENANT_PERMISSIONS:
+            with self.subTest(code=code):
+                self.assertTrue(user_has_permission(self.owner, code))
+
+    def test_owner_keeps_company_role_grants_if_legacy_role_json_is_malformed(self):
+        self.role.permissions = {"legacy_permissions": ["dashboard.view"]}
+        self.role.save(update_fields=["permissions"])
+        self.assertTrue(user_has_permission(self.owner, "staff.edit"))
+        self.assertTrue(user_has_permission(self.owner, "settings.manage"))
+        self.assertTrue(user_has_permission(self.owner, "billing.view"))
+        self.assertFalse(user_has_permission(self.staff, "staff.edit"))
+
+    def test_platform_superuser_is_not_tenant_company_admin(self):
+        request = type("Request", (), {"user": self.platform})()
+        self.assertFalse(IsCompanyAdmin().has_permission(request, None))
+        request.user = self.owner
+        self.assertTrue(IsCompanyAdmin().has_permission(request, None))
+
+    def test_super_admin_role_name_without_verified_ownership_is_not_owner(self):
+        self.role.code = "SUPER_ADMIN"
+        self.role.permissions = ["*"]
+        self.role.save(update_fields=["code", "permissions"])
+        self.assertFalse(user_has_permission(self.staff, "billing.view"))
+        self.assertFalse(user_has_permission(self.staff, "company.manage"))
+        self.assertTrue(user_has_permission(self.owner, "billing.view"))
