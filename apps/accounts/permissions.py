@@ -104,6 +104,12 @@ def user_has_permission(user, permission_code):
         if billing_status(user.company)['blocked']:
             return False
 
+    # Company administration cannot be delegated by assigning the system
+    # SUPER_ADMIN wildcard role to another employee. The owner identity is
+    # the Company.owner_id relationship, not a role name or "*" claim.
+    if permission_code == "company.manage" and not is_company_owner(user):
+        return False
+
     verified_owner = is_company_owner(user)
     permissions = role.permissions or []
     # A verified owner does not lose company RBAC just because an old role
