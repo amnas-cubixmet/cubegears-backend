@@ -57,6 +57,7 @@ class InvoiceItem(models.Model):
     purchase_price=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     rate=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     tax_rate=models.DecimalField(max_digits=5,decimal_places=2,default=Decimal("0"))
+    tax_choice=models.CharField(max_length=16,blank=True,default="")
     discount=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
     stock_item=models.ForeignKey("inventory.StockItem",on_delete=models.SET_NULL,null=True,blank=True)
 
