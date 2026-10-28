@@ -1,26 +1,37 @@
-"""Workshop GST dropdown presets shared by invoice and E-Way Bill APIs.
+"""GST rate dropdown presets for workshop billing.
 
-Rates shown here are *choices requested for the workshop UI*, not a claim that
-all goods/services have these statutory rates. Backend tax arithmetic uses each
-line's combined GST percentage: 9% CGST + 9% SGST = 18% total.
-The duplicate 'IGST 5%' entry in the UI requirements is intentionally deduped.
-Existing invoices/estimates may retain other historic classified rates.
+Selectable labels are distinct. A CGST/SGST choice expresses its corresponding
+half of a paired in-state rate; Django stores the *total* percentage for each
+line (e.g. CGST 9% => total 18%, applied as CGST 9% + SGST 9%). IGST 18%
+stores total 18%. Tax jurisdiction is still determined from legal states.
+These are UI presets only, not a claim about statutory rates for every HSN/SAC.
 """
+from decimal import Decimal
 
 CGST_COMPONENT_RATES = ("2.5", "5", "9", "18")
 SGST_COMPONENT_RATES = CGST_COMPONENT_RATES
-IGST_RATES = ("5",)
+IGST_RATES = ("5", "18")
 
 
 def gst_rate_options():
-    """Return select options keyed by the GST jurisdiction mode."""
-    return {
-        "cgst_sgst": [
-            {
-                "value": str(int(float(component) * 2)) if float(component) * 2 == int(float(component) * 2) else str(float(component) * 2),
-                "label": f"CGST {component}% + SGST {component}% = {float(component) * 2:g}%",
-            }
-            for component in CGST_COMPONENT_RATES
-        ],
-        "igst": [{"value": rate, "label": f"IGST {rate}%"} for rate in IGST_RATES],
-    }
+    """Exactly 10 visibly distinct options in CGST, SGST, IGST order."""
+    options = []
+    for component, rates in (("cgst", CGST_COMPONENT_RATES),
+                             ("sgst", SGST_COMPONENT_RATES)):
+        for rate in rates:
+            combined = Decimal(rate) * 2
+            options.append({
+                "value": f"{component}:{rate}",
+                "label": f"{component.upper()} {rate}%",
+                "totalRate": format(combined, "f").rstrip("0").rstrip(".")
+                             if "." in format(combined, "f") else format(combined, "f"),
+                "taxMode": "cgst_sgst",
+            })
+    for rate in IGST_RATES:
+        options.append({
+            "value": f"igst:{rate}",
+            "label": f"IGST {rate}%",
+            "totalRate": rate,
+            "taxMode": "igst",
+        })
+    return options
