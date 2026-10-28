@@ -104,14 +104,24 @@ def user_has_permission(user, permission_code):
         if billing_status(user.company)['blocked']:
             return False
 
+    verified_owner = is_company_owner(user)
     permissions = role.permissions or []
-    if not isinstance(permissions, list) or any(not isinstance(code, str) for code in permissions):
+    # A verified owner does not lose company RBAC just because an old role
+    # catalog contains invalid grants. Staff still fail closed. This never
+    # bypasses module purchases, billing holds, tenant boundaries or policy.
+    if not verified_owner and (
+        not isinstance(permissions, list)
+        or any(not isinstance(code, str) for code in permissions)
+    ):
         return False
     # The verified company owner is its tenant administrator. An accidental
     # restrictive role edit must not lock the owner out of their own company.
     # This bypasses only role grants, NEVER feature entitlements, overdue
     # restrictions, tenant boundaries, or ownership-only billing checks.
-    role_allows = is_company_owner(user) or "*" in permissions or permission_code in permissions
+    role_allows = verified_owner or (
+        isinstance(permissions, list)
+        and ("*" in permissions or permission_code in permissions)
+    )
     if not role_allows:
         return False
     if not permission_code.startswith("panel."):
@@ -219,9 +229,8 @@ class IsCompanyAdmin(BasePermission):
     def has_permission(self, request, view):
         if not request.user or not request.user.is_authenticated or not request.user.is_active:
             return False
-        if request.user.is_superuser:
-            return True
-
+        # Being a platform superuser is not a tenant-company credential.
+        # Only a company-scoped role/verified owner can manage that company.
         return user_has_permission(request.user, "company.manage")
 
 
