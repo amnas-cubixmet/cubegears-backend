@@ -321,6 +321,15 @@ class EWayBillSerializer(serializers.ModelSerializer):
         payload.update({k: v for k, v in data.items() if k not in allowed
                         and k not in {"number", "id", "status", "company", "branch"}})
         raw["payload"] = strip_official_fields(payload)
+        if raw["payload"].get("supplyType", "Outward") == "Outward":
+            from .eway_validation import workshop_supply_party
+            user = getattr(self.context.get("request"), "user", None)
+            company = self.instance.company if self.instance else getattr(user, "company", None)
+            branch = self.instance.branch if self.instance else getattr(user, "branch", None)
+            if company is None:
+                raise serializers.ValidationError({"from": "Workshop account is unavailable."})
+            # Ignore forged client "from" values; use trusted tenant profile.
+            raw["payload"]["from"] = workshop_supply_party(company, branch)
         transport = raw["payload"].get("transport") or {}
         if not isinstance(transport, dict):
             raise serializers.ValidationError({"transport": "Invalid transport object."})
