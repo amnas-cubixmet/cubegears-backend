@@ -10,6 +10,7 @@ import re
 from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from apps.jobs.india_gst import STATE_CODES
+from .gst_rate_options import find_gst_choice
 
 GSTIN = re.compile(r"^[0-9]{2}[A-Z0-9]{13}$")
 STATE = re.compile(r"^[0-9]{2}$")
@@ -151,6 +152,22 @@ def validate_preparation(payload):
             raise ValidationError({"items": f"Use either IGST or CGST/SGST for item {index}, not both."})
         if tax_rates[0] != tax_rates[1]:
             raise ValidationError({"items": f"CGST and SGST rates must match for item {index}."})
+        selected_label = str(row.get("gstChoice") or "").strip()
+        if selected_label:
+            selection = find_gst_choice(selected_label)
+            expected = (tax_rates[0] + tax_rates[1]) if selection and selection["taxMode"] == "cgst_sgst" else tax_rates[2]
+            if not selection or Decimal(selection["totalRate"]) != expected:
+                raise ValidationError({
+                    "items": f"Item {index}: selected GST label does not match the GST rates."
+                })
+            from_code = str((payload.get("from") or {}).get("stateCode") or "")
+            to_code = str((payload.get("to") or {}).get("stateCode") or "")
+            if from_code in STATE_CODES and to_code in STATE_CODES:
+                mode = "cgst_sgst" if from_code == to_code else "igst"
+                if selection["taxMode"] != mode:
+                    raise ValidationError({
+                        "items": f"Item {index}: selected GST type conflicts with supply states."
+                    })
 
     transport = payload.get("transport") or {}
     if not isinstance(transport, dict):

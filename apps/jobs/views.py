@@ -16,6 +16,7 @@ from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,J
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status
 from .india_gst import gst_context, calculate_tax, gst_rate
+from apps.invoices.gst_rate_options import find_gst_choice
 
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
@@ -630,6 +631,16 @@ class JobViewSet(CompanyScopedModelViewSet):
             }
             if "taxRate" in row and row["taxRate"] not in (None, ""):
                 line["taxRate"] = str(gst_rate(row["taxRate"]))
+            selected_label = str(row.get("taxChoice") or "").strip()
+            if selected_label:
+                selection = find_gst_choice(selected_label)
+                if not selection or "taxRate" not in line or (
+                    Decimal(selection["totalRate"]) != Decimal(line["taxRate"])
+                ):
+                    raise ValidationError({
+                        "taxChoice": "Selected GST label does not match the line's total rate."
+                    })
+                line["taxChoice"] = selected_label
             hsn = str(row.get("hsnSac") or "").strip()
             if len(hsn) > 20 or (hsn and not hsn.isdigit()):
                 raise ValidationError({"hsnSac": "HSN/SAC must contain up to 20 digits."})
@@ -667,6 +678,11 @@ class JobViewSet(CompanyScopedModelViewSet):
                 for line in items:
                     if "taxRate" not in line:
                         raise ValidationError({"taxRate": "Set a classified GST rate for every work and part item."})
+                    selection = find_gst_choice(line.get("taxChoice", ""))
+                    if selection and selection["taxMode"] != context["taxMode"]:
+                        raise ValidationError({
+                            "taxChoice": "Selected GST type does not match the legal Place of Supply."
+                        })
             calculated = calculate_tax(items, discount, context["taxMode"])
             items = calculated["lines"]
             tax = calculated["tax"]

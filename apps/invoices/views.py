@@ -11,6 +11,7 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import Invoice,EWayBill
 from apps.jobs.audit import record_job_event
 from .serializers import InvoiceSerializer,EWayBillSerializer
+from .gst_rate_options import gst_rate_options
 
 class InvoiceViewSet(CompanyScopedModelViewSet):
     queryset=Invoice.objects.select_related("customer","vehicle","job").prefetch_related("items").all()
@@ -50,7 +51,8 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             "companyPhone": company.phone,
             "companyEmail": company.email,
             "invoiceType": "gst" if gstin else "regular",
-            "gstRatePresets": gst_dropdown_presets(),
+            "gstRateOptions": gst_rate_options(),
+            "gstDropdownPresets": gst_dropdown_presets(),
         })
     @decorators.action(detail=False, methods=["post"], url_path="preview")
     def preview(self, request):
@@ -220,6 +222,7 @@ class EWayBillViewSet(CompanyScopedModelViewSet):
         from .eway_validation import workshop_supply_party
         return response.Response({
             "from": workshop_supply_party(request.user.company, request.user.branch),
+            "gstRateOptions": gst_rate_options(),
             "branchId": str(request.user.branch.pk) if request.user.branch else "",
         })
     action_permission_map = {

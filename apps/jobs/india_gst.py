@@ -14,7 +14,7 @@ from rest_framework.exceptions import ValidationError
 # Requested dropdown presets, NOT a substitute for HSN/SAC classification.
 # The API continues to accept valid historical/legally applicable percentages.
 GST_CGST_SGST_COMPONENT_PRESETS = ("2.5", "5", "9", "18")
-GST_IGST_PRESETS = ("5",)  # repeated 5% entry consolidated
+GST_IGST_PRESETS = ("5", "18")  # 10-value GST dropdown includes two IGST rates
 
 def gst_dropdown_presets():
     """Read-only API metadata: component rates stay distinct from total rate."""

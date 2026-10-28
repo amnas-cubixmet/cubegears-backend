@@ -3,6 +3,8 @@ from apps.customers.models import Customer
 from apps.vehicles.models import Vehicle
 from apps.jobs.models import Job
 from .models import Invoice, InvoiceItem, EWayBill
+from .gst_rate_options import find_gst_choice
+from decimal import Decimal
 
 class InvoiceItemSerializer(serializers.ModelSerializer):
     type = serializers.CharField(source="item_type", required=False)
@@ -10,6 +12,7 @@ class InvoiceItemSerializer(serializers.ModelSerializer):
     qty = serializers.DecimalField(source="quantity", max_digits=12, decimal_places=2, required=False)
     purchasePrice = serializers.DecimalField(source="purchase_price", max_digits=12, decimal_places=2, required=False)
     taxRate = serializers.DecimalField(source="tax_rate", max_digits=5, decimal_places=2, required=False)
+    taxChoice = serializers.CharField(source="tax_choice", max_length=16, required=False, allow_blank=True)
     inventoryId = serializers.UUIDField(source="stock_item_id", required=False, allow_null=True)
 
     class Meta:
@@ -75,10 +78,36 @@ class InvoiceSerializer(serializers.ModelSerializer):
             attrs["invoice_type"] = expected_type
         rows = attrs.get("items")
         if invoice_type == "gst" and rows is not None:
+            # The label remains distinct, but only the combined GST percentage
+            # is used in Decimal calculation. Never trust a bare CGST half.
+            customer = attrs.get("customer") or (
+                self.instance.customer_snapshot if self.instance else {}
+            ) or {}
+            from apps.jobs.india_gst import state_code
+            supplier_code = state_code(str(company.gstin or "")[:2])
+            destination_code = state_code(
+                customer.get("placeOfSupply") or customer.get("stateCode") or
+                customer.get("state") or ""
+            ) if isinstance(customer, dict) else ""
+            jurisdiction = (
+                "cgst_sgst" if supplier_code == destination_code else "igst"
+            ) if supplier_code and destination_code else None
             for index, row in enumerate(rows, 1):
                 if "tax_rate" not in row:
                     raise serializers.ValidationError({
                         "items": f"Line {index} must specify the classified GST percentage (0% only if legally applicable)."
+                    })
+                choice_code = row.get("tax_choice") or ""
+                if not choice_code:
+                    continue  # Existing clients/historic classified rates still work.
+                choice = find_gst_choice(choice_code)
+                if not choice or Decimal(choice["totalRate"]) != row["tax_rate"]:
+                    raise serializers.ValidationError({
+                        "items": f"Line {index}: selected GST label does not match its taxable rate."
+                    })
+                if jurisdiction and choice["taxMode"] != jurisdiction:
+                    raise serializers.ValidationError({
+                        "items": f"Line {index}: selected GST type does not match Place of Supply."
                     })
         return attrs
 
