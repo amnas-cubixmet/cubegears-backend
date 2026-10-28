@@ -4,6 +4,8 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.renderers import JSONRenderer
+from .renderers import InvoicePDFRenderer
 from apps.accounts.permissions import user_has_permission
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Invoice,EWayBill
@@ -92,7 +94,8 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
             qs = qs.filter(Q(job_id=job_id) | Q(source_job_id=str(job_id)))
         return qs
 
-    @decorators.action(detail=True, methods=["get"], url_path="pdf")
+    @decorators.action(detail=True, methods=["get"], url_path="pdf",
+                       renderer_classes=[JSONRenderer, InvoicePDFRenderer])
     def pdf(self, request, pk=None):
         # get_object enforces the same company scoping as invoice detail.
         # invoices.view is required, even for a finalized invoice.
