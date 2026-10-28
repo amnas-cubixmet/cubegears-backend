@@ -17,9 +17,15 @@ class CompanyFeaturePricingLogTests(TestCase):
     def setUp(self):
         self.company = Company.objects.create(name="Alpha Workshop", slug="alpha-workshop")
         self.other = Company.objects.create(name="Beta Workshop", slug="beta-workshop")
-        group = FeatureGroup.objects.create(key="service-modules", label="Workshop Modules")
-        self.feature = PlanFeature.objects.create(
-            key="attendance", label="Attendance & Punches", group=group,
+        group, _ = FeatureGroup.objects.get_or_create(
+            key="service-modules", defaults={"label": "Workshop Modules"},
+        )
+        # The migration catalog already publishes built-in modules such as
+        # attendance. Reuse that catalog row so this fixture stays valid after
+        # migrations seed the production feature registry.
+        self.feature, _ = PlanFeature.objects.get_or_create(
+            key="attendance",
+            defaults={"label": "Attendance & Punches", "group": group},
         )
         self.bundle = FeatureBundle.objects.create(
             key="attendance-paid", name="Attendance & Punches",
