@@ -29,6 +29,53 @@ def strip_official_fields(payload):
             if key not in READONLY_PORTAL_FIELDS}
 
 
+
+def workshop_supply_party(company, branch=None):
+    """Build the OUTWARD dispatch address from server-owned company/branch data.
+
+    Branch address/city/PIN take precedence. No hard-coded state/GSTIN or
+    client-provided "from" address is trusted for outward E-Way Bill drafts.
+    """
+    from apps.jobs.india_gst import state_code
+    branch_address = str(getattr(branch, "address", "") or "").strip()
+    branch_city = str(getattr(branch, "city", "") or "").strip()
+    branch_pin = str(getattr(branch, "pincode", "") or "").strip()
+    effective_state = str(getattr(branch, "state", "") or getattr(company, "state", "") or "")
+    gstin = str(getattr(company, "gstin", "") or "").strip().upper() or "URP"
+    return {
+        "gstin": gstin,
+        "tradeName": str(getattr(company, "name", "") or getattr(company, "legal_name", "") or "").strip(),
+        "address": branch_address or str(getattr(company, "address", "") or "").strip(),
+        "place": branch_city or str(getattr(company, "city", "") or "").strip(),
+        "pincode": branch_pin or str(getattr(company, "pincode", "") or "").strip(),
+        "stateCode": state_code(effective_state),
+    }
+
+
+def validate_tax_geography(payload):
+    """Prevent incompatible CGST/SGST + IGST on ordinary domestic supplies.
+
+    Special transaction classes (exports, imports, SEZ etc.) may require
+    separate treatment; do not infer such exceptions from user-entered rates.
+    """
+    if payload.get("subSupplyType") not in {"Supply", "Sales Return"}:
+        return
+    from_code = str((payload.get("from") or {}).get("stateCode") or "")
+    to_code = str((payload.get("to") or {}).get("stateCode") or "")
+    if from_code not in STATE_CODES or to_code not in STATE_CODES:
+        return
+    for index, item in enumerate(payload.get("items") or [], 1):
+        if not isinstance(item, dict):
+            continue
+        cgst = _money(item.get("cgstRate") or "0", "cgstRate")
+        sgst = _money(item.get("sgstRate") or "0", "sgstRate")
+        igst = _money(item.get("igstRate") or "0", "igstRate")
+        if from_code == to_code and igst:
+            raise ValidationError({"items": f"Item {index}: intra-state supply must use CGST and SGST, not IGST."})
+        if from_code != to_code and (cgst or sgst):
+            raise ValidationError({"items": f"Item {index}: inter-state supply must use IGST, not CGST/SGST."})
+
+
 def validate_party(name, value):
     if not isinstance(value, dict):
         raise ValidationError({name: "Supply party details are required."})
@@ -124,3 +171,4 @@ def validate_preparation(payload):
         raise ValidationError({"transport": "Transport document number is required for non-road movement."})
     _money(payload.get("otherAmount") or "0", "otherAmount")
     _money(payload.get("cessNonAdvolAmount") or "0", "cessNonAdvolAmount")
+    validate_tax_geography(payload)
