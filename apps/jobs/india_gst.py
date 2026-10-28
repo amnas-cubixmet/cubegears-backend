@@ -11,6 +11,21 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 from rest_framework.exceptions import ValidationError
 
+# Requested dropdown presets, NOT a substitute for HSN/SAC classification.
+# The API continues to accept valid historical/legally applicable percentages.
+GST_CGST_SGST_COMPONENT_PRESETS = ("2.5", "5", "9", "18")
+GST_IGST_PRESETS = ("5",)  # repeated 5% entry consolidated
+
+def gst_dropdown_presets():
+    """Read-only API metadata: component rates stay distinct from total rate."""
+    return {
+        "cgst": list(GST_CGST_SGST_COMPONENT_PRESETS),
+        "sgst": list(GST_CGST_SGST_COMPONENT_PRESETS),
+        "igst": list(GST_IGST_PRESETS),
+        "intraTotal": [str(Decimal(value) * 2).rstrip("0").rstrip(".")
+                       for value in GST_CGST_SGST_COMPONENT_PRESETS],
+    }
+
 CENT = Decimal("0.01")
 STATE_NAMES = {
     "jammu and kashmir": "01", "himachal pradesh": "02", "punjab": "03",
