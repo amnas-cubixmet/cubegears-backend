@@ -35,3 +35,8 @@ def gst_rate_options():
             "taxMode": "igst",
         })
     return options
+
+
+def find_gst_choice(value):
+    """Look up the exact menu choice, or None for legacy invoice tax rates."""
+    return next((row for row in gst_rate_options() if row["value"] == value), None)
