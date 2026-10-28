@@ -2,7 +2,6 @@
 from types import SimpleNamespace
 from uuid import UUID
 from django.test import SimpleTestCase
-from rest_framework.exceptions import ValidationError
 
 from apps.invoices.serializers import EWayBillSerializer
 
