@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import Job,JobEstimate,JobPart,JobPhoto,JobActivity
 from .complaint_status import complaint_status_for_job, normalize_complaints
 from .india_gst import state_code
+from apps.invoices.gst_rate_options import gst_rate_options
 
 class JobEstimateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -39,6 +40,7 @@ class JobSerializer(serializers.ModelSerializer):
             "supplierState": supplier,
             "placeOfSupply": recipient or supplier,
             "customerGstin": obj.customer.gstin or "",
+            "gstRateOptions": gst_rate_options(),
         }
 
     partsWorkflow=serializers.JSONField(source="parts_workflow",read_only=True)
