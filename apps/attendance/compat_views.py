@@ -414,13 +414,16 @@ class ManagerApprovalsView(APIView):
                 "managerNote":x.manager_note,
                 **approval_review_fields(x.employee,request.user,rule),
             })
-        for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee__user"):
+        for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee__user","employee__branch"):
             rows.append({
                 "id":str(x.id),
                 "type":"Overtime",
                 "staffId":x.employee.employee_code,
                 "employeeId":str(x.employee_id),
                 "staffName":x.employee.name,
+                "branchId":str(x.employee.branch_id or ""),
+                "branchName":x.employee.branch.name if x.employee.branch else "No Branch",
+                "payrollMonth":x.payroll_month or x.date.strftime("%Y-%m"),
                 "status":x.status,
                 "reason":x.reason,
                 "date":x.date,
