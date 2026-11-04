@@ -166,6 +166,17 @@ class WhatsAppLogsView(APIView):
 class WhatsAppCustomerPreferenceView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def get(self, request, customer_id):
+        _manage(request)
+        customer = get_object_or_404(Customer, pk=customer_id, company=request.user.company)
+        preference = CustomerNotificationPreference.objects.filter(
+            customer=customer, company=request.user.company,
+        ).first()
+        return Response({
+            "optIn": bool(preference and preference.whatsapp_opt_in),
+            "source": preference.consent_source if preference and preference.whatsapp_opt_in else "",
+        })
+
     def post(self, request, customer_id):
         _manage(request)
         customer = get_object_or_404(Customer, pk=customer_id, company=request.user.company)
@@ -182,6 +193,12 @@ class WhatsAppCustomerPreferenceView(APIView):
         preference.opted_in_at = timezone.now() if consent else None
         preference.opted_out_at = None if consent else timezone.now()
         preference.save()
+        if consent:
+            from django.db import transaction
+            transaction.on_commit(lambda: queue_customer_notification(
+                customer, "tracking_link",
+                f"consent:{customer.pk}:{preference.opted_in_at.isoformat()}",
+            ))
         return Response({"optIn":consent})
 
 
