@@ -192,6 +192,12 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
     owner_name = serializers.CharField(max_length=150)
     mobile = serializers.CharField(max_length=30)
     email = serializers.EmailField(required=False, allow_blank=True)
+    whatsapp_consent = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('whatsapp_consent'):
+            raise serializers.ValidationError({'whatsapp_consent': 'Agree to receive the password setup link through official WhatsApp, or supply an email.'})
+        return attrs
 
     def validate_mobile(self, value):
         return normalize_phone(value)
