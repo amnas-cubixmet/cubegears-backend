@@ -97,6 +97,16 @@ class MobileStaffOnboardingTests(TestCase):
         first = self.create_staff()
         employee = Employee.objects.get(pk=first.data["id"])
         old = first.data["setupLink"].rsplit("/",1)[-1]
+        # One-minute repeat submissions are idempotent.
+        repeat = self.admin.post(f"/api/v1/employees/{employee.pk}/invite",{},format="json")
+        self.assertEqual(repeat.status_code, 200)
+        self.assertEqual(repeat.data["setupLink"], first.data["setupLink"])
+        self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), 1)
+        # Once cooldown passes, an explicit resend rotates and revokes the old token.
+        current = StaffPasswordInvitation.objects.get(user=employee.user)
+        StaffPasswordInvitation.objects.filter(pk=current.pk).update(
+            created_at=timezone.now() - timedelta(seconds=70),
+        )
         new = self.admin.post(f"/api/v1/employees/{employee.pk}/invite",{},format="json")
         self.assertEqual(new.status_code,200,new.data)
         self.assertNotEqual(new.data["setupLink"],first.data["setupLink"])
