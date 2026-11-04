@@ -71,3 +71,20 @@ class PunchLocationPolicyTests(SimpleTestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertTrue(serializer.validated_data["location_required"])
         self.assertTrue(serializer.validated_data["location_tracking_enabled"])
+
+    def test_selected_place_name_is_saved_as_attendance_rule_metadata(self):
+        rule = AttendanceRule()
+        serializer = AttendanceRuleSerializer(rule, data={
+            'punchLocationMode': 'workshop',
+            'workshopLocationName': 'Kozhikode Workshop, Kerala, India',
+            'workshopLatitude': 11.25,
+            'workshopLongitude': 75.8,
+            'punchRadiusMeters': 150,
+        },partial=True)
+        self.assertTrue(serializer.is_valid(),serializer.errors)
+        self.assertEqual(serializer.validated_data['workshop_location_name'],'Kozhikode Workshop, Kerala, India')
+
+    def test_old_rules_without_place_name_remain_compatible(self):
+        rule = AttendanceRule()
+        self.assertEqual(rule.workshop_location_name,'')
+        self.assertEqual(AttendanceRuleSerializer(rule).data['workshopLocationName'],'')

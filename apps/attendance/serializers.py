@@ -89,6 +89,7 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     locationRequired = serializers.BooleanField(source="location_required", required=False)
     locationTrackingEnabled = serializers.BooleanField(source="location_tracking_enabled", required=False)
     punchLocationMode = serializers.ChoiceField(source="punch_location_mode",choices=["anywhere","workshop"],required=False)
+    workshopLocationName = serializers.CharField(source="workshop_location_name",required=False,allow_blank=True,max_length=255,trim_whitespace=True)
     workshopLatitude = serializers.FloatField(source="workshop_latitude",required=False,allow_null=True,min_value=-90,max_value=90)
     workshopLongitude = serializers.FloatField(source="workshop_longitude",required=False,allow_null=True,min_value=-180,max_value=180)
     punchRadiusMeters = serializers.IntegerField(source="punch_radius_meters",required=False,min_value=50,max_value=5000)

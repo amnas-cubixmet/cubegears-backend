@@ -109,6 +109,7 @@ class AttendanceRule(CompanyOwnedModel):
     location_required=models.BooleanField(default=False)
     location_tracking_enabled=models.BooleanField(default=False)
     punch_location_mode=models.CharField(max_length=16,default="anywhere")
+    workshop_location_name=models.CharField(max_length=255,blank=True,default="")
     workshop_latitude=models.FloatField(null=True,blank=True)
     workshop_longitude=models.FloatField(null=True,blank=True)
     punch_radius_meters=models.PositiveIntegerField(default=100)
