@@ -6,7 +6,6 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User, StaffPasswordInvitation
 from apps.accounts.phone import normalize_phone
-from apps.accounts.staff_setup import issue_invitation, invitation_url
 from apps.companies.models import Company
 from apps.employees.models import Employee
 from apps.roles.models import Role
