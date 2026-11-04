@@ -141,6 +141,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
     permission_prefix="staff"
     action_permission_map={
         "toggle_account": "staff.edit",
+        "login_access": "staff.edit",
         "invite": "staff.edit",
     }
 
@@ -449,6 +450,40 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             request.user,
         )
         return response.Response(self.get_serializer(obj).data)
+
+    @decorators.action(detail=True, methods=["patch"], url_path="login-access")
+    def login_access(self, request, pk=None):
+        if not user_has_permission(request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can change staff login access.")
+        enabled = request.data.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValidationError({"enabled":"Provide a boolean enabled value."})
+        with transaction.atomic():
+            employee = self.get_object()
+            if employee.user_id == request.user.pk or (
+                employee.user and (employee.user.is_superuser or employee.user.is_staff or
+                                   (employee.user.role and employee.user.role.is_system))
+            ):
+                raise PermissionDenied("Owner and platform account login cannot be changed here.")
+            if not employee.user:
+                if not enabled:
+                    return response.Response(self.get_serializer(employee).data)
+                employee.user = self._ensure_login_user(employee)
+            if enabled and employee.status not in {"Active", "Probation", "Notice Period"}:
+                raise ValidationError({"status":"Activate the employee before enabling login."})
+            if enabled and not employee.user.is_active:
+                enforce_user_limit(request.user.company)
+            employee.user.is_active = enabled
+            employee.user.save(update_fields=["is_active", "updated_at"])
+            if not enabled:
+                from apps.accounts.models import StaffPasswordInvitation
+                StaffPasswordInvitation.objects.filter(
+                    user=employee.user,used_at__isnull=True,
+                    invalidated_at__isnull=True,
+                ).update(invalidated_at=__import__("django.utils.timezone",fromlist=["now"]).now())
+            _record_activity(employee, "Staff Login Access Changed",
+                             "Enabled" if enabled else "Disabled", request.user)
+        return response.Response(self.get_serializer(employee).data)
 
     @decorators.action(detail=True, methods=["post"], url_path="invite")
     def invite(self, request, pk=None):
