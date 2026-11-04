@@ -1,6 +1,5 @@
 """Idempotent, consent-gated WhatsApp delivery using existing Celery worker."""
 import re
-import uuid
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
