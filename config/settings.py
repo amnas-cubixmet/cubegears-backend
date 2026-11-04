@@ -157,6 +157,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
 
+CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
+CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost:5173/c" if DEBUG else "https://customer.cubegears.com/c")
+if not DEBUG and not CUSTOMER_PORTAL_BASE_URL.startswith("https://"):
+    raise ImproperlyConfigured("CUSTOMER_PORTAL_BASE_URL must use HTTPS in production.")
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -167,6 +172,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
+    "DEFAULT_THROTTLE_RATES": {"customer_portal": "30/min"},
 }
 
 SIMPLE_JWT = {
