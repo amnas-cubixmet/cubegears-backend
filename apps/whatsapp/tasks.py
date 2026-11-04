@@ -11,7 +11,7 @@ from .models import (
 )
 
 EVENTS = (
-    "tracking_link", "job_created", "inspection_completed",
+    "tracking_link", "staff_onboarding", "job_created", "inspection_completed",
     "work_started", "status_changed", "work_completed",
     "ready_delivery", "invoice_published", "test",
 )
