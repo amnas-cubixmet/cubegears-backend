@@ -276,7 +276,11 @@ class PublicWorkshopSignupView(APIView):
         company.save(update_fields=["owner", "updated_at"])
 
         # Create the staff identity without granting a free attendance entitlement.
-        resolve_employee_for_user(user)
+        employee = resolve_employee_for_user(user)
+        if data.get('whatsapp_consent') and employee:
+            employee.whatsapp_consent = True
+            employee.whatsapp_consent_source = 'Explicit consent during workshop registration'
+            employee.save(update_fields=['whatsapp_consent', 'whatsapp_consent_source', 'updated_at'])
 
         invitation = issue_invitation(user)
         setup_url = invitation_url(invitation)
