@@ -434,12 +434,15 @@ class SettingsView(APIView):
         if category == "company":
             # Reject unknown keys rather than silently saving shadow company data.
             allowed = set(CompanyAccountSettingsSerializer().fields) | {"timezone", "dateFormat"}
-            unknown = set(payload) - allowed
+            # Older clients echo the read-only logo URL from GET /settings/company.
+            # Ignore it: image uploads belong exclusively to PATCH /company/me.
+            unknown = set(payload) - allowed - {"logo"}
             if unknown:
                 return response.Response(
                     {"message": "Unsupported company fields: " + ", ".join(sorted(unknown))},
                     status=400,
                 )
+            payload = {key: value for key, value in payload.items() if key != "logo"}
             serializer = CompanyAccountSettingsSerializer(data=payload, partial=True)
             serializer.is_valid(raise_exception=True)
             payload = dict(serializer.validated_data)
