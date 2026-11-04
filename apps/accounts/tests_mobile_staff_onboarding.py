@@ -1,6 +1,7 @@
 """Regression: OTP-free workshop/mobile login and one-use staff password invitations."""
 from datetime import timedelta
 from django.test import TestCase, override_settings
+from django.core.cache import cache
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -19,6 +20,8 @@ from apps.roles.models import Role
 )
 class MobileStaffOnboardingTests(TestCase):
     def setUp(self):
+        # DRF anonymous login/signup throttles share cache across test cases.
+        cache.clear()
         self.company = Company.objects.create(name="Phone Service Workshop", slug="phone-workshop")
         self.owner_role = Role.objects.create(
             company=self.company, name="Super Admin", code="SUPER_ADMIN",
