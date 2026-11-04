@@ -31,6 +31,7 @@ jobs:
             apps.companies.tests_logo_upload \
             apps.control_panel.tests_feature_pricing_routes \
             apps.attendance.tests_auto_checkout_scheduler \
+            apps.attendance.tests_punch_location \
             apps.credits.tests_company_saas_invoices \
             apps.credits.tests_bundle_purchase_throttle \
             apps.credits.tests_storage_interval_monitoring \

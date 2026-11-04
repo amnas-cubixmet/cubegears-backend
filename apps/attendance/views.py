@@ -288,14 +288,13 @@ class ToggleAttendanceView(APIView):
         source=request.data.get("source") or "web"
         rule=state["rule"]
 
-        if rule.location_required and not location:
+        from .punch_location import validate_punch_location
+        try:
+            location = validate_punch_location(rule, location)
+        except ValueError as exc:
             return response.Response(
-                {"message":"Location is required for attendance punches."},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"message": str(exc)}, status=status.HTTP_400_BAD_REQUEST,
             )
-
-        if not rule.location_tracking_enabled and not rule.location_required:
-            location={}
 
         try:
             if action=="check_in":

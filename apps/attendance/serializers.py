@@ -88,6 +88,10 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     missingPunchPolicy = serializers.CharField(source="missing_punch_policy", required=False)
     locationRequired = serializers.BooleanField(source="location_required", required=False)
     locationTrackingEnabled = serializers.BooleanField(source="location_tracking_enabled", required=False)
+    punchLocationMode = serializers.ChoiceField(source="punch_location_mode",choices=["anywhere","workshop"],required=False)
+    workshopLatitude = serializers.FloatField(source="workshop_latitude",required=False,allow_null=True,min_value=-90,max_value=90)
+    workshopLongitude = serializers.FloatField(source="workshop_longitude",required=False,allow_null=True,min_value=-180,max_value=180)
+    punchRadiusMeters = serializers.IntegerField(source="punch_radius_meters",required=False,min_value=50,max_value=5000)
     missingPunchReminderEnabled = serializers.BooleanField(source="missing_punch_reminder_enabled", required=False)
     missingPunchReminderMinutes = serializers.IntegerField(source="missing_punch_reminder_minutes", required=False)
     leaveRequestNotifications = serializers.BooleanField(source="leave_request_notifications", required=False)
@@ -132,7 +136,19 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
             "location_required",
             getattr(self.instance, "location_required", False),
         )
-        if location_required:
+        location_mode = attrs.get(
+            "punch_location_mode",getattr(self.instance,"punch_location_mode","anywhere"),
+        )
+        if location_mode == "workshop":
+            latitude = attrs.get("workshop_latitude",getattr(self.instance,"workshop_latitude",None))
+            longitude = attrs.get("workshop_longitude",getattr(self.instance,"workshop_longitude",None))
+            if latitude is None or longitude is None:
+                raise serializers.ValidationError({
+                    "workshopLatitude": "Set both workshop coordinates before enabling the punch radius.",
+                })
+            attrs["location_required"] = True
+            attrs["location_tracking_enabled"] = True
+        elif location_required:
             attrs["location_tracking_enabled"] = True
 
         return attrs
@@ -152,6 +168,10 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
             "missing_punch_policy",
             "location_required",
             "location_tracking_enabled",
+            "punch_location_mode",
+            "workshop_latitude",
+            "workshop_longitude",
+            "punch_radius_meters",
             "missing_punch_reminder_enabled",
             "missing_punch_reminder_minutes",
             "leave_request_notifications",
