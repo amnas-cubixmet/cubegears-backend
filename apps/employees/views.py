@@ -6,7 +6,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from django.conf import settings
-from apps.accounts.email import queue_email, email_delivery_mode
+from apps.accounts.email import queue_email
 from apps.accounts.account_links import password_action_url, magic_action_url
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
