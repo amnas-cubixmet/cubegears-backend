@@ -183,7 +183,7 @@ class MobileStaffOnboardingTests(TestCase):
     def test_workshop_registration_allows_no_email_without_exposing_link(self):
         anonymous = self.public.post("/api/v1/auth/signup",{
             "workshop_name":"Mobile Registration Garage", "owner_name":"Mobile Owner",
-            "mobile":"+919101234567",
+            "mobile":"+919101234567", "whatsapp_consent": True,
         },format="json")
         self.assertEqual(anonymous.status_code,201,anonymous.data)
         self.assertEqual(anonymous.data["user"]["email"],None)
