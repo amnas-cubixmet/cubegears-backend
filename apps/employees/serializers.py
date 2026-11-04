@@ -2,6 +2,7 @@ from rest_framework import serializers
 from apps.branches.models import Branch
 from apps.accounts.permissions import can_delegate
 from apps.roles.models import Role
+from apps.accounts.phone import normalize_phone
 from .models import Team,Shift,Employee,EmployeeDocument,EmployeeActivity
 
 class TeamSerializer(serializers.ModelSerializer):
@@ -105,6 +106,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
     shiftDetails=ShiftSerializer(source="shift",read_only=True)
     shiftName=serializers.CharField(source="shift.name",read_only=True)
     roleId=serializers.UUIDField(write_only=True, required=False)
+    loginAccessEnabled=serializers.BooleanField(write_only=True, required=False)
+    whatsappConsent=serializers.BooleanField(source='whatsapp_consent',required=False)
+    whatsappConsentSource=serializers.CharField(source='whatsapp_consent_source',required=False,allow_blank=True,max_length=120)
+    setupLink=serializers.SerializerMethodField()
+    whatsappInviteStatus=serializers.SerializerMethodField()
     assignedRoleId=serializers.SerializerMethodField()
     accountStatus=serializers.SerializerMethodField()
     loginStatus=serializers.SerializerMethodField()
@@ -125,6 +131,16 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_assignedRoleId(self,obj):
         return str(obj.user.role_id) if obj.user_id and obj.user.role_id else None
 
+    def get_setupLink(self,obj):
+        # Only the authorized admin's immediate create/invite response contains a link.
+        return getattr(obj, '_setup_link', None)
+
+    def get_whatsappInviteStatus(self,obj):
+        if not obj.user_id:
+            return 'not_requested'
+        invite = obj.user.staff_password_invitations.order_by('-created_at').first()
+        return invite.delivery_status if invite else 'not_requested'
+
     def get_emailDeliveryStatus(self,obj):
         # Only present in the response that scheduled the invitation.
         # Status is not persisted, as provider delivery is not inbox receipt.
@@ -144,6 +160,17 @@ class EmployeeSerializer(serializers.ModelSerializer):
         forbidden = {'permissions', 'permissionOverrides', 'permission_overrides', 'customPermissions', 'user_permissions', 'user', 'company', 'company_id', 'is_staff', 'is_superuser'} & set(self.initial_data)
         if forbidden:
             raise serializers.ValidationError({key: 'Staff access comes only from an assigned company role.' for key in forbidden})
+        if 'phone' in attrs:
+            try:
+                attrs['phone'] = normalize_phone(attrs['phone'])
+            except Exception:
+                raise serializers.ValidationError({'phone': 'Enter a phone with country code, e.g. +919876543210.'})
+        consent = attrs.get('whatsapp_consent', getattr(self.instance, 'whatsapp_consent', False))
+        source = attrs.get('whatsapp_consent_source', getattr(self.instance, 'whatsapp_consent_source', ''))
+        if consent and len(str(source or '').strip()) < 3:
+            raise serializers.ValidationError({'whatsappConsentSource': 'Record how staff consented to WhatsApp invitations.'})
+        if attrs.get('loginAccessEnabled') and not request.user.company_id:
+            raise serializers.ValidationError({'loginAccessEnabled': 'Workshop account required.'})
         actor = request.user
         selected_id = attrs.get('roleId')
         if selected_id:
@@ -191,5 +218,12 @@ class EmployeeSerializer(serializers.ModelSerializer):
         if not obj.user:
             return "Not Invited"
         if not obj.user.is_active:
-            return "Inactive"
-        return "Active" if obj.user.has_usable_password() else "Password Setup Pending"
+            return "Disabled"
+        if obj.user.has_usable_password():
+            return "Active"
+        invite = obj.user.staff_password_invitations.order_by("-created_at").first()
+        if invite and invite.delivery_status in {"sent", "delivered", "read"}:
+            return "WhatsApp Invitation Sent"
+        if invite and invite.delivery_status == "failed":
+            return "Invitation Delivery Failed"
+        return "Pending Password Setup"
