@@ -13,6 +13,7 @@ from .models import (
     CustomerNotificationPreference,
 )
 from apps.customers.models import Customer
+from apps.accounts.models import StaffPasswordInvitation
 
 
 def _digits(value):
@@ -66,6 +67,13 @@ class MetaWhatsAppWebhookView(APIView):
                     WhatsAppNotificationLog.objects.filter(
                         company=connection.company, meta_message_id=msg_id,
                     ).update(**update)
+                    invite_updates = {"delivery_status": status}
+                    if status == "failed":
+                        invite_updates["failure_reason"] = "Meta reported staff invitation delivery failure."
+                    StaffPasswordInvitation.objects.filter(
+                        user__company=connection.company, meta_message_id=msg_id,
+                        used_at__isnull=True, invalidated_at__isnull=True,
+                    ).update(**invite_updates)
                 for message in value.get("messages") or []:
                     body_text = str(((message.get("text") or {}).get("body") or "")).strip().upper()
                     if body_text not in {"STOP", "UNSUBSCRIBE", "OPT OUT"}:
