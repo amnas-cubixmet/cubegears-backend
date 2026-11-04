@@ -500,9 +500,26 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if user.role_id != role.pk:
                 user.role = role
                 user.save(update_fields=["role"])
-            invite = self._issue_staff_invitation(obj, user)
-            url = obj._setup_link
-            delivery = obj._whatsapp_invite_status
+            from datetime import timedelta
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            from apps.accounts.staff_setup import invitation_url
+
+            # Rapid double-clicks/retries return the same still-valid invite.
+            # They must never create and deliver two different password links.
+            recent = StaffPasswordInvitation.objects.select_for_update().filter(
+                user=user, used_at__isnull=True, invalidated_at__isnull=True,
+                expires_at__gt=timezone.now(),
+                created_at__gte=timezone.now() - timedelta(seconds=60),
+            ).order_by("-created_at").first()
+            if recent:
+                invite = recent
+                url = invitation_url(recent)
+                delivery = recent.delivery_status
+            else:
+                invite = self._issue_staff_invitation(obj, user)
+                url = obj._setup_link
+                delivery = obj._whatsapp_invite_status
         return response.Response({
             "message": "New secure 24-hour password link issued.",
             "setupLink": url, "expiresAt": invite.expires_at,
