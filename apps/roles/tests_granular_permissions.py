@@ -48,6 +48,8 @@ class GranularFinancialPermissionTests(TestCase):
     def grant(self, *codes):
         self.role.permissions = list(dict.fromkeys([*self.role.permissions, *codes]))
         self.role.save(update_fields=["permissions"])
+        # The APIClient uses this authenticated instance across requests.
+        self.staff.role = self.role
 
     def test_wage_viewer_cannot_change_rates_pay_or_reverse(self):
         endpoints = (
