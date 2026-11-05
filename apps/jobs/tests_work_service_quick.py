@@ -83,6 +83,24 @@ class JobWorkServiceQuickTests(TestCase):
         from apps.inventory.models import StockMovement
         self.assertFalse(StockMovement.objects.filter(job=self.job).exists())
 
+    def test_service_links_to_invoice_suggestions_without_mechanic_pay(self):
+        from apps.invoices.job_draft import suggested_job_invoice
+        from apps.invoices.models import Invoice
+        response = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.job.refresh_from_db()
+        suggested = suggested_job_invoice(self.job)
+        self.assertFalse(suggested["created"])
+        self.assertFalse(suggested["finalized"])
+        self.assertEqual(len(suggested["items"]), 1)
+        line = suggested["items"][0]
+        self.assertEqual(line["description"], "Door Painting")
+        self.assertEqual(line["qty"], "2.00")
+        self.assertEqual(line["rate"], "800.00")
+        self.assertEqual(line["hsnCode"], "998714")
+        self.assertNotIn("500", str(line))
+        self.assertFalse(Invoice.objects.filter(company=self.company, job=self.job).exists())
+
     def test_optional_mechanic_and_zero_charge(self):
         payload = self.payload()
         payload.pop("mechanicId")
