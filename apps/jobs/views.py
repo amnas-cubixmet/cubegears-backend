@@ -18,6 +18,17 @@ from .complaint_status import sync_complaint_status
 from .india_gst import gst_context, calculate_tax, gst_rate
 from apps.invoices.gst_rate_options import find_gst_choice
 
+def _same_quick_create_phone(stored, supplied):
+    """Allow verified +91 normalization of legacy 10-digit Indian contacts only."""
+    first = "".join(filter(str.isdigit, str(stored or "")))
+    second = "".join(filter(str.isdigit, str(supplied or "")))
+    if first == second:
+        return True
+    return (len(first) == 10 and second == "91" + first) or (
+        len(second) == 10 and first == "91" + second
+    )
+
+
 FLOW=[Job.STATUS_NEW,Job.STATUS_INSPECTION,Job.STATUS_ESTIMATE_PENDING,Job.STATUS_APPROVED,Job.STATUS_IN_PROGRESS,Job.STATUS_WAITING_PARTS,Job.STATUS_QC,Job.STATUS_READY,Job.STATUS_DELIVERED]
 
 class JobViewSet(CompanyScopedModelViewSet):
@@ -309,7 +320,7 @@ class JobViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({
                         "vehicleReg": "This vehicle belongs to another customer. Verify ownership before continuing."
                     })
-                if not chosen_customer and "".join(filter(str.isdigit, customer.phone)) != "".join(filter(str.isdigit, phone)):
+                if not chosen_customer and not _same_quick_create_phone(customer.phone, phone):
                     raise ValidationError({
                         "vehicleReg": "This registration belongs to another customer. Open the vehicle record to verify ownership."
                     })
@@ -356,7 +367,7 @@ class JobViewSet(CompanyScopedModelViewSet):
 
             if chosen_customer and (
                 chosen_customer.name != name or
-                "".join(filter(str.isdigit, chosen_customer.phone)) != "".join(filter(str.isdigit, phone))
+                not _same_quick_create_phone(chosen_customer.phone, phone)
             ):
                 raise ValidationError({
                     "customer": "Selected customer details changed. Select the customer again."
