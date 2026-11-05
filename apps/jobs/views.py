@@ -419,7 +419,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"advisor":"Service advisor belongs to another company."})
         count=Job.objects.filter(company=company).count()+1
         number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
-        job=serializer.save(company=company,branch=self.request.user,job_number=number,advisor=advisor)
+        job=serializer.save(company=company,branch=getattr(self, '_job_create_branch', self.request.user.branch),job_number=number,advisor=advisor)
         JobActivity.objects.create(company=company,branch=job.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
 
     @decorators.action(detail=True,methods=["patch"])
