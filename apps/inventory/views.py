@@ -275,6 +275,20 @@ class StockMovementViewSet(CompanyScopedModelViewSet):
             serializer.save(company=self.request.user.company,branch=self.request.user.branch,created_by=self.request.user)
 class PurchaseOrderViewSet(CompanyScopedModelViewSet):
     queryset=PurchaseOrder.objects.all(); serializer_class=PurchaseOrderSerializer
+
+    def perform_update(self, serializer):
+        from rest_framework.exceptions import ValidationError
+        if hasattr(serializer.instance, "supplier_credit"):
+            protected = {"total", "subtotal", "tax", "supplier", "items", "status", "number"}
+            if protected.intersection(serializer.validated_data):
+                raise ValidationError({"message": "A purchase with supplier credit cannot have its financial fields changed."})
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        from rest_framework.exceptions import ValidationError
+        if hasattr(instance, "supplier_credit"):
+            raise ValidationError({"message": "Cannot delete a purchase with linked supplier credit."})
+        instance.delete()
 class StockTransferViewSet(CompanyScopedModelViewSet):
     queryset=StockTransfer.objects.all(); serializer_class=StockTransferSerializer
 class StockAuditViewSet(CompanyScopedModelViewSet):
@@ -282,3 +296,6 @@ class StockAuditViewSet(CompanyScopedModelViewSet):
     def perform_create(self,serializer):
         item=serializer.validated_data["item"]; counted=serializer.validated_data["counted_qty"]
         serializer.save(company=self.request.user.company,branch=self.request.user.branch,expected_qty=item.on_hand,difference=counted-item.on_hand,created_by=self.request.user)
+
+# Explicitly permission-gated supplier credit and settlement endpoints.
+from .supplier_credit_views import SupplierCreditViewSet, SupplierCreditPaymentViewSet

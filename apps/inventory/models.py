@@ -88,3 +88,39 @@ class StockAudit(CompanyOwnedModel):
     difference=models.DecimalField(max_digits=12,decimal_places=2)
     reason=models.CharField(max_length=255,blank=True)
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+
+# A credit is an allocation against a canonical received purchase order.
+# The original PO total is authoritative; no second supplier or invoice exists.
+class SupplierCredit(CompanyOwnedModel):
+    purchase_order = models.OneToOneField(
+        PurchaseOrder, on_delete=models.PROTECT, related_name="supplier_credit"
+    )
+    due_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+# The matching Expense is the single canonical financial outflow.
+# This row only allocates that expense against one supplier credit.
+class SupplierCreditPayment(CompanyOwnedModel):
+    credit = models.ForeignKey(
+        SupplierCredit, on_delete=models.PROTECT, related_name="payments"
+    )
+    expense = models.OneToOneField(
+        "expenses.Expense", on_delete=models.PROTECT,
+        related_name="supplier_credit_allocation"
+    )
+    idempotency_key = models.UUIDField()
+    recorded_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "idempotency_key"],
+                name="unique_supplier_payment_request_per_company",
+            ),
+        ]
