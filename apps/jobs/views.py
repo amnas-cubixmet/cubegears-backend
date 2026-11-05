@@ -350,6 +350,24 @@ class JobViewSet(CompanyScopedModelViewSet):
             if "fuelLevel" in data:
                 data["fuel_level"] = data["fuelLevel"]
 
+            # Existing Employee IDs are not User IDs. Resolve both within the
+            # workshop, preserving the current payroll assignment flow.
+            from apps.employees.models import Employee
+            for input_key, target_key in (
+                ("assignedEmployeeId", "technician"),
+                ("serviceAdvisorEmployeeId", "advisor"),
+            ):
+                employee_id = data.get(input_key)
+                if not employee_id:
+                    continue
+                employee = Employee.objects.filter(
+                    pk=employee_id, company=company, status="Active",
+                ).select_related("user").first()
+                if not employee:
+                    raise ValidationError({input_key: "Choose an active staff member from your workshop."})
+                if employee.user_id and employee.user.is_active:
+                    data[target_key] = str(employee.user_id)
+
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
@@ -369,9 +387,12 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"vehicle":"Vehicle does not belong to the selected customer."})
         if technician and technician.company_id != company.id:
             raise ValidationError({"technician":"Technician belongs to another company."})
+        advisor=serializer.validated_data.get("advisor") or self.request.user
+        if advisor.company_id != company.id:
+            raise ValidationError({"advisor":"Service advisor belongs to another company."})
         count=Job.objects.filter(company=company).count()+1
         number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
-        job=serializer.save(company=company,branch=self.request.user.branch,job_number=number,advisor=self.request.user)
+        job=serializer.save(company=company,branch=self.request.user,job_number=number,advisor=advisor)
         JobActivity.objects.create(company=company,branch=self.request.user.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
 
     @decorators.action(detail=True,methods=["patch"])
