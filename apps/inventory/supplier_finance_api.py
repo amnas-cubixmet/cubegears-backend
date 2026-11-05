@@ -7,12 +7,11 @@ Legacy PurchaseOrders, Expenses, Payments, and Stock movements stay intact.
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
