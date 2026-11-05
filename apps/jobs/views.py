@@ -570,8 +570,10 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(data)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/start")
+    @transaction.atomic
     def inspection_start(self,request,pk=None):
-        job=self.get_object()
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
         if (job.inspection or {}).get("status") in {"Skipped", "Completed"}:
             raise ValidationError({"inspection": "Resolved inspections cannot be restarted."})
         if workflow_state(job)["current"] != "inspection":
@@ -583,12 +585,14 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(data)
 
     @decorators.action(detail=True,methods=["patch"],url_path="inspection/checklist")
+    @transaction.atomic
     def inspection_checklist(self,request,pk=None):
-        job=self.get_object()
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
         self._assert_inspection_editable(job)
         item = str(request.data.get("itemName") or "").strip()
         check_status = request.data.get("status", "Not Checked")
-        if not item or len(item) > 120 or check_status not in {"Good", "Needs Attention", "Critical", "Not Checked"}:
+        if not item or len(item) > 120 or check_status not in {"Good", "Needs Attention", "Critical", "Not Checked", "Not Applicable"}:
             raise ValidationError({"checklist": "Select a valid inspection item and status."})
         data=dict(job.inspection or {}); checklist=dict(data.get("checklist") or {})
         previous = checklist.get(item,"Not Checked")
@@ -648,8 +652,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(photo,status=201)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
+    @transaction.atomic
     def inspection_complete(self,request,pk=None):
-        job=self.get_object(); data=dict(job.inspection or {})
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
+        data=dict(job.inspection or {})
         if data.get("status") == "Completed":
             raise ValidationError({"inspection": "Inspection is already completed. Use Edit Inspection before estimate approval."})
         if data.get("status") == "Skipped":
