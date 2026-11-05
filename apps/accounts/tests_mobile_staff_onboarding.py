@@ -203,3 +203,88 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertFalse(owner.has_usable_password())
         self.assertTrue(StaffPasswordInvitation.objects.filter(user=owner).exists())
         self.assertNotIn("setupLink",anonymous.data)
+
+
+    def test_staff_invitation_never_uses_optional_email(self):
+        from unittest.mock import patch
+        with patch("apps.accounts.email.queue_email") as email_sender:
+            reply = self.create_staff(email="staff@legacy-company.test")
+        self.assertEqual(reply.data["whatsappInviteStatus"], "manual")
+        self.assertNotIn("emailDeliveryStatus", reply.data)
+        email_sender.assert_not_called()
+
+    def test_mobile_forgot_password_has_generic_public_responses(self):
+        self.create_staff(consent=False)
+        details = {"mobile": "+919333333333", "workshop": "phone-workshop"}
+        before = StaffPasswordInvitation.objects.count()
+        existing = self.public.post("/api/v1/auth/forgot-password", details, format="json")
+        self.assertEqual(existing.status_code, 200, existing.data)
+        missing = self.public.post("/api/v1/auth/forgot-password", {
+            "mobile": "+919444444444", "workshop": "phone-workshop",
+        }, format="json")
+        self.assertEqual(missing.status_code, 200, missing.data)
+        self.assertEqual(existing.data, missing.data)
+        self.assertNotIn("setupLink", existing.data)
+        self.assertEqual(StaffPasswordInvitation.objects.count(), before)
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_registered_mobile_recovery_queues_only_official_workshop_whatsapp(self):
+        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
+        from apps.accounts.staff_setup import resolve_invitation
+        from apps.accounts.staff_setup import invitation_url
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        old_token = reply.data["setupLink"].rsplit("/", 1)[-1]
+        employee.user.set_password("AlreadySetPass33!")
+        employee.user.save(update_fields=["password"])
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, notifications_enabled=True,
+            messaging_mode="automatic", phone_number_id="registered-phone",
+            waba_id="registered-waba", encrypted_access_token="mock-encrypted",
+            event_settings={"staff_onboarding": True},
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="staff_onboarding",
+            template_name="staff_password_setup", approval_status="APPROVED",
+        )
+        payload = {"mobile": "+919333333333", "workshop": "phone-workshop"}
+        first = self.public.post("/api/v1/auth/forgot-password", payload, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        record = StaffPasswordInvitation.objects.filter(user=employee.user).latest("created_at")
+        self.assertEqual(record.purpose, "reset")
+        self.assertEqual(record.delivery_status, "queued")
+        self.assertEqual(resolve_invitation(old_token), None)
+        self.assertNotIn("setupLink", first.data)
+        self.assertNotIn("token", first.data)
+        count = StaffPasswordInvitation.objects.filter(user=employee.user).count()
+        retry = self.public.post("/api/v1/auth/forgot-password", payload, format="json")
+        self.assertEqual(retry.status_code, 200)
+        self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), count)
+        # The encrypted token remains absent from the database, API response,
+        # and Celery task argument; only the signed URL can be regenerated.
+        self.assertNotIn(invitation_url(record), str(record.token_hash))
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_missing_whatsapp_consent_never_creates_recovery_link(self):
+        reply = self.create_staff(consent=False)
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        employee.user.set_password("AlreadySetPass33!")
+        employee.user.save(update_fields=["password"])
+        before = StaffPasswordInvitation.objects.filter(user=employee.user).count()
+        result = self.public.post("/api/v1/auth/forgot-password", {
+            "mobile": "+919333333333", "workshop": "phone-workshop",
+        }, format="json")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), before)
+
+    def test_inactive_employment_blocks_login_even_if_user_still_enabled(self):
+        reply = self.create_staff()
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        employee.user.set_password("AlreadySetPass33!")
+        employee.user.save(update_fields=["password"])
+        employee.status = "Inactive"
+        employee.save(update_fields=["status"])
+        result = self.public.post("/api/v1/auth/login", {
+            "identifier": "+919333333333", "password": "AlreadySetPass33!",
+        }, format="json")
+        self.assertEqual(result.status_code, 400)
