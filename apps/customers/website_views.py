@@ -65,7 +65,8 @@ def _tenant(request):
             return get_object_or_404(Company, slug=slug, is_active=True)
     domain = CompanyDomain.objects.select_related("company").filter(
         hostname=hostname, status=CompanyDomain.ACTIVE,
-        verified_at__isnull=False, company__is_active=True
+        is_approved=True, dns_configured=True, ownership_verified=True,
+        ssl_status="ready", verified_at__isnull=False, company__is_active=True
     ).first()
     if domain:
         return domain.company
