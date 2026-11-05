@@ -38,11 +38,6 @@ def worker_or_404(request, employee_id):
     return worker
 
 
-def require_editor(request):
-    if not user_has_permission(request.user, "payroll.edit"):
-        raise PermissionDenied("Payroll Edit permission required.")
-
-
 def pack_rate(rate):
     return {
         "id": str(rate.pk), "rate": str(rate.rate),
@@ -251,7 +246,10 @@ class DailyWageDashboardView(WageAPIView):
 
 class DailyWageAccountView(WageAPIView):
     def get(self, request, employee_id):
-        return Response(account(worker_or_404(request, employee_id)))
+        data = account(worker_or_404(request, employee_id))
+        if not user_has_permission(request.user, "payroll.payments.view"):
+            data["payments"] = []
+        return Response(data)
 
 
 class DailyWageHistoryView(WageAPIView):
@@ -260,6 +258,7 @@ class DailyWageHistoryView(WageAPIView):
 
 
 class DailyWagePaymentListView(WageAPIView):
+    permission_map = {"GET": "payroll.payments.view"}
     def get(self, request):
         employee_id = request.query_params.get("employee")
         qs = WagePayment.objects.select_related("employee", "employee__branch").filter(employee__in=visible_workers(request))
@@ -269,6 +268,7 @@ class DailyWagePaymentListView(WageAPIView):
 
 
 class DailyWageRateView(WageAPIView):
+    permission_map = {"POST": "payroll.rates.manage"}
     def post(self, request, employee_id):
         employee = worker_or_404(request, employee_id)
         rate = set_rate(
@@ -279,6 +279,7 @@ class DailyWageRateView(WageAPIView):
 
 
 class DailyWageFinalizeView(WageAPIView):
+    permission_map = {"POST": "payroll.wages.finalize"}
     def post(self, request, employee_id):
         employee = worker_or_404(request, employee_id)
         day = finalize_attendance(
@@ -294,6 +295,7 @@ class DailyWageFinalizeView(WageAPIView):
 
 
 class DailyWageExtraView(WageAPIView):
+    permission_map = {"POST": "payroll.extras.manage"}
     @transaction.atomic
     def post(self, request, employee_id):
         employee = worker_or_404(request, employee_id)
@@ -323,6 +325,7 @@ class DailyWageExtraView(WageAPIView):
 
 
 class DailyWageExtraApprovalView(WageAPIView):
+    permission_map = {"POST": "payroll.extras.approve"}
     @transaction.atomic
     def post(self, request, extra_id):
         extra = DailyWageExtra.objects.select_related("employee").filter(
@@ -355,6 +358,7 @@ class DailyWageExtraApprovalView(WageAPIView):
 
 
 class DailyWageAdjustmentView(WageAPIView):
+    permission_map = {"POST": "payroll.adjustments.manage"}
     @transaction.atomic
     def post(self, request, employee_id):
         employee = worker_or_404(request, employee_id)
@@ -383,6 +387,7 @@ class DailyWageAdjustmentView(WageAPIView):
 
 
 class DailyWagePayView(WageAPIView):
+    permission_map = {"POST": "payroll.payments.record"}
     def post(self, request, employee_id):
         employee = worker_or_404(request, employee_id)
         payment = pay_balance(
@@ -397,6 +402,7 @@ class DailyWagePayView(WageAPIView):
 
 
 class DailyWageReversalView(WageAPIView):
+    permission_map = {"POST": "payroll.payments.reverse"}
     @transaction.atomic
     def post(self, request, payment_id):
         payment = WagePayment.objects.select_related("employee").filter(
