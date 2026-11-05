@@ -140,7 +140,8 @@ class ForgotPasswordView(APIView):
         # Preserve legacy owner/platform email recovery. Staff onboarding and
         # linked employee accounts recover through workshop-owned WhatsApp.
         user = User.objects.filter(email__iexact=data["email"], is_active=True).first()
-        if user and not hasattr(user, "employee_profile"):
+        from apps.accounts.permissions import is_company_owner
+        if user and (is_platform_account(user) or is_company_owner(user)):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = password_action_url(request, user, uid, token)
