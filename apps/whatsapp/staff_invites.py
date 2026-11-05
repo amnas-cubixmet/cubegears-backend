@@ -26,7 +26,7 @@ def queue_staff_whatsapp_invitation(invitation, employee):
     template = WhatsAppMessageTemplate.objects.filter(
         company=employee.company, event="staff_onboarding", approval_status="APPROVED",
     ).first()
-    if not connection or not connection.event_settings.get("staff_onboarding", False) or not template:
+    if not connection or connection.messaging_mode != "automatic" or not connection.event_settings.get("staff_onboarding", False) or not template:
         invitation.delivery_status = "manual"
         invitation.failure_reason = "Workshop WhatsApp disconnected or staff template not enabled."
         invitation.save(update_fields=["delivery_status", "failure_reason"])
@@ -69,7 +69,7 @@ def send_staff_invitation(invitation_id):
         template = WhatsAppMessageTemplate.objects.filter(
             company=user.company, event="staff_onboarding", approval_status="APPROVED",
         ).first()
-        if (not user.is_active or not employee or not connection or not template
+        if (not user.is_active or not employee or not connection or connection.messaging_mode != "automatic" or not template
                 or not connection.event_settings.get("staff_onboarding", False)):
             invite.delivery_status = "failed"
             invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
