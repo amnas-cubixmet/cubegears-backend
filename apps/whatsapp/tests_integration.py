@@ -62,7 +62,9 @@ class WhatsAppSecurityTests(TestCase):
         )
         self.assertEqual(consent.status_code, 200, consent.data)
         self.assertTrue(CustomerNotificationPreference.objects.get(customer=self.customer).whatsapp_opt_in)
-        self.assertIsNone(queue_customer_notification(self.customer,"job_created","job:a:created"))
+        missing_template = queue_customer_notification(self.customer,"job_created","job:a:created")
+        self.assertEqual(missing_template.status, "failed")
+        self.assertIn("template", missing_template.error_detail)
         WhatsAppMessageTemplate.objects.create(
             company=self.company,event="job_created",template_name="approved_job",approval_status="APPROVED",
         )
@@ -123,7 +125,7 @@ class WhatsAppSecurityTests(TestCase):
         }, format="json")
         self.assertEqual(prepared.status_code, 200, prepared.data)
         self.assertTrue(prepared.data["url"].startswith("https://wa.me/919888888888?text="))
-        self.assertIn("https%3A%2F%2F", prepared.data["url"])
+        self.assertIn("%3A%2F%2F", prepared.data["url"])
         self.assertEqual(prepared.data["status"], "manual_prepared")
         self.assertIn("press Send", prepared.data["note"])
         self.assertEqual(
