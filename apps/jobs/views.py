@@ -143,11 +143,31 @@ class JobViewSet(CompanyScopedModelViewSet):
                     "status":"Pause and complete all active mechanic timers before QC or delivery."
                 })
 
+    def _inspection_skip_block_reason(self, job):
+        """Return a policy/stage/safety reason, or None for a permitted skip."""
+        data = job.inspection or {}
+        if data.get("status") == "Skipped":
+            return "Inspection was already skipped. A second skip is not permitted."
+        if data.get("status") == "Completed":
+            return "Completed inspections cannot be skipped."
+        if workflow_state(job)["current"] != "inspection":
+            return "Complete Overview first, or return to the active Inspection stage."
+        if job.company.require_vehicle_inspection:
+            return "Workshop policy requires an inspection for every vehicle."
+        if data.get("mandatorySafetyInspection") or data.get("requiresSafetyInspection"):
+            return "A mandatory safety inspection is required for this Job Card."
+        if "Critical" in (data.get("checklist") or {}).values() or any(
+            str(finding.get("severity") or "").lower() == "critical"
+            for finding in (data.get("findings") or []) if isinstance(finding, dict)
+        ):
+            return "Critical safety findings require inspection; skipping is disabled."
+        return None
+
     def _assert_inspection_editable(self, job):
         """Completed checks may be corrected before customer approves an estimate."""
         current = workflow_state(job)["current"]
         if (job.inspection or {}).get("status") == "Skipped":
-            raise ValidationError({"inspection": "Skipped inspection cannot be edited."})
+            raise ValidationError({"inspection": "Skipped inspection is read-only. Existing findings and photos are preserved."})
         completed = (job.inspection or {}).get("status") == "Completed"
         # The quick-create form can save initial inspection details in Overview.
         # Completed inspections are strictly editable only at Estimate stage.
@@ -182,6 +202,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         next_status = serializer.validated_data.get("status")
         if "inspection" in serializer.validated_data:
             self._assert_inspection_editable(job)
+            proposed = serializer.validated_data["inspection"]
+            if not isinstance(proposed, dict):
+                raise ValidationError({"inspection": "Inspection must be an object."})
+            if proposed.get("status") in {"Completed", "Skipped"}:
+                raise ValidationError({"inspection": "Use the dedicated Complete Inspection or Skip Inspection action."})
             if (job.inspection or {}).get("status") == "Completed":
                 raise ValidationError({
                     "inspection": "Use inspection edit actions to preserve revision history."
@@ -530,20 +555,29 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["get"],url_path="inspection")
     def inspection_detail(self,request,pk=None):
+        from apps.accounts.permissions import user_has_permission
         job=self.get_object()
-        return response.Response(job.inspection or {
+        data = dict(job.inspection or {
             "status":"Not Started","checklist":{},"findings":[],
             "diagnosticScan":{"performed":False,"codes":[]},"photos":[],
             "summary":{"totalChecks":0,"good":0,"needsAttention":0,"issuesFound":0,"criticalIssues":0,"recommendedRepairs":0}
         })
+        reason = self._inspection_skip_block_reason(job)
+        if not user_has_permission(request.user, "jobs.edit"):
+            reason = "You do not have permission to skip an inspection."
+        data["skipAllowed"] = not bool(reason)
+        data["skipBlockedReason"] = reason or ""
+        return response.Response(data)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/start")
+    @transaction.atomic
     def inspection_start(self,request,pk=None):
-        job=self.get_object()
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
+        if (job.inspection or {}).get("status") in {"Skipped", "Completed"}:
+            raise ValidationError({"inspection": "Resolved inspections cannot be restarted."})
         if workflow_state(job)["current"] != "inspection":
-            raise ValidationError({"stage": "Inspection can only start during its active workflow stage."})
-        if (job.inspection or {}).get("status") in {"Completed", "Skipped"}:
-            raise ValidationError({"inspection": "This inspection is already closed."})
+            raise ValidationError({"stage":"Complete Overview before starting Inspection, or return to the current stage."})
         data=dict(job.inspection or {})
         data.setdefault("checklist",{}); data.setdefault("findings",[]); data.setdefault("diagnosticScan",{"performed":False,"codes":[]}); data.setdefault("photos",[])
         data["status"]="In Progress"; data["startedAt"]=timezone.now().isoformat()
@@ -551,12 +585,14 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(data)
 
     @decorators.action(detail=True,methods=["patch"],url_path="inspection/checklist")
+    @transaction.atomic
     def inspection_checklist(self,request,pk=None):
-        job=self.get_object()
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
         self._assert_inspection_editable(job)
         item = str(request.data.get("itemName") or "").strip()
         check_status = request.data.get("status", "Not Checked")
-        if not item or len(item) > 120 or check_status not in {"Good", "Needs Attention", "Critical", "Not Checked"}:
+        if not item or len(item) > 120 or check_status not in {"Good", "Needs Attention", "Critical", "Not Checked", "Not Applicable"}:
             raise ValidationError({"checklist": "Select a valid inspection item and status."})
         data=dict(job.inspection or {}); checklist=dict(data.get("checklist") or {})
         previous = checklist.get(item,"Not Checked")
@@ -616,10 +652,15 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(photo,status=201)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
+    @transaction.atomic
     def inspection_complete(self,request,pk=None):
-        job=self.get_object(); data=dict(job.inspection or {})
+        scoped=self.get_object()
+        job=Job.objects.select_for_update().get(pk=scoped.pk,company_id=request.user.company_id)
+        data=dict(job.inspection or {})
         if data.get("status") == "Completed":
             raise ValidationError({"inspection": "Inspection is already completed. Use Edit Inspection before estimate approval."})
+        if data.get("status") == "Skipped":
+            raise ValidationError({"inspection": "Skipped inspections cannot be completed retroactively."})
         self._assert_inspection_editable(job)
         checked = data.get("checklist") or {}
         if not any(value in {"Good","Needs Attention","Critical"} for value in checked.values()):
@@ -629,57 +670,63 @@ class JobViewSet(CompanyScopedModelViewSet):
         job.save(update_fields=["inspection","status","updated_at"])
         return response.Response({"inspection":data,"newJobStatus":job.status})
 
+
     @decorators.action(detail=True, methods=["post"], url_path="inspection/skip")
     @transaction.atomic
     def inspection_skip(self, request, pk=None):
-        """Advance without recording unperformed checks as Good or Completed."""
-        scoped = self.get_object()
-        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
-        if workflow_state(job)["current"] != "inspection":
-            raise ValidationError({"stage": "Only the active Inspection stage can be skipped."})
+        """Distinct, auditable inspection exit; never synthesize checklist results.
+
+        Lock the tenant-scoped Job row to prevent a simultaneous skip, completion,
+        or second skip request from recording a duplicate audit event.
+        """
+        scoped = self.get_object()  # RolePermission(jobs.edit) + tenant scope
+        job = Job.objects.select_for_update().select_related("company").get(
+            pk=scoped.pk, company_id=request.user.company_id,
+        )
+        reason = request.data.get("reason")
+        if not isinstance(reason, str) or not 3 <= len(reason.strip()) <= 160:
+            raise ValidationError({"reason": "Enter a skip reason (3–160 characters)."})
+        reason = reason.strip()
+        blocked = self._inspection_skip_block_reason(job)
+        if blocked:
+            raise ValidationError({"inspection": blocked})
+
+        now = timezone.now()
         inspection = dict(job.inspection or {})
-        if inspection.get("status") in {"Completed", "Skipped"}:
-            raise ValidationError({"inspection": "Inspection is already completed or skipped."})
-        reason = str(request.data.get("reason") or "").strip()
-        if not 3 <= len(reason) <= 300:
-            raise ValidationError({"reason": "Enter a skip reason between 3 and 300 characters."})
-        now = timezone.now().isoformat()
         inspection.update({
             "status": "Skipped",
             "skipReason": reason,
-            "skippedAt": now,
-            "skippedBy": str(request.user.pk),
+            "skippedAt": now.isoformat(),
+            "skippedById": str(request.user.pk),
+            "skippedBy": str(getattr(request.user, "name", "") or "").strip(),
         })
-        state = workflow_state(job)
         progress = dict(job.workflow_progress or {})
-        completed = set(state["completed"])
+        completed = set(workflow_state(job)["completed"])
         completed.add("inspection")
-        skipped = set(progress.get("skipped") or [])
-        skipped.add("inspection")
-        progress.update({
-            "started": True,
-            "completed": [stage for stage in STAGES if stage in completed],
-            "skipped": [stage for stage in STAGES if stage in skipped],
-            "lastCompletedAt": now,
-        })
-        previous_status = job.status
+        progress["started"] = True
+        progress["completed"] = [stage for stage in STAGES if stage in completed]
+        progress["skipped"] = sorted(set(progress.get("skipped") or []) | {"inspection"})
+        progress["lastSkippedAt"] = now.isoformat()
+
+        old_status = job.status
         job.inspection = inspection
         job.workflow_progress = progress
-        job.status = NEXT_STATUS["inspection"]
-        fields = ["inspection", "workflow_progress", "status", "updated_at"]
-        if sync_complaint_status(job):
-            fields.append("complaints")
-        job.save(update_fields=fields)
-        JobActivity.objects.create(
-            company=job.company, branch=job.branch, job=job,
-            actor=request.user, event="Inspection Skipped",
-            description=reason, from_status=previous_status, to_status=job.status,
-            metadata={"stage": "inspection", "reason": reason, "skippedAt": now},
+        job.status = Job.STATUS_ESTIMATE_PENDING
+        job.save(update_fields=["inspection", "workflow_progress", "status", "updated_at"])
+        record_job_event(
+            job, request.user, "Inspection Skipped",
+            f"Vehicle inspection skipped: {reason}",
+            {
+                "stage": "inspection", "reason": reason,
+                "skippedAt": now.isoformat(), "staffId": str(request.user.pk),
+                "fromStatus": old_status, "toStatus": job.status,
+            },
         )
         return response.Response({
             "inspection": inspection,
             "newJobStatus": job.status,
             "workflow": workflow_state(job),
+            "job": JobSerializer(job).data,
         })
 
     @decorators.action(detail=True,methods=["post"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)/add-to-estimate")
