@@ -100,7 +100,7 @@ class VercelDomains:
         return result
 
     def configuration(self, hostname):
-        return self.request("GET", "/v6/domains/" + quote(hostname, safe="") + "/config")
+        return self.request("GET", "/v6/domains/" + quote(hostname, safe="") + "/config?projectIdOrName=" + quote(self.project, safe=""))
 
     def verify(self, hostname):
         return self.request("POST", self.path(hostname) + "/verify")
