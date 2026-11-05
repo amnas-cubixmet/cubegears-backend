@@ -95,7 +95,7 @@ class CustomerWebsiteTests(TestCase):
         self.assertEqual(own.status_code, 200)
         self.assertEqual(own.data["name"], "Alpha Workshop")
         self.assertEqual(
-            self.client.get(path, **self.headers("first-tenant.cubegears.com")).status_code, 200
+            self.client.get(path, **self.headers("alpha.cubegears.com")).status_code, 200
         )
         assigned.status = CompanyDomain.DISABLED
         assigned.is_primary = False
