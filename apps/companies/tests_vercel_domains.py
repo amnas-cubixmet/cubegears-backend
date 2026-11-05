@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import User
 from apps.companies.models import Company, CompanyDomain, CompanyDomainAudit
 from apps.companies.vercel_domains import (
-    VercelDomainError, VercelDomains, certificate_ready, dns_requirements, refresh_domain,
+    VercelDomainError, VercelDomains, certificate_ready, dns_requirements,
 )
 from apps.customers.models import Customer
 from apps.customers.portal_tokens import ensure_portal_access, issue_link
@@ -124,7 +124,7 @@ class WorkshopDomainTests(TestCase):
 
     def test_primary_preserves_previous_address_and_magic_link_tracks_verified_domain(self):
         with self.mock_vercel(verified=True, misconfigured=False, tls=True):
-            response = self.create()
+            self.create()
             domain = CompanyDomain.objects.get()
             primary = self.client.post(f"/api/v1/company/customer-website/domains/{domain.pk}/primary", {}, format="json")
         self.assertEqual(primary.status_code, 200, primary.data)
