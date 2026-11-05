@@ -44,3 +44,54 @@ class Company(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CompanyWebsiteSettings(models.Model):
+    """Optional customer-facing appearance; legacy Company remains authoritative."""
+    company = models.OneToOneField(
+        Company, on_delete=models.CASCADE, related_name="website_settings"
+    )
+    public_name = models.CharField(max_length=180, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    welcome_message = models.CharField(max_length=240, blank=True)
+    contact_phone = models.CharField(max_length=30, blank=True)
+    whatsapp_phone = models.CharField(max_length=30, blank=True)
+    primary_color = models.CharField(max_length=7, default="#116f69")
+    secondary_color = models.CharField(max_length=7, default="#e4f2ec")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Customer website for {self.company.name}"
+
+
+class CompanyDomain(models.Model):
+    """Custom domains are NEVER active on user submission alone."""
+    PENDING_DNS = "pending_dns"
+    PENDING_VERIFICATION = "pending_verification"
+    SSL_PENDING = "ssl_pending"
+    ACTIVE = "active"
+    FAILED = "failed"
+    DISABLED = "disabled"
+    STATUS_CHOICES = [
+        (PENDING_DNS, "Pending DNS"),
+        (PENDING_VERIFICATION, "Pending Verification"),
+        (SSL_PENDING, "SSL Pending"),
+        (ACTIVE, "Active"),
+        (FAILED, "Failed"),
+        (DISABLED, "Disabled"),
+    ]
+    company = models.ForeignKey(
+        Company, on_delete=models.CASCADE, related_name="customer_domains"
+    )
+    hostname = models.CharField(max_length=253, unique=True, db_index=True)
+    status = models.CharField(
+        max_length=30, choices=STATUS_CHOICES, default=PENDING_DNS
+    )
+    is_primary = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    provider_reference = models.CharField(max_length=180, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.hostname
