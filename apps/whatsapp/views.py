@@ -39,6 +39,7 @@ class WhatsAppSettingsView(APIView):
             "appId": settings.WHATSAPP_META_APP_ID if configured() else "",
             "configId": settings.WHATSAPP_META_CONFIG_ID if configured() else "",
             "connected": bool(connection and connection.connected),
+            "messagingMode": connection.messaging_mode if connection else "manual",
             "phone": connection.display_phone_number if connection and connection.connected else "",
             "wabaId": connection.waba_id if connection and connection.connected else "",
             "notificationsEnabled": bool(connection and connection.notifications_enabled),
@@ -54,9 +55,12 @@ class WhatsAppSettingsView(APIView):
 
     def patch(self, request):
         _manage(request)
-        connection = get_object_or_404(WhatsAppBusinessConnection, company=request.user.company)
-        if not connection.connected:
-            return Response({"message": "Connect a verified WhatsApp Business account first."}, status=409)
+        connection, _ = WhatsAppBusinessConnection.objects.get_or_create(company=request.user.company)
+        mode = request.data.get("messagingMode")
+        if mode is not None:
+            if mode not in {"manual", "automatic"}:
+                return Response({"message": "Messaging mode must be manual or automatic."}, status=400)
+            connection.messaging_mode = mode
         choices = request.data.get("events")
         enabled = request.data.get("notificationsEnabled")
         if choices is not None:
@@ -70,7 +74,7 @@ class WhatsAppSettingsView(APIView):
             if not isinstance(enabled, bool):
                 return Response({"message": "notificationsEnabled must be a boolean."}, status=400)
             connection.notifications_enabled = enabled
-        connection.save(update_fields=["event_settings", "notifications_enabled", "updated_at"])
+        connection.save(update_fields=["messaging_mode", "event_settings", "notifications_enabled", "updated_at"])
         return self.get(request)
 
 
@@ -105,7 +109,6 @@ class WhatsAppConnectView(APIView):
                 "waba_id": waba, "phone_number_id": phone_id,
                 "display_phone_number": display, "encrypted_access_token": encrypted,
                 "connected": True, "connected_at": timezone.now(),
-                "notifications_enabled": False, "event_settings": {},
             },
         )
         return Response({"connected": True, "phone": connection.display_phone_number})
