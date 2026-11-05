@@ -1,10 +1,10 @@
 """Idempotent, consent-gated WhatsApp delivery using existing Celery worker."""
-import re
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from apps.customers.portal_tokens import ensure_portal_access, issue_link
 from .meta import decrypt_token, send_template_message
+from .phone import normalize_recipient
 from .models import (
     WhatsAppBusinessConnection, WhatsAppMessageTemplate,
     CustomerNotificationPreference, WhatsAppNotificationLog,
@@ -18,8 +18,7 @@ EVENTS = (
 
 
 def _phone(customer):
-    digits = re.sub(r"\D", "", customer.whatsapp or customer.phone or "")
-    return digits if 10 <= len(digits) <= 15 else ""
+    return normalize_recipient(customer.whatsapp or customer.phone)
 
 
 def queue_customer_notification(customer, event, event_key, job=None):
