@@ -49,6 +49,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_complete": "jobs.edit",
         "inspection_skip": "jobs.edit",
         "work_skip": "jobs.edit",
+        "work_service_add": "jobs.edit",
         "complaint_status": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
@@ -631,6 +632,105 @@ class JobViewSet(CompanyScopedModelViewSet):
             **workflow_state(job),
             "job": JobSerializer(job).data,
         })
+
+    @decorators.action(detail=True, methods=["post"], url_path="work/services")
+    @transaction.atomic
+    def work_service_add(self, request, pk=None):
+        """Add an actual customer-billable catalogue service to the active Work stage.
+
+        Customer revenue is stored in Job.work. The agreed mechanic charge is
+        *informational* until posted by the existing approved payroll/outside
+        labour workflow. This action never issues stock, pays staff, or invoices.
+        A stable client requestId makes network retries idempotent.
+        """
+        from apps.services.models import Service
+        from apps.accounts.models import User
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(
+            pk=scoped.pk, company_id=request.user.company_id,
+        )
+        if workflow_state(job)["current"] != "work":
+            raise ValidationError({"stage": "Add actual services only during the Work stage."})
+
+        request_id = request.data.get("requestId")
+        try:
+            from uuid import UUID
+            normalized_request = str(UUID(str(request_id)))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"requestId": "A stable UUID requestId is required for safe retries."})
+        existing = next(
+            (item for item in (job.work or []) if isinstance(item, dict)
+             and item.get("requestId") == normalized_request), None,
+        )
+        if existing:
+            return response.Response({"item": existing, "job": JobSerializer(job).data})
+
+        service_id = request.data.get("serviceId")
+        try:
+            service = Service.objects.get(
+                pk=service_id, company=job.company, is_active=True,
+            )
+        except (Service.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+            raise ValidationError({"serviceId": "Choose an active service in this workshop."})
+
+        def decimal_field(name, default, low, high, *, positive=False):
+            raw = request.data.get(name, default)
+            try:
+                value = Decimal(str(raw))
+            except (ArithmeticError, ValueError, TypeError):
+                raise ValidationError({name: "Enter a valid decimal number."})
+            if (not value.is_finite() or value.as_tuple().exponent < -2 or
+                    value < low or value > high or (positive and value == 0)):
+                raise ValidationError({name: "Use a valid amount with at most two decimals."})
+            return value.quantize(Decimal("0.01"))
+
+        quantity = decimal_field("quantity", 1, Decimal("0.01"), Decimal("10000"), positive=True)
+        customer_rate = decimal_field(
+            "customerRate", service.price, Decimal("0"), Decimal("10000000"),
+        )
+        worker_charge = decimal_field(
+            "mechanicCost", 0, Decimal("0"), Decimal("10000000"),
+        )
+        mechanic = None
+        mechanic_id = request.data.get("mechanicId")
+        if mechanic_id:
+            try:
+                mechanic = User.objects.get(
+                    pk=mechanic_id, company=job.company, is_active=True,
+                )
+            except (User.DoesNotExist, ValueError, TypeError, DjangoValidationError):
+                raise ValidationError({"mechanicId": "Mechanic must be an active user in this workshop."})
+
+        line = {
+            "id": str(uuid4()), "requestId": normalized_request,
+            "serviceId": str(service.pk), "service": service.name,
+            "serviceCode": service.code, "quantity": str(quantity),
+            "customerRate": str(customer_rate),
+            "customerCharge": str((quantity * customer_rate).quantize(Decimal("0.01"))),
+            "mechanicId": str(mechanic.pk) if mechanic else None,
+            "mechanicName": mechanic.name if mechanic else "",
+            "agreedWorkerCharge": str(worker_charge),
+            "workerChargePosted": False,
+            "billable": True,
+            "hsnSac": service.hsn_sac, "taxRate": str(service.tax_rate),
+            "taxTreatment": service.tax_treatment,
+            "unit": service.unit,
+            "addedAt": timezone.now().isoformat(),
+            "addedBy": str(request.user.pk),
+        }
+        job.work = [line, *(job.work or [])]
+        job.save(update_fields=["work", "updated_at"])
+        record_job_event(
+            job, request.user, "Job Service Added",
+            f"Added {service.name} x {quantity}",
+            {"serviceId": str(service.pk), "workId": line["id"], "requestId": normalized_request},
+        )
+        return response.Response(
+            {"item": line, "job": JobSerializer(job).data},
+            status=status.HTTP_201_CREATED,
+        )
 
     @decorators.action(detail=True, methods=["post"], url_path="work/skip")
     @transaction.atomic
