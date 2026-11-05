@@ -8,7 +8,7 @@ from django.db import transaction
 from apps.accounts.models import StaffPasswordInvitation
 from apps.accounts.staff_setup import invitation_url
 from apps.employees.models import Employee
-from .meta import decrypt_token, send_template_message
+from .meta import approved_templates, decrypt_token, send_template_message
 from .phone import normalize_recipient
 from .models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
 
@@ -86,9 +86,15 @@ def send_staff_invitation(invitation_id):
         invite.save(update_fields=["delivery_status", "attempts"])
 
     try:
+        token = decrypt_token(connection.encrypted_access_token)
+        if not any(
+            row.get("name") == template.template_name and row.get("language") == template.language
+            for row in approved_templates(connection.waba_id, token)
+        ):
+            raise ValueError("Staff invitation template approval is no longer valid.")
         result = send_template_message(
             connection.phone_number_id,
-            decrypt_token(connection.encrypted_access_token),
+            token,
             recipient, template.template_name, template.language,
             employee.name, user.company.name, invitation_url(invite),
         )
