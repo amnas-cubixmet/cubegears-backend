@@ -19,6 +19,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.control_panel.urls")),
     path("api/v1/health/", HealthView.as_view(), name="health"),
+    path("api/v1/customer-website/", include("apps.customers.website_urls")),
     path("api/v1/", include("apps.customers.portal_urls")),
     path("api/v1/", include("apps.vehicles.photo_urls")),
     path("api/v1/whatsapp/", include("apps.whatsapp.urls")),

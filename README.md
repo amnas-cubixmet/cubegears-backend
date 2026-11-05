@@ -368,3 +368,44 @@ username, password, TLS and a verified sender. `EMAIL_TIMEOUT` defaults to 15s.
 The console backend is for local development and does not deliver email.
 Run `python manage.py check --deploy`, migrations and a real SMTP smoke test in
 staging before release. No deployment or live SMTP credentials are bundled.
+
+
+## Customer Website (separate frontend)
+
+Customer frontend repository: https://github.com/amnas-cubixmet/cubegears-customers-website
+
+New cookie-session API endpoints under /api/v1/customer-website/:
+- GET branding (also issues a signed double-submit CSRF cookie)
+- POST session (exchange existing CustomerPortalAccess bearer URL token for a server session)
+- GET session (existing Customer/Vehicle/Job/approved Estimate/published Invoice/photo data)
+- POST logout
+- GET logo and photos/<photo_uuid> (published files only)
+
+Every request must arrive through the same-origin frontend proxy with HMAC-signed
+X-CG-Portal-Host, X-CG-Portal-TS and X-CG-Portal-Sig headers. Django verifies the
+signature before resolving the company from a default subdomain or an *active*
+custom-domain mapping. No frontend-supplied company/customer ID is trusted.
+
+Local environment settings:
+- PORTAL_PROXY_SHARED_SECRET: same strong random value (32+ chars) in Django
+  and frontend Vite/Vercel server-side environment.
+- CUSTOMER_PORTAL_ROOT_DOMAIN=cubegears.com
+- PORTAL_DEV_COMPANY_SLUG=alpha (only used with DJANGO_DEBUG=True, for localhost)
+- CUSTOMER_WEBSITE_LINKS_ENABLED=true to emit new /access/<token> URLs
+  ONLY AFTER the customer frontend and wildcard HTTPS have been verified.
+
+For production: keep SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True
+and SESSION_COOKIE_SAMESITE=Lax. Ensure HTTPS on Django and Vercel. Run migrations
+before enabling. The browser stores only same-origin HttpOnly Django session
+cookies; long-lived customer bearer credentials do not go into localStorage.
+
+Company owner settings endpoints:
+- GET/PATCH /api/v1/company/customer-website
+- GET/POST /api/v1/company/customer-website/domains
+- DELETE /api/v1/company/customer-website/domains/<id>
+
+A custom domain request is always PENDING_DNS; no domain becomes active just
+because its owner entered it. DNS ownership verification, Vercel provider domain
+registration and certificate readiness are follow-on deployment requirements.
+
+Tests: python manage.py test apps.customers.tests_website

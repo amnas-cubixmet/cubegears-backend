@@ -189,7 +189,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
-    "DEFAULT_THROTTLE_RATES": {"customer_portal": "30/min"},
+    "DEFAULT_THROTTLE_RATES": {"customer_portal": "30/min", "customer_website": "180/min"},
 }
 
 SIMPLE_JWT = {

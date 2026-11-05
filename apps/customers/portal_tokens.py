@@ -34,6 +34,21 @@ def issue_link(access):
     token = _token(access)
     if not hmac.compare_digest(digest(token), access.token_hash or ""):
         raise ValueError("Tracking link cannot be recovered. Regenerate it.")
+    # Switch staff-generated links to the dedicated customer website only once
+    # the wildcard DNS and TLS deployment are actually working.
+    import os
+    import re
+    if os.environ.get("CUSTOMER_WEBSITE_LINKS_ENABLED", "").lower() == "true":
+        from apps.companies.models import CompanyDomain
+        root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
+        preferred = CompanyDomain.objects.filter(
+            company=access.company, status=CompanyDomain.ACTIVE,
+            is_primary=True, verified_at__isnull=False,
+        ).first()
+        if preferred:
+            return f"https://{preferred.hostname}/access/{token}"
+        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", access.company.slug):
+            return f"https://{access.company.slug}.{root}/access/{token}"
     base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5173/c").rstrip("/")
     return f"{base}/{token}"
 

@@ -1,0 +1,276 @@
+"""Tenant-isolated, cookie-authenticated customer website endpoints.
+
+The incoming workshop hostname is signed by the trusted same-origin BFF;
+client-supplied tenant IDs are never authorization inputs.
+"""
+import hashlib
+import hmac
+import os
+import re
+import secrets
+import time
+from mimetypes import guess_type
+
+from django.conf import settings
+from django.http import FileResponse, Http404
+from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
+
+from apps.companies.models import Company, CompanyDomain, CompanyWebsiteSettings
+from apps.customers.models import CustomerPortalAccess
+from apps.customers.portal_tokens import resolve_link
+from apps.customers.portal_views import _job_public
+from apps.invoices.models import Invoice
+from apps.jobs.models import Job, JobEstimate
+from apps.vehicles.models import VehicleInspectionPhoto
+from apps.vehicles.photo_views import _file_response
+
+
+def _secret():
+    return os.environ.get("PORTAL_PROXY_SHARED_SECRET", "")
+
+
+def _tenant(request):
+    """Fail closed unless the server-side proxy authenticated the hostname."""
+    host = str(request.headers.get("X-CG-Portal-Host") or "").strip().lower()
+    ts = str(request.headers.get("X-CG-Portal-TS") or "")
+    sig = str(request.headers.get("X-CG-Portal-Sig") or "")
+    key = _secret()
+    if (
+        len(key) < 32
+        or len(host) > 255
+        or not re.fullmatch(r"[a-z0-9.-]+(?::[0-9]{1,5})?", host)
+        or not re.fullmatch(r"\d{10,11}", ts)
+        or not re.fullmatch(r"[a-f0-9]{64}", sig)
+        or abs(time.time() - int(ts)) > 120
+    ):
+        raise Http404("Website not found.")
+    expected = hmac.new(key.encode(), (ts + ":" + host).encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        raise Http404("Website not found.")
+    hostname = host.split(":", 1)[0]
+    if settings.DEBUG and hostname in {"localhost", "127.0.0.1"}:
+        slug = os.environ.get("PORTAL_DEV_COMPANY_SLUG", "")
+        if slug:
+            return get_object_or_404(Company, slug=slug, is_active=True)
+    root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
+    if hostname.endswith("." + root):
+        slug = hostname[:-(len(root) + 1)]
+        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", slug):
+            return get_object_or_404(Company, slug=slug, is_active=True)
+    domain = CompanyDomain.objects.select_related("company").filter(
+        hostname=hostname, status=CompanyDomain.ACTIVE,
+        verified_at__isnull=False, company__is_active=True
+    ).first()
+    if domain:
+        return domain.company
+    raise Http404("Website not found.")
+
+
+def _csrf_key():
+    return str(getattr(settings, "SECRET_KEY", "")).encode()
+
+
+def _make_csrf():
+    nonce = secrets.token_urlsafe(32)
+    digest = hmac.new(_csrf_key(), ("portal-csrf:" + nonce).encode(), hashlib.sha256).hexdigest()
+    return nonce + "." + digest
+
+
+def _verify_csrf(request):
+    cookie = request.COOKIES.get("cg_portal_csrf", "")
+    provided = request.headers.get("X-CG-CSRF", "")
+    if not cookie or len(cookie) > 160 or not hmac.compare_digest(cookie, provided):
+        return False
+    try:
+        nonce, mac = cookie.rsplit(".", 1)
+    except ValueError:
+        return False
+    if len(nonce) < 32 or len(mac) != 64:
+        return False
+    expected = hmac.new(_csrf_key(), ("portal-csrf:" + nonce).encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, mac)
+
+
+def _no_store(response):
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def _session_access(request, company):
+    auth = request.session.get("cg_customer_portal")
+    if not isinstance(auth, dict) or str(auth.get("company")) != str(company.pk):
+        return None
+    now = int(time.time())
+    if (
+        now - int(auth.get("started", 0)) > 12 * 3600
+        or now - int(auth.get("last_seen", 0)) > 30 * 60
+        or now < int(auth.get("started", 0))
+    ):
+        request.session.pop("cg_customer_portal", None)
+        return None
+    access = CustomerPortalAccess.objects.select_related("customer", "company").filter(
+        pk=auth.get("access"), customer_id=auth.get("customer"), company=company,
+        is_active=True, customer__status="active", company__is_active=True,
+    ).first()
+    if not access:
+        request.session.pop("cg_customer_portal", None)
+        return None
+    auth["last_seen"] = now
+    request.session["cg_customer_portal"] = auth
+    return access
+
+
+def _branding(company):
+    config = CompanyWebsiteSettings.objects.filter(company=company).first()
+    return {
+        "name": company.name,
+        "publicName": (config.public_name if config else "") or company.name,
+        "phone": (config.contact_phone if config else "") or company.phone,
+        "whatsapp": (config.whatsapp_phone if config else "") or company.phone,
+        "address": company.address,
+        "city": company.city,
+        "description": config.description if config else "",
+        "welcomeMessage": config.welcome_message if config else "",
+        "primaryColor": config.primary_color if config else "#116f69",
+        "secondaryColor": config.secondary_color if config else "#e4f2ec",
+        "hasLogo": bool(company.logo_image),
+    }
+
+
+def _dashboard(access):
+    company, customer = access.company, access.customer
+    vehicles = list(customer.vehicles.filter(company=company).order_by("registration")[:100])
+    jobs = list(Job.objects.filter(
+        company=company, customer=customer, vehicle__customer=customer
+    ).select_related("vehicle").order_by("-created_at")[:100])
+    estimates = JobEstimate.objects.filter(
+        company=company, job__customer=customer, job__company=company, status="Approved"
+    ).order_by("-created_at")[:100]
+    invoices = Invoice.objects.filter(
+        company=company, customer=customer, finalized_at__isnull=False
+    ).exclude(status__in=["Draft", "Cancelled"]).order_by("-date")[:100]
+    photos = VehicleInspectionPhoto.objects.filter(
+        company=company, vehicle__customer=customer, published=True
+    ).order_by("-captured_at")[:150]
+    return {
+        "customer": {"name": customer.name},
+        "vehicles": [
+            {"id": str(v.pk), "registration": v.registration,
+             "model": " ".join(filter(None, [v.make, v.model, v.variant])), "year": v.year}
+            for v in vehicles
+        ],
+        "jobs": [_job_public(j) for j in jobs],
+        "estimates": [
+            {"jobId": str(e.job_id), "version": e.version,
+             "status": e.status, "total": str(e.total)} for e in estimates
+        ],
+        "invoices": [
+            {"jobId": str(inv.job_id) if inv.job_id else None,
+             "number": inv.number, "date": inv.date, "status": inv.status,
+             "total": str(inv.total), "paid": str(inv.paid), "balance": str(inv.balance),
+             "kind": inv.kind} for inv in invoices
+        ],
+        "photos": [
+            {"id": str(p.pk), "vehicleId": str(p.vehicle_id),
+             "jobId": str(p.job_id) if p.job_id else None,
+             "category": p.category, "phase": p.phase, "caption": p.caption,
+             "capturedAt": p.captured_at} for p in photos
+        ],
+    }
+
+
+class CustomerWebsiteThrottle(ScopedRateThrottle):
+    """Use the client identity supplied by the trusted proxy, not its egress IP."""
+    def get_ident(self, request):
+        ident = request.headers.get("X-CG-Portal-Client", "") or super().get_ident(request)
+        return str(ident)[:64]
+
+
+@method_decorator(never_cache, name="dispatch")
+class PortalBaseView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [CustomerWebsiteThrottle]
+    throttle_scope = "customer_website"
+
+
+class WebsiteBrandingView(PortalBaseView):
+    def get(self, request):
+        company = _tenant(request)
+        response = _no_store(Response(_branding(company)))
+        response.set_cookie(
+            "cg_portal_csrf", _make_csrf(), max_age=3600, path="/",
+            secure=not settings.DEBUG, httponly=False, samesite="Lax",
+        )
+        return response
+
+
+class WebsiteSessionView(PortalBaseView):
+    def get(self, request):
+        company = _tenant(request)
+        access = _session_access(request, company)
+        if not access:
+            return _no_store(Response({"message": "Customer session required."}, status=401))
+        return _no_store(Response(_dashboard(access)))
+
+    def post(self, request):
+        company = _tenant(request)
+        if not _verify_csrf(request):
+            return _no_store(Response({"message": "Invalid request token."}, status=403))
+        token = request.data.get("token")
+        access = resolve_link(token)
+        if not access or access.company_id != company.pk:
+            return _no_store(Response({"message": "Access link invalid."}, status=404))
+        request.session.flush()
+        now = int(time.time())
+        request.session["cg_customer_portal"] = {
+            "company": str(company.pk), "customer": str(access.customer_id),
+            "access": str(access.pk), "started": now, "last_seen": now,
+        }
+        request.session.set_expiry(0)
+        return _no_store(Response({"authenticated": True}))
+
+
+class WebsiteLogoutView(PortalBaseView):
+    def post(self, request):
+        _tenant(request)
+        if not _verify_csrf(request):
+            return _no_store(Response({"message": "Invalid request token."}, status=403))
+        request.session.flush()
+        return _no_store(Response({"authenticated": False}))
+
+
+class WebsiteLogoView(PortalBaseView):
+    def get(self, request):
+        company = _tenant(request)
+        if not company.logo_image:
+            raise Http404("Logo unavailable.")
+        try:
+            content = company.logo_image.open("rb")
+        except (FileNotFoundError, OSError, ValueError):
+            raise Http404("Logo unavailable.")
+        response = FileResponse(
+            content, content_type=guess_type(company.logo_image.name)[0] or "application/octet-stream"
+        )
+        return _no_store(response)
+
+
+class WebsitePhotoView(PortalBaseView):
+    def get(self, request, photo_id):
+        company = _tenant(request)
+        access = _session_access(request, company)
+        if not access:
+            raise Http404("Photo unavailable.")
+        photo = get_object_or_404(
+            VehicleInspectionPhoto, pk=photo_id, company=company,
+            vehicle__customer=access.customer, published=True
+        )
+        return _no_store(_file_response(photo))
