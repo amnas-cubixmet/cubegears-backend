@@ -8,6 +8,30 @@ class SupplierSerializer(serializers.ModelSerializer):
     gstNo=serializers.CharField(source="gstin",required=False,allow_blank=True)
     class Meta: model=Supplier; exclude=("company","branch","gstin")
 
+    def validate(self, attrs):
+        request = self.context.get("request")
+        company_id = getattr(getattr(request, "user", None), "company_id", None)
+        if not company_id:
+            return attrs
+        name = (attrs.get("name", getattr(self.instance, "name", "")) or "").strip()
+        phone = (attrs.get("phone", getattr(self.instance, "phone", "")) or "").strip()
+        gstin = (attrs.get("gstin", getattr(self.instance, "gstin", "")) or "").strip().upper()
+        if not name:
+            raise serializers.ValidationError({"name": "Supplier Name is required."})
+        qs = Supplier.objects.filter(company_id=company_id)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if gstin and qs.filter(gstin__iexact=gstin).exists():
+            raise serializers.ValidationError({"gstNo": "A supplier with this GSTIN already exists."})
+        if phone and qs.filter(name__iexact=name, phone=phone).exists():
+            raise serializers.ValidationError({"name": "A supplier with this name and phone already exists."})
+        attrs["name"] = name
+        if "phone" in attrs:
+            attrs["phone"] = phone
+        if "gstin" in attrs:
+            attrs["gstin"] = gstin
+        return attrs
+
 class StockItemSerializer(serializers.ModelSerializer):
     partName=serializers.CharField(source="name",required=False)
     categoryName=serializers.CharField(source="category.name",read_only=True)
@@ -25,6 +49,26 @@ class StockItemSerializer(serializers.ModelSerializer):
     location=serializers.CharField(source="rack",required=False,allow_blank=True)
     hsnCode=serializers.CharField(source="hsn_code",required=False,allow_blank=True)
     onHand=serializers.DecimalField(source="on_hand",max_digits=12,decimal_places=2,required=False)
+
+    def validate_sku(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("SKU / Part Number is required.")
+        request = self.context.get("request")
+        company_id = getattr(getattr(request, "user", None), "company_id", None)
+        if company_id:
+            qs = StockItem.objects.filter(company_id=company_id, sku__iexact=value)
+            if self.instance is not None:
+                qs = qs.exclude(pk=self.instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError("This SKU / Part Number already exists.")
+        return value
+
+    def validate_onHand(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Stock quantity cannot be negative.")
+        return value
+
     class Meta:
         model=StockItem
         exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand")

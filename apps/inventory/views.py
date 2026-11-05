@@ -38,7 +38,8 @@ class StockItemViewSet(CompanyScopedModelViewSet):
                 movement_type="opening",
                 quantity=item.on_hand,
                 unit_cost=item.cost_price,
-                note="Initial stock entered when the part was created.",
+                unit_selling_price=item.selling_price,
+                note="Opening inventory; this entry does not create a supplier bill or payment.",
                 created_by=self.request.user,
             )
 
@@ -253,7 +254,32 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 class StockCategoryViewSet(CompanyScopedModelViewSet):
     queryset=StockCategory.objects.all(); serializer_class=StockCategorySerializer
 class SupplierViewSet(CompanyScopedModelViewSet):
-    queryset=Supplier.objects.all(); serializer_class=SupplierSerializer
+    queryset = Supplier.objects.all()
+    serializer_class = SupplierSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        search = self.request.query_params.get("search", "").strip()[:120]
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(contact_person__icontains=search) |
+                Q(phone__icontains=search) |
+                Q(gstin__icontains=search)
+            )
+        state = self.request.query_params.get("active")
+        if state in {"true", "false"}:
+            qs = qs.filter(is_active=(state == "true"))
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        supplier = self.get_object()
+        if supplier.items.exists() or supplier.purchase_orders.exists():
+            return response.Response(
+                {"message": "This supplier has inventory or purchase history. Deactivate the supplier instead."},
+                status=409,
+            )
+        return super().destroy(request, *args, **kwargs)
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
     def create(self, request, *args, **kwargs):
