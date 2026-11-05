@@ -105,4 +105,4 @@ class CustomerPortalSecurityTests(TestCase):
         self.assertEqual(self.public.get("/api/v1/c/not-a-secret").status_code, 404)
         access = ensure_portal_access(self.customer)
         original = self.token(access)
-        self.assertEqual(self.public.get("/api/v1/c/" + original[:-1] + "0").status_code, 404)
+        self.assertEqual(self.public.get("/api/v1/c/" + original[:-1] + ("0" if original[-1] != "0" else "1")).status_code, 404)

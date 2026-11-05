@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import MagicLink
+from .staff_setup import issue_invitation, invitation_url, resolve_invitation, consume_invitation
 from .email import queue_email
 from .account_links import is_platform_account, password_action_url, magic_action_url
 from .serializers import (
@@ -227,8 +228,8 @@ class PublicWorkshopSignupView(APIView):
             name=data["workshop_name"].strip(),
             legal_name=data["workshop_name"].strip(),
             slug=slug,
-            email=data["email"],
-            phone=data["mobile"].strip(),
+            email=data.get("email") or "",
+            phone=data["mobile"],
             currency="INR",
             plan="credits",
             require_paid_features=True,
@@ -239,8 +240,8 @@ class PublicWorkshopSignupView(APIView):
             company=company,
             name="Head Office",
             code="HO",
-            phone=data["mobile"].strip(),
-            email=data["email"],
+            phone=data["mobile"],
+            email=data.get("email") or "",
             is_head_office=True,
             is_active=True,
         )
@@ -256,7 +257,7 @@ class PublicWorkshopSignupView(APIView):
 
 
         user = User.objects.create_user(
-            email=data["email"],
+            email=data.get("email") or None,
             password=None,
             name=data["owner_name"].strip(),
             phone=data["mobile"].strip(),
@@ -275,21 +276,32 @@ class PublicWorkshopSignupView(APIView):
         company.save(update_fields=["owner", "updated_at"])
 
         # Create the staff identity without granting a free attendance entitlement.
-        resolve_employee_for_user(user)
+        employee = resolve_employee_for_user(user)
+        if data.get('whatsapp_consent') and employee:
+            employee.whatsapp_consent = True
+            employee.whatsapp_consent_source = 'Explicit consent during workshop registration'
+            employee.save(update_fields=['whatsapp_consent', 'whatsapp_consent_source', 'updated_at'])
 
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = default_token_generator.make_token(user)
-        setup_url = password_action_url(request, user, uid, token, setup=True)
-        queue_email(
-            subject="Set up your CubeGears password",
-            message="Welcome to CubeGears. Your workshop account has been created. Set your password before signing in.",
-            recipient_list=[user.email],
-            action_url=setup_url, action_label="Set up password",
-        )
+        invitation = issue_invitation(user)
+        setup_url = invitation_url(invitation)
+        # Email remains supported. Mobile-only registration needs an official,
+        # independently configured platform WhatsApp/SMS sender to deliver the
+        # invite: do not leak a bearer link back to an anonymous signup caller.
+        if user.email:
+            queue_email(
+                subject="Set up your CubeGears password",
+                message="Welcome to CubeGears. Complete your workshop account setup using the secure link.",
+                recipient_list=[user.email],
+                action_url=setup_url, action_label="Set up password",
+            )
+        else:
+            from apps.whatsapp.staff_invites import queue_platform_owner_invitation
+            transaction.on_commit(lambda: queue_platform_owner_invitation(invitation.pk))
 
         return Response(
             {
-                "message": "Workshop account created. Check your email to set your password.",
+                "message": "Workshop account created. Your password setup invitation will be delivered to the registered contact when a delivery channel is configured.",
+                "setupDelivery": "email_queued" if user.email else "platform_whatsapp_pending",
                 "workshop": {
                     "id": str(company.id),
                     "name": company.name,
@@ -300,6 +312,39 @@ class PublicWorkshopSignupView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class StaffInvitationValidationView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
+
+    def post(self, request):
+        record = resolve_invitation(request.data.get("token"))
+        if not record:
+            return Response({"valid":False,"message":"Invalid or expired setup link."}, status=400)
+        return Response({"valid":True,"purpose":record.purpose,"expiresAt":record.expires_at})
+
+
+class StaffInvitationConsumeView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
+
+    def post(self, request):
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as PasswordValidationError
+        token = request.data.get("token")
+        password = request.data.get("password")
+        confirmation = request.data.get("confirmPassword")
+        if not isinstance(password,str) or not password or password != confirmation:
+            return Response({"password":"Passwords must match."}, status=400)
+        try:
+            validate_password(password)
+            user = consume_invitation(token, password)
+        except PasswordValidationError as exc:
+            return Response({"password":list(exc.messages)}, status=400)
+        if user is None:
+            return Response({"message":"Invalid or expired setup link."}, status=400)
+        return Response({"message":"Password saved. Sign in with your mobile number or email."})
 
 
 class SetupPasswordView(APIView):

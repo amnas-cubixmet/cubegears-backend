@@ -27,6 +27,8 @@ class Employee(CompanyOwnedModel):
     name=models.CharField(max_length=160)
     phone=models.CharField(max_length=30,blank=True)
     email=models.EmailField(blank=True)
+    whatsapp_consent=models.BooleanField(default=False)
+    whatsapp_consent_source=models.CharField(max_length=120,blank=True)
     designation=models.CharField(max_length=100,blank=True)
     role_name=models.CharField(max_length=100,blank=True)
     department_name=models.CharField(max_length=120,blank=True)

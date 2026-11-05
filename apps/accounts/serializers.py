@@ -3,6 +3,7 @@ from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
 from .models import User
+from .phone import normalize_phone
 
 
 class CompanyMiniSerializer(serializers.Serializer):
@@ -69,7 +70,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "name", "email", "phone", "avatar",
+            "id", "name", "email", "phone", "normalized_phone", "avatar",
             "company", "branch", "role",
             "employeeProfileId", "employeeDisplayNo", "effectivePermissions", "isCompanyOwner", "paidAccessRequired",
             "is_staff", "is_superuser", "email_verified",
@@ -91,21 +92,52 @@ def user_can_sign_in(user):
 
 
 class LoginSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    """Email or international mobile + password, preserving old email clients."""
+    identifier = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    workshop = serializers.SlugField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True, trim_whitespace=False)
 
     def validate(self, attrs):
-        user = authenticate(
-            request=self.context.get("request"),
-            email=attrs["email"].lower(),
-            password=attrs["password"],
-        )
-        if not user:
-            raise serializers.ValidationError("Invalid email or password.")
-        if not user.is_active:
-            raise serializers.ValidationError("This account is disabled.")
-        if not user_can_sign_in(user):
-            raise serializers.ValidationError("This account cannot sign in. Contact your workshop administrator.")
+        from django.contrib.auth.hashers import check_password
+        ident = str(attrs.get("identifier") or attrs.get("email") or attrs.get("mobile") or "").strip()
+        password = attrs["password"]
+        generic = "Invalid credentials or workshop selection."
+        if not ident:
+            raise serializers.ValidationError({"identifier":"Enter your email or mobile number."})
+        if "@" in ident:
+            user = authenticate(
+                request=self.context.get("request"),
+                email=ident.lower(), password=password,
+            )
+            if not user or not user_can_sign_in(user):
+                raise serializers.ValidationError(generic)
+        else:
+            try:
+                mobile = normalize_phone(ident)
+            except Exception:
+                # Similar response for nonexistent and badly formatted numbers.
+                raise serializers.ValidationError(generic)
+            candidates = User.objects.filter(normalized_phone=mobile).select_related(
+                "company", "role"
+            ).order_by("id")
+            company_slug = str(attrs.get("workshop") or "").strip().lower()
+            if company_slug:
+                candidates = candidates.filter(company__slug=company_slug)
+            # Never silently choose among two workshop accounts sharing a phone.
+            # Require a workshop code only after a valid password is supplied.
+            matches = list(candidates[:6])
+            if not company_slug and len(matches) > 1:
+                if any(row.check_password(password) and user_can_sign_in(row) for row in matches):
+                    raise serializers.ValidationError({"workshop":"Enter your workshop code for this mobile number."})
+                check_password(password, "!" + ("invalid" * 14))
+                raise serializers.ValidationError(generic)
+            user = next((row for row in matches if row.check_password(password) and user_can_sign_in(row)), None)
+            if not user:
+                # Dummy hash verification is intentionally symmetrical for absent users.
+                check_password(password, "!" + ("invalid" * 14))
+                raise serializers.ValidationError(generic)
         attrs["user"] = user
         return attrs
 
@@ -159,10 +191,19 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
     workshop_name = serializers.CharField(max_length=180)
     owner_name = serializers.CharField(max_length=150)
     mobile = serializers.CharField(max_length=30)
-    email = serializers.EmailField()
+    email = serializers.EmailField(required=False, allow_blank=True)
+    whatsapp_consent = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('whatsapp_consent'):
+            raise serializers.ValidationError({'whatsapp_consent': 'Agree to receive the password setup link through official WhatsApp, or supply an email.'})
+        return attrs
+
+    def validate_mobile(self, value):
+        return normalize_phone(value)
 
     def validate_email(self, value):
         value = value.lower().strip()
-        if User.objects.filter(email__iexact=value).exists():
+        if value and User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("An account with this email already exists.")
         return value

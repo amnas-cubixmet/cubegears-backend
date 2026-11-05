@@ -6,7 +6,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
 from django.conf import settings
-from apps.accounts.email import queue_email, email_delivery_mode
+from apps.accounts.email import queue_email
 from apps.accounts.account_links import password_action_url, magic_action_url
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
@@ -141,6 +141,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
     permission_prefix="staff"
     action_permission_map={
         "toggle_account": "staff.edit",
+        "login_access": "staff.edit",
         "invite": "staff.edit",
     }
 
@@ -231,34 +232,62 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             self.request.user,
         )
 
+    def _issue_staff_invitation(self, employee, user):
+        from apps.accounts.staff_setup import issue_invitation, invitation_url
+        from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
+
+        if not user or not user.is_active or not user.company_id or user.company_id != employee.company_id:
+            raise ValidationError({"account": "Active, company-specific staff login required."})
+        if not user.role_id or user.role.is_system or not user.role.is_active:
+            raise ValidationError({"role": "A valid non-admin staff login role is required."})
+        record = issue_invitation(user, issuer=self.request.user)
+        delivery = queue_staff_whatsapp_invitation(record, employee)
+        employee._setup_link = invitation_url(record)
+        employee._whatsapp_invite_status = delivery
+        employee._invite_email_delivery = {"status":"not_requested"}
+        if delivery == "manual" and user.email:
+            # Optional email fallback through the existing Celery-only service.
+            result = queue_email(
+                subject="Set your CubeGears workshop password",
+                message=f"Your account for {employee.company.name} is ready. Use the secure one-time link to set your password.",
+                recipient_list=[user.email],
+                action_url=employee._setup_link,
+                action_label="Set password",
+            )
+            employee._invite_email_delivery = result
+        _record_activity(
+            employee, "Staff Password Invitation Created",
+            "A one-use 24-hour password link was created. Delivery: " + delivery,
+            self.request.user,
+        )
+        return record
+
     def _ensure_login_user(self, employee):
         from apps.accounts.models import User
+        from apps.accounts.phone import normalize_phone
 
         if employee.user:
             return employee.user
-        if not employee.email:
-            raise ValidationError({"email": "Add an email address to invite this staff member."})
         if not user_has_permission(self.request.user, "company.manage"):
             raise PermissionDenied("Only a company admin can create staff login accounts.")
-
+        try:
+            mobile = normalize_phone(employee.phone)
+        except Exception:
+            raise ValidationError({"phone": "Add an international mobile number before enabling login."})
         role = self._resolve_role(employee.role_name)
         if not role:
             raise ValidationError({"role": "Choose a role before inviting this staff member."})
-        if User.objects.filter(email__iexact=employee.email.strip()).exists():
+        if employee.email and User.objects.filter(email__iexact=employee.email.strip()).exists():
             raise ValidationError({"email": "This email is already linked to a login account."})
-
+        if User.objects.filter(company=employee.company, normalized_phone=mobile).exists():
+            raise ValidationError({"phone": "This mobile already has a login in this workshop."})
         if employee.status == "Active":
             enforce_user_limit(employee.company)
         user = User.objects.create_user(
-            email=employee.email.strip().lower(),
-            password=None,
-            name=employee.name,
-            company=employee.company,
-            branch=employee.branch,
-            role=role,
-            is_active=employee.status == "Active",
-            is_staff=False,
-            is_superuser=False,
+            email=employee.email.strip().lower() or None,
+            password=None, name=employee.name, phone=mobile,
+            company=employee.company, branch=employee.branch, role=role,
+            is_active=employee.status == "Active", is_staff=False, is_superuser=False,
         )
         employee.user = user
         employee.save(update_fields=["user", "updated_at"])
@@ -266,59 +295,54 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
+        from apps.accounts.models import User
+        from apps.accounts.phone import normalize_phone
+
         company = self.request.user.company
         code = serializer.validated_data.get("employee_code") or _next_employee_code(company)
         email = (serializer.validated_data.get("email") or "").strip().lower()
         name = serializer.validated_data.get("name") or code
         role_name = serializer.validated_data.get("role_name") or ""
         role_id = serializer.validated_data.pop("roleId", None)
-        requested_role = self._resolve_role(role_name, role_id) if role_name else None
+        login_enabled = serializer.validated_data.pop("loginAccessEnabled", bool(email))
+        requested_role = self._resolve_role(role_name, role_id) if role_name or role_id else None
         branch = serializer.validated_data.get("branch", self.request.user.branch)
         team = serializer.validated_data.get("team")
         shift = serializer.validated_data.get("shift")
         status_value = serializer.validated_data.get("status", "Active")
+        mobile = normalize_phone(serializer.validated_data.get("phone"))
+        serializer.validated_data["phone"] = mobile
 
-        from apps.accounts.models import User
         user = None
-        if email:
+        if login_enabled:
             if not user_has_permission(self.request.user, "company.manage"):
                 raise PermissionDenied("Only a company admin can create staff login accounts.")
             if requested_role is None:
-                raise ValidationError({"role": "Choose a staff role before enabling email login."})
-            # An existing account must never be silently attached or reassigned.
-            if User.objects.filter(email__iexact=email).exists():
+                raise ValidationError({"role": "Choose an assignable staff role before enabling login."})
+            if email and User.objects.filter(email__iexact=email).exists():
                 raise ValidationError({"email": "This email is already linked to a login account."})
+            if User.objects.filter(company=company, normalized_phone=mobile).exists():
+                raise ValidationError({"phone": "This mobile already has a login account in this workshop."})
             if status_value == "Active":
                 enforce_user_limit(company)
             user = User.objects.create_user(
-                email=email,
-                password=None,
-                name=name,
-                company=company,
-                branch=branch,
-                role=requested_role,
-                is_active=status_value == "Active",
-                is_staff=False,
-                is_superuser=False,
-                email_verified=False,
+                email=email or None, password=None, name=name,
+                phone=mobile, company=company, branch=branch,
+                role=requested_role, is_active=status_value == "Active",
+                is_staff=False, is_superuser=False, email_verified=False,
             )
 
         obj = serializer.save(
-            company=company,
-            branch=branch,
-            employee_code=code,
-            email=email,
-            payment_type="daily",
-            user=user,
+            company=company, branch=branch, employee_code=code, email=email,
+            payment_type="daily", user=user,
             department_name=serializer.validated_data.get("department_name") or (team.name if team else ""),
             shift_label=serializer.validated_data.get("shift_label") or _shift_label(shift),
         )
         _record_activity(obj, "Staff Created", f"{_employee_display_no(obj)} profile created.", self.request.user)
         if user and user.is_active:
-            self._send_staff_access_email(obj, user)
+            self._issue_staff_invitation(obj, user)
         else:
-            obj._invite_email_delivery = {"status": "not_requested"}
-
+            obj._invite_email_delivery = {"status":"not_requested"}
 
     @transaction.atomic
     def perform_update(self,serializer):
@@ -328,7 +352,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         selected_id = serializer.validated_data.pop("roleId", None)
         requested_name=serializer.validated_data.get("role_name")
         requested_email=serializer.validated_data.get("email")
-        if instance.user and requested_email is not None and requested_email.strip().lower() != instance.user.email.lower():
+        if instance.user and requested_email is not None and requested_email.strip().lower() != (instance.user.email or '').lower():
             raise ValidationError({"email": "To change a linked login email, contact your company administrator."})
         if requested_name is not None and (requested_name != instance.role_name or (selected_id and instance.user and selected_id != instance.user.role_id)):
             if not user_has_permission(self.request.user, "company.manage"):
@@ -427,37 +451,81 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         )
         return response.Response(self.get_serializer(obj).data)
 
+    @decorators.action(detail=True, methods=["patch"], url_path="login-access")
+    def login_access(self, request, pk=None):
+        if not user_has_permission(request.user, "company.manage"):
+            raise PermissionDenied("Only a company admin can change staff login access.")
+        enabled = request.data.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValidationError({"enabled":"Provide a boolean enabled value."})
+        with transaction.atomic():
+            employee = self.get_object()
+            if employee.user_id == request.user.pk or (
+                employee.user and (employee.user.is_superuser or employee.user.is_staff or
+                                   (employee.user.role and employee.user.role.is_system))
+            ):
+                raise PermissionDenied("Owner and platform account login cannot be changed here.")
+            if not employee.user:
+                if not enabled:
+                    return response.Response(self.get_serializer(employee).data)
+                employee.user = self._ensure_login_user(employee)
+            if enabled and employee.status not in {"Active", "Probation", "Notice Period"}:
+                raise ValidationError({"status":"Activate the employee before enabling login."})
+            if enabled and not employee.user.is_active:
+                enforce_user_limit(request.user.company)
+            employee.user.is_active = enabled
+            employee.user.save(update_fields=["is_active", "updated_at"])
+            if not enabled:
+                from apps.accounts.models import StaffPasswordInvitation
+                StaffPasswordInvitation.objects.filter(
+                    user=employee.user,used_at__isnull=True,
+                    invalidated_at__isnull=True,
+                ).update(invalidated_at=__import__("django.utils.timezone",fromlist=["now"]).now())
+            _record_activity(employee, "Staff Login Access Changed",
+                             "Enabled" if enabled else "Disabled", request.user)
+        return response.Response(self.get_serializer(employee).data)
+
     @decorators.action(detail=True, methods=["post"], url_path="invite")
     def invite(self, request, pk=None):
         if not user_has_permission(request.user, "company.manage"):
             raise PermissionDenied("Only a company admin can invite staff login accounts.")
-
-        # Commit staff account changes before attempting to queue the email.
-        # A broker outage cannot send mail, and does not roll back staff data.
         with transaction.atomic():
             obj = self.get_object()
             if obj.status != "Active":
-                raise ValidationError({"status": "Activate this employee before sending a login invitation."})
+                raise ValidationError({"status":"Activate this employee before inviting."})
             user = self._ensure_login_user(obj)
             role = self._resolve_role(obj.role_name, user.role_id)
             if not role:
-                raise ValidationError({"role": "A valid staff role is required."})
-            if user.role_id != role.id:
+                raise ValidationError({"role":"A valid workshop staff role is required."})
+            if user.role_id != role.pk:
                 user.role = role
                 user.save(update_fields=["role"])
-            self._send_staff_access_email(obj, user)
+            from datetime import timedelta
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            from apps.accounts.staff_setup import invitation_url
 
-        delivery = getattr(obj, "_invite_email_delivery", {"status": email_delivery_mode()})
-        status_value = delivery["status"]
+            # Rapid double-clicks/retries return the same still-valid invite.
+            # They must never create and deliver two different password links.
+            recent = StaffPasswordInvitation.objects.select_for_update().filter(
+                user=user, used_at__isnull=True, invalidated_at__isnull=True,
+                expires_at__gt=timezone.now(),
+                created_at__gte=timezone.now() - timedelta(seconds=60),
+            ).order_by("-created_at").first()
+            if recent:
+                invite = recent
+                url = invitation_url(recent)
+                delivery = recent.delivery_status
+            else:
+                invite = self._issue_staff_invitation(obj, user)
+                url = obj._setup_link
+                delivery = obj._whatsapp_invite_status
         return response.Response({
-            "message": (
-                "Staff access invitation accepted by Celery queue." if status_value == "queued"
-                else "Email service disabled. Start Redis and Celery Worker and enable email." if status_value == "disabled"
-                else "Celery broker unavailable. Invitation was not queued or sent." if status_value == "failed"
-                else "Staff access invitation pending transaction commit."
-            ),
-            "emailDeliveryStatus": status_value,
-            "loginStatus": "Password Setup Pending" if not user.has_usable_password() else "Active",
+            "message": "New secure 24-hour password link issued.",
+            "setupLink": url, "expiresAt": invite.expires_at,
+            "whatsappInviteStatus": delivery,
+            "emailDeliveryStatus": getattr(obj, "_invite_email_delivery", {}).get("status"),
+            "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
         })
 
 

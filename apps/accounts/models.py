@@ -15,7 +15,8 @@ class User(AbstractBaseUser, PermissionsMixin):
             return super().save(*args, **kwargs)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, null=True, blank=True)
+    normalized_phone = models.CharField(max_length=17, null=True, blank=True, db_index=True)
     name = models.CharField(max_length=150)
     phone = models.CharField(max_length=30, blank=True)
     company = models.ForeignKey("companies.Company", on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
@@ -33,8 +34,14 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     objects = UserManager()
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["company", "normalized_phone"], condition=models.Q(company__isnull=False, normalized_phone__isnull=False), name="unique_company_mobile_login"),
+            models.UniqueConstraint(fields=["normalized_phone"], condition=models.Q(company__isnull=True, normalized_phone__isnull=False), name="unique_platform_mobile_login"),
+        ]
+
     def __str__(self):
-        return self.email
+        return self.email or self.normalized_phone or str(self.pk)
 
 class MagicLink(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -68,3 +75,24 @@ class MagicLink(models.Model):
         link.used_at = timezone.now()
         link.save(update_fields=["used_at"])
         return link.user
+
+
+class StaffPasswordInvitation(models.Model):
+    """One-use HMAC capability. Raw URL secrets are never stored."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="staff_password_invitations")
+    issued_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="issued_staff_password_invitations")
+    nonce = models.CharField(max_length=64)
+    token_hash = models.CharField(max_length=64, unique=True)
+    purpose = models.CharField(max_length=10, default="setup", choices=[("setup","Setup"),("reset","Reset")])
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+    delivery_status = models.CharField(max_length=24, default="pending")
+    meta_message_id = models.CharField(max_length=180, blank=True, db_index=True)
+    failure_reason = models.CharField(max_length=280, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
