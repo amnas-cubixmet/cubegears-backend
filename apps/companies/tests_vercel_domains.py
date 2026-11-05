@@ -26,6 +26,7 @@ class WorkshopDomainTests(TestCase):
             "VERCEL_CUSTOMER_PROJECT_ID": "prj_customer_test",
             "VERCEL_CUSTOMER_TEAM_ID": "team_customer_test",
             "CUSTOMER_PORTAL_ROOT_DOMAIN": "cubegears.com",
+            "CUSTOMER_DOMAIN_REQUIRE_APPROVAL": "false",
         })
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -196,6 +197,23 @@ class WorkshopDomainTests(TestCase):
         ).status_code, 200)
         self.assertFalse(CompanyDomain.objects.get().is_approved)
         self.assertTrue(CompanyDomainAudit.objects.filter(action="platform_disabled").exists())
+
+    def test_default_requires_platform_approval_before_vercel_mutation(self):
+        with patch.dict(os.environ, {"CUSTOMER_DOMAIN_REQUIRE_APPROVAL": "true"}):
+            with patch.object(VercelDomains, "add") as call:
+                response = self.create()
+                self.assertEqual(response.status_code, 201, response.data)
+                self.assertFalse(response.data["isApproved"])
+                call.assert_not_called()
+        domain = CompanyDomain.objects.get()
+        self.client.force_authenticate(user=self.platform)
+        with self.mock_vercel():
+            approved = self.client.post(
+                f"/api/v1/company/platform/customer-domains/{domain.pk}/review",
+                {"action": "approve"}, format="json",
+            )
+        self.assertEqual(approved.status_code, 200, approved.data)
+        self.assertTrue(CompanyDomain.objects.get().is_approved)
 
     def test_provider_configuration_and_project_id_are_fenced(self):
         with self.assertRaises(VercelDomainError):
