@@ -23,7 +23,42 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         "convert": "invoices.create",
         "gst_context": "invoices.view",
         "preview": "invoices.view",
+        "job_draft": "invoices.create",
     }
+
+    @decorators.action(detail=False, methods=["get"], url_path="job-draft")
+    def job_draft(self, request):
+        """An unsaved proposal from recorded billable job charges only.
+
+        Using this GET endpoint never creates a financial record, posts stock,
+        or treats an approved estimate as completed workshop work.
+        """
+        from django.shortcuts import get_object_or_404
+        from apps.jobs.models import Job
+        from apps.jobs.workflow import workflow_state
+        from .job_draft import suggested_job_invoice
+
+        job_id = request.query_params.get("jobId")
+        try:
+            UUID(str(job_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"jobId": "Provide a valid Job Card identifier."})
+        job = get_object_or_404(
+            Job.objects.select_related("company", "customer", "vehicle", "branch"),
+            pk=job_id, company=request.user.company,
+        )
+        if "qc" not in workflow_state(job)["completed"]:
+            raise ValidationError({"jobId": "Complete Job Card Quality Check before preparing the invoice draft."})
+        linked = Invoice.objects.filter(
+            company=job.company, job=job, kind="invoice",
+        ).exclude(status="Cancelled").order_by("-created_at").first()
+        if linked:
+            return response.Response({
+                "jobId": str(job.pk), "existingInvoiceId": str(linked.pk),
+                "items": [], "warnings": ["This job already has an invoice. Open it rather than creating a duplicate."],
+                "created": False,
+            })
+        return response.Response(suggested_job_invoice(job))
 
     @decorators.action(detail=False, methods=["get"], url_path="gst-context")
     def gst_context(self, request):
