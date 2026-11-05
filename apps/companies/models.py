@@ -129,6 +129,7 @@ class CompanyDomain(models.Model):
 
 
 class CompanyDomainAudit(models.Model):
+    id = models.BigAutoField(primary_key=True)
     domain = models.ForeignKey(CompanyDomain, on_delete=models.CASCADE, related_name="events")
     company = models.ForeignKey(Company, on_delete=models.CASCADE)
     actor = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
