@@ -216,4 +216,7 @@ class WhatsAppTestMessageView(APIView):
         )
         if not log:
             return Response({"message":"Connect WhatsApp, enable test events, configure an approved template and record customer opt-in."}, status=409)
-        return Response({"queued":True, "id":str(log.id), "sendingEnabled":bool(settings.WHATSAPP_SEND_ENABLED and settings.CELERY_BROKER_URL)}, status=202)
+        is_queued = log.status == "queued"
+        return Response({"queued":is_queued, "id":str(log.id), "status":log.status,
+                         "sendingEnabled":bool(settings.WHATSAPP_SEND_ENABLED and settings.CELERY_BROKER_URL),
+                         "message": "" if is_queued else log.error_detail}, status=202 if is_queued else 503)
