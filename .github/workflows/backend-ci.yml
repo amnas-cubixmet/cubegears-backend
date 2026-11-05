@@ -38,6 +38,7 @@ jobs:
             apps.jobs.tests_work_skip \
             apps.jobs.tests_estimate_skip_gst \
             apps.services.tests_hierarchy \
+            apps.inventory.tests_supplier_finance \
             apps.jobs.tests_inspection_skip \
             apps.whatsapp.tests_integration \
             apps.search.tests \
