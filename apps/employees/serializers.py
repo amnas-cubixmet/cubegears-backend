@@ -212,7 +212,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
         return attrs
 
     def get_accountStatus(self,obj):
-        return "Active" if (not obj.user or obj.user.is_active) and obj.status=="Active" else "Inactive"
+        return "Active" if (not obj.user or obj.user.is_active) and obj.status in {"Active", "Probation", "Notice Period"} else "Inactive"
 
     def get_loginStatus(self,obj):
         if not obj.user:
