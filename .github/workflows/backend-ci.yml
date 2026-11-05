@@ -37,6 +37,7 @@ jobs:
             apps.whatsapp.tests_integration \
             apps.search.tests \
             apps.companies.tests_logo_upload \
+            apps.companies.tests_vercel_domains \
             apps.control_panel.tests_feature_pricing_routes \
             apps.attendance.tests_auto_checkout_scheduler \
             apps.attendance.tests_punch_location \

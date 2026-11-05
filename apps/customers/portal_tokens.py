@@ -43,7 +43,9 @@ def issue_link(access):
         root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
         preferred = CompanyDomain.objects.filter(
             company=access.company, status=CompanyDomain.ACTIVE,
-            is_primary=True, verified_at__isnull=False,
+            is_primary=True, is_approved=True,
+            dns_configured=True, ownership_verified=True, ssl_status="ready",
+            verified_at__isnull=False,
         ).first()
         if preferred:
             return f"https://{preferred.hostname}/access/{token}"
