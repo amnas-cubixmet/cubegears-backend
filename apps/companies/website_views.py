@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsCompanyAdmin
-from .models import Company, CompanyDomain, CompanyDomainAudit, CompanyWebsiteSettings
+from .models import Company, CompanyDomain, CompanyWebsiteSettings
 from .vercel_domains import (
     VercelDomainError, VercelDomains, record_domain_event, refresh_domain,
 )
