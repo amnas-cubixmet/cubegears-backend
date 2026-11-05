@@ -248,6 +248,22 @@ class JobViewSet(CompanyScopedModelViewSet):
 
             company = request.user.company
             branch = request.user.branch
+            requested_branch = data.get("branchId")
+            if requested_branch:
+                from apps.branches.models import Branch
+                from apps.accounts.permissions import user_has_permission
+                resolved_branch = Branch.objects.filter(
+                    pk=requested_branch, company=company, is_active=True,
+                ).first()
+                if not resolved_branch:
+                    raise ValidationError({"branchId": "Select an active workshop branch."})
+                if (not branch or branch.pk != resolved_branch.pk) and not (
+                    user_has_permission(request.user, "company.manage")
+                    or user_has_permission(request.user, "branches.manage")
+                ):
+                    raise ValidationError({"branchId": "You cannot create Job Cards in a different branch."})
+                branch = resolved_branch
+            self._job_create_branch = branch
             chosen_customer = None
             chosen_id = data.get("customer")
             if chosen_id:
@@ -393,7 +409,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         count=Job.objects.filter(company=company).count()+1
         number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
         job=serializer.save(company=company,branch=self.request.user,job_number=number,advisor=advisor)
-        JobActivity.objects.create(company=company,branch=self.request.user.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
+        JobActivity.objects.create(company=company,branch=job.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
 
     @decorators.action(detail=True,methods=["patch"])
     def status(self,request,pk=None):
