@@ -1,5 +1,6 @@
 from rest_framework.routers import DefaultRouter
 from .views import *
+from .supplier_credit_views import SupplierCreditViewSet, SupplierCreditPaymentViewSet
 router=DefaultRouter(trailing_slash=False)
 router.register("categories",StockCategoryViewSet,basename="stock-categories")
 router.register("suppliers",SupplierViewSet,basename="stock-suppliers")

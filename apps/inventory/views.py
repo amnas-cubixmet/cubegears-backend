@@ -297,5 +297,3 @@ class StockAuditViewSet(CompanyScopedModelViewSet):
         item=serializer.validated_data["item"]; counted=serializer.validated_data["counted_qty"]
         serializer.save(company=self.request.user.company,branch=self.request.user.branch,expected_qty=item.on_hand,difference=counted-item.on_hand,created_by=self.request.user)
 
-# Explicitly permission-gated supplier credit and settlement endpoints.
-from .supplier_credit_views import SupplierCreditViewSet, SupplierCreditPaymentViewSet
