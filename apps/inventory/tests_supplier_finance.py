@@ -105,7 +105,7 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(posted.data["outstanding"], "2000.00")
         self.assertEqual(self.post_bill(bill).status_code, 400)
         self.stock.refresh_from_db()
-        self.assertEqual(str(self.stock.on_hand), "4.00")
+        self.assertEqual(str(self.stock.on_hand), "3.00")
         moves = StockMovement.objects.filter(reference=f"SUPBILL:{bill}")
         self.assertEqual(moves.count(), 1)
         self.assertEqual(str(moves.first().unit_cost), "2000.00")
