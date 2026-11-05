@@ -2,7 +2,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from django.db.models import Q
 from django.db import transaction
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from django.utils import timezone
 from rest_framework import response,status
 from apps.accounts.permissions import RolePermission, user_has_permission
@@ -20,6 +20,13 @@ UNPAID_LEAVE_NAME="Unpaid Leave"
 UNPAID_LEAVE_CODE="UNPAID"
 
 
+def _scope_team(qs, user, field="employee__branch_id"):
+    """Branch-bound managers never see or modify another branch's staff."""
+    if user.branch_id and not user_has_permission(user, "company.manage"):
+        return qs.filter(**{field: user.branch_id})
+    return qs
+
+
 def _employee_for_user(user):
     return resolve_employee_for_user(user)
 
@@ -34,7 +41,7 @@ def _notify_attendance_managers(company,title,message,notification_type,data=Non
     users=User.objects.filter(company=company,is_active=True).select_related("role")
     notifications=[]
     for user in users:
-        if user_has_permission(user,"attendance.manage"):
+        if user_has_permission(user,"attendance.team.view"):
             notifications.append(Notification(
                 company=company,
                 branch=user.branch,
@@ -389,14 +396,14 @@ def approval_review_fields(employee, reviewer, rule):
 
 class ManagerApprovalsView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view"}
     def get(self,request):
         company=request.user.company
         rule=get_attendance_rule(company,request.user.branch)
         rows=[]
-        for x in PunchCorrection.objects.filter(company=company,status="Pending").select_related("employee__user"):
+        for x in _scope_team(PunchCorrection.objects.filter(company=company,status="Pending"), request.user).select_related("employee__user"):
             rows.append({"id":str(x.id),"type":"Punch Correction","staffId":str(x.employee_id),"staffName":x.employee.name,"status":x.status,"reason":x.reason,"date":x.attendance.date,**approval_review_fields(x.employee,request.user,rule)})
-        for x in LeaveRequest.objects.filter(company=company,status="Pending").select_related("employee__user"):
+        for x in _scope_team(LeaveRequest.objects.filter(company=company,status="Pending"), request.user).select_related("employee__user"):
             total_days=0.5 if x.half_day else max(1,(x.end_date-x.start_date).days+1)
             rows.append({
                 "id":str(x.id),
@@ -414,7 +421,7 @@ class ManagerApprovalsView(APIView):
                 "managerNote":x.manager_note,
                 **approval_review_fields(x.employee,request.user,rule),
             })
-        for x in OvertimeRequest.objects.filter(company=company,status="Pending").select_related("employee__user","employee__branch"):
+        for x in _scope_team(OvertimeRequest.objects.filter(company=company,status="Pending"), request.user).select_related("employee__user","employee__branch"):
             rows.append({
                 "id":str(x.id),
                 "type":"Overtime",
@@ -438,7 +445,7 @@ class ManagerApprovalsView(APIView):
 
 class ManagerApprovalDetailView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.team.view"
     def post(self,request,pk):
         decision=request.data.get("decision")
         next_status="Approved" if decision=="approve" else "Rejected"
@@ -446,7 +453,17 @@ class ManagerApprovalDetailView(APIView):
         rule=get_attendance_rule(request.user.company,request.user.branch)
         for Model in (PunchCorrection,LeaveRequest,OvertimeRequest):
             obj=Model.objects.filter(pk=pk,company=request.user.company).select_related("employee__user").first()
-            if not obj: continue
+            if not obj:
+                continue
+            if request.user.branch_id and not user_has_permission(request.user, "company.manage") and obj.employee.branch_id != request.user.branch_id:
+                continue
+            required = (
+                "attendance.corrections.approve" if isinstance(obj, PunchCorrection)
+                else "attendance.leave.approve" if isinstance(obj, LeaveRequest)
+                else "attendance.overtime.approve"
+            )
+            if not user_has_permission(request.user, required):
+                raise PermissionDenied("You do not have permission to approve this request type.")
             if (
                 not rule.allow_self_approval
                 and getattr(obj.employee,"user_id",None)==request.user.id
@@ -553,7 +570,7 @@ class ManagerApprovalDetailView(APIView):
 
 class ManagerTeamView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.records.manage"}
 
     def get(self,request):
         company=request.user.company
@@ -563,7 +580,7 @@ class ManagerTeamView(APIView):
         except ValueError:
             return response.Response({"message":"Invalid date."},status=400)
 
-        employees=Employee.objects.filter(company=company,status="Active").select_related("branch","shift","team","user")
+        employees=_scope_team(Employee.objects.filter(company=company,status="Active"), request.user, "branch_id").select_related("branch","shift","team","user")
         branch=request.query_params.get("branch")
         role=request.query_params.get("role")
         search=request.query_params.get("search") or ""
@@ -670,10 +687,10 @@ class ManagerTeamView(APIView):
 
     @transaction.atomic
     def post(self,request):
-        employee=Employee.objects.filter(
+        employee=_scope_team(Employee.objects.filter(
             pk=request.data.get("employeeId"),
             company=request.user.company,
-        ).first()
+        ), request.user, "branch_id").first()
         if not employee:
             return response.Response({"message":"Employee not found."},status=404)
 
@@ -732,11 +749,11 @@ class ManagerTeamView(APIView):
 
 class ManagerTeamDetailView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.records.manage"
 
     @transaction.atomic
     def put(self,request,pk):
-        obj=AttendanceRecord.objects.filter(pk=pk,company=request.user.company).prefetch_related("sessions").first()
+        obj=_scope_team(AttendanceRecord.objects.filter(pk=pk,company=request.user.company), request.user).prefetch_related("sessions").first()
         if not obj:
             return response.Response({"message":"Attendance record not found."},status=404)
         old_status=obj.status
@@ -787,9 +804,9 @@ class ManagerTeamDetailView(APIView):
 
 class ManagerMasterView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.team.view"
     def get(self,request):
-        qs=AttendanceRecord.objects.filter(company=request.user.company).select_related("employee","branch").prefetch_related("sessions")
+        qs=_scope_team(AttendanceRecord.objects.filter(company=request.user.company), request.user).select_related("employee","branch").prefetch_related("sessions")
         month=request.query_params.get("month"); year=request.query_params.get("year")
         if month: qs=qs.filter(date__month=month)
         if year: qs=qs.filter(date__year=year)
@@ -797,7 +814,7 @@ class ManagerMasterView(APIView):
 
 class ManagerHolidaysView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.holidays.manage"}
 
     def get(self,request):
         qs=Holiday.objects.filter(company=request.user.company).order_by("date")
@@ -815,7 +832,7 @@ class ManagerHolidaysView(APIView):
 
 class ManagerHolidayDetailView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.holidays.manage"
 
     def delete(self,request,pk):
         obj=Holiday.objects.filter(pk=pk,company=request.user.company).first()
@@ -827,7 +844,7 @@ class ManagerHolidayDetailView(APIView):
 
 class ManagerCalendarView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.team.view"
 
     def get(self,request):
         today=timezone.localdate()
@@ -1005,13 +1022,13 @@ class CancelOvertimeRequestView(APIView):
 
 class ManagerShiftsView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.shifts.manage"}
 
     def get(self,request):
         company=request.user.company
         shifts=Shift.objects.filter(company=company).order_by("name")
         teams=Team.objects.filter(company=company,is_active=True).order_by("name")
-        employees=Employee.objects.filter(company=company,status="Active").select_related("team","shift").order_by("name")
+        employees=_scope_team(Employee.objects.filter(company=company,status="Active"), request.user, "branch_id").select_related("team","shift").order_by("name")
         return response.Response({
             "shifts":[{
                 "id":str(row.id),
@@ -1066,7 +1083,7 @@ class ManagerShiftsView(APIView):
         if not shift:
             return response.Response({"message":"Shift not found."},status=404)
 
-        employees=Employee.objects.filter(company=company,status="Active")
+        employees=_scope_team(Employee.objects.filter(company=company,status="Active"), request.user, "branch_id")
         team_id=request.data.get("teamId")
         staff_ids=request.data.get("staffIds") or []
         if team_id:
@@ -1082,7 +1099,7 @@ class ManagerShiftsView(APIView):
 
 class ManagerRulesView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.rules.manage"}
     def get(self,request):
         obj=get_attendance_rule(request.user.company,None)
         return response.Response(AttendanceRuleSerializer(obj).data)
@@ -1102,7 +1119,7 @@ class ManagerRulesView(APIView):
 
 class StaffAttendanceDetailsView(APIView):
     permission_classes=[RolePermission]
-    permission_code="attendance.manage"
+    permission_code = "attendance.team.view"
     def get(self,request,staff_id,date):
         employee=Employee.objects.filter(
             company=request.user.company,
@@ -1118,7 +1135,7 @@ class StaffAttendanceDetailsView(APIView):
                 ).select_related("shift","branch").first()
             except (ValueError,TypeError,AttributeError):
                 employee=None
-        if not employee:
+        if not employee or (request.user.branch_id and not user_has_permission(request.user, "company.manage") and employee.branch_id != request.user.branch_id):
             return response.Response({"message":"Staff not found."},status=404)
         record=AttendanceRecord.objects.filter(employee=employee,date=date).first()
         ensure_record_session(record)
