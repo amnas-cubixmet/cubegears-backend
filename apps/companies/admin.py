@@ -1,5 +1,4 @@
 from django.contrib import admin, messages
-from django.utils import timezone
 from .models import Company, CompanyDomain, CompanyDomainAudit, CompanyWebsiteSettings
 from .vercel_domains import VercelDomainError, record_domain_event, refresh_domain
 
