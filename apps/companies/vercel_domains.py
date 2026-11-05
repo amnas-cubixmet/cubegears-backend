@@ -4,7 +4,6 @@ import json
 import os
 import socket
 import ssl
-from datetime import datetime, timezone as dt_timezone
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
