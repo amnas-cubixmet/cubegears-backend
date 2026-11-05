@@ -248,6 +248,22 @@ class JobViewSet(CompanyScopedModelViewSet):
 
             company = request.user.company
             branch = request.user.branch
+            requested_branch = data.get("branchId")
+            if requested_branch:
+                from apps.branches.models import Branch
+                from apps.accounts.permissions import user_has_permission
+                resolved_branch = Branch.objects.filter(
+                    pk=requested_branch, company=company, is_active=True,
+                ).first()
+                if not resolved_branch:
+                    raise ValidationError({"branchId": "Select an active workshop branch."})
+                if (not branch or branch.pk != resolved_branch.pk) and not (
+                    user_has_permission(request.user, "company.manage")
+                    or user_has_permission(request.user, "branches.manage")
+                ):
+                    raise ValidationError({"branchId": "You cannot create Job Cards in a different branch."})
+                branch = resolved_branch
+            self._job_create_branch = branch
             chosen_customer = None
             chosen_id = data.get("customer")
             if chosen_id:
@@ -256,6 +272,29 @@ class JobViewSet(CompanyScopedModelViewSet):
                 ).first()
                 if chosen_customer is None:
                     raise ValidationError({"customer": "Select a valid active customer."})
+
+            # Preserve separate Make / Model / Fuel on new Job Cards. The old
+            # combined vehicleInfo payload remains supported for older clients.
+            legacy_parts = str(data.get("vehicleInfo") or "").strip().split(maxsplit=1)
+            make = str(data.get("vehicleMake") or (legacy_parts[0] if legacy_parts else "")).strip()
+            model = str(data.get("vehicleModel") or (legacy_parts[1] if len(legacy_parts) > 1 else "")).strip()
+            fuel_type = str(data.get("fuelType") or "").strip()
+            if len(make) > 80 or len(model) > 80 or len(fuel_type) > 30:
+                raise ValidationError({"vehicleInfo": "Vehicle make, model or fuel type is too long."})
+            if fuel_type and fuel_type not in {
+                "Petrol", "Diesel", "CNG", "LPG", "Electric", "Hybrid", "Other",
+            }:
+                raise ValidationError({"fuelType": "Select a supported vehicle fuel type."})
+            raw_km = data.get("kilometre")
+            km = None
+            if raw_km not in (None, ""):
+                try:
+                    km = int(str(raw_km))
+                except (TypeError, ValueError):
+                    raise ValidationError({"kilometre": "Enter a valid non-negative odometer reading."})
+                if km < 0 or km > 999999999:
+                    raise ValidationError({"kilometre": "Enter a valid non-negative odometer reading."})
+                data["odometer"] = km
 
             vehicle = (
                 Vehicle.objects.filter(company=company)
@@ -276,6 +315,26 @@ class JobViewSet(CompanyScopedModelViewSet):
                     })
                 if isinstance(vehicle_value, str) and vehicle_value and str(vehicle.id) != vehicle_value:
                     raise ValidationError({"vehicle": "Selected vehicle does not match registration."})
+                # Existing vehicle metadata is not overwritten just because
+                # an operator creates a Job Card. Explicit updates require
+                # existing Vehicle Edit permission and same-tenant ownership.
+                if data.get("vehicleDetailsUpdate") is True:
+                    from apps.accounts.permissions import user_has_permission
+                    if not user_has_permission(request.user, "vehicles.edit"):
+                        raise ValidationError({"vehicle": "Vehicle Edit permission is required to update saved vehicle details."})
+                    changes = {}
+                    if make:
+                        changes["make"] = make
+                    if model:
+                        changes["model"] = model
+                    if fuel_type:
+                        changes["fuel_type"] = fuel_type
+                    if km is not None:
+                        changes["odometer"] = km
+                    if changes:
+                        for key, value in changes.items():
+                            setattr(vehicle, key, value)
+                        vehicle.save(update_fields=[*changes.keys(), "updated_at"])
             else:
                 if isinstance(vehicle_value, str) and vehicle_value:
                     raise ValidationError({"vehicle": "Selected vehicle does not match registration."})
@@ -288,11 +347,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                         email=str(data.get("customerEmail") or "").strip(),
                         address=str(data.get("customerAddress") or "").strip(),
                     )
-                make_model = str(data.get("vehicleInfo") or "").strip().split(maxsplit=1)
                 vehicle = Vehicle.objects.create(
                     company=company, branch=branch, customer=customer,
-                    registration=registration, make=make_model[0] if make_model else "",
-                    model=make_model[1] if len(make_model) > 1 else "",
+                    registration=registration, make=make, model=model,
+                    fuel_type=fuel_type, odometer=km or 0,
                     vin=str(data.get("vin") or "").strip(),
                 )
 
@@ -305,17 +363,26 @@ class JobViewSet(CompanyScopedModelViewSet):
                 })
             data["customer"] = str(customer.id)
             data["vehicle"] = str(vehicle.id)
-            raw_km = data.get("kilometre")
-            if raw_km not in (None, ""):
-                try:
-                    km = int(raw_km)
-                except (TypeError, ValueError):
-                    raise ValidationError({"kilometre": "Enter a valid non-negative odometer reading."})
-                if km < 0:
-                    raise ValidationError({"kilometre": "Odometer reading cannot be negative."})
-                data["odometer"] = km
             if "fuelLevel" in data:
                 data["fuel_level"] = data["fuelLevel"]
+
+            # Existing Employee IDs are not User IDs. Resolve both within the
+            # workshop, preserving the current payroll assignment flow.
+            from apps.employees.models import Employee
+            for input_key, target_key in (
+                ("assignedEmployeeId", "technician"),
+                ("serviceAdvisorEmployeeId", "advisor"),
+            ):
+                employee_id = data.get(input_key)
+                if not employee_id:
+                    continue
+                employee = Employee.objects.filter(
+                    pk=employee_id, company=company, status="Active",
+                ).select_related("user").first()
+                if not employee:
+                    raise ValidationError({input_key: "Choose an active staff member from your workshop."})
+                if employee.user_id and employee.user.is_active:
+                    data[target_key] = str(employee.user_id)
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
@@ -336,10 +403,13 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"vehicle":"Vehicle does not belong to the selected customer."})
         if technician and technician.company_id != company.id:
             raise ValidationError({"technician":"Technician belongs to another company."})
+        advisor=serializer.validated_data.get("advisor") or self.request.user
+        if advisor.company_id != company.id:
+            raise ValidationError({"advisor":"Service advisor belongs to another company."})
         count=Job.objects.filter(company=company).count()+1
         number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
-        job=serializer.save(company=company,branch=self.request.user.branch,job_number=number,advisor=self.request.user)
-        JobActivity.objects.create(company=company,branch=self.request.user.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
+        job=serializer.save(company=company,branch=self.request.user,job_number=number,advisor=advisor)
+        JobActivity.objects.create(company=company,branch=job.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
 
     @decorators.action(detail=True,methods=["patch"])
     def status(self,request,pk=None):
