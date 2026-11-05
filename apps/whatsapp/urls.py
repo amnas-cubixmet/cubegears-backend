@@ -5,6 +5,7 @@ from .views import (
     WhatsAppTestMessageView,
 )
 from .webhook import MetaWhatsAppWebhookView
+from .manual import WhatsAppManualShareView
 
 urlpatterns = [
     path("settings", WhatsAppSettingsView.as_view(), name="whatsapp-settings"),
@@ -14,5 +15,6 @@ urlpatterns = [
     path("logs", WhatsAppLogsView.as_view(), name="whatsapp-logs"),
     path("customers/<uuid:customer_id>/consent", WhatsAppCustomerPreferenceView.as_view(), name="whatsapp-consent"),
     path("test", WhatsAppTestMessageView.as_view(), name="whatsapp-test"),
+    path("manual-share", WhatsAppManualShareView.as_view(), name="whatsapp-manual-share"),
     path("webhook", MetaWhatsAppWebhookView.as_view(), name="whatsapp-webhook"),
 ]
