@@ -219,6 +219,15 @@ class CompanyWebsiteDomainPrimaryView(APIView):
             return Response({"message": "Domain is not currently HTTPS-ready."}, status=409)
         with transaction.atomic():
             Company.objects.select_for_update().get(pk=request.user.company_id)
+            domain = CompanyDomain.objects.select_for_update().get(
+                pk=domain.pk, company=request.user.company,
+            )
+            # Recheck after acquiring locks: an admin may have disabled the
+            # domain while the network/TLS verification was in flight.
+            if (domain.status != CompanyDomain.ACTIVE or not domain.is_approved
+                    or not domain.dns_configured or not domain.ownership_verified
+                    or domain.ssl_status != "ready" or not domain.verified_at):
+                return Response({"message": "Domain changed while checking. Verify again."}, status=409)
             CompanyDomain.objects.filter(company=request.user.company, is_primary=True).update(is_primary=False)
             domain.is_primary = True
             domain.save(update_fields=["is_primary", "updated_at"])
