@@ -450,6 +450,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
                 expires_at__gt=timezone.now(),
                 created_at__gte=timezone.now() - timedelta(seconds=60),
+                delivery_status__in=["queued", "sending", "sent", "delivered", "read", "manual"],
             ).order_by("-created_at").first()
             if recent:
                 invite = recent
