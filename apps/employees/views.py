@@ -433,6 +433,10 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if obj.status != "Active":
                 raise ValidationError({"status":"Activate this employee before inviting."})
             user = self._ensure_login_user(obj)
+            # Serialize same-account resend requests even when no invitation
+            # row exists yet. The invitation queryset lock alone is insufficient.
+            from apps.accounts.models import User
+            user = User.objects.select_for_update().select_related("role").get(pk=user.pk)
             role = self._resolve_role(obj.role_name, user.role_id)
             if not role:
                 raise ValidationError({"role":"A valid workshop staff role is required."})
