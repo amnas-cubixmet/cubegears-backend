@@ -2,14 +2,14 @@
 
 Raw password-link tokens never enter DB storage, Celery task arguments or logs.
 """
-import re
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from apps.accounts.models import StaffPasswordInvitation
 from apps.accounts.staff_setup import invitation_url
 from apps.employees.models import Employee
-from .meta import decrypt_token, send_template_message
+from .meta import approved_templates, decrypt_token, send_template_message
+from .phone import normalize_recipient
 from .models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
 
 
@@ -26,7 +26,7 @@ def queue_staff_whatsapp_invitation(invitation, employee):
     template = WhatsAppMessageTemplate.objects.filter(
         company=employee.company, event="staff_onboarding", approval_status="APPROVED",
     ).first()
-    if not connection or not connection.event_settings.get("staff_onboarding", False) or not template:
+    if not connection or connection.messaging_mode != "automatic" or not connection.event_settings.get("staff_onboarding", False) or not template:
         invitation.delivery_status = "manual"
         invitation.failure_reason = "Workshop WhatsApp disconnected or staff template not enabled."
         invitation.save(update_fields=["delivery_status", "failure_reason"])
@@ -69,14 +69,14 @@ def send_staff_invitation(invitation_id):
         template = WhatsAppMessageTemplate.objects.filter(
             company=user.company, event="staff_onboarding", approval_status="APPROVED",
         ).first()
-        if (not user.is_active or not employee or not connection or not template
+        if (not user.is_active or not employee or not connection or connection.messaging_mode != "automatic" or not template
                 or not connection.event_settings.get("staff_onboarding", False)):
             invite.delivery_status = "failed"
             invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
             invite.save(update_fields=["delivery_status", "failure_reason"])
             return "failed"
-        recipient = re.sub(r"\D", "", user.normalized_phone or "")
-        if not 8 <= len(recipient) <= 15:
+        recipient = normalize_recipient(user.normalized_phone)
+        if not recipient:
             invite.delivery_status = "failed"
             invite.failure_reason = "Valid international mobile number required."
             invite.save(update_fields=["delivery_status", "failure_reason"])
@@ -86,9 +86,15 @@ def send_staff_invitation(invitation_id):
         invite.save(update_fields=["delivery_status", "attempts"])
 
     try:
+        token = decrypt_token(connection.encrypted_access_token)
+        if not any(
+            row.get("name") == template.template_name and row.get("language") == template.language
+            for row in approved_templates(connection.waba_id, token)
+        ):
+            raise ValueError("Staff invitation template approval is no longer valid.")
         result = send_template_message(
             connection.phone_number_id,
-            decrypt_token(connection.encrypted_access_token),
+            token,
             recipient, template.template_name, template.language,
             employee.name, user.company.name, invitation_url(invite),
         )
@@ -125,8 +131,8 @@ def send_platform_owner_invitation(invitation_id):
     if not settings.CELERY_BROKER_URL:
         return "disabled"
     user = invite.user
-    digits = re.sub(r"\D", "", user.normalized_phone or "")
-    if not 8 <= len(digits) <= 15:
+    digits = normalize_recipient(user.normalized_phone)
+    if not digits:
         return "bad-number"
     try:
         result = send_template_message(
