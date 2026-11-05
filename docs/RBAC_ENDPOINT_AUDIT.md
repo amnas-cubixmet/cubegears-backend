@@ -49,7 +49,9 @@ Notation: `+ ` means **all** listed permissions are required, not either permiss
 | POST `/payroll/runs/{id}/approve` | `payroll.approve` | **Historical route currently GET-only**; action unavailable |
 | POST `/payroll/payslips/{id}/payment` | `payroll.payments.record` | **Historical route currently GET-only**; action unavailable |
 | POST `/payroll/adjustments/{id}/approve`, `/reject` | `payroll.adjustments.manage` | **Historical route currently GET-only**; action unavailable |
-| GET/POST/PATCH/DELETE `/payments` | `payments.view/create/edit/delete` respectively | **Existing unsafe update/delete behavior requires follow-up**, see below |
+| GET/POST `/payments` | `payments.view` / `payments.create` | Collections recorded only as Completed |
+| PATCH/DELETE `/payments/{id}` | Denied | Posted customer receipts immutable; prevents invoice desynchronization |
+| POST `/payments/{id}/reverse` | `payments.reverse` | Atomic invoice reconciliation, required reason, one-way status and audit metadata |
 | GET/POST/PATCH/DELETE `/expenses` | `expenses.view/create/edit/delete` respectively | Supplier allocation rows locked against update/delete |
 | GET `/inventory/procurement/bills` | `stock.view` + `payments.view` | Supplier financial invoice |
 | POST `/inventory/procurement/bills` | `stock.create` | Draft supplier bill, not bank settlement |
@@ -79,7 +81,7 @@ Notation: `+ ` means **all** listed permissions are required, not either permiss
 
 ## Verified outstanding issues / follow-up work
 
-1. **Customer payment consistency (high priority):** `apps/payments/views.py` adjusts `Invoice.paid` only in `perform_create`. Inherited PATCH/DELETE can modify or delete payment records without restoring invoice totals or creating reversal audit. Do not expose payment adjust/reverse capabilities until a transaction-safe immutable reversal model is implemented and tested.
+1. **Customer payment consistency (addressed in this draft):** `apps/payments/views.py` now denies PATCH/DELETE and exposes a dedicated POST `/payments/{id}/reverse` with `payments.reverse`, row locks, invoice balance rollback and audit metadata. This remains **unreleased** until CI and staging review pass.
 2. **Supplier permission granularity:** Current supplier CRUD is still mapped to `stock.*` by `MODEL_PERMISSION_PREFIX`. A separate supplier domain needs a deliberate paid feature entitlement mapping, migration and frontend rollout.
 3. **Attendance manager UI:** Manager screens still need per-button visibility updates for newly granular rights (server rejects unauthorized mutations).
 4. **Branch/record scope:** Some generic company-scoped views in customers, payments and expenses do not restrict by staff branch. Do a dedicated branch matrix before labeling multi-branch least privilege complete.
@@ -89,4 +91,4 @@ Notation: `+ ` means **all** listed permissions are required, not either permiss
 
 ## Automated verification
 
-`apps.roles.tests_granular_permissions` tests negative and positive wage/attendance/supplier grants and idempotent migration. Existing attendance self-approval, owner, tenant, supplier-finance, credit/billing regressions are retained in CI. Frontend tests validate nested matrix codes, direct routes, and wage button guards. **Passing CI does not establish production safety:** perform an authenticated staging matrix by owner, read-only wages viewer, rate editor, wage payer, wage reverser, attendance manager, overtime approver, supplier account operator and cross-tenant employee. Test both enabled/disabled modules, inactive roles, inactive tenants and overdue wallet state.
+`apps.roles.tests_granular_permissions` tests negative and positive wage/attendance/supplier grants and idempotent migration. `apps.payments.tests_reversal` checks immutable customer receipts, idempotent audited reversal, and invoice balance reconciliation. Existing attendance self-approval, owner, tenant, supplier-finance, credit/billing regressions are retained in CI. Frontend tests validate nested matrix codes, direct routes, and wage button guards. **Passing CI does not establish production safety:** perform an authenticated staging matrix by owner, read-only wages viewer, rate editor, wage payer, wage reverser, attendance manager, overtime approver, supplier account operator and cross-tenant employee. Test both enabled/disabled modules, inactive roles, inactive tenants and overdue wallet state.
