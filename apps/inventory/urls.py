@@ -5,12 +5,9 @@ from .supplier_finance_api import (
 )
 from rest_framework.routers import DefaultRouter
 from .views import *
-from .supplier_credit_views import SupplierCreditViewSet, SupplierCreditPaymentViewSet
 router=DefaultRouter(trailing_slash=False)
 router.register("categories",StockCategoryViewSet,basename="stock-categories")
 router.register("suppliers",SupplierViewSet,basename="stock-suppliers")
-router.register("supplier-credits",SupplierCreditViewSet,basename="supplier-credits")
-router.register("supplier-payments",SupplierCreditPaymentViewSet,basename="supplier-payments")
 router.register("movements",StockMovementViewSet,basename="stock-movements")
 router.register("purchase-orders",PurchaseOrderViewSet,basename="purchase-orders")
 router.register("transfers",StockTransferViewSet,basename="stock-transfers")
