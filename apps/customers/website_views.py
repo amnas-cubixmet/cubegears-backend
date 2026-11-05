@@ -120,7 +120,11 @@ def _session_access(request, company):
         pk=auth.get("access"), customer_id=auth.get("customer"), company=company,
         is_active=True, customer__status="active", company__is_active=True,
     ).first()
-    if not access:
+    # A rotated capability is a new authorization version. A browser session
+    # minted from the previous link must not survive rotation (or revocation).
+    if not access or not hmac.compare_digest(
+        str(auth.get("version") or ""), str(access.token_hash if access else ""),
+    ):
         request.session.pop("cg_customer_portal", None)
         return None
     auth["last_seen"] = now
@@ -233,7 +237,8 @@ class WebsiteSessionView(PortalBaseView):
         now = int(time.time())
         request.session["cg_customer_portal"] = {
             "company": str(company.pk), "customer": str(access.customer_id),
-            "access": str(access.pk), "started": now, "last_seen": now,
+            "access": str(access.pk), "version": access.token_hash,
+            "started": now, "last_seen": now,
         }
         request.session.set_expiry(0)
         return _no_store(Response({"authenticated": True}))
