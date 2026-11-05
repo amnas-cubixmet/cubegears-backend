@@ -41,7 +41,6 @@ def workflow_state(job):
     inspection_status = (job.inspection or {}).get("status") or "Not Started"
     return {
         "inspectionStatus": inspection_status,
-        "skipped": ["inspection"] if inspection_status == "Skipped" else [],
         "current": current,
         "completed": [stage for stage in STAGES if stage in completed],
         "skipped": [stage for stage in STAGES if stage in set(saved.get("skipped") or [])],
