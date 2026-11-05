@@ -10,6 +10,7 @@ from apps.accounts.models import StaffPasswordInvitation
 from apps.accounts.staff_setup import invitation_url
 from apps.employees.models import Employee
 from .meta import decrypt_token, send_template_message
+from .phone import normalize_recipient
 from .models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
 
 
@@ -75,8 +76,8 @@ def send_staff_invitation(invitation_id):
             invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
             invite.save(update_fields=["delivery_status", "failure_reason"])
             return "failed"
-        recipient = re.sub(r"\D", "", user.normalized_phone or "")
-        if not 8 <= len(recipient) <= 15:
+        recipient = normalize_recipient(user.normalized_phone)
+        if not recipient:
             invite.delivery_status = "failed"
             invite.failure_reason = "Valid international mobile number required."
             invite.save(update_fields=["delivery_status", "failure_reason"])
@@ -125,8 +126,8 @@ def send_platform_owner_invitation(invitation_id):
     if not settings.CELERY_BROKER_URL:
         return "disabled"
     user = invite.user
-    digits = re.sub(r"\D", "", user.normalized_phone or "")
-    if not 8 <= len(digits) <= 15:
+    digits = normalize_recipient(user.normalized_phone)
+    if not digits:
         return "bad-number"
     try:
         result = send_template_message(
