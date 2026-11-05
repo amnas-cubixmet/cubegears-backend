@@ -1,4 +1,5 @@
 from rest_framework import decorators,response,status
+from rest_framework.exceptions import ValidationError
 from django.db.models import Q
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Service,ServiceCategory
@@ -23,6 +24,20 @@ class ServiceCategoryViewSet(CompanyScopedModelViewSet):
     queryset=ServiceCategory.objects.all()
     serializer_class=ServiceCategorySerializer
     action_permission_map={"add_type": "services.edit"}
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("parent")
+        query = str(self.request.query_params.get("search") or "").strip()
+        if query:
+            qs = qs.filter(Q(name__icontains=query) | Q(description__icontains=query))
+        return qs
+
+    def perform_destroy(self, instance):
+        # Deleting a parent or category used by services loses workshop
+        # navigation. Deactivate it instead; historical services retain IDs.
+        if instance.children.exists() or instance.services.exists():
+            raise ValidationError({"category": "Move child categories and services first, or deactivate this category."})
+        return super().perform_destroy(instance)
 
     @decorators.action(detail=True,methods=["post"],url_path="types")
     def add_type(self,request,pk=None):

@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+from uuid import uuid4
 from django.conf import settings
 import mimetypes
 from django.http import FileResponse
@@ -15,7 +16,7 @@ from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .audit import record_job_event
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
-from .complaint_status import sync_complaint_status
+from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
 from .india_gst import gst_context, calculate_tax, gst_rate
 from apps.invoices.gst_rate_options import find_gst_choice
 
@@ -48,6 +49,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_complete": "jobs.edit",
         "inspection_skip": "jobs.edit",
         "work_skip": "jobs.edit",
+        "complaint_status": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
         "quick_estimate": "jobs.edit",
@@ -470,6 +472,72 @@ class JobViewSet(CompanyScopedModelViewSet):
         JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
         return response.Response(JobSerializer(job).data)
 
+    @decorators.action(
+        detail=True, methods=["post"],
+        url_path=r"complaints/(?P<complaint_id>[^/.]+)/status",
+    )
+    @transaction.atomic
+    def complaint_status(self, request, pk=None, complaint_id=None):
+        """Manual, audited complaint status update; never auto-resolve on QC."""
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
+        if job.status == Job.STATUS_DELIVERED:
+            raise ValidationError({"complaint": "Delivered Job Cards are read-only."})
+        desired = request.data.get("status")
+        if not isinstance(desired, str) or desired not in VALID_COMPLAINT_STATUSES:
+            raise ValidationError({"status": "Choose Pending, In Progress, Resolved, Not Resolved or Not Applicable."})
+        notes = request.data.get("notes", "")
+        work_reference = request.data.get("workReference", "")
+        if not isinstance(notes, str) or len(notes.strip()) > 1000:
+            raise ValidationError({"notes": "Notes must be 1000 characters or fewer."})
+        if not isinstance(work_reference, str) or len(work_reference.strip()) > 120:
+            raise ValidationError({"workReference": "Work reference must be 120 characters or fewer."})
+        notes, work_reference = notes.strip(), work_reference.strip()
+        if desired in {"Not Applicable", "Not Resolved"} and len(notes) < 5:
+            raise ValidationError({"notes": "Record a reason (at least 5 characters)."})
+        existing = list(job.complaints or [])
+        match = next((i for i, item in enumerate(existing)
+                      if isinstance(item, dict) and str(item.get("id")) == complaint_id), None)
+        if match is None and complaint_id.startswith("row-"):
+            try:
+                index = int(complaint_id[4:])
+            except ValueError:
+                index = -1
+            if 0 <= index < len(existing) and isinstance(existing[index], dict) and not existing[index].get("id"):
+                match = index
+        if match is None:
+            raise ValidationError({"complaint": "Complaint not found on this Job Card."})
+        item = dict(existing[match])
+        current = manual_complaint_status(item)
+        if (current == desired and item.get("resolutionNotes", "") == notes
+                and item.get("workReference", "") == work_reference
+                and item.get("status") == desired):
+            return response.Response({"complaint": item, "job": JobSerializer(job).data})
+        timestamp = timezone.now().isoformat()
+        item["id"] = item.get("id") or str(uuid4())
+        history = list(item.get("statusHistory") or [])
+        history.append({
+            "from": current, "to": desired, "notes": notes,
+            "workReference": work_reference, "by": str(request.user.pk),
+            "at": timestamp,
+        })
+        item.update({
+            "status": desired, "resolutionNotes": notes,
+            "workReference": work_reference,
+            "statusUpdatedAt": timestamp, "statusUpdatedBy": str(request.user.pk),
+            "statusHistory": history,
+        })
+        existing[match] = item
+        job.complaints = existing
+        job.save(update_fields=["complaints", "updated_at"])
+        record_job_event(
+            job, request.user, "Complaint Status Updated",
+            f"Complaint {item['id']}: {current} → {desired}",
+            {"complaintId": str(item["id"]), "from": current, "to": desired,
+             "notes": notes, "workReference": work_reference},
+        )
+        return response.Response({"complaint": item, "job": JobSerializer(job).data})
+
     @decorators.action(detail=True,methods=["get","post"],url_path="workflow")
     @transaction.atomic
     def workflow(self,request,pk=None):
@@ -510,6 +578,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         elif stage == "work":
             if not request.data.get("confirmWorkDone"):
                 raise ValidationError({"stage":"Confirm that workshop work is complete."})
+            if unresolved_complaints(job) and request.data.get("confirmUnresolvedComplaints") is not True:
+                raise ValidationError({"complaints": "Review unresolved customer complaints and explicitly acknowledge them before QC."})
             self._guard_active_timers(job, "QC")
         elif stage == "qc":
             qc = job.qc or {}
@@ -536,6 +606,12 @@ class JobViewSet(CompanyScopedModelViewSet):
             "completed": [name for name in STAGES if name in completed],
             "lastCompletedAt": timezone.now().isoformat(),
         })
+        if stage == "work" and unresolved_complaints(job):
+            progress["complaintReview"] = {
+                "unresolvedCount": len(unresolved_complaints(job)),
+                "acknowledgedBy": str(request.user.pk),
+                "acknowledgedAt": timezone.now().isoformat(),
+            }
         old_status = job.status
         job.workflow_progress = progress
         job.status = NEXT_STATUS[stage]
@@ -596,9 +672,17 @@ class JobViewSet(CompanyScopedModelViewSet):
                 "work": "Work, labour, or parts have already been recorded. Finish Work normally instead of skipping."
             })
         self._guard_active_timers(job, "QC")
+        if unresolved_complaints(job) and request.data.get("confirmUnresolvedComplaints") is not True:
+            raise ValidationError({"complaints": "Review unresolved customer complaints before skipping work and advancing to QC."})
 
         now = timezone.now().isoformat()
         progress = dict(job.workflow_progress or {})
+        if unresolved_complaints(job):
+            progress["complaintReview"] = {
+                "unresolvedCount": len(unresolved_complaints(job)),
+                "acknowledgedBy": str(request.user.pk),
+                "acknowledgedAt": now,
+            }
         completed = set(workflow_state(job)["completed"])
         completed.add("work")
         skipped = set(progress.get("skipped") or [])

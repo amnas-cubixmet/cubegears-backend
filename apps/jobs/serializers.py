@@ -84,8 +84,34 @@ class JobSerializer(serializers.ModelSerializer):
     def validate_complaints(self, value):
         if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
             raise serializers.ValidationError("Complaints must be a list of complaint records.")
-        status = complaint_status_for_job(self.instance) if self.instance else "Open"
-        return normalize_complaints(value, status)
+        if len(value) > 200:
+            raise serializers.ValidationError("Maximum 200 complaints per Job Card.")
+        previous = list(self.instance.complaints or []) if self.instance else []
+        by_id = {str(row.get("id")): row for row in previous
+                 if isinstance(row, dict) and row.get("id") is not None}
+        result = []
+        for index, row in enumerate(value):
+            stored = by_id.get(str(row.get("id"))) if row.get("id") is not None else (
+                previous[index] if index < len(previous) and
+                isinstance(previous[index], dict) and previous[index].get("id") is None
+                else None
+            )
+            if stored:
+                # Generic Job PATCH may edit wording, but must not forge a
+                # technician's status, timestamp, evidence, or audit history.
+                protected = ("status", "statusHistory", "statusUpdatedAt",
+                             "statusUpdatedBy", "resolutionNotes", "workReference")
+                row = {**row, **{key: stored[key] for key in protected if key in stored}}
+                for key in protected:
+                    if key not in stored:
+                        row.pop(key, None)
+            else:
+                row = {**row, "status": "Pending"}
+                for key in ("statusHistory", "statusUpdatedAt", "statusUpdatedBy",
+                            "resolutionNotes", "workReference"):
+                    row.pop(key, None)
+            result.append(row)
+        return normalize_complaints(result)
 
     def to_representation(self, instance):
         result = super().to_representation(instance)
