@@ -89,38 +89,83 @@ class StockAudit(CompanyOwnedModel):
     reason=models.CharField(max_length=255,blank=True)
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
 
-# A credit is an allocation against a canonical received purchase order.
-# The original PO total is authoritative; no second supplier or invoice exists.
-class SupplierCredit(CompanyOwnedModel):
-    purchase_order = models.OneToOneField(
-        PurchaseOrder, on_delete=models.PROTECT, related_name="supplier_credit"
-    )
-    due_date = models.DateField(null=True, blank=True)
 
+# Supplier financial records are separate from PurchaseOrder drafts and from
+# customer Payment. A posted bill is a payable, not a second expense.
+class WorkshopFinancialAccount(CompanyOwnedModel):
+    KIND_CHOICES = [("Cash", "Cash"), ("Bank", "Bank"), ("UPI", "UPI")]
+    name = models.CharField(max_length=120)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
     class Meta:
-        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["company", "name"], name="unique_workshop_money_account")]
 
 
-# The matching Expense is the single canonical financial outflow.
-# This row only allocates that expense against one supplier credit.
-class SupplierCreditPayment(CompanyOwnedModel):
-    credit = models.ForeignKey(
-        SupplierCredit, on_delete=models.PROTECT, related_name="payments"
-    )
-    expense = models.OneToOneField(
-        "expenses.Expense", on_delete=models.PROTECT,
-        related_name="supplier_credit_allocation"
-    )
-    idempotency_key = models.UUIDField()
-    recorded_by = models.ForeignKey(
-        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True
-    )
-
+class SupplierBill(CompanyOwnedModel):
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="accounting_bills")
+    invoice_number = models.CharField(max_length=100)
+    invoice_date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
+    related_job = models.ForeignKey("jobs.Job", on_delete=models.PROTECT, null=True, blank=True)
+    # Validated, server-priced snapshot. No stock movement before posting.
+    items = models.JSONField(default=list)
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    tax = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    status = models.CharField(max_length=12, default="Draft", choices=[("Draft", "Draft"), ("Posted", "Posted")])
+    receive_into_stock = models.BooleanField(default=False)
+    posted_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="supplier_bills_created")
     class Meta:
         ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["company", "idempotency_key"],
-                name="unique_supplier_payment_request_per_company",
+                fields=["company", "supplier", "invoice_number"],
+                name="unique_supplier_bill_reference_per_company",
             ),
+        ]
+
+
+class SupplierPayment(CompanyOwnedModel):
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="accounting_payments")
+    account = models.ForeignKey(WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="supplier_payments")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    kind = models.CharField(max_length=12, choices=[("Payment", "Payment"), ("Advance", "Advance")])
+    method = models.CharField(max_length=30)
+    reference = models.CharField(max_length=120, blank=True)
+    paid_on = models.DateField()
+    idempotency_key = models.CharField(max_length=120)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="supplier_payments_recorded")
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "idempotency_key"], name="unique_supplier_payment_request"),
+        ]
+
+
+class SupplierPaymentAllocation(CompanyOwnedModel):
+    payment = models.ForeignKey(SupplierPayment, on_delete=models.PROTECT, related_name="allocations")
+    bill = models.ForeignKey(SupplierBill, on_delete=models.PROTECT, related_name="payment_allocations")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["payment", "bill"], name="unique_payment_allocation_per_bill"),
+        ]
+
+
+class WorkshopAccountEntry(CompanyOwnedModel):
+    """Immutable signed cash/bank ledger movement. Negative = money out."""
+    account = models.ForeignKey(WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="entries")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    entry_type = models.CharField(max_length=30)
+    source_key = models.CharField(max_length=160)
+    reference = models.CharField(max_length=120, blank=True)
+    posted_at = models.DateTimeField()
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    class Meta:
+        ordering = ["posted_at", "created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "source_key"], name="unique_workshop_account_posting"),
         ]
