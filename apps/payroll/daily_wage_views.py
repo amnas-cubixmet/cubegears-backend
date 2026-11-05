@@ -5,7 +5,7 @@ from django.db.models import Max, Sum
 from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 
 from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.attendance.models import AttendanceRecord
