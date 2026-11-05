@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "apps.attendance",
     "apps.payroll",
     "apps.notifications",
+    "apps.whatsapp",
     "apps.reports",
     "apps.saas",
     "apps.credits",
@@ -157,6 +158,20 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
 
+# Official Meta account onboarding is disabled without explicit configuration.
+WHATSAPP_META_APP_ID = env("WHATSAPP_META_APP_ID", "")
+WHATSAPP_META_APP_SECRET = env("WHATSAPP_META_APP_SECRET", "")
+WHATSAPP_META_CONFIG_ID = env("WHATSAPP_META_CONFIG_ID", "")
+WHATSAPP_WEBHOOK_VERIFY_TOKEN = env("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
+WHATSAPP_TOKEN_ENCRYPTION_KEY = env("WHATSAPP_TOKEN_ENCRYPTION_KEY", "")
+WHATSAPP_GRAPH_VERSION = env("WHATSAPP_GRAPH_VERSION", "v25.0")
+WHATSAPP_SEND_ENABLED = env_bool("WHATSAPP_SEND_ENABLED", False)
+
+CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
+CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost:5173/c" if DEBUG else "https://customer.cubegears.com/c")
+if not DEBUG and not CUSTOMER_PORTAL_BASE_URL.startswith("https://"):
+    raise ImproperlyConfigured("CUSTOMER_PORTAL_BASE_URL must use HTTPS in production.")
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
@@ -167,6 +182,7 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
     ),
+    "DEFAULT_THROTTLE_RATES": {"customer_portal": "30/min"},
 }
 
 SIMPLE_JWT = {

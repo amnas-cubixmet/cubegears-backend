@@ -10,3 +10,4 @@ python-dotenv>=1.1
 
 # Required by config.celery and the email/billing task modules.
 celery[redis]>=5.6,<5.8
+cryptography>=44,<48  # encrypted workshop-specific Meta WhatsApp Cloud API tokens

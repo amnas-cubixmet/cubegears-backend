@@ -45,3 +45,28 @@ class CustomerReminder(CompanyOwnedModel):
     due_at = models.DateTimeField()
     status = models.CharField(max_length=20, default="pending")
     channel = models.CharField(max_length=30, default="internal")
+
+
+def portal_access_nonce():
+    # Random per-customer secret material, never exposed via a public response.
+    import secrets
+    return secrets.token_hex(32)
+
+
+class CustomerPortalAccess(CompanyOwnedModel):
+    """One long-lived, revocable tracking capability per customer.
+
+    The URL bearer secret is deterministically derived via HMAC from the
+    server signing key and the random nonce. Its plaintext is never stored.
+    """
+    customer = models.OneToOneField(
+        Customer, on_delete=models.CASCADE, related_name="portal_access"
+    )
+    nonce = models.CharField(max_length=64, default=portal_access_nonce)
+    token_hash = models.CharField(max_length=64, blank=True)
+    is_active = models.BooleanField(default=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    rotated_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Customer portal access for {self.customer_id}"
