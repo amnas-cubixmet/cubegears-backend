@@ -11,6 +11,7 @@ class WhatsAppBusinessConnection(models.Model):
     display_phone_number = models.CharField(max_length=40, blank=True)
     encrypted_access_token = models.TextField(blank=True)
     connected = models.BooleanField(default=False)
+    messaging_mode = models.CharField(max_length=12, choices=[("manual", "Manual"), ("automatic", "Automatic")], default="manual")
     notifications_enabled = models.BooleanField(default=False)
     event_settings = models.JSONField(default=dict, blank=True)
     connected_at = models.DateTimeField(null=True, blank=True)
