@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from apps.accounts.models import User
@@ -195,3 +196,34 @@ class WhatsAppSecurityTests(TestCase):
         self.assertEqual(
             WhatsAppNotificationLog.objects.filter(company=self.company, status="manual_prepared").count(), 1
         )
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_automatic_worker_sends_template_once_and_does_not_retry(self):
+        from apps.whatsapp.tasks import send_whatsapp_notification
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, messaging_mode="automatic",
+            notifications_enabled=True, event_settings={"job_created": True},
+            phone_number_id="987654321",
+            encrypted_access_token="encrypted-in-test",
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="job_created", template_name="approved_job",
+            approval_status="APPROVED",
+        )
+        CustomerNotificationPreference.objects.create(
+            company=self.company, customer=self.customer, whatsapp_opt_in=True,
+            consent_source="Customer signed service consent",
+        )
+        log = queue_customer_notification(self.customer, "job_created", "worker:once")
+        self.assertEqual(log.status, "queued")
+        with patch("apps.whatsapp.tasks.decrypt_token", return_value="mock-access-token"), patch(
+            "apps.whatsapp.tasks.send_template_message",
+            return_value={"messages": [{"id": "wamid.mock-once"}]},
+        ) as send:
+            self.assertEqual(send_whatsapp_notification.run(str(log.pk)), "sent")
+            self.assertEqual(send_whatsapp_notification.run(str(log.pk)), "sent")
+            self.assertEqual(send.call_count, 1)
+        log.refresh_from_db()
+        self.assertEqual(log.status, "sent")
+        self.assertEqual(log.meta_message_id, "wamid.mock-once")
+        self.assertEqual(log.attempt_count, 1)
