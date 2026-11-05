@@ -31,6 +31,7 @@ jobs:
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
             apps.vehicles.tests_inspection_photo \
+            apps.jobs.tests_create_vehicle_complaints \
             apps.whatsapp.tests_integration \
             apps.companies.tests_logo_upload \
             apps.control_panel.tests_feature_pricing_routes \
