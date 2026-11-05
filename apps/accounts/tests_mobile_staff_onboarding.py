@@ -288,3 +288,42 @@ class MobileStaffOnboardingTests(TestCase):
             "identifier": "+919333333333", "password": "AlreadySetPass33!",
         }, format="json")
         self.assertEqual(result.status_code, 400)
+
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_official_sender_acceptance_is_recorded_once(self):
+        from unittest.mock import patch
+        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
+        from apps.whatsapp.staff_invites import send_staff_invitation, queue_staff_whatsapp_invitation
+        from apps.accounts.staff_setup import issue_invitation
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, notifications_enabled=True,
+            messaging_mode="automatic", phone_number_id="official-number",
+            waba_id="official-waba", encrypted_access_token="encrypted-credential",
+            event_settings={"staff_onboarding": True},
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="staff_onboarding",
+            template_name="approved_staff_onboarding", language="en_US",
+            approval_status="APPROVED",
+        )
+        invite = issue_invitation(employee.user, issuer=self.owner)
+        self.assertEqual(queue_staff_whatsapp_invitation(invite, employee), "queued")
+        with patch("apps.whatsapp.staff_invites.decrypt_token", return_value="provider-credential"), patch(
+            "apps.whatsapp.staff_invites.approved_templates",
+            return_value=[{"name": "approved_staff_onboarding", "language": "en_US"}],
+        ), patch(
+            "apps.whatsapp.staff_invites.send_template_message",
+            return_value={"messages": [{"id": "wamid.staff-invitation-once"}]},
+        ) as provider:
+            self.assertEqual(send_staff_invitation.run(str(invite.pk)), "sent")
+            self.assertEqual(send_staff_invitation.run(str(invite.pk)), "skipped")
+            provider.assert_called_once()
+            self.assertEqual(provider.call_args.args[0], "official-number")
+        invite.refresh_from_db()
+        self.assertEqual(invite.delivery_status, "sent")
+        self.assertEqual(invite.meta_message_id, "wamid.staff-invitation-once")
+        self.assertEqual(invite.attempts, 1)
+        self.assertEqual(invite.failure_reason, "")
