@@ -78,7 +78,7 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
-def user_can_sign_in(user):
+def user_can_sign_in(user, *, allow_pending_setup=False):
     """All login methods must enforce the same active tenant and role checks."""
     if not user or not user.is_active:
         return False
@@ -92,6 +92,10 @@ def user_can_sign_in(user):
     # A profile edited to Suspended/Inactive must not keep working JWT-login
     # credentials, even if a legacy code path omitted syncing is_active.
     if employee and employee.status not in {"Active", "Probation", "Notice Period"}:
+        return False
+    # Password-setup links use a separate, one-time authorization check.
+    # A pending staff identity must never sign in via older magic-link paths.
+    if employee and not user.has_usable_password() and not allow_pending_setup:
         return False
     return bool(
         user.company and user.company.is_active
