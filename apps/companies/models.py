@@ -68,6 +68,7 @@ class CompanyWebsiteSettings(models.Model):
 class CompanyDomain(models.Model):
     id = models.BigAutoField(primary_key=True)
     """Custom domains are NEVER active on user submission alone."""
+    PENDING_SETUP = "pending_setup"
     PENDING_DNS = "pending_dns"
     PENDING_VERIFICATION = "pending_verification"
     SSL_PENDING = "ssl_pending"
@@ -75,6 +76,7 @@ class CompanyDomain(models.Model):
     FAILED = "failed"
     DISABLED = "disabled"
     STATUS_CHOICES = [
+        (PENDING_SETUP, "Pending Setup"),
         (PENDING_DNS, "Pending DNS"),
         (PENDING_VERIFICATION, "Pending Verification"),
         (SSL_PENDING, "SSL Pending"),
@@ -92,8 +94,48 @@ class CompanyDomain(models.Model):
     is_primary = models.BooleanField(default=False)
     verified_at = models.DateTimeField(null=True, blank=True)
     provider_reference = models.CharField(max_length=180, blank=True)
+    dns_provider = models.CharField(max_length=24, default="other", choices=[
+        ("godaddy", "GoDaddy"), ("cloudflare", "Cloudflare"),
+        ("hostinger", "Hostinger"), ("namecheap", "Namecheap"),
+        ("vercel", "Vercel DNS"), ("other", "Other"),
+    ])
+    dns_records = models.JSONField(default=list, blank=True)
+    verification_records = models.JSONField(default=list, blank=True)
+    dns_configured = models.BooleanField(default=False)
+    ownership_verified = models.BooleanField(default=False)
+    ssl_status = models.CharField(max_length=16, default="pending")
+    last_error = models.CharField(max_length=500, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    # Platform may require manual approval before exposing any customer data.
+    is_approved = models.BooleanField(default=True)
+    approved_by = models.ForeignKey(
+        "accounts.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="approved_customer_domains",
+    )
+    vercel_project_id = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company"], condition=models.Q(is_primary=True),
+                name="one_primary_website_domain_per_company",
+            ),
+        ]
+
     def __str__(self):
         return self.hostname
+
+
+class CompanyDomainAudit(models.Model):
+    domain = models.ForeignKey(CompanyDomain, on_delete=models.CASCADE, related_name="events")
+    company = models.ForeignKey(Company, on_delete=models.CASCADE)
+    actor = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
+    action = models.CharField(max_length=40)
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
