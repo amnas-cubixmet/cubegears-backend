@@ -45,6 +45,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_diagnostic": "jobs.edit",
         "inspection_photo": "jobs.edit",
         "inspection_complete": "jobs.edit",
+        "inspection_skip": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
         "quick_estimate": "jobs.edit",
@@ -145,6 +146,8 @@ class JobViewSet(CompanyScopedModelViewSet):
     def _assert_inspection_editable(self, job):
         """Completed checks may be corrected before customer approves an estimate."""
         current = workflow_state(job)["current"]
+        if (job.inspection or {}).get("status") == "Skipped":
+            raise ValidationError({"inspection": "Skipped inspection cannot be edited."})
         completed = (job.inspection or {}).get("status") == "Completed"
         # The quick-create form can save initial inspection details in Overview.
         # Completed inspections are strictly editable only at Estimate stage.
@@ -537,8 +540,10 @@ class JobViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["post"],url_path="inspection/start")
     def inspection_start(self,request,pk=None):
         job=self.get_object()
-        if workflow_state(job)["current"] == "overview":
-            raise ValidationError({"stage":"Complete Overview before starting Inspection."})
+        if workflow_state(job)["current"] != "inspection":
+            raise ValidationError({"stage": "Inspection can only start during its active workflow stage."})
+        if (job.inspection or {}).get("status") in {"Completed", "Skipped"}:
+            raise ValidationError({"inspection": "This inspection is already closed."})
         data=dict(job.inspection or {})
         data.setdefault("checklist",{}); data.setdefault("findings",[]); data.setdefault("diagnosticScan",{"performed":False,"codes":[]}); data.setdefault("photos",[])
         data["status"]="In Progress"; data["startedAt"]=timezone.now().isoformat()
@@ -623,6 +628,59 @@ class JobViewSet(CompanyScopedModelViewSet):
         job.inspection=data; job.status=Job.STATUS_ESTIMATE_PENDING if request.data.get("needsApproval",True) else job.status
         job.save(update_fields=["inspection","status","updated_at"])
         return response.Response({"inspection":data,"newJobStatus":job.status})
+
+    @decorators.action(detail=True, methods=["post"], url_path="inspection/skip")
+    @transaction.atomic
+    def inspection_skip(self, request, pk=None):
+        """Advance without recording unperformed checks as Good or Completed."""
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
+        if workflow_state(job)["current"] != "inspection":
+            raise ValidationError({"stage": "Only the active Inspection stage can be skipped."})
+        inspection = dict(job.inspection or {})
+        if inspection.get("status") in {"Completed", "Skipped"}:
+            raise ValidationError({"inspection": "Inspection is already completed or skipped."})
+        reason = str(request.data.get("reason") or "").strip()
+        if not 3 <= len(reason) <= 300:
+            raise ValidationError({"reason": "Enter a skip reason between 3 and 300 characters."})
+        now = timezone.now().isoformat()
+        inspection.update({
+            "status": "Skipped",
+            "skipReason": reason,
+            "skippedAt": now,
+            "skippedBy": str(request.user.pk),
+        })
+        state = workflow_state(job)
+        progress = dict(job.workflow_progress or {})
+        completed = set(state["completed"])
+        completed.add("inspection")
+        skipped = set(progress.get("skipped") or [])
+        skipped.add("inspection")
+        progress.update({
+            "started": True,
+            "completed": [stage for stage in STAGES if stage in completed],
+            "skipped": [stage for stage in STAGES if stage in skipped],
+            "lastCompletedAt": now,
+        })
+        previous_status = job.status
+        job.inspection = inspection
+        job.workflow_progress = progress
+        job.status = NEXT_STATUS["inspection"]
+        fields = ["inspection", "workflow_progress", "status", "updated_at"]
+        if sync_complaint_status(job):
+            fields.append("complaints")
+        job.save(update_fields=fields)
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Inspection Skipped",
+            description=reason, from_status=previous_status, to_status=job.status,
+            metadata={"stage": "inspection", "reason": reason, "skippedAt": now},
+        )
+        return response.Response({
+            "inspection": inspection,
+            "newJobStatus": job.status,
+            "workflow": workflow_state(job),
+        })
 
     @decorators.action(detail=True,methods=["post"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)/add-to-estimate")
     def inspection_add_to_estimate(self,request,pk=None,finding_id=None):
