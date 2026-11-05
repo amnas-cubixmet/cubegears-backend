@@ -81,6 +81,7 @@ class MetaWhatsAppWebhookView(APIView):
                     StaffPasswordInvitation.objects.filter(
                         user__company=connection.company, meta_message_id=msg_id,
                         used_at__isnull=True, invalidated_at__isnull=True,
+                        delivery_status__in=allowed_prior,
                     ).update(**invite_updates)
                 for message in value.get("messages") or []:
                     body_text = str(((message.get("text") or {}).get("body") or "")).strip().upper()
