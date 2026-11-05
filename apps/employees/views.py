@@ -257,7 +257,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             user = User.objects.create_user(
                 email=email or None, password=None, name=name,
                 phone=mobile, company=company, branch=branch,
-                role=requested_role, is_active=status_value == "Active",
+                role=requested_role, is_active=status_value in {"Active", "Probation", "Notice Period"},
                 is_staff=False, is_superuser=False, email_verified=False,
             )
 
@@ -303,6 +303,18 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             extra["shift_label"]=_shift_label(shift)
 
         obj=serializer.save(**extra)
+
+        # Staff employment deactivation is also a login revocation. Enabling
+        # employment later must not silently re-enable a disabled login.
+        if obj.user and obj.status not in {"Active", "Probation", "Notice Period"}:
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            if obj.user.is_active:
+                obj.user.is_active = False
+                obj.user.save(update_fields=["is_active", "updated_at"])
+            StaffPasswordInvitation.objects.filter(
+                user=obj.user, used_at__isnull=True, invalidated_at__isnull=True,
+            ).update(invalidated_at=timezone.now(), delivery_status="superseded")
 
         # Preserve legacy monthly/commission values only in historical payroll
         # tables; active staff are enrolled in daily wages only.
