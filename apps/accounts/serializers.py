@@ -143,7 +143,31 @@ class LoginSerializer(serializers.Serializer):
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    # Mobile recovery is workshop-scoped and never requires an email address.
+    # Keep the legacy email path for existing owner/platform accounts.
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    workshop = serializers.SlugField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        mobile = str(attrs.get("mobile") or "").strip()
+        email = str(attrs.get("email") or "").strip()
+        if mobile:
+            try:
+                attrs["mobile"] = normalize_phone(mobile)
+            except Exception:
+                raise serializers.ValidationError({
+                    "mobile": "Use an international mobile number, e.g. +919876543210."
+                })
+            if not attrs.get("workshop"):
+                raise serializers.ValidationError({
+                    "workshop": "Enter your workshop code to request a secure WhatsApp reset."
+                })
+        elif not email:
+            raise serializers.ValidationError({
+                "mobile": "Enter your mobile number with country code."
+            })
+        return attrs
 
 
 class ResetPasswordSerializer(serializers.Serializer):
