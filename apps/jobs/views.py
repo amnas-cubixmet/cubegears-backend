@@ -46,6 +46,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_photo": "jobs.edit",
         "inspection_complete": "jobs.edit",
         "inspection_skip": "jobs.edit",
+        "work_skip": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
         "quick_estimate": "jobs.edit",
@@ -547,6 +548,83 @@ class JobViewSet(CompanyScopedModelViewSet):
             event="Workflow Stage Completed",description=f"{stage} completed",
             from_status=old_status,to_status=job.status,
             metadata={"stage":stage},
+        )
+        return response.Response({
+            **workflow_state(job),
+            "job": JobSerializer(job).data,
+        })
+
+    @decorators.action(detail=True, methods=["post"], url_path="work/skip")
+    @transaction.atomic
+    def work_skip(self, request, pk=None):
+        """Skip an unused Work stage, keeping QC and billing mandatory.
+
+        Do not permit this after labour, contractor charges, or parts have
+        been recorded. Use Finish Work for jobs where work actually occurred.
+        """
+        from apps.payroll.models import JobWorkSession
+        from apps.inventory.models import StockMovement
+        from .models import OutsideLabourCharge
+
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
+        if workflow_state(job)["current"] != "work":
+            raise ValidationError({"stage": "Only the active Work stage can be skipped."})
+        reason = request.data.get("reason")
+        if not isinstance(reason, str) or not 3 <= len(reason.strip()) <= 160:
+            raise ValidationError({"reason": "Enter a skip reason between 3 and 160 characters."})
+        reason = reason.strip()
+        if (
+            job.work or job.work_updates
+            or JobWorkSession.objects.filter(company=job.company, job=job).exists()
+            or OutsideLabourCharge.objects.filter(company=job.company, job=job).exists()
+            or job.parts.filter(issued=True).exists()
+            or job.photos.filter(photo_type="work_update").exists()
+            or StockMovement.objects.filter(
+                company=job.company, job=job,
+                movement_type__in=("job_issue", "return"),
+            ).exists()
+            or any(
+                item.get("status", "Purchased") == "Purchased"
+                for item in (job.parts_workflow or {}).get("outsideParts", [])
+                if isinstance(item, dict)
+            )
+        ):
+            raise ValidationError({
+                "work": "Work, labour, or parts have already been recorded. Finish Work normally instead of skipping."
+            })
+        self._guard_active_timers(job, "QC")
+
+        now = timezone.now().isoformat()
+        progress = dict(job.workflow_progress or {})
+        completed = set(workflow_state(job)["completed"])
+        completed.add("work")
+        skipped = set(progress.get("skipped") or [])
+        skipped.add("work")
+        skip_details = dict(progress.get("skipDetails") or {})
+        skip_details["work"] = {
+            "reason": reason, "skippedAt": now,
+            "skippedById": str(request.user.pk),
+        }
+        progress.update({
+            "started": True,
+            "completed": [stage for stage in STAGES if stage in completed],
+            "skipped": [stage for stage in STAGES if stage in skipped],
+            "skipDetails": skip_details,
+            "lastSkippedAt": now,
+        })
+        previous = job.status
+        job.workflow_progress = progress
+        job.status = NEXT_STATUS["work"]
+        fields = ["workflow_progress", "status", "updated_at"]
+        if sync_complaint_status(job):
+            fields.append("complaints")
+        job.save(update_fields=fields)
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            actor=request.user, event="Work Skipped",
+            description=reason, from_status=previous, to_status=job.status,
+            metadata={"stage": "work", "reason": reason, "skippedAt": now},
         )
         return response.Response({
             **workflow_state(job),
