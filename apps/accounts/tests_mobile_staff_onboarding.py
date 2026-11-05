@@ -327,3 +327,22 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(invite.meta_message_id, "wamid.staff-invitation-once")
         self.assertEqual(invite.attempts, 1)
         self.assertEqual(invite.failure_reason, "")
+
+
+    def test_pending_password_setup_cannot_sign_in_using_legacy_magic_link(self):
+        from apps.accounts.models import MagicLink
+        reply = self.create_staff(email="staff-magic@old-workshop.test")
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        self.assertFalse(employee.user.has_usable_password())
+        raw_token = MagicLink.issue(employee.user)
+        response = self.public.post("/api/v1/auth/magic-link/verify", {
+            "token": raw_token,
+        }, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertNotIn("access", response.data)
+        # The one-use setup capability must still be usable for this identity.
+        setup_token = reply.data["setupLink"].rsplit("/", 1)[-1]
+        valid = self.public.post("/api/v1/auth/staff-invitation/validate", {
+            "token": setup_token,
+        }, format="json")
+        self.assertEqual(valid.status_code, 200, valid.data)
