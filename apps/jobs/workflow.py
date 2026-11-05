@@ -39,12 +39,14 @@ def workflow_state(job):
     current = next((stage for stage in STAGES if stage not in completed), STAGES[-1])
     position = STAGES.index(current)
     inspection_status = (job.inspection or {}).get("status") or "Not Started"
+    skipped = set(saved.get("skipped") or [])
+    if inspection_status == "Skipped":
+        skipped.add("inspection")
     return {
         "inspectionStatus": inspection_status,
-        "skipped": ["inspection"] if inspection_status == "Skipped" else [],
         "current": current,
         "completed": [stage for stage in STAGES if stage in completed],
-        "skipped": [stage for stage in STAGES if stage in set(saved.get("skipped") or [])],
+        "skipped": [stage for stage in STAGES if stage in skipped],
         "locked": list(STAGES[position + 1:]),
         "stages": list(STAGES),
         "finished": len(completed) == len(STAGES),
