@@ -64,8 +64,16 @@ class MetaWhatsAppWebhookView(APIView):
                         update["delivered_at"] = timezone.now()
                     if status == "failed":
                         update["error_detail"] = "Meta webhook reported failed delivery."
+                    # Signed status webhooks can be out of order; never move read/delivered back to sent.
+                    allowed_prior = {
+                        "sent": ["pending", "queued", "sending", "sent"],
+                        "delivered": ["pending", "queued", "sending", "sent", "delivered", "failed"],
+                        "read": ["pending", "queued", "sending", "sent", "delivered", "read", "failed"],
+                        "failed": ["pending", "queued", "sending", "sent", "failed"],
+                    }[status]
                     WhatsAppNotificationLog.objects.filter(
                         company=connection.company, meta_message_id=msg_id,
+                        status__in=allowed_prior,
                     ).update(**update)
                     invite_updates = {"delivery_status": status}
                     if status == "failed":
