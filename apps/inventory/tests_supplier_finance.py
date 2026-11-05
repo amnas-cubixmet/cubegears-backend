@@ -7,7 +7,7 @@ from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.inventory.models import (
     Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation,
-    StockItem, StockMovement, WorkshopFinancialAccount, WorkshopAccountEntry,
+    StockItem, StockMovement, WorkshopAccountEntry,
 )
 from apps.roles.models import Role
 
