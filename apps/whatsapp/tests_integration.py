@@ -51,7 +51,7 @@ class WhatsAppSecurityTests(TestCase):
     def test_queue_rejects_without_connection_consent_and_approved_template(self):
         self.assertIsNone(queue_customer_notification(self.customer,"job_created","job:a:created"))
         conn = WhatsAppBusinessConnection.objects.create(
-            company=self.company, connected=True, notifications_enabled=True,
+            company=self.company, connected=True, notifications_enabled=True, messaging_mode="automatic",
             phone_number_id="123456789",event_settings={"job_created":True},
         )
         self.assertIsNone(queue_customer_notification(self.customer,"job_created","job:a:created"))
@@ -70,10 +70,10 @@ class WhatsAppSecurityTests(TestCase):
         self.assertIsNotNone(first)
         self.assertEqual(first.id, second.id)
         self.assertEqual(WhatsAppNotificationLog.objects.filter(company=self.company).count(),1)
-        self.assertEqual(first.status,"pending")
+        self.assertEqual(first.status,"failed")
         conn.connected = False
         conn.save(update_fields=["connected"])
-        self.assertIsNone(queue_customer_notification(self.customer,"job_created","job:b:created"))
+        self.assertEqual(queue_customer_notification(self.customer,"job_created","job:b:created").status, "failed")
 
     def test_customer_opt_out_is_recorded_and_prevents_new_notifications(self):
         consent = self.client.post(
@@ -106,3 +106,92 @@ class WhatsAppSecurityTests(TestCase):
             HTTP_X_HUB_SIGNATURE_256="sha256="+sig,
         )
         self.assertEqual(reply.status_code,200)
+
+    def test_manual_mode_can_be_saved_without_meta_and_prepares_private_tracking_link(self):
+        saved = self.client.patch("/api/v1/whatsapp/settings", {
+            "messagingMode": "manual",
+            "events": {"job_created": True},
+            "notificationsEnabled": False,
+        }, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertEqual(saved.data["messagingMode"], "manual")
+        self.assertFalse(saved.data["connected"])
+
+        prepared = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(self.customer.pk),
+        }, format="json")
+        self.assertEqual(prepared.status_code, 200, prepared.data)
+        self.assertTrue(prepared.data["url"].startswith("https://wa.me/919888888888?text="))
+        self.assertIn("https%3A%2F%2F", prepared.data["url"])
+        self.assertEqual(prepared.data["status"], "manual_prepared")
+        self.assertIn("press Send", prepared.data["note"])
+        self.assertEqual(
+            WhatsAppNotificationLog.objects.get(company=self.company).status,
+            "manual_prepared",
+        )
+
+    def test_switching_modes_controls_customer_event_queue(self):
+        conn = WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, messaging_mode="manual",
+            notifications_enabled=True, event_settings={"job_created": True},
+        )
+        CustomerNotificationPreference.objects.create(
+            company=self.company, customer=self.customer, whatsapp_opt_in=True,
+            consent_source="Signed intake form",
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="job_created",
+            template_name="approved_job", approval_status="APPROVED",
+        )
+        self.assertIsNone(queue_customer_notification(self.customer, "job_created", "mode:manual"))
+        reply = self.client.patch("/api/v1/whatsapp/settings", {
+            "messagingMode": "automatic", "notificationsEnabled": True,
+        }, format="json")
+        self.assertEqual(reply.status_code, 200, reply.data)
+        self.assertEqual(reply.data["messagingMode"], "automatic")
+        queued = queue_customer_notification(self.customer, "job_created", "mode:automatic")
+        self.assertIsNotNone(queued)
+        self.assertEqual(queued.status, "failed")  # Sending disabled in these tests.
+        conn.refresh_from_db()
+        conn.connected = False
+        conn.save(update_fields=["connected"])
+        disconnected = queue_customer_notification(self.customer, "job_created", "mode:disconnected")
+        self.assertEqual(disconnected.status, "failed")
+        self.assertIn("disconnected", disconnected.error_detail)
+        self.client.patch("/api/v1/whatsapp/settings", {
+            "messagingMode": "manual",
+        }, format="json")
+        self.assertIsNone(queue_customer_notification(self.customer, "job_created", "mode:manual-again"))
+
+    def test_manual_share_validates_international_number_and_tenant(self):
+        self.customer.phone = "9888888888"
+        self.customer.save(update_fields=["phone"])
+        invalid = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(self.customer.pk),
+        }, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        other = Company.objects.create(name="Other Workshop", slug="wa-other-tenant")
+        foreign_customer = Customer.objects.create(
+            company=other, name="Other Customer", phone="+919777777777",
+        )
+        forbidden = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(foreign_customer.pk),
+        }, format="json")
+        self.assertEqual(forbidden.status_code, 404)
+
+    def test_failed_automatic_message_exposes_manual_fallback_without_marking_sent(self):
+        log = WhatsAppNotificationLog.objects.create(
+            company=self.company, customer=self.customer,
+            event="job_created", idempotency_key="failed:fallback",
+            phone="919888888888", status="failed",
+            error_detail="WhatsApp API disconnected.",
+        )
+        prepared = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "log", "targetId": str(log.pk),
+        }, format="json")
+        self.assertEqual(prepared.status_code, 200, prepared.data)
+        log.refresh_from_db()
+        self.assertEqual(log.status, "failed")
+        self.assertEqual(
+            WhatsAppNotificationLog.objects.filter(company=self.company, status="manual_prepared").count(), 1
+        )
