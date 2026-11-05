@@ -25,7 +25,7 @@ LEGACY_GRANTS = {
 
 def preserve_existing_roles(apps, schema_editor):
     Role = apps.get_model("roles", "Role")
-    for role in Role.objects.all().iterator():
+    for role in Role.objects.filter(company__isnull=False).iterator():
         old = role.permissions
         if not isinstance(old, list) or not all(isinstance(code, str) for code in old):
             continue
