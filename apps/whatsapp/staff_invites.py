@@ -13,6 +13,29 @@ from .phone import normalize_recipient
 from .models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
 
 
+
+def staff_auto_delivery_available(employee):
+    """Authoritative preflight; never issue an anonymous reset link without it."""
+    if not (employee and employee.user_id and employee.whatsapp_consent
+            and employee.whatsapp_consent_source and employee.user.is_active
+            and employee.user.company_id == employee.company_id
+            and normalize_recipient(employee.user.normalized_phone)
+            and settings.WHATSAPP_SEND_ENABLED and settings.CELERY_BROKER_URL):
+        return False
+    connection = WhatsAppBusinessConnection.objects.filter(
+        company=employee.company, connected=True, notifications_enabled=True,
+        messaging_mode="automatic",
+    ).first()
+    return bool(
+        connection and connection.phone_number_id and connection.encrypted_access_token
+        and connection.waba_id and connection.event_settings.get("staff_onboarding", False)
+        and WhatsAppMessageTemplate.objects.filter(
+            company=employee.company, event="staff_onboarding",
+            approval_status="APPROVED",
+        ).exists()
+    )
+
+
 def queue_staff_whatsapp_invitation(invitation, employee):
     if (not employee.whatsapp_consent or not employee.whatsapp_consent_source
             or not employee.phone or not employee.user_id):
@@ -69,7 +92,8 @@ def send_staff_invitation(invitation_id):
         template = WhatsAppMessageTemplate.objects.filter(
             company=user.company, event="staff_onboarding", approval_status="APPROVED",
         ).first()
-        if (not user.is_active or not employee or not connection or connection.messaging_mode != "automatic" or not template
+        if (not user.is_active or not employee or not employee.whatsapp_consent_source
+                or not connection or connection.messaging_mode != "automatic" or not template
                 or not connection.event_settings.get("staff_onboarding", False)):
             invite.delivery_status = "failed"
             invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
