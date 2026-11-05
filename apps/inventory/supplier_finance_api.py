@@ -112,10 +112,10 @@ def supplier_summary(request, supplier):
         advances += max(Decimal("0"), payment.amount - applied)
     return {
         "supplierId": str(supplier.pk), "supplierName": supplier.name,
-        "totalPurchases": str(total), "totalPaymentsApplied": str(amount_paid),
-        "outstanding": str(outstanding), "overdue": str(overdue),
-        "availableAdvance": str(advances),
-        "totalUnappliedAdvances": str(advances),
+        "totalPurchases": str(total.quantize(CENT)), "totalPaymentsApplied": str(amount_paid.quantize(CENT)),
+        "outstanding": str(outstanding.quantize(CENT)), "overdue": str(overdue.quantize(CENT)),
+        "availableAdvance": str(advances.quantize(CENT)),
+        "totalUnappliedAdvances": str(advances.quantize(CENT)),
     }
 
 
