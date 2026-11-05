@@ -216,7 +216,9 @@ class WhatsAppSecurityTests(TestCase):
         )
         log = queue_customer_notification(self.customer, "job_created", "worker:once")
         self.assertEqual(log.status, "queued")
-        with patch("apps.whatsapp.tasks.decrypt_token", return_value="mock-access-token"), patch(
+        with patch("apps.whatsapp.tasks.approved_templates", return_value=[
+            {"name": "approved_job", "language": "en_US"}
+        ]), patch("apps.whatsapp.tasks.decrypt_token", return_value="mock-access-token"), patch(
             "apps.whatsapp.tasks.send_template_message",
             return_value={"messages": [{"id": "wamid.mock-once"}]},
         ) as send:
