@@ -3,7 +3,6 @@
 Preparing a message never proves that it was sent. Private capability URLs
 are returned only to a permitted staff session and never stored in log text.
 """
-import re
 import uuid
 from urllib.parse import quote
 
@@ -19,17 +18,7 @@ from apps.customers.portal_tokens import ensure_portal_access, issue_link
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job
 from .models import WhatsAppNotificationLog
-
-
-def normalize_recipient(value):
-    raw = str(value or "").strip()
-    digits = re.sub(r"\\D", "", raw)
-    # Without country code, local ten-digit numbers are ambiguous.
-    if not raw or (not raw.startswith("+") and len(digits) < 11):
-        return ""
-    if not re.fullmatch(r"[1-9][0-9]{7,14}", digits):
-        return ""
-    return digits
+from .phone import normalize_recipient
 
 
 def click_to_chat(phone, message):
