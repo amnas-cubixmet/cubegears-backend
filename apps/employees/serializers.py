@@ -217,7 +217,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_loginStatus(self,obj):
         if not obj.user:
             return "Not Invited"
-        if not obj.user.is_active:
+        if not obj.user.is_active or obj.status not in {"Active", "Probation", "Notice Period"}:
             return "Disabled"
         if obj.user.has_usable_password():
             return "Active"
