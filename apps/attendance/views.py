@@ -28,8 +28,8 @@ class AttendanceRecordViewSet(CompanyScopedModelViewSet):
 
     def perform_create(self, serializer):
         employee = serializer.validated_data["employee"]
-        if employee.company_id != self.request.user.company_id:
-            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        if employee.company_id != self.request.user.company_id or (self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id):
+            raise ValidationError({"employee": "Employee is outside your permitted workshop branch."})
         serializer.save(company=employee.company, branch=employee.branch)
 
     @transaction.atomic
@@ -65,8 +65,8 @@ class LeaveRequestViewSet(CompanyScopedModelViewSet):
 
     def perform_create(self, serializer):
         employee = serializer.validated_data["employee"]
-        if employee.company_id != self.request.user.company_id:
-            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        if employee.company_id != self.request.user.company_id or (self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id):
+            raise ValidationError({"employee": "Employee is outside your permitted workshop branch."})
         serializer.save(
             company=employee.company, branch=employee.branch,
             leave_type="Unpaid Leave",
@@ -121,6 +121,9 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
                 employee=Employee.objects.get(pk=employee_id,company=self.request.user.company)
             except Exception as exc:
                 raise ValidationError({"staffId":"Employee not found."}) from exc
+
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id:
+            raise ValidationError({"staffId": "Employee is outside your permitted branch."})
 
         hours=float(self.request.data.get("overtimeHours") or 0)
         minutes=int(self.request.data.get("minutes") or round(hours*60))
