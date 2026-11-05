@@ -38,7 +38,8 @@ class StockItemViewSet(CompanyScopedModelViewSet):
                 movement_type="opening",
                 quantity=item.on_hand,
                 unit_cost=item.cost_price,
-                note="Initial stock entered when the part was created.",
+                unit_selling_price=item.selling_price,
+                note="Opening inventory; this entry does not create a supplier bill or payment.",
                 created_by=self.request.user,
             )
 
