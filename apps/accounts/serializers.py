@@ -85,6 +85,14 @@ def user_can_sign_in(user):
     if not user.company_id:
         return True
     role = user.role
+    try:
+        employee = user.employee_profile
+    except Exception:
+        employee = None
+    # A profile edited to Suspended/Inactive must not keep working JWT-login
+    # credentials, even if a legacy code path omitted syncing is_active.
+    if employee and employee.status not in {"Active", "Probation", "Notice Period"}:
+        return False
     return bool(
         user.company and user.company.is_active
         and role and role.is_active and role.company_id == user.company_id
