@@ -114,7 +114,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     assignedRoleId=serializers.SerializerMethodField()
     accountStatus=serializers.SerializerMethodField()
     loginStatus=serializers.SerializerMethodField()
-    emailDeliveryStatus=serializers.SerializerMethodField()
+    whatsappInviteFailure=serializers.SerializerMethodField()
 
     class Meta:
         model=Employee
@@ -141,11 +141,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
         invite = obj.user.staff_password_invitations.order_by('-created_at').first()
         return invite.delivery_status if invite else 'not_requested'
 
-    def get_emailDeliveryStatus(self,obj):
-        # Only present in the response that scheduled the invitation.
-        # Status is not persisted, as provider delivery is not inbox receipt.
-        state = getattr(obj, "_invite_email_delivery", None)
-        return state.get("status") if state else None
+    def get_whatsappInviteFailure(self,obj):
+        if not obj.user_id:
+            return ""
+        invite = obj.user.staff_password_invitations.order_by("-created_at").first()
+        return invite.failure_reason if invite else ""
 
     def get_displayEmployeeNo(self,obj):
         digits="".join(ch for ch in str(obj.employee_code or "") if ch.isdigit())
@@ -221,9 +221,4 @@ class EmployeeSerializer(serializers.ModelSerializer):
             return "Disabled"
         if obj.user.has_usable_password():
             return "Active"
-        invite = obj.user.staff_password_invitations.order_by("-created_at").first()
-        if invite and invite.delivery_status in {"sent", "delivered", "read"}:
-            return "WhatsApp Invitation Sent"
-        if invite and invite.delivery_status == "failed":
-            return "Invitation Delivery Failed"
         return "Pending Password Setup"
