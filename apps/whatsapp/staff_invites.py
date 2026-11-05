@@ -2,7 +2,6 @@
 
 Raw password-link tokens never enter DB storage, Celery task arguments or logs.
 """
-import re
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
