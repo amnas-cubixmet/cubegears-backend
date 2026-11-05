@@ -26,7 +26,7 @@ def queue_customer_notification(customer, event, event_key, job=None):
     """Create at most one per-event record; never send without explicit opt-in."""
     if event not in EVENTS or not customer or not customer.company_id:
         return None
-    conn = WhatsAppBusinessConnection.objects.filter(company=customer.company, connected=True,
+    conn = WhatsAppBusinessConnection.objects.filter(company=customer.company,
                                                        notifications_enabled=True, messaging_mode="automatic").first()
     if not conn or not conn.event_settings.get(event, False):
         return None
@@ -38,16 +38,24 @@ def queue_customer_notification(customer, event, event_key, job=None):
     ).first()
     number = _phone(customer)
     access = ensure_portal_access(customer)
-    if not preference or not template or not number or not access.is_active:
+    if not preference or not number or not access.is_active:
         return None
-    send_ready = bool(getattr(settings, "WHATSAPP_SEND_ENABLED", False) and settings.CELERY_BROKER_URL)
+    send_ready = bool(conn.connected and template
+                      and getattr(settings, "WHATSAPP_SEND_ENABLED", False)
+                      and settings.CELERY_BROKER_URL)
+    if not conn.connected:
+        failure = "WhatsApp API disconnected. Use manual share."
+    elif not template:
+        failure = "Approved Meta template missing. Use manual share."
+    else:
+        failure = "WhatsApp sender or Celery broker is disabled."
     log, created = WhatsAppNotificationLog.objects.get_or_create(
         company=customer.company, idempotency_key=str(event_key)[:180],
         defaults={
             "branch":customer.branch, "customer": customer, "job":job,
-            "event":event, "phone":number, "template_name":template.template_name,
+            "event":event, "phone":number, "template_name":template.template_name if template else "",
             "status": "queued" if send_ready else "failed",
-            "error_detail": "" if send_ready else "WhatsApp sender or Celery broker is disabled.",
+            "error_detail": "" if send_ready else failure,
         },
     )
     if created and send_ready:
