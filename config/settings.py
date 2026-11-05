@@ -194,7 +194,7 @@ WHATSAPP_GRAPH_VERSION = env("WHATSAPP_GRAPH_VERSION", "v25.0")
 WHATSAPP_SEND_ENABLED = env_bool("WHATSAPP_SEND_ENABLED", False)
 
 CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
-CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost:5173/c" if DEBUG else "https://customer.cubegears.com/c")
+CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access" if DEBUG else "https://customer.cubegears.com/access")
 if not DEBUG and not CUSTOMER_PORTAL_BASE_URL.startswith("https://"):
     raise ImproperlyConfigured("CUSTOMER_PORTAL_BASE_URL must use HTTPS in production.")
 
