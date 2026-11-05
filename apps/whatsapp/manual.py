@@ -59,7 +59,9 @@ class WhatsAppManualShareView(APIView):
                 return Response({"message": "Only finalized, published invoices can be shared."}, status=409)
             customer, job = invoice.customer, invoice.job
         elif kind == "log":
-            _require(request, "settings.manage")
+            if not (user_has_permission(request.user, "settings.manage") or
+                    user_has_permission(request.user, "company.manage")):
+                raise PermissionDenied("Workshop administrator permission is required.")
             log = get_object_or_404(
                 WhatsAppNotificationLog.objects.select_related("customer", "job"),
                 company=company, pk=ident, status__in=["failed", "skipped"],
