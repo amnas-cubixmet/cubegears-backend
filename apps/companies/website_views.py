@@ -133,7 +133,7 @@ class CompanyWebsiteDomainsView(APIView):
                 domain = CompanyDomain.objects.create(
                     company=request.user.company, hostname=hostname,
                     dns_provider=provider, status=CompanyDomain.PENDING_SETUP,
-                    is_approved=os.environ.get("CUSTOMER_DOMAIN_REQUIRE_APPROVAL", "").lower() != "true",
+                    is_approved=os.environ.get("CUSTOMER_DOMAIN_REQUIRE_APPROVAL", "true").lower() == "false",
                 )
         except IntegrityError:
             return Response({"message": "This domain is already assigned or pending."}, status=409)
