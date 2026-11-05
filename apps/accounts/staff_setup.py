@@ -70,7 +70,7 @@ def resolve_invitation(raw):
         pk=invitation_id, used_at__isnull=True, invalidated_at__isnull=True,
         expires_at__gt=timezone.now(),
     ).first()
-    if not record or not user_can_sign_in(record.user):
+    if not record or not user_can_sign_in(record.user, allow_pending_setup=True):
         return None
     expected = _token(record)
     if not (hmac.compare_digest(raw, expected) and
@@ -94,7 +94,7 @@ def consume_invitation(raw, password):
         not hmac.compare_digest(_digest(raw), record.token_hash)):
         return None
     user = record.user
-    if not user_can_sign_in(user):
+    if not user_can_sign_in(user, allow_pending_setup=True):
         return None
     user.set_password(password)
     user.save(update_fields=["password"])
