@@ -1,4 +1,5 @@
 from decimal import Decimal, ROUND_HALF_UP
+from django.conf import settings
 import mimetypes
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -52,6 +53,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "quick_estimate": "jobs.edit",
         "quick_estimate_detail": "jobs.edit",
         "estimate_decision": "jobs.edit",
+        "estimate_skip": "jobs.edit",
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
         "upload_work_photo": "jobs.edit",
         "work_photo_file": "jobs.view",
@@ -846,6 +848,54 @@ class JobViewSet(CompanyScopedModelViewSet):
                          {"estimateId": str(estimate.pk), "version": estimate.version})
         return response.Response(JobEstimateSerializer(estimate).data)
 
+    @decorators.action(detail=True, methods=["post"], url_path="estimate/skip")
+    @transaction.atomic
+    def estimate_skip(self, request, pk=None):
+        """Explicitly skip only the current Estimate stage; never approve a quote."""
+        job = Job.objects.select_for_update().get(
+            pk=self.get_object().pk, company=request.user.company,
+        )
+        state = workflow_state(job)
+        if state["current"] != "estimate":
+            raise ValidationError({"estimate": "Only the active Estimate stage can be skipped."})
+        if (job.inspection or {}).get("status") != "Completed":
+            raise ValidationError({"inspection": "Complete the required inspection before skipping an estimate."})
+        if job.estimates.filter(status="Approved").exists():
+            raise ValidationError({"estimate": "An approved estimate cannot be skipped."})
+        reasons = {
+            "Estimate Not Required", "Quick Service",
+            "Customer Declined Estimate", "Other",
+        }
+        reason = request.data.get("reason")
+        details = str(request.data.get("details") or "").strip()
+        if reason not in reasons:
+            raise ValidationError({"reason": "Choose a supported skip reason."})
+        if len(details) > 500 or (reason == "Other" and len(details) < 5):
+            raise ValidationError({"details": "For Other, enter a reason (5–500 characters)."})
+        timestamp = timezone.now()
+        decision = {
+            "status": "Skipped", "reason": reason, "details": details,
+            "skippedBy": str(request.user.pk), "skippedAt": timestamp.isoformat(),
+        }
+        progress = dict(job.workflow_progress or {})
+        completed = set(state["completed"])
+        completed.add("estimate")
+        progress.update({
+            "started": True,
+            "completed": [name for name in STAGES if name in completed],
+            "lastCompletedAt": timestamp.isoformat(),
+            "estimateDecision": decision,
+        })
+        job.workflow_progress = progress
+        job.status = NEXT_STATUS["estimate"]
+        job.save(update_fields=["workflow_progress", "status", "updated_at"])
+        record_job_event(
+            job, request.user, "Estimate Skipped",
+            f"Estimate skipped: {reason}",
+            {**decision, "stage": "estimate"},
+        )
+        return response.Response({**workflow_state(job), "job": JobSerializer(job).data})
+
     def _quick_estimate_values(self, data):
         lines = data.get("lines")
         if not isinstance(lines, list) or not 1 <= len(lines) <= 75:
@@ -896,7 +946,17 @@ class JobViewSet(CompanyScopedModelViewSet):
             if "taxRate" in row and row["taxRate"] not in (None, ""):
                 line["taxRate"] = str(gst_rate(row["taxRate"]))
             selected_label = str(row.get("taxChoice") or "").strip()
-            if selected_label:
+            treatment = str(row.get("taxTreatment") or "").strip()
+            confirmed = row.get("taxTreatmentConfirmed") is True
+            if selected_label == "none":
+                if line.get("taxRate") != "0":
+                    raise ValidationError({"taxChoice": "None / No GST requires a 0% line rate."})
+                if treatment not in {"exempt", "nil_rated", "non_gst", "out_of_scope"} or not confirmed:
+                    raise ValidationError({"taxTreatment": "Explicitly classify and confirm this zero-tax supply."})
+                line["taxChoice"] = "none"
+                line["taxTreatment"] = treatment
+                line["taxTreatmentConfirmed"] = True
+            elif selected_label:
                 selection = find_gst_choice(selected_label)
                 if not selection or "taxRate" not in line or (
                     Decimal(selection["totalRate"]) != Decimal(line["taxRate"])
@@ -904,10 +964,16 @@ class JobViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({
                         "taxChoice": "Selected GST label does not match the line's total rate."
                     })
+                if treatment and treatment != "taxable":
+                    raise ValidationError({"taxTreatment": "Remove zero-tax classification from taxed supplies."})
                 line["taxChoice"] = selected_label
+            elif treatment and treatment != "taxable":
+                raise ValidationError({"taxTreatment": "Select None / No GST to classify a zero-tax supply."})
             hsn = str(row.get("hsnSac") or "").strip()
             if len(hsn) > 20 or (hsn and not hsn.isdigit()):
                 raise ValidationError({"hsnSac": "HSN/SAC must contain up to 20 digits."})
+            if line.get("taxChoice") == "none" and not hsn:
+                raise ValidationError({"hsnSac": "HSN / SAC is required to justify a non-taxed supply."})
             if hsn:
                 line["hsnSac"] = hsn
             if catalog_id:
@@ -942,6 +1008,16 @@ class JobViewSet(CompanyScopedModelViewSet):
                 for line in items:
                     if "taxRate" not in line:
                         raise ValidationError({"taxRate": "Set a classified GST rate for every work and part item."})
+                    if line["taxRate"] == "0":
+                        if line.get("taxChoice") != "none" or not line.get("taxTreatmentConfirmed"):
+                            raise ValidationError({"taxTreatment": "Zero GST requires an explicit confirmed tax classification."})
+                        # No arbitrary 0% for registered workshops: tax specialists
+                        # configure the eligible HSN/SAC + treatment pairs, rather
+                        # than us guessing exemption rules in application code.
+                        eligible = getattr(settings, "ESTIMATE_ZERO_GST_CLASSIFICATIONS", {})
+                        permitted = eligible.get(line.get("hsnSac", ""), ()) if isinstance(eligible, dict) else ()
+                        if line.get("taxTreatment") not in permitted:
+                            raise ValidationError({"taxTreatment": "This HSN/SAC is not configured for the selected zero-GST treatment. Contact your tax administrator."})
                     selection = find_gst_choice(line.get("taxChoice", ""))
                     if selection and selection["taxMode"] != context["taxMode"]:
                         raise ValidationError({

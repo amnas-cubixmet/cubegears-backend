@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -20,6 +21,24 @@ def env_list(name, default=""):
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
+
+# Verified statutory zero-tax HSN/SAC eligibility is deliberately not guessed.
+# Authorized tax administrators populate this server-side map after confirming
+# classification. Empty mapping blocks all zero GST for registered workshops.
+try:
+    ESTIMATE_ZERO_GST_CLASSIFICATIONS = json.loads(
+        env("ESTIMATE_ZERO_GST_CLASSIFICATIONS", "{}")
+    )
+except (ValueError, TypeError) as exc:
+    raise ImproperlyConfigured("ESTIMATE_ZERO_GST_CLASSIFICATIONS must be valid JSON.") from exc
+if not isinstance(ESTIMATE_ZERO_GST_CLASSIFICATIONS, dict) or any(
+    not isinstance(code, str)
+    or not isinstance(treatments, list)
+    or not all(t in {"nil_rated", "exempt", "non_gst", "out_of_scope"}
+               for t in treatments)
+    for code, treatments in ESTIMATE_ZERO_GST_CLASSIFICATIONS.items()
+):
+    raise ImproperlyConfigured("ESTIMATE_ZERO_GST_CLASSIFICATIONS must map HSN/SAC codes to permitted treatment arrays.")
 
 # Keep strong security settings for production; SQLite is supported on
 # a server with persistent local storage, never an ephemeral Vercel function.

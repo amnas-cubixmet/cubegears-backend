@@ -50,4 +50,8 @@ def workflow_state(job):
         "locked": list(STAGES[position + 1:]),
         "stages": list(STAGES),
         "finished": len(completed) == len(STAGES),
+        "estimateDecision": saved.get("estimateDecision") or (
+            {"status": "Approved"} if job.estimates.filter(status="Approved").exists()
+            else {"status": "Pending"}
+        ),
     }
