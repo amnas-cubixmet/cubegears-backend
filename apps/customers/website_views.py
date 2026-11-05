@@ -64,7 +64,8 @@ def _tenant(request):
         if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", slug):
             return get_object_or_404(Company, slug=slug, is_active=True)
     domain = CompanyDomain.objects.select_related("company").filter(
-        hostname=hostname, status=CompanyDomain.ACTIVE, company__is_active=True
+        hostname=hostname, status=CompanyDomain.ACTIVE,
+        verified_at__isnull=False, company__is_active=True
     ).first()
     if domain:
         return domain.company
@@ -186,12 +187,19 @@ def _dashboard(access):
     }
 
 
+class CustomerWebsiteThrottle(ScopedRateThrottle):
+    """Use the client identity supplied by the trusted proxy, not its egress IP."""
+    def get_ident(self, request):
+        ident = request.headers.get("X-CG-Portal-Client", "") or super().get_ident(request)
+        return str(ident)[:64]
+
+
 @method_decorator(never_cache, name="dispatch")
 class PortalBaseView(APIView):
     authentication_classes = []
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "customer_portal"
+    throttle_classes = [CustomerWebsiteThrottle]
+    throttle_scope = "customer_website"
 
 
 class WebsiteBrandingView(PortalBaseView):
