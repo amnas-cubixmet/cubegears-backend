@@ -20,8 +20,9 @@ users, tenant roles or invoices are deleted or migrated to a different account.
    the owner account remains pending and requires operator intervention. Do
    not enable email-free public signup in production until the sender works.
 4. Authorized company admin creates staff with full name, international mobile,
-   optional email, branch and an assignable, non-system company role. If
-   `loginAccessEnabled` is true, a user with no usable password is created.
+   branch, designation, employment status and an assignable non-system company
+   role. **No staff email is collected or required.** If
+   `loginAccessEnabled` is true, a user with an unusable password is created.
 5. An invitation is issued immediately; the old unused invitation is
    invalidated. Staff must **explicitly consent** and the company must have
    an official connected WABA, approved `staff_onboarding` template, enabled
@@ -29,6 +30,8 @@ users, tenant roles or invoices are deleted or migrated to a different account.
 6. The signed admin-only staff invitation response includes an ephemeral
    `setupLink` for manual trusted sharing when automated sending is disabled
    or unavailable. Only administrators with `company.manage` may issue it.
+   No staff invitation is sent by email. A manual WhatsApp share is offered
+   only when staff WhatsApp consent is recorded.
    **Do not log or store this raw link in an audit feed.**
 7. Staff enters and confirms their password at `/set-password/:token`. Django
    validates it using AUTH_PASSWORD_VALIDATORS, hashes it and atomically consumes
@@ -45,6 +48,10 @@ users, tenant roles or invoices are deleted or migrated to a different account.
   optional `email`, `whatsapp_consent`.
 - `POST /api/v1/auth/login`: `identifier` (email or E.164 mobile),
   `password`, optional `workshop` slug. Legacy `email` credential accepted.
+- `POST /api/v1/auth/forgot-password`: `mobile` (E.164) plus required
+  `workshop` slug for staff. Uses connected company Meta WhatsApp, recorded
+  opt-in, a 10-minute per-identity cooldown and generic success responses.
+  Existing owner/platform email recovery remains compatible.
 - `POST /api/v1/auth/staff-invitation/validate`: `token` (generic
   expired/revoked invalid response).
 - `POST /api/v1/auth/staff-invitation/consume`: `token`, `password`,
@@ -108,7 +115,8 @@ and no-referrer headers are required for password-link safety.
   authorized account migration/admin review before enabling phone login.
 - Duplicate historical phone numbers must be reviewed, not silently assigned
   to one workshop account.
-- Email/password login and older setup/reset URLs remain supported.
+- Existing owner/platform email login and legacy setup/reset URLs remain
+  supported, but the **staff Add form and staff invitation never require or send email**.
 - Public signup is **not verified proof of phone ownership**; successful link
   delivery through Meta is necessary before activation.
 - Verify persistent Celery workers, real Meta template approval, signed webhooks,

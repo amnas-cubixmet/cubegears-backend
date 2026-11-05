@@ -1,13 +1,7 @@
 import re
 
-from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
 
-from django.conf import settings
-from apps.accounts.email import queue_email
-from apps.accounts.account_links import password_action_url, magic_action_url
 from apps.accounts.permissions import can_delegate
 from rest_framework import decorators, response
 from rest_framework.exceptions import ValidationError
@@ -178,60 +172,6 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"role": "Choose a company-created staff role without owner or platform authority."})
         return role
 
-    def _send_staff_access_email(self, employee, user):
-        """Staff onboarding is password setup first, then normal company login."""
-        from apps.accounts.models import MagicLink
-
-        if (
-            not user.is_active
-            or not user.company_id
-            or user.company_id != employee.company_id
-            or not user.role_id
-            or not user.role.is_active
-            or user.role.is_system
-            or user.role.company_id != employee.company_id
-        ):
-            raise ValidationError({"role": "An active, company-specific staff login role is required."})
-
-        if user.has_usable_password():
-            # Previously activated staff can receive one-use login links;
-            # never reset an existing password while resending an invite.
-            magic_token = MagicLink.issue(user)
-            url = magic_action_url(self.request, user, magic_token)
-            subject = "Sign in to your CubeGears workshop"
-            instruction = "Use the button below to sign in securely."
-        else:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            url = password_action_url(self.request, user, uid, token, setup=True)
-            subject = "Create your CubeGears staff password"
-            instruction = "Use the button below to create your account password."
-
-        delivery = queue_email(
-            subject=subject,
-            message=(
-                f"Hi {employee.name},\n\n"
-                f"You have been invited to {employee.company.name} on CubeGears.\n"
-                f"{instruction}\n\n"
-                f"Login email: {user.email}\n"
-                f"Assigned role: {user.role.name}\n"
-                f"Login page: {settings.FRONTEND_URL.rstrip('/')}/login\n"
-                f"Employee number: {_employee_display_no(employee)}\n"
-                "Your login grants access only to your assigned workshop role.\n"
-                "If you weren't expecting this email, ignore it."
-            ),
-            recipient_list=[user.email],
-            action_url=url, action_label="Open CubeGears staff access",
-        )
-        # Serializer and owner-facing invite endpoint see this state after commit.
-        # No setup token or SMTP secrets are returned to the browser.
-        employee._invite_email_delivery = delivery
-        _record_activity(
-            employee, "Staff Access Invite Requested",
-            "A Celery email notification was requested for the staff account.",
-            self.request.user,
-        )
-
     def _issue_staff_invitation(self, employee, user):
         from apps.accounts.staff_setup import issue_invitation, invitation_url
         from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
@@ -244,17 +184,6 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         delivery = queue_staff_whatsapp_invitation(record, employee)
         employee._setup_link = invitation_url(record)
         employee._whatsapp_invite_status = delivery
-        employee._invite_email_delivery = {"status":"not_requested"}
-        if delivery == "manual" and user.email:
-            # Optional email fallback through the existing Celery-only service.
-            result = queue_email(
-                subject="Set your CubeGears workshop password",
-                message=f"Your account for {employee.company.name} is ready. Use the secure one-time link to set your password.",
-                recipient_list=[user.email],
-                action_url=employee._setup_link,
-                action_label="Set password",
-            )
-            employee._invite_email_delivery = result
         _record_activity(
             employee, "Staff Password Invitation Created",
             "A one-use 24-hour password link was created. Delivery: " + delivery,
@@ -328,7 +257,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             user = User.objects.create_user(
                 email=email or None, password=None, name=name,
                 phone=mobile, company=company, branch=branch,
-                role=requested_role, is_active=status_value == "Active",
+                role=requested_role, is_active=status_value in {"Active", "Probation", "Notice Period"},
                 is_staff=False, is_superuser=False, email_verified=False,
             )
 
@@ -341,8 +270,6 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         _record_activity(obj, "Staff Created", f"{_employee_display_no(obj)} profile created.", self.request.user)
         if user and user.is_active:
             self._issue_staff_invitation(obj, user)
-        else:
-            obj._invite_email_delivery = {"status":"not_requested"}
 
     @transaction.atomic
     def perform_update(self,serializer):
@@ -376,6 +303,18 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             extra["shift_label"]=_shift_label(shift)
 
         obj=serializer.save(**extra)
+
+        # Staff employment deactivation is also a login revocation. Enabling
+        # employment later must not silently re-enable a disabled login.
+        if obj.user and obj.status not in {"Active", "Probation", "Notice Period"}:
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            if obj.user.is_active:
+                obj.user.is_active = False
+                obj.user.save(update_fields=["is_active", "updated_at"])
+            StaffPasswordInvitation.objects.filter(
+                user=obj.user, used_at__isnull=True, invalidated_at__isnull=True,
+            ).update(invalidated_at=timezone.now(), delivery_status="superseded")
 
         # Preserve legacy monthly/commission values only in historical payroll
         # tables; active staff are enrolled in daily wages only.
@@ -494,6 +433,10 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if obj.status != "Active":
                 raise ValidationError({"status":"Activate this employee before inviting."})
             user = self._ensure_login_user(obj)
+            # Serialize same-account resend requests even when no invitation
+            # row exists yet. The invitation queryset lock alone is insufficient.
+            from apps.accounts.models import User
+            user = User.objects.select_for_update().select_related("role").get(pk=user.pk)
             role = self._resolve_role(obj.role_name, user.role_id)
             if not role:
                 raise ValidationError({"role":"A valid workshop staff role is required."})
@@ -511,6 +454,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
                 expires_at__gt=timezone.now(),
                 created_at__gte=timezone.now() - timedelta(seconds=60),
+                delivery_status__in=["queued", "sending", "sent", "delivered", "read", "manual"],
             ).order_by("-created_at").first()
             if recent:
                 invite = recent
@@ -524,7 +468,6 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             "message": "New secure 24-hour password link issued.",
             "setupLink": url, "expiresAt": invite.expires_at,
             "whatsappInviteStatus": delivery,
-            "emailDeliveryStatus": getattr(obj, "_invite_email_delivery", {}).get("status"),
             "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
         })
 

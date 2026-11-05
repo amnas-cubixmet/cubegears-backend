@@ -92,9 +92,56 @@ class ForgotPasswordView(APIView):
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = User.objects.filter(email__iexact=serializer.validated_data["email"], is_active=True).first()
-        # Public recovery responses must not reveal whether an account exists.
-        if user:
+        data = serializer.validated_data
+        # Identical success for unknown accounts, disabled staff, missing
+        # consent, unconfigured workshops and successfully queued requests.
+        generic = {"message": "If an eligible account exists, password reset instructions will be sent."}
+        if data.get("mobile"):
+            import hashlib
+            from datetime import timedelta
+            from django.core.cache import cache
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            from apps.employees.models import Employee
+            from apps.whatsapp.staff_invites import (
+                staff_auto_delivery_available, queue_staff_whatsapp_invitation,
+            )
+
+            workshop = data["workshop"].strip().lower()
+            mobile = data["mobile"]
+            fingerprint = hashlib.sha256((workshop + ":" + mobile).encode()).hexdigest()
+            # Shared cache and anonymous-IP throttle both apply; account lookup
+            # outcome must never change the public response or rate-limit key.
+            if not cache.add("staff-recovery:" + fingerprint, 1, timeout=600):
+                return Response(generic)
+            user = User.objects.filter(
+                company__slug=workshop, normalized_phone=mobile,
+            ).select_related("company", "role").first()
+            if user and user.has_usable_password() and user_can_sign_in(user):
+                employee = Employee.objects.filter(
+                    company=user.company, user=user,
+                    status__in=["Active", "Probation", "Notice Period"],
+                ).select_related("user", "user__company", "user__role").first()
+                if employee and staff_auto_delivery_available(employee):
+                    with transaction.atomic():
+                        # Prevent two requests invalidating one another's links.
+                        locked = User.objects.select_for_update().get(pk=user.pk)
+                        since = timezone.now() - timedelta(minutes=10)
+                        recent = StaffPasswordInvitation.objects.filter(
+                            user=locked, used_at__isnull=True, invalidated_at__isnull=True,
+                            expires_at__gt=timezone.now(), created_at__gte=since,
+                            delivery_status__in=["queued", "sending", "sent", "delivered", "read"],
+                        ).exists()
+                        if not recent:
+                            invitation = issue_invitation(locked, purpose="reset")
+                            queue_staff_whatsapp_invitation(invitation, employee)
+            return Response(generic)
+
+        # Preserve legacy owner/platform email recovery. Staff onboarding and
+        # linked employee accounts recover through workshop-owned WhatsApp.
+        user = User.objects.filter(email__iexact=data["email"], is_active=True).first()
+        from apps.accounts.permissions import is_company_owner
+        if user and (is_platform_account(user) or is_company_owner(user)):
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
             reset_url = password_action_url(request, user, uid, token)
@@ -104,8 +151,7 @@ class ForgotPasswordView(APIView):
                 recipient_list=[user.email],
                 action_url=reset_url, action_label="Reset password",
             )
-
-        return Response({"message": "If the account exists, a reset link has been sent."})
+        return Response(generic)
 
 class ResetPasswordView(APIView):
     permission_classes = [AllowAny]
