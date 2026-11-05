@@ -858,17 +858,17 @@ class ManagerCalendarView(APIView):
         next_month=(first_day.replace(day=28)+timedelta(days=4)).replace(day=1)
         last_day=next_month-timedelta(days=1)
         employees=list(
-            Employee.objects.filter(company=company,status="Active")
+            _scope_team(Employee.objects.filter(company=company,status="Active"), request.user, "branch_id")
             .select_related("branch","shift","team")
             .order_by("name")
         )
-        records=AttendanceRecord.objects.filter(
+        records=_scope_team(AttendanceRecord.objects.filter(
             company=company,date__gte=first_day,date__lte=last_day
-        ).select_related("employee")
+        ), request.user).select_related("employee")
         record_map={(row.employee_id,row.date):row for row in records}
-        leaves=LeaveRequest.objects.filter(
+        leaves=_scope_team(LeaveRequest.objects.filter(
             company=company,status="Approved",start_date__lte=last_day,end_date__gte=first_day
-        )
+        ), request.user)
         leave_rows=list(leaves)
         holidays=list(Holiday.objects.filter(company=company,date__gte=first_day,date__lte=last_day))
         holiday_map={row.date:row for row in holidays}
