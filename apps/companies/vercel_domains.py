@@ -71,10 +71,21 @@ class VercelDomains:
         return "/v9/projects/" + quote(self.project, safe="") + "/domains/" + quote(hostname, safe="")
 
     def add(self, hostname):
-        result = self.request(
-            "POST", "/v10/projects/" + quote(self.project, safe="") + "/domains",
-            {"name": hostname},
-        )
+        try:
+            result = self.request(
+                "POST", "/v10/projects/" + quote(self.project, safe="") + "/domains",
+                {"name": hostname},
+            )
+        except VercelDomainError as exc:
+            if exc.code not in (400, 409):
+                raise
+            # A previous add may have succeeded before a network timeout.
+            # Retry only after verifying the exact same project and domain;
+            # never force-reassign a domain from another Vercel project.
+            try:
+                return self.detail(hostname)
+            except VercelDomainError:
+                raise exc from None
         if result.get("projectId") != self.project or result.get("name", "").lower() != hostname:
             raise VercelDomainError("Vercel returned an unexpected project/domain assignment.")
         return result
