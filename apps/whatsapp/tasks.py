@@ -3,7 +3,7 @@ from celery import shared_task
 from django.conf import settings
 from django.db import transaction
 from apps.customers.portal_tokens import ensure_portal_access, issue_link
-from .meta import decrypt_token, send_template_message
+from .meta import approved_templates, decrypt_token, send_template_message
 from .phone import normalize_recipient
 from .models import (
     WhatsAppBusinessConnection, WhatsAppMessageTemplate,
@@ -100,8 +100,15 @@ def send_whatsapp_notification(log_id):
     # Network calls are outside the DB lock. 'sending' avoids parallel
     # duplicate attempts; the Meta API does not promise exactly-once sends.
     try:
+        token = decrypt_token(conn.encrypted_access_token)
+        still_approved = any(
+            row.get("name") == template.template_name and row.get("language") == template.language
+            for row in approved_templates(conn.waba_id, token)
+        )
+        if not still_approved:
+            raise ValueError("Template approval is no longer valid.")
         response = send_template_message(
-            conn.phone_number_id, decrypt_token(conn.encrypted_access_token),
+            conn.phone_number_id, token,
             log.phone, template.template_name, template.language,
             log.job.vehicle.registration if log.job else "Your vehicle",
             log.job.job_number if log.job else "Tracking",
