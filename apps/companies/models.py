@@ -34,6 +34,8 @@ class Company(models.Model):
     )
     # Legacy companies keep their existing rollout; public signup always locks modules.
     require_paid_features = models.BooleanField(default=False)
+    # Workshop safety policy: skips are prohibited while this is enabled.
+    require_vehicle_inspection = models.BooleanField(default=False)
     plan = models.CharField(max_length=50, default="starter")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
