@@ -862,6 +862,16 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"inspection": "Complete the required inspection before skipping an estimate."})
         if job.estimates.filter(status="Approved").exists():
             raise ValidationError({"estimate": "An approved estimate cannot be skipped."})
+        if job.company.require_customer_estimate_approval:
+            raise ValidationError({"estimate": "Workshop policy requires customer estimate approval."})
+        inspection = job.inspection or {}
+        if inspection.get("requiresEstimateApproval") or inspection.get("mandatoryEstimateApproval"):
+            raise ValidationError({"estimate": "This job requires an approved customer estimate."})
+        if ("Critical" in (inspection.get("checklist") or {}).values() or any(
+            isinstance(item, dict) and str(item.get("severity") or "").lower() == "critical"
+            for item in (inspection.get("findings") or [])
+        )):
+            raise ValidationError({"estimate": "Critical safety findings require estimate review and approval."})
         reasons = {
             "Estimate Not Required", "Quick Service",
             "Customer Declined Estimate", "Other",
@@ -880,10 +890,17 @@ class JobViewSet(CompanyScopedModelViewSet):
         progress = dict(job.workflow_progress or {})
         completed = set(state["completed"])
         completed.add("estimate")
+        skipped = set(progress.get("skipped") or [])
+        skipped.add("estimate")
+        skip_details = dict(progress.get("skipDetails") or {})
+        skip_details["estimate"] = decision
         progress.update({
             "started": True,
             "completed": [name for name in STAGES if name in completed],
+            "skipped": [name for name in STAGES if name in skipped],
+            "skipDetails": skip_details,
             "lastCompletedAt": timestamp.isoformat(),
+            "lastSkippedAt": timestamp.isoformat(),
             "estimateDecision": decision,
         })
         job.workflow_progress = progress

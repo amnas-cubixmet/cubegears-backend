@@ -36,6 +36,7 @@ class Company(models.Model):
     require_paid_features = models.BooleanField(default=False)
     # Workshop safety policy: skips are prohibited while this is enabled.
     require_vehicle_inspection = models.BooleanField(default=False)
+    require_customer_estimate_approval = models.BooleanField(default=False)
     plan = models.CharField(max_length=50, default="starter")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -42,6 +42,8 @@ def workflow_state(job):
     skipped = set(saved.get("skipped") or [])
     if inspection_status == "Skipped":
         skipped.add("inspection")
+    if (saved.get("estimateDecision") or {}).get("status") == "Skipped":
+        skipped.add("estimate")
     return {
         "inspectionStatus": inspection_status,
         "current": current,

@@ -76,6 +76,51 @@ class EstimateSkipTests(TestCase):
         self.client.force_authenticate(user=viewer)
         self.assertEqual(self.skip().status_code, 403)
 
+    def test_skip_is_separate_from_approval_in_workflow_and_audit(self):
+        reply = self.skip()
+        self.assertEqual(reply.status_code, 200, reply.data)
+        self.assertEqual(reply.data["estimateDecision"]["status"], "Skipped")
+        self.assertIn("estimate", reply.data["skipped"])
+        self.job.refresh_from_db()
+        self.assertIn("estimate", self.job.workflow_progress["skipped"])
+        self.assertEqual(
+            self.job.workflow_progress["skipDetails"]["estimate"]["reason"],
+            "Quick Service",
+        )
+        self.assertEqual(
+            self.client.get(self.url("workflow")).data["estimateDecision"]["status"],
+            "Skipped",
+        )
+        self.assertFalse(self.job.estimates.filter(status="Approved").exists())
+        self.assertEqual(JobActivity.objects.filter(
+            job=self.job, event="Estimate Skipped",
+        ).count(), 1)
+
+    def test_workshop_policy_prevents_estimate_skip(self):
+        self.company.require_customer_estimate_approval = True
+        self.company.save(update_fields=["require_customer_estimate_approval"])
+        reply = self.skip()
+        self.assertEqual(reply.status_code, 400, reply.data)
+        self.assertIn("policy", str(reply.data).lower())
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "Estimate Pending")
+        self.assertFalse(JobActivity.objects.filter(job=self.job, event="Estimate Skipped").exists())
+
+    def test_mandatory_and_critical_inspection_findings_block_estimate_skip(self):
+        for inspection in (
+            {"status": "Completed", "requiresEstimateApproval": True},
+            {"status": "Completed", "mandatoryEstimateApproval": True},
+            {"status": "Completed", "checklist": {"Brake pads": "Critical"}},
+            {"status": "Completed", "findings": [{"severity": "Critical", "description": "No brakes"}]},
+        ):
+            self.job.inspection = inspection
+            self.job.save(update_fields=["inspection"])
+            reply = self.skip()
+            self.assertEqual(reply.status_code, 400, (inspection, reply.data))
+            self.assertFalse(JobActivity.objects.filter(job=self.job, event="Estimate Skipped").exists())
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "Estimate Pending")
+
     def gst_payload(self):
         self.company.gstin = "32ABCDE1234F1Z5"
         self.company.state = "Kerala"
