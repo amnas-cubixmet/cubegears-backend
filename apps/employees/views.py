@@ -233,7 +233,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         name = serializer.validated_data.get("name") or code
         role_name = serializer.validated_data.get("role_name") or ""
         role_id = serializer.validated_data.pop("roleId", None)
-        login_enabled = serializer.validated_data.pop("loginAccessEnabled", False)
+        login_enabled = serializer.validated_data.pop("loginAccessEnabled", bool(email))
         requested_role = self._resolve_role(role_name, role_id) if role_name or role_id else None
         branch = serializer.validated_data.get("branch", self.request.user.branch)
         team = serializer.validated_data.get("team")
