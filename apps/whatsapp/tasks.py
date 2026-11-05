@@ -27,7 +27,7 @@ def queue_customer_notification(customer, event, event_key, job=None):
     if event not in EVENTS or not customer or not customer.company_id:
         return None
     conn = WhatsAppBusinessConnection.objects.filter(company=customer.company, connected=True,
-                                                       notifications_enabled=True).first()
+                                                       notifications_enabled=True, messaging_mode="automatic").first()
     if not conn or not conn.event_settings.get(event, False):
         return None
     preference = CustomerNotificationPreference.objects.filter(
@@ -40,28 +40,40 @@ def queue_customer_notification(customer, event, event_key, job=None):
     access = ensure_portal_access(customer)
     if not preference or not template or not number or not access.is_active:
         return None
+    send_ready = bool(getattr(settings, "WHATSAPP_SEND_ENABLED", False) and settings.CELERY_BROKER_URL)
     log, created = WhatsAppNotificationLog.objects.get_or_create(
         company=customer.company, idempotency_key=str(event_key)[:180],
         defaults={
             "branch":customer.branch, "customer": customer, "job":job,
             "event":event, "phone":number, "template_name":template.template_name,
+            "status": "queued" if send_ready else "failed",
+            "error_detail": "" if send_ready else "WhatsApp sender or Celery broker is disabled.",
         },
     )
-    if created and getattr(settings, "WHATSAPP_SEND_ENABLED", False) and settings.CELERY_BROKER_URL:
-        transaction.on_commit(lambda: send_whatsapp_notification.delay(str(log.pk)))
+    if created and send_ready:
+        def enqueue():
+            try:
+                send_whatsapp_notification.delay(str(log.pk))
+            except Exception:
+                WhatsAppNotificationLog.objects.filter(pk=log.pk, status="queued").update(
+                    status="failed", error_detail="WhatsApp delivery queue unavailable. Use manual share."
+                )
+        transaction.on_commit(enqueue)
     return log
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=90)
-def send_whatsapp_notification(self, log_id):
+@shared_task
+def send_whatsapp_notification(log_id):
+    # Do not retry uncertain provider responses: Meta may have accepted the message
+    # before a timeout, and resending could duplicate a customer notification.
     if not getattr(settings, "WHATSAPP_SEND_ENABLED", False):
         return "disabled"
     with transaction.atomic():
         log = WhatsAppNotificationLog.objects.select_for_update().select_related("customer","job","company").get(pk=log_id)
-        if log.status not in {"pending", "retry"}:
+        if log.status != "queued":
             return log.status
         conn = WhatsAppBusinessConnection.objects.filter(company=log.company, connected=True,
-                                                           notifications_enabled=True).first()
+                                                           notifications_enabled=True, messaging_mode="automatic").first()
         opt_in = CustomerNotificationPreference.objects.filter(
             company=log.company, customer=log.customer, whatsapp_opt_in=True,
         ).exists()
@@ -91,15 +103,13 @@ def send_whatsapp_notification(self, log_id):
         meta_id = (response.get("messages") or [{}])[0].get("id")
         if not meta_id:
             raise ValueError("Meta did not return a WhatsApp message ID.")
-        WhatsAppNotificationLog.objects.filter(pk=log_id).update(
+        WhatsAppNotificationLog.objects.filter(pk=log_id, status="sending").update(
             status="sent", meta_message_id=str(meta_id), error_detail="",
         )
         return "sent"
     except Exception:
-        log = WhatsAppNotificationLog.objects.get(pk=log_id)
-        log.status = "retry" if self.request.retries < self.max_retries else "failed"
-        log.error_detail = "Cloud API delivery failed; check the Meta Business connection and approved template."
-        log.save(update_fields=["status", "error_detail", "updated_at"])
-        if log.status == "retry":
-            raise self.retry()
+        WhatsAppNotificationLog.objects.filter(pk=log_id, status="sending").update(
+            status="failed",
+            error_detail="Meta acceptance could not be confirmed. Do not blindly retry; use manual share if needed.",
+        )
         return "failed"
