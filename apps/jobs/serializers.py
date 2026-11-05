@@ -45,6 +45,8 @@ class JobSerializer(serializers.ModelSerializer):
 
     partsWorkflow=serializers.JSONField(source="parts_workflow",read_only=True)
     workUpdates=serializers.JSONField(source="work_updates",required=False)
+    branchId=serializers.UUIDField(source="branch_id",read_only=True,allow_null=True)
+    branchName=serializers.CharField(source="branch.name",read_only=True,default="")
     customerId=serializers.UUIDField(source="customer_id",read_only=True)
     customerName=serializers.CharField(source="customer.name",read_only=True)
     customerPhone=serializers.CharField(source="customer.phone",read_only=True)

@@ -47,6 +47,7 @@ class Company(models.Model):
 
 
 class CompanyWebsiteSettings(models.Model):
+    id = models.BigAutoField(primary_key=True)
     """Optional customer-facing appearance; legacy Company remains authoritative."""
     company = models.OneToOneField(
         Company, on_delete=models.CASCADE, related_name="website_settings"
@@ -65,6 +66,7 @@ class CompanyWebsiteSettings(models.Model):
 
 
 class CompanyDomain(models.Model):
+    id = models.BigAutoField(primary_key=True)
     """Custom domains are NEVER active on user submission alone."""
     PENDING_DNS = "pending_dns"
     PENDING_VERIFICATION = "pending_verification"

@@ -1,4 +1,6 @@
 """Security regression for login-less, per-customer tracking capabilities."""
+from tempfile import TemporaryDirectory
+from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -106,3 +108,24 @@ class CustomerPortalSecurityTests(TestCase):
         access = ensure_portal_access(self.customer)
         original = self.token(access)
         self.assertEqual(self.public.get("/api/v1/c/" + original[:-1] + ("0" if original[-1] != "0" else "1")).status_code, 404)
+
+    def test_logo_stream_is_scoped_to_signed_active_customer_portal_link(self):
+        content = b"test-private-logo-file"
+        with TemporaryDirectory() as root, override_settings(MEDIA_ROOT=root):
+            self.workshop.logo_image.save("company.png", ContentFile(content), save=True)
+            token = self.token(ensure_portal_access(self.customer))
+            detail = self.public.get("/api/v1/c/" + token)
+            self.assertTrue(detail.data["workshop"]["logoAvailable"])
+            self.assertEqual(detail.data["workshop"]["name"], self.workshop.name)
+
+            response = self.public.get("/api/v1/c/" + token + "/logo")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("no-store", response["Cache-Control"])
+            self.assertEqual(b"".join(response.streaming_content), content)
+            self.assertNotIn("logo_image", str(detail.data))
+
+            other = self.token(ensure_portal_access(self.stranger))
+            self.assertEqual(self.public.get("/api/v1/c/" + other + "/logo").status_code, 404)
+            self.staff.post(f"/api/v1/customer-portal/links/{self.customer.id}",
+                            {"action": "revoke"}, format="json")
+            self.assertEqual(self.public.get("/api/v1/c/" + token + "/logo").status_code, 404)

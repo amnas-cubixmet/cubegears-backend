@@ -1,5 +1,6 @@
 """Dedicated allowlisted, tenant-safe public tracking APIs (no staff serializer)."""
-from django.http import Http404
+from mimetypes import guess_type
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import never_cache
 from django.utils.decorators import method_decorator
@@ -110,6 +111,7 @@ class CustomerPortalDetailView(APIView):
         return Response({
             "workshop": {
                 "name": company.name,
+                "logoAvailable": bool(company.logo_image),
                 "phone": company.phone,
                 "address": company.address,
                 "city": company.city,
@@ -144,3 +146,30 @@ class CustomerPortalDetailView(APIView):
                 for inv in published_invoices
             ],
         })
+
+
+@method_decorator(never_cache, name="dispatch")
+class CustomerPortalLogoView(APIView):
+    """Serve workshop branding only to holders of a valid customer capability.
+
+    No public MEDIA_ROOT URL or private storage path is disclosed.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "customer_portal"
+
+    def get(self, request, token):
+        access = resolve_link(token)
+        if not access or not access.company.logo_image:
+            raise Http404("Workshop logo not found.")
+        try:
+            file = access.company.logo_image.open("rb")
+        except (OSError, ValueError):
+            raise Http404("Workshop logo not found.")
+        result = FileResponse(
+            file, content_type=guess_type(access.company.logo_image.name)[0] or "image/png"
+        )
+        result["Cache-Control"] = "private, no-store"
+        result["X-Content-Type-Options"] = "nosniff"
+        return result

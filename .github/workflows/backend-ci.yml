@@ -33,6 +33,7 @@ jobs:
             apps.vehicles.tests_inspection_photo \
             apps.jobs.tests_create_vehicle_complaints \
             apps.whatsapp.tests_integration \
+            apps.search.tests \
             apps.companies.tests_logo_upload \
             apps.control_panel.tests_feature_pricing_routes \
             apps.attendance.tests_auto_checkout_scheduler \

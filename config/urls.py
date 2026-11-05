@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.search.views import WorkspaceSearchView
 from apps.reports.views import DashboardView
 from apps.saas.views import SettingsView
 
@@ -19,6 +20,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.control_panel.urls")),
     path("api/v1/health/", HealthView.as_view(), name="health"),
+    path("api/v1/search", WorkspaceSearchView.as_view(), name="workspace-search"),
     path("api/v1/customer-website/", include("apps.customers.website_urls")),
     path("api/v1/", include("apps.customers.portal_urls")),
     path("api/v1/", include("apps.vehicles.photo_urls")),
