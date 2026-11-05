@@ -20,6 +20,8 @@ LEGACY_GRANTS = {
         "payroll.payments.record", "payroll.payments.reverse",
     ),
     "payroll.view": ("payroll.payments.view",),
+    "payments.edit": ("payments.reverse",),
+    "payments.delete": ("payments.reverse",),
 }
 
 
