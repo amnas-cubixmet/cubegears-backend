@@ -30,6 +30,7 @@ jobs:
             apps.accounts.tests_owner_permissions \
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
+            apps.customers.tests_branch_assignment \
             apps.customers.tests_website \
             apps.vehicles.tests_inspection_photo \
             apps.jobs.tests_create_vehicle_complaints \

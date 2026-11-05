@@ -1,8 +1,10 @@
+import uuid
 from django.db.models import Q, Sum
 from rest_framework import decorators, response, status
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Customer, CustomerActivity, CustomerReminder
 from .serializers import CustomerSerializer, CustomerActivitySerializer, CustomerReminderSerializer
+from apps.branches.models import Branch
 
 class CustomerViewSet(CompanyScopedModelViewSet):
     queryset = Customer.objects.select_related("branch").all()
@@ -16,6 +18,7 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         "payments": "payments.view",
         "activity": "customers.view",
         "outstanding": "invoices.view",
+        "branch_options": "customers.view",
     }
 
     def get_queryset(self):
@@ -27,7 +30,32 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         if st and st.lower() != "all": qs = qs.filter(status__iexact=st)
         ctype = self.request.query_params.get("customerType")
         if ctype and ctype.lower() != "all": qs = qs.filter(customer_type__iexact=ctype)
+        branch = self.request.query_params.get("branch")
+        if branch and branch.lower() != "all":
+            try:
+                branch_id = uuid.UUID(branch)
+            except (ValueError, AttributeError, TypeError):
+                return qs.none()
+            qs = qs.filter(branch_id=branch_id)
         return qs
+
+    def perform_create(self, serializer):
+        # The base view assigns the user's default branch; honor a selected
+        # branch only after the base create() validates its tenant ownership.
+        selected = serializer.validated_data.get("branch")
+        serializer.save(
+            company=self.request.user.company,
+            branch=selected if selected is not None else self.request.user.branch,
+        )
+
+    @decorators.action(detail=False, methods=["get"], url_path="branch-options")
+    def branch_options(self, request):
+        branches = Branch.objects.filter(
+            company=request.user.company, is_active=True
+        ).order_by("name", "pk")
+        return response.Response([
+            {"id": str(item.pk), "name": item.name} for item in branches
+        ])
 
     @decorators.action(detail=False, methods=["post"], url_path="check-duplicate")
     def check_duplicate(self, request):

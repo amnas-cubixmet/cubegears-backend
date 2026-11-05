@@ -1,13 +1,18 @@
 from rest_framework import serializers
 from .models import Customer, CustomerActivity, CustomerReminder
+from apps.branches.models import Branch
 
 class CustomerSerializer(serializers.ModelSerializer):
     branchName = serializers.CharField(source="branch.name", read_only=True)
+    branchId = serializers.UUIDField(source="branch_id", read_only=True)
+    branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.all(), required=False, allow_null=True,
+    )
     companyName = serializers.CharField(source="company_name", required=False, allow_blank=True)
     customerType = serializers.CharField(source="customer_type", required=False)
     class Meta:
         model = Customer
-        exclude = ("company","branch")
+        exclude = ("company",)
         read_only_fields = ("id","created_at","updated_at")
 
 class CustomerActivitySerializer(serializers.ModelSerializer):
