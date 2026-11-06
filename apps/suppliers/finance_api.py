@@ -340,6 +340,11 @@ def finalize_supplier_bill(request, bill, payment_data=None, payments_data=None)
             cost = Decimal(row["purchaseRate"])
             item.on_hand += count
             update_fields = ["on_hand", "updated_at"]
+            if item.supplier_id is None:
+                # Associate previously unassigned catalog products with the
+                # supplier when a real stock purchase is posted.
+                item.supplier_id = bill.supplier_id
+                update_fields.append("supplier")
             if row.get("updateItemPrices") is True:
                 item.cost_price = cost
                 item.selling_price = Decimal(row["sellingPrice"])
