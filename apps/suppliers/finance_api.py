@@ -349,7 +349,15 @@ def finalize_supplier_bill(request, bill, payment_data=None, payments_data=None)
                 item.cost_price = cost
                 item.selling_price = Decimal(row["sellingPrice"])
                 item.tax = Decimal(row["gstRate"])
-                update_fields.extend(["cost_price", "selling_price", "tax"])
+                if item.tax == 0 and row.get("gstTreatment") in {
+                    "exempt", "nil_rated", "zero_rated", "non_gst",
+                }:
+                    item.gst_zero_classification = row["gstTreatment"]
+                elif item.tax > 0:
+                    item.gst_zero_classification = ""
+                update_fields.extend([
+                    "cost_price", "selling_price", "tax", "gst_zero_classification",
+                ])
             item.save(update_fields=update_fields)
             StockMovement.objects.create(
                 company_id=request.user.company_id, branch=bill.branch,
