@@ -98,6 +98,8 @@ def bill_info(bill):
     return {
         **purchase_bill_components(bill.items, bill.tax),
         "id": str(bill.pk), "supplierId": str(bill.supplier_id),
+        "supplierName": bill.supplier.name,
+        "purchasedBy": bill.created_by.name if bill.created_by_id else "",
         "invoiceNumber": bill.invoice_number, "invoiceDate": bill.invoice_date.isoformat(),
         "dueDate": bill.due_date.isoformat() if bill.due_date else None,
         "relatedJobId": str(bill.related_job_id) if bill.related_job_id else None,
@@ -453,7 +455,7 @@ class SupplierBillCollection(APIView):
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.create", "payments.create"]}
 
     def get(self, request):
-        qs = SupplierBill.objects.filter(company_id=request.user.company_id).select_related("supplier").order_by("-created_at")
+        qs = SupplierBill.objects.filter(company_id=request.user.company_id).select_related("supplier", "created_by").order_by("-created_at")
         supplier_id = request.query_params.get("supplier")
         if supplier_id:
             supplier = supplier_for(request, supplier_id)
