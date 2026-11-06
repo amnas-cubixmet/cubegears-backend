@@ -561,7 +561,7 @@ class SupplierPaymentCollection(APIView):
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.view", "payments.create"]}
 
     def get(self, request):
-        qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account")
+        qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account", "created_by").prefetch_related("allocations__bill")
         if request.query_params.get("supplier"):
             qs = qs.filter(supplier=supplier_for(request, request.query_params["supplier"]))
         result = []
@@ -569,6 +569,10 @@ class SupplierPaymentCollection(APIView):
             applied = payment.allocations.aggregate(total=Sum("amount"))["total"] or Decimal("0")
             result.append({
                 "id": str(payment.pk), "supplierId": str(payment.supplier_id),
+                "supplierName": payment.supplier.name,
+                "createdAt": payment.created_at.isoformat(),
+                "recordedBy": payment.created_by.name if payment.created_by_id else "",
+                "billReferences": [allocation.bill.invoice_number for allocation in payment.allocations.all()],
                 "accountId": str(payment.account_id), "amount": str(payment.amount),
                 "kind": payment.kind, "method": payment.method,
                 "reference": payment.reference, "paidOn": payment.paid_on.isoformat(),
