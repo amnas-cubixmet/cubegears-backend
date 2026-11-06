@@ -62,13 +62,17 @@ class FinancePaymentActivity(APIView):
                 ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
                 supplier_outstanding += max(Decimal("0"), bill.total - credited)
 
+            # Summary totals include ALL recorded payments, even when the
+            # latest-history list is capped for responsiveness.
+            supplier_payments = SupplierPayment.objects.filter(
+                company=company
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             for payment in SupplierPayment.objects.filter(
                 company=company
             ).select_related("supplier", "account", "created_by").prefetch_related(
                 "allocations__bill"
             ).order_by("-created_at")[:1000]:
                 bills = [a.bill.invoice_number for a in payment.allocations.all()]
-                supplier_payments += payment.amount
                 entries.append({
                     "id": str(payment.pk), "source": "supplier",
                     "sourceId": str(payment.pk), "supplierId": str(payment.supplier_id),
