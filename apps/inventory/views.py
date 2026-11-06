@@ -1,6 +1,9 @@
+import re
 from django.db import transaction
 from django.db.models import F,Q
 from rest_framework import decorators,response
+from rest_framework.exceptions import ValidationError
+from apps.companies.models import Company
 from common.viewsets import CompanyScopedModelViewSet
 from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 from .serializers import *
@@ -22,12 +25,50 @@ class StockItemViewSet(CompanyScopedModelViewSet):
     }
     def get_queryset(self):
         qs=super().get_queryset(); q=self.request.query_params.get("search")
-        if q: qs=qs.filter(Q(name__icontains=q)|Q(sku__icontains=q)|Q(barcode__icontains=q)|Q(brand__icontains=q))
+        if q: qs=qs.filter(Q(name__icontains=q)|Q(sku__icontains=q)|Q(part_number__icontains=q)|Q(barcode__icontains=q)|Q(brand__icontains=q)|Q(rack__icontains=q)|Q(category__name__icontains=q)|Q(supplier__name__icontains=q))
         if self.request.query_params.get("low_stock") in {"1","true","True"}: qs=qs.filter(on_hand__lte=F("minimum_stock")+F("reserved"))
         return qs
 
+    @decorators.action(detail=False, methods=["get"], url_path="rack-locations")
+    def rack_locations(self, request):
+        """Persistent suggestions from existing stock, never from unfinished typing."""
+        qs = StockItem.objects.filter(company_id=request.user.company_id)
+        branch_id = getattr(request.user, "branch_id", None)
+        if branch_id:
+            qs = qs.filter(Q(branch_id=branch_id) | Q(branch__isnull=True))
+        term = request.query_params.get("q", "").strip()[:80]
+        if term:
+            qs = qs.filter(rack__icontains=term)
+        seen = set()
+        locations = []
+        for rack in qs.exclude(rack="").order_by("rack").values_list("rack", flat=True)[:500]:
+            name = rack.strip()
+            if not name or name.casefold() in seen:
+                continue
+            seen.add(name.casefold())
+            locations.append(name)
+            if len(locations) >= 80:
+                break
+        return response.Response(locations)
+
     @transaction.atomic
     def perform_create(self, serializer):
+        # Serialize SKU assignment for this tenant (including manual SKUs).
+        # This also prevents races between concurrently generated values.
+        Company.objects.select_for_update().get(pk=self.request.user.company_id)
+        sku = str(serializer.validated_data.get("sku") or "").strip()
+        if not sku:
+            last = (StockItem.objects.filter(
+                company_id=self.request.user.company_id, sku__startswith="CG-PRT-",
+            ).order_by("-sku").values_list("sku", flat=True).first())
+            number = int(last[7:]) + 1 if last and re.fullmatch(r"CG-PRT-\\d{6,}", last) else 1
+            sku = f"CG-PRT-{number:06d}"
+            while StockItem.objects.filter(company_id=self.request.user.company_id, sku__iexact=sku).exists():
+                number += 1
+                sku = f"CG-PRT-{number:06d}"
+        if StockItem.objects.filter(company_id=self.request.user.company_id, sku__iexact=sku).exists():
+            raise ValidationError({"sku": "This SKU already exists in your company."})
+        serializer.validated_data["sku"] = sku
         super().perform_create(serializer)
         item = serializer.instance
         if item.on_hand > 0:
