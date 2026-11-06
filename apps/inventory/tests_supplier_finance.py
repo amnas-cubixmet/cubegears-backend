@@ -331,3 +331,91 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
         self.stock.refresh_from_db()
         self.assertEqual(str(self.stock.on_hand), "2.00")
+
+    def test_purchase_gst_options_include_0_5_18_and_indian_states(self):
+        result = self.client.get(f"{self.base}/gst-options")
+        self.assertEqual(result.status_code, 200, getattr(result, "data", None))
+        self.assertEqual([row["total"] for row in result.data["rates"]], ["0", "5", "18"])
+        self.assertIn("32", [row["code"] for row in result.data["states"]])
+
+    def test_intra_state_supplier_purchase_5_percent_split_2_5_each(self):
+        self.supplier.gstin = "32ABCDE1234F1Z5"
+        self.supplier.save(update_fields=["gstin"])
+        result = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "GST-INTRA-05",
+            "invoiceDate": "2026-11-06", "placeOfSupply": "Kerala",
+            "items": [{"description": "Service part", "quantity": "1",
+                       "purchaseRate": "1000.00", "gstRate": "5",
+                       "gstTreatment": "taxable"}],
+        }, format="json")
+        self.assertEqual(result.status_code, 201, getattr(result, "data", None))
+        self.assertEqual(result.data["taxMode"], "cgst_sgst")
+        self.assertEqual(result.data["tax"], "50.00")
+        self.assertEqual(result.data["cgst"], "25.00")
+        self.assertEqual(result.data["sgst"], "25.00")
+        self.assertEqual(result.data["igst"], "0.00")
+        self.assertEqual(result.data["total"], "1050.00")
+        self.assertTrue(result.data["taxComponentsVerified"])
+        self.assertEqual(result.data["items"][0]["gstTreatment"], "taxable")
+
+    def test_inter_state_supplier_purchase_18_percent_igst(self):
+        self.supplier.gstin = "29ABCDE1234F1Z5"
+        self.supplier.save(update_fields=["gstin"])
+        result = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "GST-INTER-18",
+            "invoiceDate": "2026-11-06", "placeOfSupply": "Kerala",
+            "items": [{"description": "Service part", "quantity": "1",
+                       "purchaseRate": "1000.00", "gstRate": "18"}],
+        }, format="json")
+        self.assertEqual(result.status_code, 201, getattr(result, "data", None))
+        self.assertEqual(result.data["taxMode"], "igst")
+        self.assertEqual(result.data["igst"], "180.00")
+        self.assertEqual(result.data["cgst"], "0.00")
+        self.assertEqual(result.data["sgst"], "0.00")
+        self.assertEqual(result.data["total"], "1180.00")
+
+    def test_utgst_is_distinct_from_sgst(self):
+        self.supplier.gstin = "04ABCDE1234F1Z5"
+        self.supplier.save(update_fields=["gstin"])
+        result = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "GST-CHANDIGARH-05",
+            "invoiceDate": "2026-11-06", "placeOfSupply": "Chandigarh",
+            "items": [{"description": "Service part", "quantity": "1",
+                       "purchaseRate": "1000.00", "gstRate": "5"}],
+        }, format="json")
+        self.assertEqual(result.status_code, 201, getattr(result, "data", None))
+        self.assertEqual(result.data["cgst"], "25.00")
+        self.assertEqual(result.data["utgst"], "25.00")
+        self.assertEqual(result.data["sgst"], "0.00")
+        self.assertEqual(result.data["total"], "1050.00")
+
+    def test_zero_rate_requires_explicit_tax_treatment_when_registered(self):
+        self.supplier.gstin = "32ABCDE1234F1Z5"
+        self.supplier.save(update_fields=["gstin"])
+        row = {"description": "Classified supply", "quantity": "1",
+               "purchaseRate": "1000.00", "gstRate": "0"}
+        data = {"supplierId": str(self.supplier.pk),
+                "invoiceNumber": "GST-ZERO-1", "invoiceDate": "2026-11-06",
+                "placeOfSupply": "Kerala", "items": [row]}
+        invalid = self.client.post(f"{self.base}/bills", data, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(SupplierBill.objects.filter(invoice_number="GST-ZERO-1").count(), 0)
+        valid = self.client.post(f"{self.base}/bills", {
+            **data, "items": [{**row, "gstTreatment": "exempt"}],
+        }, format="json")
+        self.assertEqual(valid.status_code, 201, getattr(valid, "data", None))
+        self.assertEqual(valid.data["tax"], "0.00")
+
+    def test_unregistered_supplier_cannot_charge_gst(self):
+        data = {"supplierId": str(self.supplier.pk), "invoiceNumber": "GST-UNREG-1",
+                "invoiceDate": "2026-11-06", "placeOfSupply": "Kerala",
+                "items": [{"description": "Goods", "quantity": "1",
+                           "purchaseRate": "1000.00", "gstRate": "18"}]}
+        invalid = self.client.post(f"{self.base}/bills", data, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        valid = self.client.post(f"{self.base}/bills", {
+            **data, "items": [{**data["items"][0], "gstRate": "0"}],
+        }, format="json")
+        self.assertEqual(valid.status_code, 201, getattr(valid, "data", None))
+        self.assertEqual(valid.data["taxMode"], "unregistered")
+        self.assertEqual(valid.data["items"][0]["gstTreatment"], "unregistered")
