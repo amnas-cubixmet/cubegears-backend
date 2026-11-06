@@ -513,7 +513,7 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(str(self.stock.on_hand), "3.00")
         self.assertEqual(str(self.stock.cost_price), "300.00")
         self.assertEqual(str(self.stock.selling_price), "450.00")
-        self.assertEqual(str(self.stock.tax), "0")
+        self.assertEqual(float(self.stock.tax), 0.0)
         self.assertEqual(SupplierBill.objects.count(), 1)
         self.assertEqual(SupplierPayment.objects.count(), 2)
         self.assertEqual(WorkshopAccountEntry.objects.count(), 2)
@@ -528,7 +528,7 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(SupplierPayment.objects.count(), 2)
 
     def test_split_exceeding_total_rolls_back_bill_and_stock_and_ledger(self):
-        start_stock = self.stock.on_hand
+        start_stock = str(self.stock.on_hand)
         start_count = WorkshopAccountEntry.objects.count()
         resp = self.client.post(f"{self.base}/bills", {
             "supplierId": str(self.supplier.pk),
@@ -548,5 +548,5 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(SupplierBill.objects.filter(invoice_number="SPLIT-ROLLBACK-1").exists())
         self.stock.refresh_from_db()
-        self.assertEqual(self.stock.on_hand, start_stock)
+        self.assertEqual(str(self.stock.on_hand), start_stock)
         self.assertEqual(WorkshopAccountEntry.objects.count(), start_count)
