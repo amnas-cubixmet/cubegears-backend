@@ -4,6 +4,7 @@ CRUD_MODULES = ['customers', 'vehicles', 'services', 'jobs', 'stock', 'invoices'
 TENANT_PERMISSIONS = sorted({f'{module}.{action}' for module in CRUD_MODULES
                             for action in ['view', 'create', 'edit', 'delete']} | {
     'dashboard.view', 'reports.view', 'company.manage', 'attendance.self',
+    'gstr.view', 'gstr.prepare', 'gstr.export', 'gstr.reconcile', 'gstr.manage', 'gstr.record_filing',
     'attendance.manage', 'billing.view', 'billing.edit', 'storage.view',
     'storage.manage', 'settings.view', 'settings.manage',
     # Legacy attendance.manage and payroll.edit remain catalogued by CRUD_MODULES

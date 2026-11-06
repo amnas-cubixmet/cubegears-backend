@@ -54,6 +54,7 @@ urlpatterns = [
     path("api/v1/", include("apps.attendance.compat_urls")),
     re_path(r"^api/v1/payroll/?", include("apps.payroll.urls")),
 
+    path("api/v1/gstr/", include("apps.gstr.urls")),
     path("api/v1/dashboard", DashboardView.as_view(), name="dashboard"),
     re_path(r"^api/v1/reports/?", include("apps.reports.urls")),
     re_path(r"^api/v1/notifications/?", include("apps.notifications.urls")),

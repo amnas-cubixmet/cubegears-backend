@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.whatsapp",
     "apps.reports",
+    "apps.gstr",
     "apps.saas",
     "apps.credits",
     "apps.control_panel",
