@@ -66,8 +66,11 @@ def purchase_bill_components(items, tax_total):
     totals = {key: sum((Decimal(str(row.get(key, "0"))) for row in items), Decimal("0"))
               for key in keys}
     first = items[0] if items else {}
-    verified = bool(items) and all(row.get("taxMode") in ("cgst_sgst", "igst", "unregistered")
-                                  for row in items)
+    verified = bool(items) and all(
+        row.get("taxMode") in ("cgst_sgst", "igst", "unregistered")
+        and row.get("taxValidationStatus", "valid") == "valid"
+        for row in items
+    )
     return {
         "taxMode": first.get("taxMode", "legacy") if verified else "legacy",
         "placeOfSupply": first.get("placeOfSupply", "") if verified else "",
