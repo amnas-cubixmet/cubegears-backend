@@ -93,48 +93,18 @@ class ForgotPasswordView(APIView):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        # Identical success for unknown accounts, disabled staff, missing
-        # consent, unconfigured workshops and successfully queued requests.
-        generic = {"message": "If an eligible account exists, password reset instructions will be sent."}
-        if data.get("mobile"):
-            import hashlib
-            from datetime import timedelta
-            from django.core.cache import cache
-            from django.utils import timezone
-            from apps.accounts.models import StaffPasswordInvitation
-            from apps.employees.models import Employee
-            from apps.whatsapp.staff_invites import (
-                staff_auto_delivery_available, queue_staff_whatsapp_invitation,
+        # Staff password reset is now administrator-mediated manual sharing.
+        # The public endpoint remains non-enumerating: no user lookup, token,
+        # Celery task, Meta API request or staff email is initiated here.
+        # Authorized admins can use POST /employees/<id>/invite to prepare
+        # a one-use reset URL for a staff member who already has a password.
+        generic = {
+            "message": (
+                "If an eligible staff account exists, ask the workshop administrator "
+                "for a secure password reset link."
             )
-
-            workshop = data["workshop"].strip().lower()
-            mobile = data["mobile"]
-            fingerprint = hashlib.sha256((workshop + ":" + mobile).encode()).hexdigest()
-            # Shared cache and anonymous-IP throttle both apply; account lookup
-            # outcome must never change the public response or rate-limit key.
-            if not cache.add("staff-recovery:" + fingerprint, 1, timeout=600):
-                return Response(generic)
-            user = User.objects.filter(
-                company__slug=workshop, normalized_phone=mobile,
-            ).select_related("company", "role").first()
-            if user and user.has_usable_password() and user_can_sign_in(user):
-                employee = Employee.objects.filter(
-                    company=user.company, user=user,
-                    status__in=["Active", "Probation", "Notice Period"],
-                ).select_related("user", "user__company", "user__role").first()
-                if employee and staff_auto_delivery_available(employee):
-                    with transaction.atomic():
-                        # Prevent two requests invalidating one another's links.
-                        locked = User.objects.select_for_update().get(pk=user.pk)
-                        since = timezone.now() - timedelta(minutes=10)
-                        recent = StaffPasswordInvitation.objects.filter(
-                            user=locked, used_at__isnull=True, invalidated_at__isnull=True,
-                            expires_at__gt=timezone.now(), created_at__gte=since,
-                            delivery_status__in=["queued", "sending", "sent", "delivered", "read"],
-                        ).exists()
-                        if not recent:
-                            invitation = issue_invitation(locked, purpose="reset")
-                            queue_staff_whatsapp_invitation(invitation, employee)
+        }
+        if data.get("mobile"):
             return Response(generic)
 
         # Preserve legacy owner/platform email recovery. Staff onboarding and

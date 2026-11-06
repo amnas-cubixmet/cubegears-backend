@@ -173,24 +173,26 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         return role
 
     def _issue_staff_invitation(self, employee, user):
+        """Generate an auditable manual-only staff setup capability.
+
+        No WABA/Celery/email sender may be invoked from this staff workflow.
+        The raw capability is returned only in the authorized create or invite
+        response, never via regular employee list/detail reads.
+        """
         from apps.accounts.staff_setup import issue_invitation, invitation_url
-        from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
 
         if not user or not user.is_active or not user.company_id or user.company_id != employee.company_id:
             raise ValidationError({"account": "Active, company-specific staff login required."})
         if not user.role_id or user.role.is_system or not user.role.is_active:
             raise ValidationError({"role": "A valid non-admin staff login role is required."})
         record = issue_invitation(user, issuer=self.request.user)
-        delivery = queue_staff_whatsapp_invitation(record, employee)
-        # Only reveal a bearer setup URL to an authorized admin when the
-        # automatic WhatsApp invitation cannot be sent. Never leak it in a
-        # successful queue response or through normal staff detail/list reads.
-        if delivery in {"manual", "failed"}:
-            employee._setup_link = invitation_url(record)
-        employee._whatsapp_invite_status = delivery
+        record.delivery_status = "manual"
+        record.save(update_fields=["delivery_status"])
+        employee._setup_link = invitation_url(record)
+        employee._whatsapp_invite_status = "manual"
         _record_activity(
             employee, "Staff Password Invitation Created",
-            "A one-use 24-hour password link was created. Delivery: " + delivery,
+            "A one-use, 24-hour setup link is ready for authorized manual sharing.",
             self.request.user,
         )
         return record
@@ -237,7 +239,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         name = serializer.validated_data.get("name") or code
         role_name = serializer.validated_data.get("role_name") or ""
         role_id = serializer.validated_data.pop("roleId", None)
-        login_enabled = serializer.validated_data.pop("loginAccessEnabled", bool(email))
+        login_enabled = serializer.validated_data.pop("loginAccessEnabled", False)
         requested_role = self._resolve_role(role_name, role_id) if role_name or role_id else None
         branch = serializer.validated_data.get("branch", self.request.user.branch)
         team = serializer.validated_data.get("team")
@@ -483,24 +485,33 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             from apps.accounts.models import StaffPasswordInvitation
             from apps.accounts.staff_setup import invitation_url
 
-            # Rapid double-clicks/retries return the same still-valid invite.
-            # They must never create and deliver two different password links.
+            # Reuse the valid link by default, including safe rapid retries.
+            # Explicit replacement rotates the capability only after cooldown;
+            # a burst of clicks can never mint multiple conflicting URLs.
+            replace = request.data.get("replace", False)
+            if not isinstance(replace, bool):
+                raise ValidationError({"replace": "Provide a boolean replace value."})
             recent = StaffPasswordInvitation.objects.select_for_update().filter(
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
-                expires_at__gt=timezone.now(),
-                created_at__gte=timezone.now() - timedelta(seconds=60),
-                delivery_status__in=["queued", "sending", "sent", "delivered", "read", "manual"],
+                expires_at__gt=timezone.now(), delivery_status="manual",
             ).order_by("-created_at").first()
-            if recent:
+            cooldown = timedelta(seconds=60)
+            should_reuse = bool(recent and (
+                not replace or recent.created_at >= timezone.now() - cooldown
+            ))
+            if should_reuse:
                 invite = recent
-                delivery = recent.delivery_status
-                url = invitation_url(recent) if delivery in {"manual", "failed"} else None
+                url = invitation_url(recent)
             else:
+                if replace and StaffPasswordInvitation.objects.filter(
+                    user=user, created_at__gte=timezone.now() - timedelta(hours=1),
+                ).count() >= 5:
+                    raise ValidationError({"invite": "Too many replacement links. Try again later."})
                 invite = self._issue_staff_invitation(obj, user)
-                delivery = obj._whatsapp_invite_status
-                url = getattr(obj, "_setup_link", None)
+                url = obj._setup_link
+            delivery = "manual"
         return response.Response({
-            "message": "Staff invitation status updated.",
+            "message": "Manual setup link ready for sharing.",
             "setupLink": url, "expiresAt": invite.expires_at,
             "whatsappInviteStatus": delivery,
             "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
