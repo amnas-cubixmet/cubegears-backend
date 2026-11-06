@@ -137,7 +137,10 @@ class FinancePaymentActivity(APIView):
             page = max(1, int(request.query_params.get("page", "1")))
         except (ValueError, TypeError):
             page = 1
-        page_size = 50
+        try:
+            page_size = max(10, min(1000, int(request.query_params.get("page_size", "50"))))
+        except (ValueError, TypeError):
+            page_size = 50
         return Response({
             "count": len(entries), "page": page, "pageSize": page_size,
             "results": entries[(page - 1) * page_size:page * page_size],
