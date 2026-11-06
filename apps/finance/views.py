@@ -97,9 +97,18 @@ class FinanceDashboard(APIView):
             ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
             supplier_outstanding += max(Decimal("0"), bill.total - paid)
 
-        pending_expenses = Expense.objects.filter(
-            company=company, status__in=["Pending", "Unpaid", "pending", "unpaid"]
-        ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        # Partial settlements reduce outstanding expense liabilities without
+        # losing the unpaid remainder from the dashboard.
+        from apps.expenses.models import ExpenseSettlement
+        pending_expenses = Decimal("0")
+        candidates = Expense.objects.filter(company=company).exclude(
+            status__iexact="paid"
+        ).exclude(status__in=["Rejected", "rejected", "Cancelled", "cancelled", "Draft", "draft"])
+        for expense in candidates:
+            settled = ExpenseSettlement.objects.filter(
+                expense=expense, company=company, reversed_at__isnull=True,
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+            pending_expenses += max(Decimal("0"), expense.amount - settled)
 
         recent_entries = WorkshopAccountEntry.objects.filter(
             company=company
@@ -249,9 +258,13 @@ class FinanceAccountDetail(APIView):
                     continue
                 setattr(acc, model_field, value)
         if "openingDate" in d:
+            if WorkshopAccountEntry.objects.filter(company=request.user.company, account=acc).exists():
+                raise ValidationError({"openingDate": "Posted account dates are immutable; use an audited adjustment."})
             acc.opening_date = d["openingDate"] or None
         if "isActive" in d:
-            acc.is_active = bool(d["isActive"])
+            if not isinstance(d["isActive"], bool):
+                raise ValidationError({"isActive": "Expected true or false."})
+            acc.is_active = d["isActive"]
         acc.save()
         return Response({"id": str(acc.pk), "name": acc.name, "isActive": acc.is_active})
 
@@ -457,6 +470,11 @@ class FinanceLedger(APIView):
         })
 
     def _csv_export(self, qs):
+        # Never let user supplied account/ref text execute as spreadsheet formulas.
+        def csv_safe(value):
+            text = str(value or "")
+            return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r", "\n")) else text
+
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="transactions.csv"'
         writer = csv.writer(response)
@@ -465,9 +483,9 @@ class FinanceLedger(APIView):
             credit = str(entry.amount) if entry.amount > 0 else "0.00"
             debit = str(abs(entry.amount)) if entry.amount < 0 else "0.00"
             writer.writerow([
-                entry.posted_at.date().isoformat(), entry.account.name,
-                entry.entry_type, credit, debit, entry.reference,
-                entry.source_key, entry.created_by.name if entry.created_by else "",
+                entry.posted_at.date().isoformat(), csv_safe(entry.account.name),
+                csv_safe(entry.entry_type), credit, debit, csv_safe(entry.reference),
+                csv_safe(entry.source_key), csv_safe(entry.created_by.name if entry.created_by else ""),
             ])
         return response
 
@@ -486,8 +504,11 @@ class FinanceReports(APIView):
         if date_to:
             qs = qs.filter(posted_at__date__lte=date_to)
 
-        total_credits = qs.filter(amount__gt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
-        total_debits = qs.filter(amount__lt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        # Separate book transfers and equity adjustments from operating flows.
+        operating = qs.exclude(entry_type__in=["transfer_in", "transfer_out", "manual_adjustment"])
+        total_credits = operating.filter(amount__gt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        total_debits = operating.filter(amount__lt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        transfer_volume = qs.filter(entry_type="transfer_out").aggregate(v=Sum("amount"))["v"] or Decimal("0")
 
         by_type = {}
         for row in qs.values("entry_type").annotate(total=Sum("amount")):
@@ -499,6 +520,7 @@ class FinanceReports(APIView):
             "totalCredits": str(total_credits.quantize(CENT)),
             "totalDebits": str(abs(total_debits).quantize(CENT)),
             "netFlow": str((total_credits + total_debits).quantize(CENT)),
+            "internalTransfers": str(abs(transfer_volume).quantize(CENT)),
             "bankBalance": str(bank_total.quantize(CENT)),
             "cashBalance": str(cash_total.quantize(CENT)),
             "byType": by_type,
