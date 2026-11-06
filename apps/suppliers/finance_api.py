@@ -216,7 +216,7 @@ class AccountLedger(APIView):
 
 class SupplierBillCollection(APIView):
     permission_classes = [RolePermission]
-    permission_map = {"GET": "stock.view", "POST": "stock.create"}
+    permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.create", "payments.create"]}
 
     def get(self, request):
         qs = SupplierBill.objects.filter(company_id=request.user.company_id).select_related("supplier").order_by("-created_at")
@@ -261,7 +261,7 @@ class SupplierBillCollection(APIView):
 
 class SupplierBillPost(APIView):
     permission_classes = [RolePermission]
-    permission_map = {"POST": "stock.edit"}
+    permission_map = {"POST": ["stock.edit", "payments.create"]}
 
     @transaction.atomic
     def post(self, request, pk):
@@ -294,7 +294,7 @@ class SupplierBillPost(APIView):
 
 class SupplierPaymentCollection(APIView):
     permission_classes = [RolePermission]
-    permission_map = {"GET": "payments.view", "POST": "payments.create"}
+    permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.view", "payments.create"]}
 
     def get(self, request):
         qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account")
@@ -398,7 +398,7 @@ class SupplierPaymentCollection(APIView):
 
 class SupplierAdvanceApply(APIView):
     permission_classes = [RolePermission]
-    permission_map = {"POST": "payments.edit"}
+    permission_map = {"POST": ["stock.view", "payments.edit"]}
 
     @transaction.atomic
     def post(self, request, pk):
