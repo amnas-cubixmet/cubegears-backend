@@ -552,6 +552,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         stage = request.data.get("stage")
         if stage not in STAGES:
             raise ValidationError({"stage":"Unknown Job Card stage."})
+        if stage in state["completed"]:
+            raise ValidationError({"stage": "This Job Card stage is already completed."})
         if stage != state["current"]:
             raise ValidationError({"stage": f"Complete {state['current']} before {stage}."})
 
@@ -597,9 +599,34 @@ class JobViewSet(CompanyScopedModelViewSet):
                 status__in=["Finalized","Paid"],
             ).exists():
                 raise ValidationError({"stage":"Finalize a linked invoice before completing delivery."})
+            # Save handover metadata with the stage transition in one transaction.
+            handover = request.data.get("delivery")
+            if not isinstance(handover, dict):
+                raise ValidationError({"delivery": "Enter final kilometres and customer acknowledgement."})
+            raw_km = handover.get("finalKm")
+            if isinstance(raw_km, bool) or not str(raw_km).isdigit():
+                raise ValidationError({"finalKm": "Enter a valid whole-number final odometer reading."})
+            final_km = int(raw_km)
+            if final_km > 2147483647 or final_km < job.odometer:
+                raise ValidationError({"finalKm": "Final kilometres cannot be less than check-in kilometres."})
+            acknowledgement = str(handover.get("acknowledgedBy") or "").strip()
+            if not 1 <= len(acknowledgement) <= 160:
+                raise ValidationError({"acknowledgedBy": "Enter customer's name (maximum 160 characters)."})
+            warranty_notes = str(handover.get("warrantyNotes") or "").strip()
+            if len(warranty_notes) > 1500:
+                raise ValidationError({"warrantyNotes": "Warranty notes must be 1500 characters or fewer."})
             self._guard_active_timers(job, "Delivered")
+            delivery_record = {
+                "finalKm": final_km,
+                "acknowledgedBy": acknowledgement,
+                "warrantyNotes": warranty_notes,
+                "deliveredAt": timezone.now().isoformat(),
+                "completedById": str(request.user.pk),
+            }
 
         progress = dict(job.workflow_progress or {})
+        if stage == "invoice":
+            progress["delivery"] = delivery_record
         completed = set(state["completed"])
         completed.add(stage)
         progress.update({

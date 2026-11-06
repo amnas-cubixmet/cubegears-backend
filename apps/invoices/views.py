@@ -145,6 +145,20 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
     def perform_create(self,serializer):
         company=self.request.user.company
         kind=serializer.validated_data.get("kind","invoice")
+        if kind == "invoice":
+            # Lock the Job Card until the invoice is saved so concurrent retries
+            # cannot both pass the serializer's duplicate-invoice check.
+            source_id = serializer.validated_data.get("source_job_id")
+            job_number = serializer.validated_data.get("jobCardNo")
+            if source_id or job_number:
+                from apps.jobs.models import Job
+                jobs = Job.objects.select_for_update().filter(company=company)
+                linked_job = (jobs.filter(pk=source_id).first() if source_id else
+                              jobs.filter(job_number__iexact=job_number).first())
+                if linked_job and Invoice.objects.filter(
+                    company=company, job=linked_job, kind="invoice",
+                ).exclude(status="Cancelled").exists():
+                    raise ValidationError({"jobCardNo": "An active invoice already exists for this Job Card."})
         count=Invoice.objects.filter(company=company,kind=kind).count()+1
         prefix="EST" if kind=="estimate" else "INV"
         number=serializer.validated_data.get("number") or f"{prefix}-{timezone.now().year}-{count:04d}"
@@ -231,6 +245,10 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
     def convert(self,request,pk=None):
         src=self.get_object()
         if src.kind!="estimate": raise ValidationError("Only estimates can be converted.")
+        if src.job_id:
+            raise ValidationError({
+                "job": "A Job Card estimate is a quotation. Complete QC and prepare its invoice from actual billable work and issued parts."
+            })
         invoice=Invoice.objects.create(company=src.company,branch=src.branch,
             seller_snapshot=src.seller_snapshot, customer_snapshot=src.customer_snapshot,
             vehicle_snapshot=src.vehicle_snapshot,

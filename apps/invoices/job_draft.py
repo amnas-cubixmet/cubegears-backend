@@ -48,7 +48,7 @@ def suggested_job_invoice(job):
             "qty": str(qty), "rate": str(price.quantize(CENT, rounding=ROUND_HALF_UP)),
             "unit": unit_name, "hsnCode": str(hsn or "").strip()[:30],
             "taxRate": str(tax) if registered and tax is not None and amount(tax) is not None
-                and amount(tax) > 0 else ("" if registered else "0"),
+                else ("" if registered else "0"),
             "discount": "0", "inventoryId": "",
         })
 
@@ -119,8 +119,9 @@ def suggested_job_invoice(job):
             continue
         append("Labour", str(row.get("id") or len(items)),
                row.get("service") or row.get("description"),
-               row.get("quantity") or 1,
-               row.get("customerRate") or row.get("unitPrice") or row.get("customerCharge"),
+               row.get("quantity", 1),
+               next((row[key] for key in ("customerRate", "unitPrice", "customerCharge")
+                     if row.get(key) is not None), None),
                row.get("hsnSac"), row.get("taxRate"), row.get("unit") or "Job")
 
     if seen_stock or any(row.get("issues") for row in workflow.get("lines") or [] if isinstance(row, dict)):

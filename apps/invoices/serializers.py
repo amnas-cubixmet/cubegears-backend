@@ -76,6 +76,43 @@ class InvoiceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"invoiceType": message})
         if self.instance is None:
             attrs["invoice_type"] = expected_type
+        else:
+            if self.instance.status != "Draft":
+                raise serializers.ValidationError({
+                    "status": "Finalized or cancelled invoices cannot be edited. Use the dedicated workflow actions."
+                })
+            if self.instance.job_id:
+                submitted_number = attrs.get("jobCardNo")
+                submitted_source = attrs.get("source_job_id")
+                if (submitted_number is not None and
+                        str(submitted_number).casefold() != self.instance.job.job_number.casefold()) or (
+                        submitted_source not in (None, "", str(self.instance.job_id))):
+                    raise serializers.ValidationError({
+                        "jobCardNo": "An existing linked invoice cannot be moved to another Job Card."
+                    })
+        if self.instance is None and attrs.get("kind", "invoice") == "invoice":
+            source_id = str(attrs.get("source_job_id") or "").strip()
+            job_number = str(attrs.get("jobCardNo") or "").strip()
+            if source_id or job_number:
+                from uuid import UUID
+                from apps.jobs.workflow import workflow_state
+                if source_id:
+                    try:
+                        linked_id = UUID(source_id)
+                    except (TypeError, ValueError):
+                        raise serializers.ValidationError({"sourceJobId": "Invalid Job Card identifier."})
+                    linked_job = Job.objects.filter(company=company, pk=linked_id).first()
+                else:
+                    linked_job = self._resolve_job(job_number, company)
+                if linked_job is None:
+                    raise serializers.ValidationError({"jobCardNo": "Job Card was not found in this workshop."})
+                if job_number and linked_job.job_number.casefold() != job_number.casefold():
+                    raise serializers.ValidationError({"jobCardNo": "Invoice source and Job Card number do not match."})
+                if "qc" not in workflow_state(linked_job)["completed"]:
+                    raise serializers.ValidationError({"jobCardNo": "Complete Job Card QC before creating its invoice."})
+                if Invoice.objects.filter(company=company, job=linked_job, kind="invoice").exclude(
+                        status="Cancelled").exists():
+                    raise serializers.ValidationError({"jobCardNo": "This Job Card already has an active invoice."})
         rows = attrs.get("items")
         if invoice_type == "gst" and rows is not None:
             # The label remains distinct, but only the combined GST percentage
@@ -212,6 +249,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         }
 
         job = self._resolve_job(job_number, company)
+        if validated_data.get("kind", "invoice") == "invoice" and validated_data.get("source_job_id"):
+            # Link by the already-validated, tenant-scoped UUID, not a display label.
+            job = Job.objects.get(company=company, pk=validated_data["source_job_id"])
         customer = self._resolve_customer(customer_payload, company) or (job.customer if job else None)
         if not customer:
             raise serializers.ValidationError({"customer": "Customer is required."})
