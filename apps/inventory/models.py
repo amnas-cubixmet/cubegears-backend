@@ -157,6 +157,22 @@ class SupplierPaymentAllocation(CompanyOwnedModel):
         ]
 
 
+class SupplierLinePaymentAllocation(CompanyOwnedModel):
+    """Optional item-wise detail of one bill allocation (not another liability)."""
+    allocation = models.ForeignKey(
+        SupplierPaymentAllocation, on_delete=models.PROTECT, related_name="line_allocations",
+    )
+    line_index = models.PositiveIntegerField()
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["allocation", "line_index"], name="unique_supplier_bill_line_application",
+            ),
+        ]
+
+
 class WorkshopAccountEntry(CompanyOwnedModel):
     """Immutable signed cash/bank ledger movement. Negative = money out."""
     account = models.ForeignKey(WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="entries")
