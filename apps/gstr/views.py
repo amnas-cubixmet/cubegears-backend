@@ -1,0 +1,212 @@
+"""GSTR APIs: preparation only, no portal filing or financial mutations."""
+import csv
+import json
+import re
+from collections import Counter
+from decimal import Decimal
+
+from django.http import HttpResponse
+from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from apps.accounts.permissions import RolePermission
+from .services import amount, money, parse_period, prepare
+
+
+def _period(request):
+    return parse_period(request.query_params.get("period"))
+
+
+class GSTRReportView(APIView):
+    permission_classes = [RolePermission]
+    permission_code = "gstr.view"
+
+    def get(self, request, section="overview"):
+        data = prepare(request.user.company, _period(request))
+        if section == "overview":
+            return Response(data)
+        if section == "gstr-1":
+            return Response({**data["gstr1"], "period": data["period"],
+                             "issues": data["issues"], "warnings": data["warnings"]})
+        if section == "gstr-3b":
+            return Response({**data["gstr3b"], "period": data["period"],
+                             "issues": data["issues"], "warnings": data["warnings"]})
+        if section == "gstr-2b":
+            return Response({**data["gstr2b"], "period": data["period"],
+                             "warnings": data["warnings"]})
+        if section == "hsn-summary":
+            return Response({**data["hsn"], "period": data["period"],
+                             "issues": data["issues"]})
+        if section == "filing-status":
+            return Response({**data["filing"], "period": data["period"],
+                             "message": "Official filing verification is not connected."})
+        raise ValidationError({"section": "Unknown GSTR report."})
+
+
+def _number(value):
+    return str(value or "").strip().upper().replace(" ", "")
+
+
+def _official_2b_rows(payload, expected_gstin, expected_period):
+    if not isinstance(payload, dict):
+        raise ValidationError({"file": "Expected a GST Portal GSTR-2B JSON object."})
+    if isinstance(payload.get("data"), dict):
+        payload = payload["data"]
+    declared_gstin = _number(payload.get("gstin"))
+    if not declared_gstin or declared_gstin != _number(expected_gstin):
+        raise ValidationError({"file": "GSTR-2B GSTIN does not match this workshop."})
+    period_value = _number(payload.get("rtnprd"))
+    expected = expected_period[5:] + expected_period[:4]
+    if period_value != expected:
+        raise ValidationError({"file": "GSTR-2B return period does not match the selected month."})
+    document_data = payload.get("docdata")
+    if not isinstance(document_data, dict) or not isinstance(document_data.get("b2b"), list):
+        raise ValidationError({"file": "Unsupported 2B format: docdata.b2b must be an array."})
+    unsupported = [name for name, value in document_data.items()
+                   if name != "b2b" and value]
+    rows = []
+    for supplier in document_data["b2b"]:
+        if not isinstance(supplier, dict):
+            raise ValidationError({"file": "Invalid B2B supplier structure."})
+        gstin = _number(supplier.get("ctin"))
+        if not re.fullmatch(r"[0-9]{2}[A-Z0-9]{13}", gstin):
+            raise ValidationError({"file": "Invalid supplier GSTIN in 2B statement."})
+        invoices = supplier.get("inv")
+        if not isinstance(invoices, list):
+            raise ValidationError({"file": "Invalid B2B invoice list in 2B statement."})
+        for inv in invoices:
+            if not isinstance(inv, dict) or not _number(inv.get("inum")):
+                raise ValidationError({"file": "Invalid invoice structure in GSTR-2B."})
+            lines = inv.get("itms") or []
+            if not isinstance(lines, list):
+                raise ValidationError({"file": "Invalid tax line structure in GSTR-2B."})
+            totals = {"taxable": Decimal("0"), "igst": Decimal("0"),
+                      "cgst": Decimal("0"), "sgst": Decimal("0"), "cess": Decimal("0")}
+            for line in lines:
+                fields = line.get("itm_det") if isinstance(line, dict) else None
+                if not isinstance(fields, dict):
+                    raise ValidationError({"file": "Unrecognized GSTR-2B invoice tax line."})
+                for key, source in (("taxable", "txval"), ("igst", "iamt"),
+                                    ("cgst", "camt"), ("sgst", "samt"), ("cess", "csamt")):
+                    totals[key] += amount(fields.get(source))
+            rows.append({
+                "supplierGSTIN": gstin, "number": _number(inv["inum"]),
+                "date": str(inv.get("idt") or "").strip(),
+                **{k: money(v) for k, v in totals.items()},
+                "itcAvailableOnPortal": inv.get("itcavl") or supplier.get("itcavl") or "",
+            })
+            if len(rows) > 10000:
+                raise ValidationError({"file": "Limit is 10,000 B2B invoices per upload."})
+    return rows, unsupported
+
+
+def _reconcile(books, statement):
+    # Match on normalized supplier GSTIN + invoice number. Date and amounts
+    # remain independent comparisons to avoid silently accepting discrepancies.
+    groups = {}
+    for row in books:
+        key = (_number(row["supplierGSTIN"]), _number(row["number"]))
+        groups.setdefault(key, []).append(row)
+    occurrences = Counter((_number(row["supplierGSTIN"]), _number(row["number"])) for row in statement)
+    matched_keys = set()
+    results = []
+    for row in statement:
+        key = (_number(row["supplierGSTIN"]), _number(row["number"]))
+        candidates = groups.get(key, [])
+        if occurrences[key] > 1 or len(candidates) > 1:
+            state = "Duplicate"
+        elif not candidates:
+            state = "Missing in Books"
+        else:
+            bill = candidates[0]
+            matched_keys.add(key)
+            if not bill["taxVerified"]:
+                state = "Requires Review"
+            elif abs(amount(row["taxable"]) - amount(bill["taxable"])) > Decimal("0.01"):
+                state = "Amount Mismatch"
+            elif abs(sum((amount(row[k]) for k in ("cgst", "sgst", "igst")), Decimal("0")) -
+                     amount(bill["tax"])) > Decimal("0.01"):
+                state = "Tax Mismatch"
+            elif any(abs(amount(row[k]) - amount(bill[k])) > Decimal("0.01")
+                     for k in ("cgst", "sgst", "igst")):
+                state = "Tax Mismatch"
+            else:
+                state = "Matched"
+        results.append({**row, "status": state,
+                        "bookId": str(candidates[0]["id"]) if len(candidates) == 1 else None})
+    for key, bills in groups.items():
+        if key in matched_keys or key in occurrences:
+            continue
+        for bill in bills:
+            results.append({**bill, "status": "Missing in GSTR-2B",
+                            "bookId": bill["id"]})
+    return results
+
+
+class GSTR2BReconcileView(APIView):
+    permission_classes = [RolePermission]
+    permission_code = "gstr.reconcile"
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request):
+        period = _period(request)
+        company = request.user.company
+        if not company.gstin:
+            raise ValidationError({"file": "Register the workshop GSTIN first."})
+        uploaded = request.FILES.get("file")
+        if not uploaded or not uploaded.name.lower().endswith(".json"):
+            raise ValidationError({"file": "Select the official GSTR-2B JSON download."})
+        if uploaded.size > 5 * 1024 * 1024:
+            raise ValidationError({"file": "Maximum JSON upload size is 5 MB."})
+        try:
+            payload = json.loads(uploaded.read().decode("utf-8-sig"))
+        except (ValueError, UnicodeError):
+            raise ValidationError({"file": "Invalid UTF-8 JSON file."})
+        statement, unsupported = _official_2b_rows(payload, company.gstin, period["period"])
+        books = prepare(company, period)["gstr2b"]["purchases"]
+        results = _reconcile(books, statement)
+        return Response({
+            "period": period["period"], "rows": results,
+            "counts": dict(Counter(r["status"] for r in results)),
+            "unsupportedSections": unsupported,
+            "notice": ("Matching is read-only. This import is not retained. "
+                       "ITC eligibility, reverse charges and unmatched sections need independent review."),
+        })
+
+
+def _safe_cell(value):
+    # Spreadsheet CSV formula injection protection for user-controlled labels.
+    text = str(value if value is not None else "")
+    return "'" + text if text.lstrip().startswith(("=", "+", "-", "@", "\t", "\r")) else text
+
+
+class GSTRCSVExportView(APIView):
+    permission_classes = [RolePermission]
+    permission_code = "gstr.export"
+
+    def get(self, request):
+        data = prepare(request.user.company, _period(request))
+        report = request.query_params.get("report", "gstr1")
+        if report == "gstr1":
+            fields = ["number", "date", "customer", "customerGSTIN", "placeOfSupply",
+                      "classification", "taxable", "cgst", "sgst", "igst", "total"]
+            rows = data["gstr1"]["rows"]
+        elif report == "hsn":
+            fields = ["hsnSac", "description", "unit", "rate", "classification",
+                      "quantity", "taxablePreview", "cgst", "sgst", "igst"]
+            rows = data["hsn"]["rows"]
+        else:
+            raise ValidationError({"report": "Select gstr1 or hsn for preparation CSV export."})
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = (
+            f'attachment; filename="cubegears-{report}-{data["period"]}-PREPARATION.csv"')
+        writer = csv.writer(response)
+        writer.writerow(["CubeGears GST preparation only", "NOT PORTAL-COMPATIBLE", data["period"]])
+        writer.writerow(["Workshop", _safe_cell(data["company"]["name"]),
+                         "GSTIN", _safe_cell(data["company"]["gstin"])])
+        writer.writerow(fields)
+        for row in rows:
+            writer.writerow([_safe_cell(row.get(field)) for field in fields])
+        return response
