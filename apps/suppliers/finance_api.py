@@ -19,6 +19,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.jobs.models import Job
 from .purchase_gst import purchase_gst_context, purchase_line_components, purchase_bill_components
+from .manual_gst import manual_purchase_components, validate_manual_purchase_lines
 from apps.inventory.models import (
     Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation, SupplierLinePaymentAllocation,
     StockItem, StockMovement, WorkshopFinancialAccount, WorkshopAccountEntry,
@@ -162,7 +163,20 @@ def prepare_items(request, rows, receive_into_stock, tax_context=None):
         if not description or len(description) > 180:
             raise ValidationError({"description": "Enter a valid product name (1–180 characters)."})
         line_subtotal = (count * cost).quantize(CENT, rounding=ROUND_HALF_UP)
-        components = purchase_line_components(line_subtotal, gst, context, str(row.get("gstTreatment") or ""))
+        explicit_components = "taxComponents" in row
+        if explicit_components:
+            components = manual_purchase_components(
+                line_subtotal, row["taxComponents"], context,
+                str(row.get("gstTreatment") or ""),
+                str(row.get("zeroRatingBasis") or ""),
+            )
+            gst = Decimal(components["gstRate"])
+        else:
+            # Backwards-compatible route for legacy clients that submit a
+            # single combined GST rate. New UI must send taxComponents.
+            components = purchase_line_components(
+                line_subtotal, gst, context, str(row.get("gstTreatment") or "")
+            )
         line_tax = components["tax"]
         subtotal += line_subtotal
         tax_total += line_tax
@@ -174,6 +188,9 @@ def prepare_items(request, rows, receive_into_stock, tax_context=None):
             "taxMode": context["taxMode"], "placeOfSupply": context["placeOfSupply"],
             "supplierStateCode": context["supplierStateCode"],
             "gstTreatment": components["gstTreatment"],
+            **({key: components[key] for key in
+                ("taxComponents", "taxValidationStatus", "taxValidationMessage", "zeroRatingBasis")}
+               if explicit_components else {}),
             **{key: str(components[key].quantize(CENT)) for key in ("cgst", "sgst", "utgst", "igst")},
             "subtotal": str(line_subtotal), "tax": str(line_tax),
             "total": str(line_subtotal + line_tax),
@@ -299,6 +316,8 @@ def finalize_supplier_bill(request, bill, payment_data=None):
     """Post a bill, optional cash settlement and receipt in one DB transaction."""
     if bill.status != "Draft":
         raise ValidationError({"bill": "Supplier bill was already posted; inventory and liability were not posted again."})
+    # Validate explicitly chosen components before changing any stock or ledger.
+    validate_manual_purchase_lines(bill.items)
     if bill.receive_into_stock:
         for row in bill.items:
             item = get_object_or_404(StockItem.objects.select_for_update(),
@@ -356,7 +375,15 @@ class SupplierPurchaseGSTOptions(APIView):
                 {"code": code, "name": name.title()}
                 for name, code in sorted(STATE_NAMES.items())
             ],
-            "rates": [
+            "componentChoices": [
+                *[{"value": f"cgst:{rate}", "label": f"CGST {rate}%"} for rate in ("2.5", "5", "9", "18")],
+                *[{"value": f"sgst:{rate}", "label": f"SGST {rate}%"} for rate in ("2.5", "5", "9", "18")],
+                *[{"value": f"utgst:{rate}", "label": f"UTGST {rate}%"} for rate in ("2.5", "5", "9", "18")],
+                *[{"value": f"igst:{rate}", "label": f"IGST {rate}%"} for rate in ("5", "18")],
+                {"value": "zero", "label": "0% — Select Classification"},
+            ],
+            "zeroClassifications": ["exempt", "nil_rated", "zero_rated", "non_gst"],
+            "rates": [  # Legacy combined-rate API; deprecated for new UI.
                 {"total": "0", "cgst": "0", "stateTax": "0", "igst": "0"},
                 {"total": "5", "cgst": "2.5", "stateTax": "2.5", "igst": "5"},
                 {"total": "18", "cgst": "9", "stateTax": "9", "igst": "18"},
