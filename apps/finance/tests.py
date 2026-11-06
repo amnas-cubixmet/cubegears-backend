@@ -214,3 +214,108 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(dash.status_code, 200, getattr(dash, "data", None))
         self.assertEqual(dash.data["totalReceived"], "700.00")
         self.assertEqual(dash.data["outstandingCustomer"], "800.00")
+
+    def test_payment_page_totals_separate_invoiced_revenue_from_cash_collection(self):
+        from django.utils import timezone
+        from apps.customers.models import Customer
+        from apps.invoices.models import Invoice, InvoiceItem
+
+        today = timezone.localdate()
+        customer = Customer.objects.create(
+            company=self.company, name="Payment Dashboard Customer", phone="+919876500000",
+        )
+        invoice = Invoice.objects.create(
+            company=self.company, customer=customer,
+            kind="invoice", number="INV-PAYMENTS-SUMMARY-1",
+            date=today, status="Finalized",
+            total=Decimal("1500.00"), paid=Decimal("700.00"),
+            balance=Decimal("800.00"),
+            cgst=Decimal("90.00"), sgst=Decimal("90.00"),
+        )
+        InvoiceItem.objects.create(
+            invoice=invoice, item_type="Spare Part",
+            description="Paint", quantity=Decimal("2.00"),
+            purchase_price=Decimal("200.00"), rate=Decimal("750.00"),
+        )
+        WorkshopAccountEntry.objects.create(
+            company=self.company, account=self.bank,
+            amount=Decimal("700.00"), entry_type="customer_payment",
+            source_key="dashboard-collection",
+            posted_at=timezone.now(), created_by=self.owner,
+        )
+        WorkshopAccountEntry.objects.create(
+            company=self.company, account=self.cash,
+            amount=Decimal("-100.00"), entry_type="Supplier Payment",
+            source_key="dashboard-supplier-pay",
+            posted_at=timezone.now(), created_by=self.owner,
+        )
+        # Internal transfers, opening balances, and manual adjustments are
+        # NOT revenue, operating cost, or today's business collection.
+        for entry_type, amount in (
+            ("transfer_in", Decimal("200.00")),
+            ("transfer_out", Decimal("-200.00")),
+            ("manual_adjustment", Decimal("50.00")),
+        ):
+            WorkshopAccountEntry.objects.create(
+                company=self.company, account=self.cash,
+                amount=amount, entry_type=entry_type,
+                source_key=f"summary-{entry_type}",
+                posted_at=timezone.now(), created_by=self.owner,
+            )
+        response = self.client.get("/api/v1/finance/dashboard?period=today")
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+        data = response.data
+        self.assertEqual(data["period"], "today")
+        self.assertEqual(data["todayReceived"], "700.00")
+        self.assertEqual(data["todayPaid"], "100.00")
+        self.assertEqual(data["netSalesRevenue"], "1320.00")
+        self.assertEqual(data["salesTaxExcluded"], "180.00")
+        self.assertEqual(data["knownCostOfSales"], "400.00")
+        # Original test fixture expense is dated 2026-11-06. All-time
+        # reporting always includes its recorded payable.
+        self.assertEqual(data["bankBalance"], "1200.00")
+        self.assertEqual(data["cashBalance"], "950.00")
+        self.assertIn("estimated", data["profitNote"].lower())
+
+        all_time = self.client.get("/api/v1/finance/dashboard?period=all")
+        self.assertEqual(all_time.status_code, 200)
+        self.assertEqual(all_time.data["netSalesRevenue"], "1320.00")
+        self.assertEqual(all_time.data["recordedExpenses"], "300.00")
+        self.assertEqual(all_time.data["estimatedProfit"], "620.00")
+        self.assertEqual(self.client.get("/api/v1/finance/dashboard?period=bad").status_code, 400)
+
+    def test_draft_invoice_does_not_generate_revenue_or_profit(self):
+        from django.utils import timezone
+        from apps.customers.models import Customer
+        from apps.invoices.models import Invoice
+
+        customer = Customer.objects.create(company=self.company, name="Draft Customer")
+        Invoice.objects.create(
+            company=self.company, customer=customer,
+            number="DRAFT-NOT-REVENUE", kind="invoice",
+            date=timezone.localdate(), status="Draft",
+            total=Decimal("9000.00"), balance=Decimal("9000.00"),
+        )
+        report = self.client.get("/api/v1/finance/dashboard?period=all")
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data["netSalesRevenue"], "0.00")
+        self.assertEqual(report.data["recordedExpenses"], "300.00")
+        self.assertEqual(report.data["estimatedProfit"], "-300.00")
+        self.assertEqual(report.data["todayReceived"], "0.00")
+        self.assertEqual(report.data["bankBalance"], "500.00")
+        self.assertEqual(report.data["cashBalance"], "1000.00")
+
+    def test_inactive_bank_funds_stay_in_book_balances_without_allowing_posting(self):
+        self.bank.is_active = False
+        self.bank.save(update_fields=["is_active"])
+        report = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data["bankBalance"], "500.00")
+        self.assertTrue(any(
+            a["id"] == str(self.bank.pk) and a["isActive"] is False
+            for a in report.data["accounts"]
+        ))
+        blocked = self.client.post("/api/v1/finance/accounts/" + str(self.bank.pk) + "/adjust", {
+            "direction": "credit", "amount": "50.00", "reason": "Attempt to post to inactive account"
+        }, format="json")
+        self.assertEqual(blocked.status_code, 400)
