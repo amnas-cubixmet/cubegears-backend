@@ -351,8 +351,6 @@ class MobileStaffOnboardingTests(TestCase):
     @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
     def test_incomplete_waba_configuration_requires_manual_share_not_false_queue(self):
         from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
-        reply = self.create_staff(consent=True)
-        employee = Employee.objects.get(pk=reply.data["id"])
         WhatsAppBusinessConnection.objects.create(
             company=self.company, connected=True, notifications_enabled=True,
             messaging_mode="automatic", phone_number_id="official-number",
@@ -363,9 +361,12 @@ class MobileStaffOnboardingTests(TestCase):
             company=self.company, event="staff_onboarding",
             template_name="approved_staff_onboarding", approval_status="APPROVED",
         )
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.get(pk=reply.data["id"])
+        self.assertEqual(reply.status_code, 201, reply.data)
+        self.assertEqual(reply.data["whatsappInviteStatus"], "manual")
         res = self.admin.post(f"/api/v1/employees/{employee.pk}/invite", {}, format="json")
-        # Existing still-valid manual links are re-used briefly to avoid duplicate
-        # sends; the underlying latest invitation must remain manual.
+        # A still-valid manual link can be re-used briefly without duplicate sends.
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["whatsappInviteStatus"], "manual")
         self.assertTrue(res.data["setupLink"])
