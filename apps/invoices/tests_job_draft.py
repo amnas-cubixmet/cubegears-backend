@@ -137,3 +137,67 @@ class JobInvoiceDraftTests(TestCase):
         )
         self.client.force_authenticate(user=other)
         self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def _invoice_payload(self):
+        return {
+            "kind": "invoice", "date": date.today().isoformat(),
+            "invoiceType": "regular",
+            "jobCardNo": self.job.job_number,
+            "sourceJobId": str(self.job.pk),
+            "customer": {"name": self.job.customer.name, "phone": self.job.customer.phone},
+            "vehicle": {"registration": self.job.vehicle.registration},
+            "items": [{"type": "Labour", "description": "Verified work",
+                       "qty": "1", "rate": "100", "unit": "JOB", "taxRate": "0"}],
+        }
+
+    def test_direct_invoice_create_requires_qc(self):
+        self.job.status = "In Progress"
+        self.job.workflow_progress["completed"] = ["overview", "inspection", "estimate"]
+        self.job.save(update_fields=["status", "workflow_progress"])
+        res = self.client.post("/api/v1/billing/documents/", self._invoice_payload(), format="json")
+        self.assertEqual(res.status_code, 400, getattr(res, "data", None))
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_direct_create_rejects_second_active_job_invoice(self):
+        Invoice.objects.create(
+            company=self.company, branch=self.branch,
+            customer=self.job.customer, vehicle=self.job.vehicle, job=self.job,
+            kind="invoice", date=date.today(), number="INV-ALREADY", status="Draft",
+        )
+        res = self.client.post("/api/v1/billing/documents/", self._invoice_payload(), format="json")
+        self.assertEqual(res.status_code, 400, getattr(res, "data", None))
+        self.assertEqual(Invoice.objects.count(), 1)
+
+    def test_mismatched_source_and_job_number_are_rejected(self):
+        payload = self._invoice_payload()
+        payload["jobCardNo"] = "ANOTHER-JOB"
+        res = self.client.post("/api/v1/billing/documents/", payload, format="json")
+        self.assertEqual(res.status_code, 400, getattr(res, "data", None))
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_job_estimate_cannot_be_converted_to_actual_invoice(self):
+        estimate = Invoice.objects.create(
+            company=self.company, branch=self.branch,
+            customer=self.job.customer, vehicle=self.job.vehicle, job=self.job,
+            kind="estimate", date=date.today(), number="EST-JOB", status="Draft",
+        )
+        res = self.client.post(
+            f"/api/v1/billing/documents/{estimate.pk}/convert-to-invoice/", {}, format="json",
+        )
+        self.assertEqual(res.status_code, 400, getattr(res, "data", None))
+        self.assertFalse(Invoice.objects.filter(job=self.job, kind="invoice").exists())
+
+    def test_zero_percent_recorded_tax_is_not_dropped_and_zero_work_qty_is_not_billed(self):
+        self.company.gstin = "32AAAAA0000A1Z5"
+        self.company.save(update_fields=["gstin"])
+        self.stock.tax = Decimal("0")
+        self.stock.save(update_fields=["tax"])
+        self.job.work = [{"id": "invalid-zero", "service": "Not completed",
+                          "billable": True, "quantity": 0, "customerRate": "500"}]
+        self.job.save(update_fields=["work"])
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, 200, getattr(res, "data", None))
+        part = next(row for row in res.data["items"] if row["description"] == "Brake Pad")
+        self.assertEqual(part["taxRate"], "0")
+        self.assertNotIn("Not completed", [row["description"] for row in res.data["items"]])
+
