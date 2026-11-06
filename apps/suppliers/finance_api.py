@@ -455,7 +455,7 @@ class SupplierBillCollection(APIView):
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.create", "payments.create"]}
 
     def get(self, request):
-        qs = SupplierBill.objects.filter(company_id=request.user.company_id).select_related("supplier").order_by("-created_at")
+        qs = SupplierBill.objects.filter(company_id=request.user.company_id).select_related("supplier", "created_by").order_by("-created_at")
         supplier_id = request.query_params.get("supplier")
         if supplier_id:
             supplier = supplier_for(request, supplier_id)
