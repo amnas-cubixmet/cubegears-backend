@@ -28,6 +28,10 @@ class JobActivitySerializer(serializers.ModelSerializer):
     class Meta: model=JobActivity; exclude=("company","branch")
 class JobSerializer(serializers.ModelSerializer):
     gstInfo=serializers.SerializerMethodField()
+    delivery=serializers.SerializerMethodField()
+
+    def get_delivery(self, obj):
+        return (obj.workflow_progress or {}).get("delivery") or {}
 
     def get_gstInfo(self, obj):
         gstin = str(obj.company.gstin or "").strip().upper()
