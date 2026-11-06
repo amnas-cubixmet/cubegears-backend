@@ -201,3 +201,49 @@ class JobInvoiceDraftTests(TestCase):
         self.assertEqual(Decimal(part["taxRate"]), Decimal("0"))
         self.assertNotIn("Not completed", [row["description"] for row in res.data["items"]])
 
+    def test_delivery_records_handover_and_cannot_repeat(self):
+        invoice = Invoice.objects.create(
+            company=self.company, branch=self.branch,
+            customer=self.job.customer, vehicle=self.job.vehicle, job=self.job,
+            kind="invoice", date=date.today(), number="INV-DELIVERY", status="Finalized",
+        )
+        self.assertIsNotNone(invoice.pk)
+        url = f"/api/v1/jobs/{self.job.pk}/workflow"
+        missing = self.client.post(url, {"stage": "invoice"}, format="json")
+        self.assertEqual(missing.status_code, 400, getattr(missing, "data", None))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "Ready for Delivery")
+
+        invalid = self.client.post(url, {
+            "stage": "invoice", "delivery": {
+                "finalKm": -1, "acknowledgedBy": "Buyer",
+            },
+        }, format="json")
+        self.assertEqual(invalid.status_code, 400, getattr(invalid, "data", None))
+
+        reply = self.client.post(url, {
+            "stage": "invoice", "delivery": {
+                "finalKm": "1200", "acknowledgedBy": "Buyer",
+                "warrantyNotes": "Check after 30 days",
+            },
+        }, format="json")
+        self.assertEqual(reply.status_code, 200, getattr(reply, "data", None))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "Delivered")
+        self.assertIsNotNone(self.job.delivered_at)
+        self.assertEqual(self.job.workflow_progress["delivery"]["finalKm"], 1200)
+        self.assertEqual(
+            self.job.workflow_progress["delivery"]["acknowledgedBy"], "Buyer",
+        )
+        job_detail = self.client.get(f"/api/v1/jobs/{self.job.pk}")
+        self.assertEqual(job_detail.status_code, 200, getattr(job_detail, "data", None))
+        self.assertEqual(job_detail.data["delivery"]["warrantyNotes"], "Check after 30 days")
+        repeated = self.client.post(url, {
+            "stage": "invoice", "delivery": {
+                "finalKm": "1400", "acknowledgedBy": "Another person",
+            },
+        }, format="json")
+        self.assertEqual(repeated.status_code, 400, getattr(repeated, "data", None))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.workflow_progress["delivery"]["finalKm"], 1200)
+
