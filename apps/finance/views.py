@@ -432,6 +432,8 @@ class FinanceLedger(APIView):
         # CSV export
         if request.query_params.get("export") == "csv":
             return self._csv_export(qs)
+        if request.query_params.get("export") == "pdf":
+            return self._pdf_export(qs)
 
         # Pagination
         try:
@@ -468,6 +470,55 @@ class FinanceLedger(APIView):
             "totalPages": (total_count + page_size - 1) // page_size,
             "results": result,
         })
+
+    def _pdf_export(self, qs):
+        """Authenticated, capped account ledger PDF export."""
+        from io import BytesIO
+        from xml.sax.saxutils import escape
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=landscape(A4), leftMargin=24,
+            rightMargin=24, topMargin=24, bottomMargin=24,
+        )
+        normal = getSampleStyleSheet()["BodyText"]
+        normal.fontSize = 7
+        normal.leading = 9
+        headers = ["Date", "Account", "Category", "Credit", "Debit", "Reference", "Posted by"]
+        rows = [headers]
+        for entry in qs.select_related("account", "created_by").order_by("-posted_at", "-pk")[:1000]:
+            def cell(value):
+                return Paragraph(escape(str(value or "")[:110]), normal)
+            rows.append([
+                cell(entry.posted_at.date().isoformat()),
+                cell(entry.account.name),
+                cell(entry.entry_type),
+                cell(str(entry.amount) if entry.amount > 0 else "0.00"),
+                cell(str(-entry.amount) if entry.amount < 0 else "0.00"),
+                cell(entry.reference),
+                cell(entry.created_by.name if entry.created_by else ""),
+            ])
+        table = Table(rows, repeatRows=1, colWidths=[65, 110, 95, 64, 64, 230, 105])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e7edf5")),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d2dae4")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        doc.build([
+            Paragraph("CubeGears - Internal Account Transaction Ledger", getSampleStyleSheet()["Heading2"]),
+            Paragraph("Bookkeeping balances only; not live bank statements. Up to 1,000 matching entries.", normal),
+            table,
+        ])
+        result = HttpResponse(buf.getvalue(), content_type="application/pdf")
+        result["Content-Disposition"] = 'attachment; filename="transactions.pdf"'
+        return result
 
     def _csv_export(self, qs):
         # Never let user supplied account/ref text execute as spreadsheet formulas.
