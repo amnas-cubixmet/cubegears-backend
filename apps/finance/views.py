@@ -19,6 +19,25 @@ from apps.expenses.models import Expense
 CENT = Decimal("0.01")
 
 
+def mask_account_number(value):
+    """Never transmit full bank account numbers in financial API responses."""
+    cleaned = "".join(ch for ch in str(value or "") if ch.isalnum())
+    return ("••••" + cleaned[-4:]) if len(cleaned) > 4 else ("••••" if cleaned else "")
+
+
+def valid_money(value, field="amount", allow_zero=False):
+    try:
+        amount = Decimal(str(value))
+        if (not amount.is_finite() or amount < 0 or
+                (amount == 0 and not allow_zero) or
+                amount.as_tuple().exponent < -2 or amount >= Decimal("1000000000000")):
+            raise ValueError()
+        return amount.quantize(CENT)
+    except (ValueError, TypeError, ArithmeticError):
+        raise ValidationError({field: "Enter a valid amount (up to two decimal places)."})
+
+
+
 def account_balance(account):
     total = WorkshopAccountEntry.objects.filter(
         company_id=account.company_id, account=account
@@ -35,7 +54,7 @@ def accounts_summary(company_id):
         bal = account_balance(acc)
         result.append({
             "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-            "bankName": acc.bank_name, "accountNumber": acc.account_number,
+            "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
             "isActive": acc.is_active,
@@ -127,7 +146,7 @@ class FinanceAccountCollection(APIView):
             bal = account_balance(acc)
             result.append({
                 "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-                "bankName": acc.bank_name, "accountNumber": acc.account_number,
+                "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
                 "ifsc": acc.ifsc, "branchName": acc.branch_name,
                 "openingBalance": str(acc.opening_balance),
                 "openingDate": acc.opening_date.isoformat() if acc.opening_date else None,
@@ -145,10 +164,7 @@ class FinanceAccountCollection(APIView):
         kind = d.get("kind", "Cash")
         if kind not in ("Cash", "Bank", "UPI", "Wallet"):
             raise ValidationError({"kind": "Choose Cash, Bank, UPI or Wallet."})
-        try:
-            opening = Decimal(str(d.get("openingBalance", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"openingBalance": "Enter a valid amount."})
+        opening = valid_money(d.get("openingBalance", "0"), "openingBalance", allow_zero=True)
         if WorkshopFinancialAccount.objects.filter(company=request.user.company, name=name).exists():
             raise ValidationError({"name": "An account with this name already exists."})
         acc = WorkshopFinancialAccount.objects.create(
@@ -177,12 +193,14 @@ class FinanceAccountDetail(APIView):
     def get(self, request, pk):
         acc = self._get_account(request, pk)
         bal = account_balance(acc)
-        entries = WorkshopAccountEntry.objects.filter(
+        entries = list(WorkshopAccountEntry.objects.filter(
             company=request.user.company, account=acc
-        ).select_related("created_by").order_by("-posted_at")[:200]
+        ).select_related("created_by").order_by("-posted_at", "-created_at", "-pk")[:200])
         ledger = []
-        running = acc.opening_balance
-        for entry in reversed(list(entries)):
+        # Start from the balance just before this newest-page slice; opening
+        # balance alone is incorrect once an account has more than 200 entries.
+        running = bal - sum((item.amount for item in entries), Decimal("0"))
+        for entry in reversed(entries):
             running += entry.amount
             ledger.append({
                 "id": str(entry.pk), "date": entry.posted_at.isoformat(),
@@ -196,7 +214,7 @@ class FinanceAccountDetail(APIView):
             })
         return Response({
             "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-            "bankName": acc.bank_name, "accountNumber": acc.account_number,
+            "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
             "isActive": acc.is_active, "description": acc.description,
@@ -224,7 +242,12 @@ class FinanceAccountDetail(APIView):
                            "ifsc": "ifsc", "branchName": "branch_name",
                            "description": "description"}[field]
             if field in d:
-                setattr(acc, model_field, str(d[field] or ""))
+                value = str(d[field] or "")
+                # The UI receives masked numbers. Saving unchanged metadata
+                # must never overwrite the stored number with its mask.
+                if field == "accountNumber" and "•" in value:
+                    continue
+                setattr(acc, model_field, value)
         if "openingDate" in d:
             acc.opening_date = d["openingDate"] or None
         if "isActive" in d:
@@ -246,14 +269,15 @@ class FinanceAdjustment(APIView):
             pk=pk, company=request.user.company
         )
         d = request.data
-        try:
-            amount = Decimal(str(d.get("amount", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"amount": "Enter a valid decimal amount."})
+        amount = valid_money(d.get("amount"), "amount")
         direction = d.get("direction", "credit")
         if direction not in ("credit", "debit"):
             raise ValidationError({"direction": "Must be 'credit' or 'debit'."})
         signed = amount if direction == "credit" else -amount
+        if not acc.is_active:
+            raise ValidationError({"account": "Cannot adjust an inactive account."})
+        if signed < 0 and account_balance(acc) < amount:
+            raise ValidationError({"amount": "Insufficient funds for this adjustment."})
         reason = str(d.get("reason", "")).strip()
         if not reason:
             raise ValidationError({"reason": "An audit reason is required for balance adjustments."})
@@ -295,10 +319,7 @@ class FinanceTransferCollection(APIView):
     def post(self, request):
         from django.shortcuts import get_object_or_404
         d = request.data
-        try:
-            amount = Decimal(str(d.get("amount", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"amount": "Enter a valid decimal amount."})
+        amount = valid_money(d.get("amount"), "amount")
         if amount <= 0:
             raise ValidationError({"amount": "Transfer amount must be positive."})
         from_id = d.get("fromAccountId")
@@ -320,7 +341,9 @@ class FinanceTransferCollection(APIView):
         if from_balance < amount:
             raise ValidationError({"amount": f"Insufficient balance in {from_acc.name}. Available: {from_balance}"})
 
-        idempotency_key = str(d.get("idempotencyKey") or uuid4().hex)
+        idempotency_key = str(d.get("idempotencyKey") or uuid4().hex).strip()
+        if not idempotency_key or len(idempotency_key) > 160:
+            raise ValidationError({"idempotencyKey": "Invalid transfer request key."})
         if FinanceTransfer.objects.filter(company=request.user.company, idempotency_key=idempotency_key).exists():
             raise ValidationError({"idempotencyKey": "Duplicate transfer request."})
 
