@@ -19,4 +19,7 @@ class Payment(CompanyOwnedModel):
     account=models.ForeignKey("inventory.WorkshopFinancialAccount",on_delete=models.SET_NULL,null=True,blank=True,related_name="customer_payments")
     direction=models.CharField(max_length=10,default="IN",choices=[("IN","IN"),("OUT","OUT")])
     category=models.CharField(max_length=80,blank=True,default="")
-    class Meta: ordering=["-date","-created_at"]
+    idempotency_key=models.CharField(max_length=128,null=True,blank=True,default=None)
+    class Meta:
+        ordering=["-date","-created_at"]
+        constraints=[models.UniqueConstraint(fields=["company","idempotency_key"],name="unique_customer_payment_request")]
