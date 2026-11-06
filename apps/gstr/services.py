@@ -68,8 +68,18 @@ def supplier_queryset(company, period):
 
 def outward_rows(company, period):
     invoices = list(invoice_queryset(company, period))
-    rows, issues = [], []
+    rows, issues, included = [], [], []
     for obj in invoices:
+        seller = obj.seller_snapshot if isinstance(obj.seller_snapshot, dict) else {}
+        seller_gstin = str(seller.get("gstin") or "").strip().upper()
+        if not seller_gstin or seller_gstin != str(company.gstin or "").strip().upper():
+            issues.append({
+                "type": "seller_gstin_unverified", "record": str(obj.id),
+                "number": obj.number,
+                "message": "Saved seller GSTIN is missing or differs from the selected workshop GSTIN. Excluded pending review.",
+            })
+            continue
+        included.append(obj)
         snapshot = obj.customer_snapshot if isinstance(obj.customer_snapshot, dict) else {}
         gstin = str(snapshot.get("gstin") or snapshot.get("gstIn") or "").strip().upper()
         pos = str(snapshot.get("placeOfSupply") or snapshot.get("stateCode") or snapshot.get("state") or "").strip()
@@ -100,7 +110,7 @@ def outward_rows(company, period):
             "total": money(obj.total), "taxMode": obj.tax_mode,
         }
         rows.append(row)
-    return rows, issues, invoices
+    return rows, issues, included
 
 
 def _totals(rows):
