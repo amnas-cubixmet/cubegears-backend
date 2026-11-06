@@ -419,3 +419,60 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(valid.status_code, 201, getattr(valid, "data", None))
         self.assertEqual(valid.data["taxMode"], "unregistered")
         self.assertEqual(valid.data["items"][0]["gstTreatment"], "unregistered")
+
+    def test_real_example_200_part_100_paid_then_multi_bill_settlement(self):
+        """₹200 purchase/₹100 payment leaves ₹100 due; later credit remains exact."""
+        part_bill = self.create_bill("200.00", receive=True, sku_item=True)
+        posted = self.post_bill(part_bill)
+        self.assertEqual(posted.status_code, 200, getattr(posted, "data", None))
+        self.assertEqual(self.summary()["outstanding"], "200.00")
+        self.assertEqual(self.account_balance(), "20000.00")  # credit is not cash movement
+        first = self.pay(
+            [{"billId": part_bill, "amount": "100.00"}],
+            amount="100.00", key="parts-one-hundred-now",
+        )
+        self.assertEqual(first.status_code, 201, getattr(first, "data", None))
+        self.assertEqual(self.summary()["outstanding"], "100.00")
+        self.assertEqual(self.account_balance(), "19900.00")
+
+        second_bill = self.create_bill("500.00")
+        self.assertEqual(self.post_bill(second_bill).status_code, 200)
+        self.assertEqual(self.summary()["outstanding"], "600.00")
+        settle = self.pay(
+            [
+                {"billId": part_bill, "amount": "100.00"},
+                {"billId": second_bill, "amount": "400.00"},
+            ],
+            amount="500.00", key="supplier-five-hundred-multiple-bills",
+        )
+        self.assertEqual(settle.status_code, 201, getattr(settle, "data", None))
+        self.assertEqual(self.summary()["outstanding"], "100.00")
+        self.assertEqual(self.account_balance(), "19400.00")
+        self.assertEqual(SupplierPayment.objects.count(), 2)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 2)
+
+        activity = self.client.get("/api/v1/finance/payment-activity?page_size=1000")
+        self.assertEqual(activity.status_code, 200, getattr(activity, "data", None))
+        supplier_rows = [row for row in activity.data["results"] if row["source"] == "supplier"]
+        self.assertEqual(len(supplier_rows), 2)
+        self.assertEqual(activity.data["supplierOutstanding"], "100.00")
+        self.assertEqual(activity.data["supplierPayments"], "600.00")
+        dash = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(dash.status_code, 200, getattr(dash, "data", None))
+        self.assertEqual(dash.data["totalPaid"], "600.00")
+        self.assertEqual(dash.data["supplierOutstanding"], "100.00")
+
+    def test_generic_supplier_expense_and_outgoing_are_blocked_from_double_posting(self):
+        generic_payment = self.client.post("/api/v1/payments", {
+            "date": "2026-11-06", "direction": "OUT", "amount": "100.00",
+            "method": "Bank Transfer", "account": self.account_id,
+            "status": "Completed", "category": "Supplier Payment",
+        }, format="json")
+        self.assertEqual(generic_payment.status_code, 400)
+        duplicate_expense = self.client.post("/api/v1/expenses", {
+            "date": "2026-11-06", "amount": "100.00",
+            "category": "Spare Parts", "status": "Paid",
+            "account": self.account_id, "payment_method": "Bank Transfer",
+        }, format="json")
+        self.assertEqual(duplicate_expense.status_code, 400)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)

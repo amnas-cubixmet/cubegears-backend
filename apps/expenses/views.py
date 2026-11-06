@@ -50,9 +50,21 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
         "reverse_settlement": "expenses.edit",
     }
 
+    def _validate_purchase_not_duplicate(self, category):
+        normalized = str(category or "").strip().casefold()
+        if normalized in {
+            "supplier payments", "supplier payment", "stock purchase",
+            "spare parts", "spare part purchase", "inventory purchase",
+        }:
+            raise ValidationError({
+                "category": "Supplier purchases and their payments must be linked to a posted Supplier Bill. "
+                            "Use Inventory → Supplier Purchase / Supplier Payments, not a separate Expense debit."
+            })
+
     def _post_settlement(self, request, expense, data):
         """Call inside transaction.atomic with expense locked."""
         company = request.user.company
+        self._validate_purchase_not_duplicate(expense.category)
         amount = positive_money(data.get("amount"))
         key = str(data.get("idempotencyKey") or uuid4().hex).strip()
         if not key or len(key) > 128:
@@ -111,6 +123,7 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
+        self._validate_purchase_not_duplicate(serializer.validated_data.get("category"))
         desired_status = str(serializer.validated_data.get("status", "Unpaid")).strip().lower()
         account = serializer.validated_data.get("account")
         if desired_status == "paid" and not account:

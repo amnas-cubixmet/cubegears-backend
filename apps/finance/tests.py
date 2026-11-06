@@ -181,3 +181,36 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(pdf_response.status_code, 200, getattr(pdf_response, "data", None))
         self.assertEqual(pdf_response["Content-Type"], "application/pdf")
         self.assertTrue(pdf_response.content.startswith(b"%PDF"))
+
+    def test_customer_invoice_1500_receives_700_due_800_and_cash_increases_once(self):
+        from apps.customers.models import Customer
+        from apps.invoices.models import Invoice
+
+        customer = Customer.objects.create(
+            company=self.company, name="Customer One", phone="+919876543210",
+        )
+        invoice = Invoice.objects.create(
+            company=self.company, customer=customer, kind="invoice",
+            number="INV-WORKFLOW-1500", date="2026-11-06",
+            status="Finalized", total=Decimal("1500.00"), balance=Decimal("1500.00"),
+        )
+        payload = {
+            "customer": str(customer.pk), "invoice": str(invoice.pk),
+            "date": "2026-11-06", "direction": "IN",
+            "amount": "700.00", "method": "Cash",
+            "account": str(self.cash.pk), "status": "Completed",
+            "idempotency_key": "customer-1500-invoice-700-once",
+        }
+        first = self.client.post("/api/v1/payments", payload, format="json")
+        self.assertEqual(first.status_code, 201, getattr(first, "data", None))
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.paid, Decimal("700.00"))
+        self.assertEqual(invoice.balance, Decimal("800.00"))
+        self.assertEqual(account_balance(self.cash), Decimal("1700.00"))
+        self.assertEqual(self.client.post("/api/v1/payments", payload, format="json").status_code, 400)
+        self.assertEqual(account_balance(self.cash), Decimal("1700.00"))
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
+        dash = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(dash.status_code, 200, getattr(dash, "data", None))
+        self.assertEqual(dash.data["totalReceived"], "700.00")
+        self.assertEqual(dash.data["outstandingCustomer"], "800.00")

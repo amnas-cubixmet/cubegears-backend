@@ -79,9 +79,22 @@ class FinanceDashboard(APIView):
             company=company, status="Completed", direction="IN"
         ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
 
-        total_paid = Payment.objects.filter(
-            company=company, status="Completed", direction="OUT"
+        # Account-based payouts must include supplier bill settlements, wages
+        # and real expense payments, not just generic Payment rows. Each
+        # source posts once to WorkshopAccountEntry; never sum models again.
+        outgoing_types = [
+            "outgoing_payment", "Supplier Payment", "Supplier Advance",
+            "expense_payment", "wage_payment",
+        ]
+        posted_outgoing = WorkshopAccountEntry.objects.filter(
+            company=company, entry_type__in=outgoing_types, amount__lt=0
         ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        reversed_outgoing = WorkshopAccountEntry.objects.filter(
+            company=company,
+            entry_type__in=["payment_reversal", "expense_reversal", "wage_payment_reversal"],
+            amount__gt=0,
+        ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        total_paid = max(Decimal("0"), -posted_outgoing - reversed_outgoing)
 
         from apps.invoices.models import Invoice
         outstanding_invoices = Invoice.objects.filter(
@@ -133,6 +146,12 @@ class FinanceDashboard(APIView):
             "cashBalance": str(cash_total.quantize(CENT)),
             "totalReceived": str(total_received.quantize(CENT)),
             "totalPaid": str(total_paid.quantize(CENT)),
+            "totalPaidBasis": "net-posted-account-outflows-excluding-internal-transfers",
+            "supplierPaymentsPosted": str(abs(
+                WorkshopAccountEntry.objects.filter(
+                    company=company, entry_type__in=["Supplier Payment", "Supplier Advance"], amount__lt=0
+                ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+            ).quantize(CENT)),
             "outstandingCustomer": str(outstanding_invoices.quantize(CENT)),
             "supplierOutstanding": str(supplier_outstanding.quantize(CENT)),
             "pendingExpenses": str(pending_expenses.quantize(CENT)),
