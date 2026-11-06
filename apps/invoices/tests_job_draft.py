@@ -198,6 +198,6 @@ class JobInvoiceDraftTests(TestCase):
         res = self.client.get(self.url)
         self.assertEqual(res.status_code, 200, getattr(res, "data", None))
         part = next(row for row in res.data["items"] if row["description"] == "Brake Pad")
-        self.assertEqual(part["taxRate"], "0")
+        self.assertEqual(Decimal(part["taxRate"]), Decimal("0"))
         self.assertNotIn("Not completed", [row["description"] for row in res.data["items"]])
 
