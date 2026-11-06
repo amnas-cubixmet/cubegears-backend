@@ -269,7 +269,7 @@ class SupplierFinanceTests(TestCase):
         }, format="json")
         self.assertEqual(posted.status_code, 201, getattr(posted, "data", None))
         self.assertEqual(posted.data["postingStatus"], "Posted")
-        self.assertEqual(posted.data["outstanding"], "0")
+        self.assertEqual(posted.data["outstanding"], "0.00")
         self.assertEqual(self.summary()["outstanding"], "0.00")
         self.assertEqual(self.account_balance(), "18000.00")
         self.stock.refresh_from_db()
