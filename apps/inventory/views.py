@@ -2,7 +2,7 @@ from django.db import transaction
 from django.db.models import F,Q
 from rest_framework import decorators,response
 from common.viewsets import CompanyScopedModelViewSet
-from .models import StockCategory,Supplier,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 from .serializers import *
 
 class StockItemViewSet(CompanyScopedModelViewSet):
@@ -254,7 +254,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 class StockCategoryViewSet(CompanyScopedModelViewSet):
     queryset=StockCategory.objects.all(); serializer_class=StockCategorySerializer
 # Backwards-compatible inventory URL alias for canonical supplier CRUD.
-from apps.suppliers.views import SupplierViewSet
+from apps.suppliers.views import SupplierViewSet as SupplierViewSet
 
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
