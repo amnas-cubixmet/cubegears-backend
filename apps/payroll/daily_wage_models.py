@@ -70,6 +70,10 @@ class WageAdjustment(CompanyOwnedModel):
 class WagePayment(CompanyOwnedModel):
     employee = models.ForeignKey("employees.Employee", on_delete=models.PROTECT, related_name="daily_wage_payments")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    account = models.ForeignKey(
+        "inventory.WorkshopFinancialAccount", on_delete=models.PROTECT,
+        null=True, blank=True, related_name="daily_wage_payments",
+    )
     payment_date = models.DateField()
     method = models.CharField(max_length=30)
     reference = models.CharField(max_length=150, blank=True)
