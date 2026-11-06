@@ -3,6 +3,7 @@ import csv
 import json
 import re
 from collections import Counter
+from datetime import datetime
 from decimal import Decimal
 
 from django.http import HttpResponse
@@ -102,6 +103,16 @@ def _official_2b_rows(payload, expected_gstin, expected_period):
     return rows, unsupported
 
 
+def _date_key(value):
+    raw = str(value or "").strip()
+    for pattern in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, pattern).date()
+        except ValueError:
+            continue
+    return None
+
+
 def _reconcile(books, statement):
     # Match on normalized supplier GSTIN + invoice number. Date and amounts
     # remain independent comparisons to avoid silently accepting discrepancies.
@@ -122,7 +133,9 @@ def _reconcile(books, statement):
         else:
             bill = candidates[0]
             matched_keys.add(key)
-            if not bill["taxVerified"]:
+            if not bill["taxVerified"] or not _date_key(row["date"]):
+                state = "Requires Review"
+            elif _date_key(row["date"]) != _date_key(bill["date"]):
                 state = "Requires Review"
             elif abs(amount(row["taxable"]) - amount(bill["taxable"])) > Decimal("0.01"):
                 state = "Amount Mismatch"
@@ -165,7 +178,8 @@ class GSTR2BReconcileView(APIView):
         except (ValueError, UnicodeError):
             raise ValidationError({"file": "Invalid UTF-8 JSON file."})
         statement, unsupported = _official_2b_rows(payload, company.gstin, period["period"])
-        books = prepare(company, period)["gstr2b"]["purchases"]
+        from .services import inward_rows
+        books = inward_rows(company)[0]
         results = _reconcile(books, statement)
         return Response({
             "period": period["period"], "rows": results,
