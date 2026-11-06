@@ -102,12 +102,12 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(repeat.status_code, 200)
         self.assertEqual(repeat.data["setupLink"], first.data["setupLink"])
         self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), 1)
-        # Once cooldown passes, an explicit resend rotates and revokes the old token.
+        # After cooldown, an explicit replacement revokes the old one-use link.
         current = StaffPasswordInvitation.objects.get(user=employee.user)
         StaffPasswordInvitation.objects.filter(pk=current.pk).update(
             created_at=timezone.now() - timedelta(seconds=70),
         )
-        new = self.admin.post(f"/api/v1/employees/{employee.pk}/invite",{},format="json")
+        new = self.admin.post(f"/api/v1/employees/{employee.pk}/invite",{"replace": True},format="json")
         self.assertEqual(new.status_code,200,new.data)
         self.assertNotEqual(new.data["setupLink"],first.data["setupLink"])
         self.assertEqual(self.public.post("/api/v1/auth/staff-invitation/validate",{"token":old},format="json").status_code,400)
@@ -228,13 +228,11 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(StaffPasswordInvitation.objects.count(), before)
 
     @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
-    def test_registered_mobile_recovery_queues_only_official_workshop_whatsapp(self):
+    def test_public_staff_recovery_never_queues_messages_even_with_waba(self):
+        from unittest.mock import patch
         from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
-        from apps.accounts.staff_setup import resolve_invitation
-        from apps.accounts.staff_setup import invitation_url
         reply = self.create_staff(consent=True)
         employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
-        old_token = reply.data["setupLink"].rsplit("/", 1)[-1]
         employee.user.set_password("AlreadySetPass33!")
         employee.user.save(update_fields=["password"])
         WhatsAppBusinessConnection.objects.create(
@@ -247,22 +245,24 @@ class MobileStaffOnboardingTests(TestCase):
             company=self.company, event="staff_onboarding",
             template_name="staff_password_setup", approval_status="APPROVED",
         )
-        payload = {"mobile": "+919333333333", "workshop": "phone-workshop"}
-        first = self.public.post("/api/v1/auth/forgot-password", payload, format="json")
-        self.assertEqual(first.status_code, 200, first.data)
-        record = StaffPasswordInvitation.objects.filter(user=employee.user).latest("created_at")
-        self.assertEqual(record.purpose, "reset")
-        self.assertEqual(record.delivery_status, "queued")
-        self.assertEqual(resolve_invitation(old_token), None)
-        self.assertNotIn("setupLink", first.data)
-        self.assertNotIn("token", first.data)
-        count = StaffPasswordInvitation.objects.filter(user=employee.user).count()
-        retry = self.public.post("/api/v1/auth/forgot-password", payload, format="json")
-        self.assertEqual(retry.status_code, 200)
-        self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), count)
-        # The encrypted token remains absent from the database, API response,
-        # and Celery task argument; only the signed URL can be regenerated.
-        self.assertNotIn(invitation_url(record), str(record.token_hash))
+        before = StaffPasswordInvitation.objects.filter(user=employee.user).count()
+        with patch("apps.whatsapp.staff_invites.queue_staff_whatsapp_invitation") as queue:
+            existing = self.public.post("/api/v1/auth/forgot-password", {
+                "mobile": "+919333333333", "workshop": "phone-workshop",
+            }, format="json")
+            absent = self.public.post("/api/v1/auth/forgot-password", {
+                "mobile": "+919444444444", "workshop": "phone-workshop",
+            }, format="json")
+        self.assertEqual(existing.status_code, 200)
+        self.assertEqual(absent.status_code, 200)
+        self.assertEqual(existing.data, absent.data)
+        self.assertEqual(StaffPasswordInvitation.objects.filter(user=employee.user).count(), before)
+        queue.assert_not_called()
+        # Only an authorized administrator may prepare a secure reset capability.
+        admin = self.admin.post(f"/api/v1/employees/{employee.pk}/invite", {}, format="json")
+        self.assertEqual(admin.status_code, 200, admin.data)
+        self.assertEqual(admin.data["whatsappInviteStatus"], "manual")
+        self.assertIn("/set-password/", admin.data["setupLink"])
 
     @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
     def test_missing_whatsapp_consent_never_creates_recovery_link(self):
@@ -376,7 +376,8 @@ class MobileStaffOnboardingTests(TestCase):
         )
 
     @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
-    def test_queued_invite_does_not_disclose_capability_url_in_staff_api(self):
+    def test_configured_whatsapp_stays_manual_and_never_queues_on_create_or_resend(self):
+        from unittest.mock import patch
         from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
         WhatsAppBusinessConnection.objects.create(
             company=self.company, connected=True, notifications_enabled=True,
@@ -388,16 +389,30 @@ class MobileStaffOnboardingTests(TestCase):
             company=self.company, event="staff_onboarding",
             template_name="approved_staff_onboarding", approval_status="APPROVED",
         )
-        reply = self.create_staff(consent=True)
-        self.assertEqual(reply.status_code, 201, reply.data)
-        self.assertEqual(reply.data["whatsappInviteStatus"], "queued")
-        self.assertIsNone(reply.data["setupLink"])
-        employee_id = reply.data["id"]
-        resent = self.admin.post(f"/api/v1/employees/{employee_id}/invite", {}, format="json")
+        with patch("apps.whatsapp.staff_invites.queue_staff_whatsapp_invitation") as queue, patch(
+            "apps.whatsapp.staff_invites.send_staff_invitation.delay"
+        ) as sender, patch("apps.accounts.email.queue_email") as email_sender:
+            reply = self.create_staff(consent=True)
+            self.assertEqual(reply.data["whatsappInviteStatus"], "manual")
+            self.assertIn("/set-password/", reply.data["setupLink"])
+            employee_id = reply.data["id"]
+            resent = self.admin.post(f"/api/v1/employees/{employee_id}/invite", {}, format="json")
         self.assertEqual(resent.status_code, 200, resent.data)
-        self.assertEqual(resent.data["whatsappInviteStatus"], "queued")
-        self.assertIsNone(resent.data["setupLink"])
+        self.assertEqual(resent.data["whatsappInviteStatus"], "manual")
+        self.assertEqual(resent.data["setupLink"], reply.data["setupLink"])
         self.assertEqual(StaffPasswordInvitation.objects.count(), 1)
+        queue.assert_not_called()
+        sender.assert_not_called()
+        email_sender.assert_not_called()
+
+    def test_invitation_url_never_exposed_to_regular_staff_get(self):
+        reply = self.create_staff()
+        employee_id = reply.data["id"]
+        detail = self.admin.get(f"/api/v1/employees/{employee_id}")
+        listing = self.admin.get("/api/v1/employees")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertIsNone(detail.data["setupLink"])
+        self.assertNotIn(reply.data["setupLink"], str(listing.data))
 
     def test_revoking_staff_whatsapp_consent_audits_source_and_cancels_queue(self):
         from apps.employees.models import EmployeeActivity
