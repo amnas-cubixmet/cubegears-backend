@@ -12,11 +12,11 @@ from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.jobs.models import Job
 from apps.inventory.models import (
     Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation, SupplierLinePaymentAllocation,
@@ -186,9 +186,7 @@ def record_supplier_payment(request, data):
     method = str(data.get("method") or "").strip()
     if method not in {"Cash", "Bank Transfer", "UPI"}:
         raise ValidationError({"method": "Select Cash, Bank Transfer, or UPI."})
-    if (method == "Cash" and account.kind != "Cash") or (
-        method != "Cash" and account.kind not in {"Bank", "UPI"}
-    ):
+    if {"Cash": "Cash", "Bank Transfer": "Bank", "UPI": "UPI"}[method] != account.kind:
         raise ValidationError({"accountId": "Payment method does not match the account type."})
     key = str(data.get("idempotencyKey") or "").strip()
     if len(key) < 8 or len(key) > 120:
@@ -410,6 +408,10 @@ class SupplierBillCollection(APIView):
         supplier = supplier_for(request, request.data.get("supplierId"))
         if not supplier.is_active:
             raise ValidationError({"supplierId": "Supplier is inactive."})
+        # Lock the supplier while checking invoice references, including case variants.
+        Supplier.objects.select_for_update().get(pk=supplier.pk)
+        if request.data.get("postNow") is True and not user_has_permission(request.user, "stock.edit"):
+            raise PermissionDenied("Purchase posting requires Inventory Edit permission.")
         invoice_number = str(request.data.get("invoiceNumber") or "").strip()
         if not invoice_number or len(invoice_number) > 100:
             raise ValidationError({"invoiceNumber": "Enter a supplier invoice reference (1–100 characters)."})
