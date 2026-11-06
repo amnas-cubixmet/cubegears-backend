@@ -61,7 +61,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             last = (StockItem.objects.filter(
                 company_id=self.request.user.company_id, sku__startswith="CG-PRT-",
             ).order_by("-sku").values_list("sku", flat=True).first())
-            number = int(last[7:]) + 1 if last and re.fullmatch(r"CG-PRT-\\d{6,}", last) else 1
+            number = int(last[7:]) + 1 if last and re.fullmatch(r"CG-PRT-\d{6,}", last) else 1
             sku = f"CG-PRT-{number:06d}"
             while StockItem.objects.filter(company_id=self.request.user.company_id, sku__iexact=sku).exists():
                 number += 1
