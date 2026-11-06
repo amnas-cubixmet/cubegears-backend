@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 import csv
 from django.db import transaction
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, F, DecimalField, ExpressionWrapper
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -72,7 +72,23 @@ class FinanceDashboard(APIView):
 
     def get(self, request):
         from apps.inventory.models import SupplierBill, SupplierPaymentAllocation
+        from apps.invoices.models import Invoice, InvoiceItem
         company = request.user.company
+        period = request.query_params.get("period", "all")
+        if period not in ("today", "month", "all"):
+            raise ValidationError({"period": "Choose today, month or all."})
+        today = timezone.localdate()
+        period_start = (
+            today if period == "today" else
+            today.replace(day=1) if period == "month" else None
+        )
+        period_label = {
+            "today": "Today", "month": "This Month", "all": "All Time",
+        }[period]
+        # Financial account balances are book values: they must not reset
+        # to zero when a date filter changes.
+        def dated(queryset, date_field):
+            return queryset.filter(**{f"{date_field}__gte": period_start}) if period_start else queryset
         accounts, bank_total, cash_total = accounts_summary(company.id)
 
         total_received = Payment.objects.filter(
@@ -96,7 +112,6 @@ class FinanceDashboard(APIView):
         ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
         total_paid = max(Decimal("0"), -posted_outgoing - reversed_outgoing)
 
-        from apps.invoices.models import Invoice
         outstanding_invoices = Invoice.objects.filter(
             company=company, kind="invoice"
         ).exclude(status__in=["Paid", "Cancelled"]).aggregate(v=Sum("balance"))["v"] or Decimal("0")
@@ -122,6 +137,77 @@ class FinanceDashboard(APIView):
                 expense=expense, company=company, reversed_at__isnull=True,
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
             pending_expenses += max(Decimal("0"), expense.amount - settled)
+
+        # Today's movement reflects real posted cash/bank entries, not
+        # purchases made on supplier credit and not opening balances.
+        today_operating_entries = WorkshopAccountEntry.objects.filter(
+            company=company, posted_at__date=today
+        ).exclude(entry_type__in=[
+            "transfer_in", "transfer_out", "manual_adjustment",
+        ])
+        today_money_in = today_operating_entries.filter(amount__gt=0).aggregate(
+            v=Sum("amount")
+        )["v"] or Decimal("0")
+        today_money_out = today_operating_entries.filter(amount__lt=0).aggregate(
+            v=Sum("amount")
+        )["v"] or Decimal("0")
+        today_supplier_paid = WorkshopAccountEntry.objects.filter(
+            company=company, posted_at__date=today,
+            entry_type__in=["Supplier Payment", "Supplier Advance"], amount__lt=0,
+        ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+
+        # Revenue is based on posted customer INVOICES, not money received
+        # (which can be an earlier invoice settlement). Exclude draft/cancelled
+        # invoices and GST collected on behalf of the government.
+        recognized_invoices = Invoice.objects.filter(
+            company=company, kind="invoice",
+            status__in=["Finalized", "Paid", "Issued", "Overdue", "Partially Paid"],
+        )
+        recognized_invoices = dated(recognized_invoices, "date")
+        revenue_totals = recognized_invoices.aggregate(
+            total=Sum("total"), cgst=Sum("cgst"), sgst=Sum("sgst"), igst=Sum("igst"),
+        )
+        gross_sales = revenue_totals["total"] or Decimal("0")
+        sales_gst = sum(
+            (revenue_totals[t] or Decimal("0") for t in ("cgst", "sgst", "igst")),
+            Decimal("0"),
+        )
+        revenue_ex_gst = gross_sales - sales_gst
+
+        # Operational expenses count once on the expense date, including
+        # unpaid bills. Settlements do not create a second expense.
+        recognized_expenses = Expense.objects.filter(company=company).exclude(
+            status__in=["Draft", "Rejected", "Cancelled"]
+        )
+        recognized_expenses = dated(recognized_expenses, "date")
+        expense_total = recognized_expenses.aggregate(v=Sum("amount"))["v"] or Decimal("0")
+
+        # InvoiceItem purchase_price is a historical cost snapshot. This is
+        # the known cost of invoiced parts, NOT the total amount purchased
+        # from suppliers (unsold inventory is still an asset).
+        known_cost_expression = ExpressionWrapper(
+            F("quantity") * F("purchase_price"),
+            output_field=DecimalField(max_digits=22, decimal_places=2),
+        )
+        known_cost_of_sales = InvoiceItem.objects.filter(
+            invoice__in=recognized_invoices,
+            purchase_price__gt=0,
+        ).aggregate(v=Sum(known_cost_expression))["v"] or Decimal("0")
+
+        estimated_profit = revenue_ex_gst - expense_total - known_cost_of_sales
+        expenses_today = Expense.objects.filter(
+            company=company, date=today
+        ).exclude(status__in=["Draft", "Rejected", "Cancelled"]).aggregate(
+            v=Sum("amount")
+        )["v"] or Decimal("0")
+        # This is not certified accounting profit: it does not assume
+        # unrecorded supplier inventory cost or wages are zero.
+        profit_note = (
+            "Estimated operating result = invoiced sales excluding GST "
+            "minus recorded operating expenses and known invoiced item costs. "
+            "Unrecorded payroll, missing part costs, other liabilities and "
+            "adjustments can change actual net profit."
+        )
 
         recent_entries = WorkshopAccountEntry.objects.filter(
             company=company
@@ -157,6 +243,21 @@ class FinanceDashboard(APIView):
             "pendingExpenses": str(pending_expenses.quantize(CENT)),
             "accounts": accounts,
             "recentTransactions": recent_transactions,
+            "period": period,
+            "periodLabel": period_label,
+            "asOfDate": today.isoformat(),
+            "todayReceived": str(today_money_in.quantize(CENT)),
+            "todayPaid": str(abs(today_money_out).quantize(CENT)),
+            "todaySupplierPaid": str(abs(today_supplier_paid).quantize(CENT)),
+            "todayExpensesRecorded": str(expenses_today.quantize(CENT)),
+            "netSalesRevenue": str(revenue_ex_gst.quantize(CENT)),
+            "salesTaxExcluded": str(sales_gst.quantize(CENT)),
+            "recordedExpenses": str(expense_total.quantize(CENT)),
+            "knownCostOfSales": str(known_cost_of_sales.quantize(CENT)),
+            "estimatedProfit": str(estimated_profit.quantize(CENT)),
+            "profitNote": profit_note,
+            "cashFlowNote": "Today money in/out follows posted account ledger entries (excluding transfers and opening/adjustment entries).",
+            "accountBalanceNote": "Internal bookkeeping balances, not live bank balances.",
         })
 
 
