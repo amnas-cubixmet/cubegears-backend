@@ -31,6 +31,7 @@ jobs:
             apps.roles.tests_granular_permissions \
             apps.payments.tests_reversal \
             apps.finance.tests \
+            apps.finance.tests_payment_overview \
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
             apps.customers.tests_branch_assignment \
