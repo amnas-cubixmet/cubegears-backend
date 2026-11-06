@@ -8,7 +8,7 @@ import calendar
 import re
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 
 from rest_framework.exceptions import ValidationError
 
@@ -120,7 +120,13 @@ def inward_rows(company, period=None):
     )
     for bill in bills:
         items = bill.items if isinstance(bill.items, list) else []
-        components = purchase_bill_components(items, bill.tax)
+        try:
+            components = purchase_bill_components(items, bill.tax)
+        except (ValueError, TypeError, InvalidOperation, KeyError):
+            components = {
+                "taxComponentsVerified": False, "unallocatedLegacyTax": money(bill.tax),
+                "cgst": "0.00", "sgst": "0.00", "utgst": "0.00", "igst": "0.00",
+            }
         verified = components["taxComponentsVerified"] and abs(
             amount(components["unallocatedLegacyTax"])) <= CENT
         if not verified:
@@ -158,7 +164,8 @@ def hsn_summary(invoices):
             if gross > 0 and obj.discount:
                 taxable = max(ZERO, base - (obj.discount * base / gross))
             key = (code, line.description, line.unit, str(line.tax_rate),
-                   "B2B" if (obj.customer_snapshot or {}).get("gstin") else ("Review Required" if obj.customer.gstin else "B2C"))
+                   "B2B" if isinstance(obj.customer_snapshot, dict) and obj.customer_snapshot.get("gstin")
+                   else ("Review Required" if obj.customer.gstin else "B2C"))
             bucket = buckets[key]
             bucket["quantity"] += line.quantity
             bucket["taxable"] += taxable
