@@ -90,8 +90,8 @@ def bill_info(bill):
     for index, row in enumerate(bill.items):
         applied = item_paid.get(index, Decimal("0"))
         items.append({
-            **row, "lineIndex": index, "paidAllocation": str(applied),
-            "lineOutstanding": str(max(Decimal("0"), Decimal(row["total"]) - applied)),
+            **row, "lineIndex": index, "paidAllocation": str(applied.quantize(CENT)),
+            "lineOutstanding": str(max(Decimal("0"), Decimal(row["total"]) - applied).quantize(CENT)),
         })
     return {
         "id": str(bill.pk), "supplierId": str(bill.supplier_id),
