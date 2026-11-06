@@ -231,3 +231,17 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(ExpenseSettlement.objects.count(), 1)
         self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
         self.assertEqual(account_balance(self.cash), Decimal("850.00"))
+
+    def test_unlinked_legacy_receipt_disclosed_without_creating_bank_money(self):
+        legacy = Payment.objects.create(
+            company=self.company, date="2026-11-06", direction="IN",
+            amount=Decimal("100.00"), method="Cash", status="Completed",
+            reference="OLD-CASH-RECEIPT", recorded_by=self.owner,
+        )
+        response = self.client.get("/api/v1/finance/payment-activity")
+        self.assertEqual(response.status_code, 200, getattr(response, "data", None))
+        row = next(v for v in response.data["results"] if v["sourceId"] == str(legacy.pk))
+        self.assertFalse(row["ledgerPosted"])
+        self.assertEqual(row["account"], "")
+        self.assertEqual(account_balance(self.cash), Decimal("1000.00"))
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
