@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.jobs.models import Job
+from .purchase_gst import purchase_gst_context, purchase_line_components, purchase_bill_components
 from apps.inventory.models import (
     Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation, SupplierLinePaymentAllocation,
     StockItem, StockMovement, WorkshopFinancialAccount, WorkshopAccountEntry,
@@ -94,6 +95,7 @@ def bill_info(bill):
             "lineOutstanding": str(max(Decimal("0"), Decimal(row["total"]) - applied).quantize(CENT)),
         })
     return {
+        **purchase_bill_components(bill.items, bill.tax),
         "id": str(bill.pk), "supplierId": str(bill.supplier_id),
         "invoiceNumber": bill.invoice_number, "invoiceDate": bill.invoice_date.isoformat(),
         "dueDate": bill.due_date.isoformat() if bill.due_date else None,
@@ -133,9 +135,10 @@ def supplier_summary(request, supplier):
     }
 
 
-def prepare_items(request, rows, receive_into_stock):
+def prepare_items(request, rows, receive_into_stock, tax_context=None):
     if not isinstance(rows, list) or not rows or len(rows) > 100:
         raise ValidationError({"items": "Provide 1–100 purchase lines."})
+    context = tax_context or {"taxMode": "legacy", "placeOfSupply": "", "supplierStateCode": ""}
     normalized = []
     subtotal = Decimal("0")
     tax_total = Decimal("0")
@@ -159,7 +162,8 @@ def prepare_items(request, rows, receive_into_stock):
         if not description or len(description) > 180:
             raise ValidationError({"description": "Enter a valid product name (1–180 characters)."})
         line_subtotal = (count * cost).quantize(CENT, rounding=ROUND_HALF_UP)
-        line_tax = (line_subtotal * gst / Decimal("100")).quantize(CENT, rounding=ROUND_HALF_UP)
+        components = purchase_line_components(line_subtotal, gst, context, str(row.get("gstTreatment") or ""))
+        line_tax = components["tax"]
         subtotal += line_subtotal
         tax_total += line_tax
         normalized.append({
@@ -167,6 +171,10 @@ def prepare_items(request, rows, receive_into_stock):
             "description": description, "partNumber": item.part_number if item else "",
             "sku": item.sku if item else "", "quantity": str(count),
             "purchaseRate": str(cost), "gstRate": str(gst),
+            "taxMode": context["taxMode"], "placeOfSupply": context["placeOfSupply"],
+            "supplierStateCode": context["supplierStateCode"],
+            "gstTreatment": components["gstTreatment"],
+            **{key: str(components[key].quantize(CENT)) for key in ("cgst", "sgst", "utgst", "igst")},
             "subtotal": str(line_subtotal), "tax": str(line_tax),
             "total": str(line_subtotal + line_tax),
         })
@@ -424,7 +432,8 @@ class SupplierBillCollection(APIView):
         if request.data.get("relatedJobId"):
             job = get_object_or_404(Job, pk=request.data["relatedJobId"], company_id=request.user.company_id)
         receive = request.data.get("receiveIntoStock") is True
-        items, subtotal, tax = prepare_items(request, request.data.get("items"), receive)
+        tax_context = purchase_gst_context(supplier, request.data.get("placeOfSupply"))
+        items, subtotal, tax = prepare_items(request, request.data.get("items"), receive, tax_context)
         if SupplierBill.objects.filter(
             company_id=request.user.company_id, supplier=supplier,
             invoice_number__iexact=invoice_number,
