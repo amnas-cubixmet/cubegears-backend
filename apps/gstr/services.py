@@ -71,9 +71,13 @@ def outward_rows(company, period):
     rows, issues = [], []
     for obj in invoices:
         snapshot = obj.customer_snapshot if isinstance(obj.customer_snapshot, dict) else {}
-        gstin = str(snapshot.get("gstin") or snapshot.get("gstIn") or obj.customer.gstin or "").strip().upper()
+        gstin = str(snapshot.get("gstin") or snapshot.get("gstIn") or "").strip().upper()
         pos = str(snapshot.get("placeOfSupply") or snapshot.get("stateCode") or snapshot.get("state") or "").strip()
         valid_gstin = not gstin or bool(GSTIN_RE.fullmatch(gstin))
+        if not gstin and obj.customer.gstin:
+            issues.append({"type": "historical_gstin_unverified", "record": str(obj.id),
+                           "number": obj.number,
+                           "message": "Customer GSTIN is missing from the saved invoice snapshot. Verify B2B/B2C classification."})
         if not valid_gstin:
             issues.append({"type": "invalid_customer_gstin", "record": str(obj.id),
                            "number": obj.number, "message": "Verify customer GSTIN on source invoice."})
@@ -90,7 +94,7 @@ def outward_rows(company, period):
             "id": str(obj.id), "number": obj.number, "date": obj.date.isoformat(),
             "customer": str(snapshot.get("name") or obj.customer.name),
             "customerGSTIN": gstin, "placeOfSupply": pos,
-            "classification": "B2B" if gstin else "B2C",
+            "classification": "B2B" if gstin else ("Review Required" if obj.customer.gstin else "B2C"),
             "taxable": money(obj.taxable), "cgst": money(obj.cgst),
             "sgst": money(obj.sgst), "igst": money(obj.igst),
             "total": money(obj.total), "taxMode": obj.tax_mode,
@@ -108,9 +112,13 @@ def _totals(rows):
     return {k: money(v) for k, v in result.items()}
 
 
-def inward_rows(company, period):
+def inward_rows(company, period=None):
     rows, issues = [], []
-    for bill in supplier_queryset(company, period):
+    bills = supplier_queryset(company, period) if period else (
+        SupplierBill.objects.filter(company=company, status="Posted")
+        .select_related("supplier").order_by("-invoice_date", "-created_at")
+    )
+    for bill in bills:
         items = bill.items if isinstance(bill.items, list) else []
         components = purchase_bill_components(items, bill.tax)
         verified = components["taxComponentsVerified"] and abs(
@@ -150,7 +158,7 @@ def hsn_summary(invoices):
             if gross > 0 and obj.discount:
                 taxable = max(ZERO, base - (obj.discount * base / gross))
             key = (code, line.description, line.unit, str(line.tax_rate),
-                   "B2B" if (obj.customer_snapshot or {}).get("gstin") or obj.customer.gstin else "B2C")
+                   "B2B" if (obj.customer_snapshot or {}).get("gstin") else ("Review Required" if obj.customer.gstin else "B2C"))
             bucket = buckets[key]
             bucket["quantity"] += line.quantity
             bucket["taxable"] += taxable
