@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 
@@ -9,6 +10,8 @@ from apps.suppliers.serializers import SupplierSerializer as SupplierSerializer
 
 
 class StockItemSerializer(serializers.ModelSerializer):
+    sku=serializers.CharField(required=False,allow_blank=True,trim_whitespace=True,max_length=80)
+    partNumber=serializers.CharField(source="part_number",required=False,allow_blank=True,max_length=100)
     partName=serializers.CharField(source="name",required=False)
     categoryName=serializers.CharField(source="category.name",read_only=True)
     supplierName=serializers.CharField(source="supplier.name",read_only=True)
@@ -29,7 +32,7 @@ class StockItemSerializer(serializers.ModelSerializer):
     def validate_sku(self, value):
         value = value.strip()
         if not value:
-            raise serializers.ValidationError("SKU / Part Number is required.")
+            return value  # An empty SKU is generated safely during creation.
         request = self.context.get("request")
         company_id = getattr(getattr(request, "user", None), "company_id", None)
         if company_id:
@@ -37,7 +40,13 @@ class StockItemSerializer(serializers.ModelSerializer):
             if self.instance is not None:
                 qs = qs.exclude(pk=self.instance.pk)
             if qs.exists():
-                raise serializers.ValidationError("This SKU / Part Number already exists.")
+                raise serializers.ValidationError("This SKU already exists in your company.")
+        return value
+
+    def validate_partNumber(self, value):
+        value = value.strip()
+        if value and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/+#() -]*", value):
+            raise serializers.ValidationError("Use a valid manufacturer part reference.")
         return value
 
     def validate_onHand(self, value):
@@ -47,7 +56,7 @@ class StockItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model=StockItem
-        exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand")
+        exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand","part_number")
 
 class StockMovementSerializer(serializers.ModelSerializer):
     unitSellingPrice=serializers.DecimalField(source="unit_selling_price",max_digits=12,decimal_places=2,read_only=True)
