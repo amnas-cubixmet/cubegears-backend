@@ -71,7 +71,7 @@ class PaymentsHomeOverviewTests(TestCase):
 
     def add_entry(self, account, kind, amount, reference):
         return WorkshopAccountEntry.objects.create(
-            company=self.company, account=account, entry_type=kind,
+            company=account.company, account=account, entry_type=kind,
             amount=amount, source_key=kind + "_" + reference.replace(" ", "_"),
             posted_at=timezone.now(), reference=reference, created_by=self.owner,
         )
