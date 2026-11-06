@@ -182,7 +182,11 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"role": "A valid non-admin staff login role is required."})
         record = issue_invitation(user, issuer=self.request.user)
         delivery = queue_staff_whatsapp_invitation(record, employee)
-        employee._setup_link = invitation_url(record)
+        # Only reveal a bearer setup URL to an authorized admin when the
+        # automatic WhatsApp invitation cannot be sent. Never leak it in a
+        # successful queue response or through normal staff detail/list reads.
+        if delivery in {"manual", "failed"}:
+            employee._setup_link = invitation_url(record)
         employee._whatsapp_invite_status = delivery
         _record_activity(
             employee, "Staff Password Invitation Created",
@@ -286,6 +290,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 raise PermissionDenied("Only a company admin can change a login role.")
             if requested_name.strip().upper().replace(" ", "_") in {"SUPER_ADMIN", "PLATFORM_ADMIN"}:
                 raise PermissionDenied("Protected admin roles cannot be assigned through staff editing.")
+        old_whatsapp_consent = bool(instance.whatsapp_consent)
         before={
             "role":instance.role_name,
             "team":instance.team.name if instance.team else "",
@@ -303,6 +308,29 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             extra["shift_label"]=_shift_label(shift)
 
         obj=serializer.save(**extra)
+
+        # Consent is audited independently of employment fields. Keep the
+        # original consent source even after opt-out; never place setup links
+        # or tokens in staff activity metadata.
+        previous_consent = old_whatsapp_consent
+        current_consent = bool(obj.whatsapp_consent)
+        if current_consent != previous_consent:
+            _record_activity(
+                obj,
+                "Staff WhatsApp Consent Granted" if current_consent else "Staff WhatsApp Consent Revoked",
+                "WhatsApp invitation consent updated by authorized staff manager.",
+                self.request.user,
+                {"source": obj.whatsapp_consent_source if current_consent else "Staff profile update"},
+            )
+            if not current_consent and obj.user_id:
+                from apps.accounts.models import StaffPasswordInvitation
+                StaffPasswordInvitation.objects.filter(
+                    user=obj.user, used_at__isnull=True, invalidated_at__isnull=True,
+                    delivery_status="queued",
+                ).update(
+                    delivery_status="manual",
+                    failure_reason="WhatsApp consent was revoked before the invitation was sent.",
+                )
 
         # Staff employment deactivation is also a login revocation. Enabling
         # employment later must not silently re-enable a disabled login.
@@ -458,14 +486,14 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             ).order_by("-created_at").first()
             if recent:
                 invite = recent
-                url = invitation_url(recent)
                 delivery = recent.delivery_status
+                url = invitation_url(recent) if delivery in {"manual", "failed"} else None
             else:
                 invite = self._issue_staff_invitation(obj, user)
-                url = obj._setup_link
                 delivery = obj._whatsapp_invite_status
+                url = getattr(obj, "_setup_link", None)
         return response.Response({
-            "message": "New secure 24-hour password link issued.",
+            "message": "Staff invitation status updated.",
             "setupLink": url, "expiresAt": invite.expires_at,
             "whatsappInviteStatus": delivery,
             "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
