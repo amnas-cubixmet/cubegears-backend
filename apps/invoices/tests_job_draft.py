@@ -154,7 +154,7 @@ class JobInvoiceDraftTests(TestCase):
         self.job.status = "In Progress"
         self.job.workflow_progress["completed"] = ["overview", "inspection", "estimate"]
         self.job.save(update_fields=["status", "workflow_progress"])
-        res = self.client.post("/api/v1/billing/documents/", self._invoice_payload(), format="json")
+        res = self.client.post("/api/v1/billing/documents", self._invoice_payload(), format="json")
         self.assertEqual(res.status_code, 400, getattr(res, "data", None))
         self.assertEqual(Invoice.objects.count(), 0)
 
@@ -164,14 +164,14 @@ class JobInvoiceDraftTests(TestCase):
             customer=self.job.customer, vehicle=self.job.vehicle, job=self.job,
             kind="invoice", date=date.today(), number="INV-ALREADY", status="Draft",
         )
-        res = self.client.post("/api/v1/billing/documents/", self._invoice_payload(), format="json")
+        res = self.client.post("/api/v1/billing/documents", self._invoice_payload(), format="json")
         self.assertEqual(res.status_code, 400, getattr(res, "data", None))
         self.assertEqual(Invoice.objects.count(), 1)
 
     def test_mismatched_source_and_job_number_are_rejected(self):
         payload = self._invoice_payload()
         payload["jobCardNo"] = "ANOTHER-JOB"
-        res = self.client.post("/api/v1/billing/documents/", payload, format="json")
+        res = self.client.post("/api/v1/billing/documents", payload, format="json")
         self.assertEqual(res.status_code, 400, getattr(res, "data", None))
         self.assertEqual(Invoice.objects.count(), 0)
 
@@ -182,7 +182,7 @@ class JobInvoiceDraftTests(TestCase):
             kind="estimate", date=date.today(), number="EST-JOB", status="Draft",
         )
         res = self.client.post(
-            f"/api/v1/billing/documents/{estimate.pk}/convert-to-invoice/", {}, format="json",
+            f"/api/v1/billing/documents/{estimate.pk}/convert-to-invoice", {}, format="json",
         )
         self.assertEqual(res.status_code, 400, getattr(res, "data", None))
         self.assertFalse(Invoice.objects.filter(job=self.job, kind="invoice").exists())
