@@ -56,6 +56,7 @@ jobs:
             apps.credits.tests_storage_interval_monitoring \
             apps.invoices.tests_template_appearance \
             apps.invoices.tests_calculations \
+            apps.gstr.tests \
             apps.invoices.tests_job_draft \
             apps.inventory.tests_supplier_credit \
             --noinput
