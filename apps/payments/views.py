@@ -44,6 +44,13 @@ class PaymentViewSet(CompanyScopedModelViewSet):
         direction = serializer.validated_data.get("direction", "IN")
         if direction not in ("IN", "OUT"):
             raise ValidationError({"direction": "Choose IN or OUT."})
+        if direction == "OUT":
+            category = str(serializer.validated_data.get("category") or "").strip().casefold()
+            restricted = ("supplier", "spare part", "stock purchase", "inventory purchase", "salary", "wage", "overtime")
+            if any(label in category for label in restricted):
+                raise ValidationError({
+                    "category": "Use the linked Supplier Payments or Payroll workflow so outstanding liabilities and bank ledger stay synchronized."
+                })
         if invoice and direction != "IN":
             raise ValidationError({"direction": "Invoice collections must be incoming payments."})
         account = serializer.validated_data.get("account")
