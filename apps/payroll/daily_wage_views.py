@@ -63,6 +63,7 @@ def pack_payment(p):
         "amount": str(p.amount),
         "date": str(p.payment_date), "method": p.method,
         "reference": p.reference,
+        "accountId": str(p.account_id) if p.account_id else None,
         "reversed": hasattr(p, "reversal"),
     }
 
@@ -394,6 +395,7 @@ class DailyWagePayView(WageAPIView):
             employee, request.user, request.data.get("amount"),
             request.data.get("method"), request.data.get("reference"),
             request.data.get("requestKey"), request.data.get("paymentDate"),
+            request.data.get("account"),
         )
         return Response({
             "payment": pack_payment(payment),
@@ -423,6 +425,20 @@ class DailyWageReversalView(WageAPIView):
             }
         )
         if created:
+            # Only undo a wage debit if this payment was actually posted.
+            from apps.inventory.models import WorkshopAccountEntry
+            original = WorkshopAccountEntry.objects.select_related("account").filter(
+                company=employee.company, source_key=f"wage_payment_{payment.pk}",
+            ).first()
+            if original:
+                WorkshopAccountEntry.objects.create(
+                    company=employee.company, branch=employee.branch,
+                    account=original.account, amount=-original.amount,
+                    entry_type="wage_payment_reversal",
+                    source_key=f"wage_payment_reverse_{payment.pk}",
+                    reference=reason[:120], posted_at=timezone.now(),
+                    created_by=request.user,
+                )
             audit(employee, request.user, "PAYMENT_REVERSED", work_date=payment.payment_date,
                   original={"payment": str(payment.pk), "amount": str(payment.amount),
                             "balance": str(balance_before)},

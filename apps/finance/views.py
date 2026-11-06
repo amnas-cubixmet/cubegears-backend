@@ -19,6 +19,25 @@ from apps.expenses.models import Expense
 CENT = Decimal("0.01")
 
 
+def mask_account_number(value):
+    """Never transmit full bank account numbers in financial API responses."""
+    cleaned = "".join(ch for ch in str(value or "") if ch.isalnum())
+    return ("••••" + cleaned[-4:]) if len(cleaned) > 4 else ("••••" if cleaned else "")
+
+
+def valid_money(value, field="amount", allow_zero=False):
+    try:
+        amount = Decimal(str(value))
+        if (not amount.is_finite() or amount < 0 or
+                (amount == 0 and not allow_zero) or
+                amount.as_tuple().exponent < -2 or amount >= Decimal("1000000000000")):
+            raise ValueError()
+        return amount.quantize(CENT)
+    except (ValueError, TypeError, ArithmeticError):
+        raise ValidationError({field: "Enter a valid amount (up to two decimal places)."})
+
+
+
 def account_balance(account):
     total = WorkshopAccountEntry.objects.filter(
         company_id=account.company_id, account=account
@@ -35,7 +54,7 @@ def accounts_summary(company_id):
         bal = account_balance(acc)
         result.append({
             "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-            "bankName": acc.bank_name, "accountNumber": acc.account_number,
+            "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
             "isActive": acc.is_active,
@@ -78,9 +97,18 @@ class FinanceDashboard(APIView):
             ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
             supplier_outstanding += max(Decimal("0"), bill.total - paid)
 
-        pending_expenses = Expense.objects.filter(
-            company=company, status__in=["Pending", "Unpaid", "pending", "unpaid"]
-        ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        # Partial settlements reduce outstanding expense liabilities without
+        # losing the unpaid remainder from the dashboard.
+        from apps.expenses.models import ExpenseSettlement
+        pending_expenses = Decimal("0")
+        candidates = Expense.objects.filter(company=company).exclude(
+            status__iexact="paid"
+        ).exclude(status__in=["Rejected", "rejected", "Cancelled", "cancelled", "Draft", "draft"])
+        for expense in candidates:
+            settled = ExpenseSettlement.objects.filter(
+                expense=expense, company=company, reversed_at__isnull=True,
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+            pending_expenses += max(Decimal("0"), expense.amount - settled)
 
         recent_entries = WorkshopAccountEntry.objects.filter(
             company=company
@@ -127,7 +155,7 @@ class FinanceAccountCollection(APIView):
             bal = account_balance(acc)
             result.append({
                 "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-                "bankName": acc.bank_name, "accountNumber": acc.account_number,
+                "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
                 "ifsc": acc.ifsc, "branchName": acc.branch_name,
                 "openingBalance": str(acc.opening_balance),
                 "openingDate": acc.opening_date.isoformat() if acc.opening_date else None,
@@ -143,12 +171,9 @@ class FinanceAccountCollection(APIView):
         if not name:
             raise ValidationError({"name": "Account name is required."})
         kind = d.get("kind", "Cash")
-        if kind not in ("Cash", "Bank", "UPI", "Wallet"):
-            raise ValidationError({"kind": "Choose Cash, Bank, UPI or Wallet."})
-        try:
-            opening = Decimal(str(d.get("openingBalance", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"openingBalance": "Enter a valid amount."})
+        if kind not in ("Cash", "Bank", "UPI", "Wallet", "Other"):
+            raise ValidationError({"kind": "Choose Cash, Bank, UPI, Wallet or Other."})
+        opening = valid_money(d.get("openingBalance", "0"), "openingBalance", allow_zero=True)
         if WorkshopFinancialAccount.objects.filter(company=request.user.company, name=name).exists():
             raise ValidationError({"name": "An account with this name already exists."})
         acc = WorkshopFinancialAccount.objects.create(
@@ -177,12 +202,14 @@ class FinanceAccountDetail(APIView):
     def get(self, request, pk):
         acc = self._get_account(request, pk)
         bal = account_balance(acc)
-        entries = WorkshopAccountEntry.objects.filter(
+        entries = list(WorkshopAccountEntry.objects.filter(
             company=request.user.company, account=acc
-        ).select_related("created_by").order_by("-posted_at")[:200]
+        ).select_related("created_by").order_by("-posted_at", "-created_at", "-pk")[:200])
         ledger = []
-        running = acc.opening_balance
-        for entry in reversed(list(entries)):
+        # Start from the balance just before this newest-page slice; opening
+        # balance alone is incorrect once an account has more than 200 entries.
+        running = bal - sum((item.amount for item in entries), Decimal("0"))
+        for entry in reversed(entries):
             running += entry.amount
             ledger.append({
                 "id": str(entry.pk), "date": entry.posted_at.isoformat(),
@@ -196,7 +223,7 @@ class FinanceAccountDetail(APIView):
             })
         return Response({
             "id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-            "bankName": acc.bank_name, "accountNumber": acc.account_number,
+            "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
             "isActive": acc.is_active, "description": acc.description,
@@ -224,11 +251,20 @@ class FinanceAccountDetail(APIView):
                            "ifsc": "ifsc", "branchName": "branch_name",
                            "description": "description"}[field]
             if field in d:
-                setattr(acc, model_field, str(d[field] or ""))
+                value = str(d[field] or "")
+                # The UI receives masked numbers. Saving unchanged metadata
+                # must never overwrite the stored number with its mask.
+                if field == "accountNumber" and "•" in value:
+                    continue
+                setattr(acc, model_field, value)
         if "openingDate" in d:
+            if WorkshopAccountEntry.objects.filter(company=request.user.company, account=acc).exists():
+                raise ValidationError({"openingDate": "Posted account dates are immutable; use an audited adjustment."})
             acc.opening_date = d["openingDate"] or None
         if "isActive" in d:
-            acc.is_active = bool(d["isActive"])
+            if not isinstance(d["isActive"], bool):
+                raise ValidationError({"isActive": "Expected true or false."})
+            acc.is_active = d["isActive"]
         acc.save()
         return Response({"id": str(acc.pk), "name": acc.name, "isActive": acc.is_active})
 
@@ -246,14 +282,15 @@ class FinanceAdjustment(APIView):
             pk=pk, company=request.user.company
         )
         d = request.data
-        try:
-            amount = Decimal(str(d.get("amount", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"amount": "Enter a valid decimal amount."})
+        amount = valid_money(d.get("amount"), "amount")
         direction = d.get("direction", "credit")
         if direction not in ("credit", "debit"):
             raise ValidationError({"direction": "Must be 'credit' or 'debit'."})
         signed = amount if direction == "credit" else -amount
+        if not acc.is_active:
+            raise ValidationError({"account": "Cannot adjust an inactive account."})
+        if signed < 0 and account_balance(acc) < amount:
+            raise ValidationError({"amount": "Insufficient funds for this adjustment."})
         reason = str(d.get("reason", "")).strip()
         if not reason:
             raise ValidationError({"reason": "An audit reason is required for balance adjustments."})
@@ -295,10 +332,7 @@ class FinanceTransferCollection(APIView):
     def post(self, request):
         from django.shortcuts import get_object_or_404
         d = request.data
-        try:
-            amount = Decimal(str(d.get("amount", "0"))).quantize(CENT)
-        except Exception:
-            raise ValidationError({"amount": "Enter a valid decimal amount."})
+        amount = valid_money(d.get("amount"), "amount")
         if amount <= 0:
             raise ValidationError({"amount": "Transfer amount must be positive."})
         from_id = d.get("fromAccountId")
@@ -320,7 +354,9 @@ class FinanceTransferCollection(APIView):
         if from_balance < amount:
             raise ValidationError({"amount": f"Insufficient balance in {from_acc.name}. Available: {from_balance}"})
 
-        idempotency_key = str(d.get("idempotencyKey") or uuid4().hex)
+        idempotency_key = str(d.get("idempotencyKey") or uuid4().hex).strip()
+        if not idempotency_key or len(idempotency_key) > 160:
+            raise ValidationError({"idempotencyKey": "Invalid transfer request key."})
         if FinanceTransfer.objects.filter(company=request.user.company, idempotency_key=idempotency_key).exists():
             raise ValidationError({"idempotencyKey": "Duplicate transfer request."})
 
@@ -396,6 +432,8 @@ class FinanceLedger(APIView):
         # CSV export
         if request.query_params.get("export") == "csv":
             return self._csv_export(qs)
+        if request.query_params.get("export") == "pdf":
+            return self._pdf_export(qs)
 
         # Pagination
         try:
@@ -433,7 +471,61 @@ class FinanceLedger(APIView):
             "results": result,
         })
 
+    def _pdf_export(self, qs):
+        """Authenticated, capped account ledger PDF export."""
+        from io import BytesIO
+        from xml.sax.saxutils import escape
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle
+
+        buf = BytesIO()
+        doc = SimpleDocTemplate(
+            buf, pagesize=landscape(A4), leftMargin=24,
+            rightMargin=24, topMargin=24, bottomMargin=24,
+        )
+        normal = getSampleStyleSheet()["BodyText"]
+        normal.fontSize = 7
+        normal.leading = 9
+        headers = ["Date", "Account", "Category", "Credit", "Debit", "Reference", "Posted by"]
+        rows = [headers]
+        for entry in qs.select_related("account", "created_by").order_by("-posted_at", "-pk")[:1000]:
+            def cell(value):
+                return Paragraph(escape(str(value or "")[:110]), normal)
+            rows.append([
+                cell(entry.posted_at.date().isoformat()),
+                cell(entry.account.name),
+                cell(entry.entry_type),
+                cell(str(entry.amount) if entry.amount > 0 else "0.00"),
+                cell(str(-entry.amount) if entry.amount < 0 else "0.00"),
+                cell(entry.reference),
+                cell(entry.created_by.name if entry.created_by else ""),
+            ])
+        table = Table(rows, repeatRows=1, colWidths=[65, 110, 95, 64, 64, 230, 105])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e7edf5")),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d2dae4")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        doc.build([
+            Paragraph("CubeGears - Internal Account Transaction Ledger", getSampleStyleSheet()["Heading2"]),
+            Paragraph("Bookkeeping balances only; not live bank statements. Up to 1,000 matching entries.", normal),
+            table,
+        ])
+        result = HttpResponse(buf.getvalue(), content_type="application/pdf")
+        result["Content-Disposition"] = 'attachment; filename="transactions.pdf"'
+        return result
+
     def _csv_export(self, qs):
+        # Never let user supplied account/ref text execute as spreadsheet formulas.
+        def csv_safe(value):
+            text = str(value or "")
+            return "'" + text if text.startswith(("=", "+", "-", "@", "\t", "\r", "\n")) else text
+
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="transactions.csv"'
         writer = csv.writer(response)
@@ -442,9 +534,9 @@ class FinanceLedger(APIView):
             credit = str(entry.amount) if entry.amount > 0 else "0.00"
             debit = str(abs(entry.amount)) if entry.amount < 0 else "0.00"
             writer.writerow([
-                entry.posted_at.date().isoformat(), entry.account.name,
-                entry.entry_type, credit, debit, entry.reference,
-                entry.source_key, entry.created_by.name if entry.created_by else "",
+                entry.posted_at.date().isoformat(), csv_safe(entry.account.name),
+                csv_safe(entry.entry_type), credit, debit, csv_safe(entry.reference),
+                csv_safe(entry.source_key), csv_safe(entry.created_by.name if entry.created_by else ""),
             ])
         return response
 
@@ -463,8 +555,11 @@ class FinanceReports(APIView):
         if date_to:
             qs = qs.filter(posted_at__date__lte=date_to)
 
-        total_credits = qs.filter(amount__gt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
-        total_debits = qs.filter(amount__lt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        # Separate book transfers and equity adjustments from operating flows.
+        operating = qs.exclude(entry_type__in=["transfer_in", "transfer_out", "manual_adjustment"])
+        total_credits = operating.filter(amount__gt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        total_debits = operating.filter(amount__lt=0).aggregate(v=Sum("amount"))["v"] or Decimal("0")
+        transfer_volume = qs.filter(entry_type="transfer_out").aggregate(v=Sum("amount"))["v"] or Decimal("0")
 
         by_type = {}
         for row in qs.values("entry_type").annotate(total=Sum("amount")):
@@ -476,6 +571,7 @@ class FinanceReports(APIView):
             "totalCredits": str(total_credits.quantize(CENT)),
             "totalDebits": str(abs(total_debits).quantize(CENT)),
             "netFlow": str((total_credits + total_debits).quantize(CENT)),
+            "internalTransfers": str(abs(transfer_volume).quantize(CENT)),
             "bankBalance": str(bank_total.quantize(CENT)),
             "cashBalance": str(cash_total.quantize(CENT)),
             "byType": by_type,

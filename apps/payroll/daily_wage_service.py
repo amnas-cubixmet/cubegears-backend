@@ -285,7 +285,7 @@ def allocate_payment(payment, employee):
 
 
 @transaction.atomic
-def pay_balance(employee, user, value, method, reference, key, payment_date):
+def pay_balance(employee, user, value, method, reference, key, payment_date, account_id=None):
     Employee.objects.select_for_update().get(pk=employee.pk)
     key = request_key(key)
     existing = WagePayment.objects.filter(employee=employee, request_key=key).first()
@@ -303,12 +303,38 @@ def pay_balance(employee, user, value, method, reference, key, payment_date):
     payment_date = parsed_date(payment_date, "paymentDate", default=timezone.localdate())
     if payment_date > timezone.localdate():
         raise ValidationError({"paymentDate": "Future payment dates are not allowed."})
+    from apps.inventory.models import WorkshopFinancialAccount, WorkshopAccountEntry
+    selected_account = None
+    if account_id:
+        selected_account = WorkshopFinancialAccount.objects.select_for_update().filter(
+            pk=account_id, company=employee.company, is_active=True
+        ).first()
+        if not selected_account:
+            raise ValidationError({"account": "Select an active account owned by your company."})
+        from apps.finance.views import account_balance
+        if account_balance(selected_account) < paid_amount:
+            raise ValidationError({"amount": "Insufficient funds in the selected account."})
+    elif WorkshopFinancialAccount.objects.filter(
+        company=employee.company, is_active=True
+    ).exists():
+        raise ValidationError({"account": "Select a bank or cash account for this wage payment."})
+
     payment = WagePayment.objects.create(
         company=employee.company, branch=employee.branch, employee=employee,
         amount=paid_amount, method=method, reference=str(reference or "")[:150],
         request_key=key, payment_date=payment_date, created_by=user,
+        account=selected_account,
     )
     allocate_payment(payment, employee)
+    if selected_account:
+        WorkshopAccountEntry.objects.create(
+            company=employee.company, branch=employee.branch,
+            account=selected_account, amount=-paid_amount,
+            entry_type="wage_payment",
+            source_key=f"wage_payment_{payment.pk}",
+            reference=(f"Wage {employee.pk}" + (f" | {reference}" if reference else ""))[:120],
+            posted_at=timezone.now(), created_by=user,
+        )
     audit(employee, user, "WAGE_PAYMENT", work_date=payment_date,
           original={"balance": str(balance_before)},
           updated={"paymentId": str(payment.pk), "amount": str(paid_amount), "method": method,
