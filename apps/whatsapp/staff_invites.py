@@ -4,138 +4,46 @@ Raw password-link tokens never enter DB storage, Celery task arguments or logs.
 """
 from celery import shared_task
 from django.conf import settings
-from django.db import transaction
 from apps.accounts.models import StaffPasswordInvitation
 from apps.accounts.staff_setup import invitation_url
-from apps.employees.models import Employee
-from .meta import approved_templates, decrypt_token, send_template_message
+from .meta import send_template_message
 from .phone import normalize_recipient
-from .models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
 
 
 
-def staff_auto_delivery_available(employee):
-    """Authoritative preflight; never issue an anonymous reset link without it."""
-    if not (employee and employee.user_id and employee.whatsapp_consent
-            and employee.whatsapp_consent_source and employee.user.is_active
-            and employee.user.company_id == employee.company_id
-            and normalize_recipient(employee.user.normalized_phone)
-            and normalize_recipient(employee.phone) == normalize_recipient(employee.user.normalized_phone)
-            and settings.WHATSAPP_SEND_ENABLED and settings.CELERY_BROKER_URL):
-        return False
-    connection = WhatsAppBusinessConnection.objects.filter(
-        company=employee.company, connected=True, notifications_enabled=True,
-        messaging_mode="automatic",
-    ).first()
-    return bool(
-        connection and connection.phone_number_id and connection.encrypted_access_token
-        and connection.waba_id and connection.event_settings.get("staff_onboarding", False)
-        and WhatsAppMessageTemplate.objects.filter(
-            company=employee.company, event="staff_onboarding",
-            approval_status="APPROVED",
-        ).exists()
-    )
+def staff_auto_delivery_available(_employee):
+    """Staff delivery is manual-only. Keep callable for legacy integrations."""
+    return False
 
 
-def queue_staff_whatsapp_invitation(invitation, employee):
-    if (not employee.whatsapp_consent or not employee.whatsapp_consent_source
-            or not employee.phone or not employee.user_id
-            or normalize_recipient(employee.phone) != normalize_recipient(employee.user.normalized_phone)):
-        invitation.delivery_status = "manual"
-        invitation.failure_reason = "WhatsApp consent not recorded; manual secure delivery required."
-        invitation.save(update_fields=["delivery_status", "failure_reason"])
-        return "manual"
-    # Use the same strict preflight as mobile password recovery. A connected
-    # flag alone is insufficient: Meta phone/WABA/token, approved staff template
-    # and the asynchronous sender must all be configured before showing Queued.
-    if not staff_auto_delivery_available(employee):
-        invitation.delivery_status = "manual"
-        invitation.failure_reason = (
-            "Automatic staff WhatsApp delivery is unavailable. "
-            "Check the official workshop connection, approved template and sender."
-        )
-        invitation.save(update_fields=["delivery_status", "failure_reason"])
-        return "manual"
-    invitation.delivery_status = "queued"
+def queue_staff_whatsapp_invitation(invitation, _employee):
+    """Compatibility: never dispatch WhatsApp, email or Celery for staff."""
+    if invitation.used_at or invitation.invalidated_at:
+        return "unavailable"
+    invitation.delivery_status = "manual"
     invitation.failure_reason = ""
     invitation.save(update_fields=["delivery_status", "failure_reason"])
-    pk = str(invitation.pk)
-    def schedule():
-        try:
-            send_staff_invitation.delay(pk)
-        except Exception:
-            StaffPasswordInvitation.objects.filter(pk=pk, delivery_status="queued").update(
-                delivery_status="failed", failure_reason="WhatsApp queue unavailable. Resend or share a new secure link.",
-            )
-    transaction.on_commit(schedule)
-    return "queued"
+    return "manual"
 
 
 @shared_task
 def send_staff_invitation(invitation_id):
-    if not settings.WHATSAPP_SEND_ENABLED:
-        return "disabled"
-    with transaction.atomic():
-        invite = StaffPasswordInvitation.objects.select_for_update().select_related("user__company").get(pk=invitation_id)
-        if invite.delivery_status != "queued" or invite.used_at or invite.invalidated_at or invite.expires_at <= __import__("django.utils.timezone", fromlist=["now"]).now():
-            return "skipped"
-        user = invite.user
-        employee = Employee.objects.filter(
-            company=user.company, user=user, whatsapp_consent=True,
-        ).first()
-        connection = WhatsAppBusinessConnection.objects.filter(
-            company=user.company, connected=True, notifications_enabled=True,
-        ).first()
-        template = WhatsAppMessageTemplate.objects.filter(
-            company=user.company, event="staff_onboarding", approval_status="APPROVED",
-        ).first()
-        if (not user.is_active or not employee or not employee.whatsapp_consent_source
-                or normalize_recipient(employee.phone) != normalize_recipient(user.normalized_phone)
-                or not connection or not connection.phone_number_id or not connection.waba_id
-                or not connection.encrypted_access_token or connection.messaging_mode != "automatic"
-                or not template or not connection.event_settings.get("staff_onboarding", False)):
-            invite.delivery_status = "failed"
-            invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
-            invite.save(update_fields=["delivery_status", "failure_reason"])
-            return "failed"
-        recipient = normalize_recipient(user.normalized_phone)
-        if not recipient:
-            invite.delivery_status = "failed"
-            invite.failure_reason = "Valid international mobile number required."
-            invite.save(update_fields=["delivery_status", "failure_reason"])
-            return "failed"
-        invite.delivery_status = "sending"
-        invite.attempts += 1
-        invite.save(update_fields=["delivery_status", "attempts"])
+    """Drain obsolete queued jobs without calling Meta.
 
-    try:
-        token = decrypt_token(connection.encrypted_access_token)
-        if not any(
-            row.get("name") == template.template_name and row.get("language") == template.language
-            for row in approved_templates(connection.waba_id, token)
-        ):
-            raise ValueError("Staff invitation template approval is no longer valid.")
-        result = send_template_message(
-            connection.phone_number_id,
-            token,
-            recipient, template.template_name, template.language,
-            employee.name, user.company.name, invitation_url(invite),
-        )
-        msg_id = (result.get("messages") or [{}])[0].get("id")
-        if not msg_id:
-            raise ValueError("Meta did not return a message ID.")
-        StaffPasswordInvitation.objects.filter(pk=invite.pk, delivery_status="sending").update(
-            delivery_status="sent", meta_message_id=msg_id, failure_reason="",
-        )
-        return "sent"
-    except Exception:
-        # Meta might have accepted a message before the network failed.
-        # No blind task retries: this protects customers from duplicate links.
-        StaffPasswordInvitation.objects.filter(pk=invite.pk, delivery_status="sending").update(
-            delivery_status="failed",
-            failure_reason="Official Meta delivery not confirmed. Resend a new setup link.",
-        )
-        return "failed"
+    A Celery task from a previous deployment could still be pending when
+    the manual-only onboarding rollout completes. Make the worker inert.
+    Workshop-owner registration uses its separate platform sender below.
+    """
+    StaffPasswordInvitation.objects.filter(
+        pk=invitation_id,
+        delivery_status__in=["queued", "sending"],
+        used_at__isnull=True,
+        invalidated_at__isnull=True,
+    ).update(
+        delivery_status="manual",
+        failure_reason="Staff invitation requires manual sharing by an authorized administrator.",
+    )
+    return "manual_only"
 
 
 @shared_task
