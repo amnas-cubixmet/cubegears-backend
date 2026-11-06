@@ -22,6 +22,8 @@ class Supplier(CompanyOwnedModel):
 class StockItem(CompanyOwnedModel):
     name=models.CharField(max_length=180)
     sku=models.CharField(max_length=80)
+    # Manufacturer reference; never inferred from a workshop SKU.
+    part_number=models.CharField(max_length=100,blank=True,default="")
     barcode=models.CharField(max_length=100,blank=True)
     category=models.ForeignKey(StockCategory,on_delete=models.SET_NULL,null=True,blank=True,related_name="items")
     brand=models.CharField(max_length=100,blank=True)
@@ -152,6 +154,22 @@ class SupplierPaymentAllocation(CompanyOwnedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["payment", "bill"], name="unique_payment_allocation_per_bill"),
+        ]
+
+
+class SupplierLinePaymentAllocation(CompanyOwnedModel):
+    """Optional item-wise detail of one bill allocation (not another liability)."""
+    allocation = models.ForeignKey(
+        SupplierPaymentAllocation, on_delete=models.PROTECT, related_name="line_allocations",
+    )
+    line_index = models.PositiveIntegerField()
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["allocation", "line_index"], name="unique_supplier_bill_line_application",
+            ),
         ]
 
 

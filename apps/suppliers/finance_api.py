@@ -5,20 +5,21 @@ changes recorded cash/bank balances. Advance allocations never move cash twice.
 Legacy PurchaseOrders, Expenses, Payments, and Stock movements stay intact.
 """
 from datetime import date
+from uuid import uuid4
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.jobs.models import Job
 from apps.inventory.models import (
-    Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation,
+    Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation, SupplierLinePaymentAllocation,
     StockItem, StockMovement, WorkshopFinancialAccount, WorkshopAccountEntry,
 )
 
@@ -79,12 +80,25 @@ def bill_info(bill):
     paid = bill_paid(bill)
     due = max(Decimal("0"), bill.total - paid) if bill.status == "Posted" else Decimal("0")
     status = "Draft" if bill.status == "Draft" else "Paid" if due == 0 else "Partially Paid" if paid else "Unpaid"
+    item_paid = {
+        row["line_index"]: row["total"]
+        for row in SupplierLinePaymentAllocation.objects.filter(
+            company_id=bill.company_id, allocation__bill=bill,
+        ).values("line_index").annotate(total=Sum("amount"))
+    }
+    items = []
+    for index, row in enumerate(bill.items):
+        applied = item_paid.get(index, Decimal("0"))
+        items.append({
+            **row, "lineIndex": index, "paidAllocation": str(applied.quantize(CENT)),
+            "lineOutstanding": str(max(Decimal("0"), Decimal(row["total"]) - applied).quantize(CENT)),
+        })
     return {
         "id": str(bill.pk), "supplierId": str(bill.supplier_id),
         "invoiceNumber": bill.invoice_number, "invoiceDate": bill.invoice_date.isoformat(),
         "dueDate": bill.due_date.isoformat() if bill.due_date else None,
         "relatedJobId": str(bill.related_job_id) if bill.related_job_id else None,
-        "status": status, "postingStatus": bill.status, "items": bill.items,
+        "status": status, "postingStatus": bill.status, "items": items,
         "subtotal": str(bill.subtotal), "tax": str(bill.tax),
         "total": str(bill.total), "paid": str(paid), "outstanding": str(due),
         "receiveIntoStock": bill.receive_into_stock,
@@ -149,13 +163,176 @@ def prepare_items(request, rows, receive_into_stock):
         subtotal += line_subtotal
         tax_total += line_tax
         normalized.append({
-            "itemId": str(item.pk) if item else None,
-            "description": description, "quantity": str(count),
+            "lineId": str(uuid4()), "itemId": str(item.pk) if item else None,
+            "description": description, "partNumber": item.part_number if item else "",
+            "sku": item.sku if item else "", "quantity": str(count),
             "purchaseRate": str(cost), "gstRate": str(gst),
             "subtotal": str(line_subtotal), "tax": str(line_tax),
             "total": str(line_subtotal + line_tax),
         })
     return normalized, subtotal, tax_total
+
+
+def record_supplier_payment(request, data):
+    """Only canonical supplier payment ledger changes money; caller wraps atomically."""
+    supplier = supplier_for(request, data.get("supplierId"))
+    account = account_for(request, data.get("accountId"), lock=True)
+    if not account.is_active:
+        raise ValidationError({"accountId": "Select an active cash/bank account."})
+    amount = money(data.get("amount"), "amount", positive=True)
+    kind = data.get("kind", "Payment")
+    if kind not in {"Payment", "Advance"}:
+        raise ValidationError({"kind": "Choose Payment or Advance."})
+    method = str(data.get("method") or "").strip()
+    if method not in {"Cash", "Bank Transfer", "UPI"}:
+        raise ValidationError({"method": "Select Cash, Bank Transfer, or UPI."})
+    if {"Cash": "Cash", "Bank Transfer": "Bank", "UPI": "UPI"}[method] != account.kind:
+        raise ValidationError({"accountId": "Payment method does not match the account type."})
+    key = str(data.get("idempotencyKey") or "").strip()
+    if len(key) < 8 or len(key) > 120:
+        raise ValidationError({"idempotencyKey": "A unique request key (8–120 characters) is required."})
+    existing = SupplierPayment.objects.filter(company_id=request.user.company_id, idempotency_key=key).first()
+    if existing:
+        raise ValidationError({"idempotencyKey": "This supplier payment was already recorded."})
+    try:
+        paid_on = date.fromisoformat(str(data.get("paidOn") or timezone.localdate()))
+    except (TypeError, ValueError):
+        raise ValidationError({"paidOn": "Enter a valid payment date."})
+    reference = str(data.get("reference") or "").strip()
+    if len(reference) > 120:
+        raise ValidationError({"reference": "Reference is too long."})
+    if account_balance(account) < amount:
+        raise ValidationError({"accountId": "Insufficient recorded account balance."})
+    rows = data.get("allocations", [])
+    if not isinstance(rows, list):
+        raise ValidationError({"allocations": "Allocations must be a list."})
+    if kind == "Advance" and rows:
+        raise ValidationError({"allocations": "Record the advance first; apply it to bills separately."})
+    if kind == "Payment" and not rows:
+        raise ValidationError({"allocations": "Choose at least one posted bill, or record an Advance."})
+    validated = []
+    seen = set()
+    allocated = Decimal("0")
+    for row in rows:
+        if not isinstance(row, dict) or not row.get("billId"):
+            raise ValidationError({"allocations": "Each allocation needs a billId."})
+        bill_id = str(row["billId"])
+        if bill_id in seen:
+            raise ValidationError({"allocations": "Cannot allocate the same bill twice in one payment."})
+        seen.add(bill_id)
+        bill = bill_for(request, bill_id, lock=True)
+        if bill.supplier_id != supplier.pk or bill.status != "Posted":
+            raise ValidationError({"allocations": "Bill is not a posted bill for this supplier."})
+        value = money(row.get("amount"), "amount", positive=True)
+        if value > bill.total - bill_paid(bill):
+            raise ValidationError({"allocations": "Allocation exceeds the bill outstanding."})
+        allocated += value
+        line_rows = row.get("lineAllocations", [])
+        if not isinstance(line_rows, list):
+            raise ValidationError({"lineAllocations": "Item allocations must be a list."})
+        details = []
+        if line_rows:
+            seen_lines = set()
+            detail_sum = Decimal("0")
+            for detail in line_rows:
+                try:
+                    index = int(detail.get("lineIndex"))
+                except (TypeError, ValueError, AttributeError):
+                    raise ValidationError({"lineAllocations": "Choose a valid line index."})
+                if not isinstance(detail, dict) or index < 0 or index >= len(bill.items) or index in seen_lines:
+                    raise ValidationError({"lineAllocations": "Invalid or duplicate purchase line."})
+                seen_lines.add(index)
+                line_amount = money(detail.get("amount"), "lineAllocations", positive=True)
+                previously_paid = SupplierLinePaymentAllocation.objects.filter(
+                    company_id=request.user.company_id, allocation__bill=bill, line_index=index,
+                ).aggregate(total=Sum("amount"))["total"] or Decimal("0")
+                line_total = Decimal(bill.items[index]["total"])
+                if line_amount > line_total - previously_paid:
+                    raise ValidationError({"lineAllocations": "Amount exceeds the remaining line total."})
+                detail_sum += line_amount
+                details.append((index, line_amount))
+            if detail_sum != value:
+                raise ValidationError({"lineAllocations": "Item allocations must equal this bill allocation."})
+        validated.append((bill, value, details))
+    if kind == "Payment" and allocated != amount:
+        raise ValidationError({"allocations": "Allocations must total the payment amount."})
+    payment = SupplierPayment.objects.create(
+        company_id=request.user.company_id, branch=request.user.branch,
+        supplier=supplier, account=account, amount=amount, kind=kind,
+        method=method, reference=reference, paid_on=paid_on,
+        idempotency_key=key, created_by=request.user,
+    )
+    for bill, allocated_amount, details in validated:
+        allocation = SupplierPaymentAllocation.objects.create(
+            company_id=request.user.company_id, branch=request.user.branch,
+            bill=bill, payment=payment, amount=allocated_amount,
+        )
+        for index, line_amount in details:
+            SupplierLinePaymentAllocation.objects.create(
+                company_id=request.user.company_id, branch=request.user.branch,
+                allocation=allocation, line_index=index, amount=line_amount,
+            )
+    WorkshopAccountEntry.objects.create(
+        company_id=request.user.company_id, branch=request.user.branch,
+        account=account, amount=-amount, entry_type="Supplier " + kind,
+        source_key=f"supplier-payment:{payment.pk}", reference=reference,
+        posted_at=timezone.now(), created_by=request.user,
+    )
+    return {
+        "id": str(payment.pk), "amount": str(payment.amount),
+        "kind": payment.kind, "applied": str(allocated),
+        "availableAdvance": str(amount) if kind == "Advance" else "0.00",
+        "recordedAccountBalance": str(account_balance(account)),
+    }
+
+
+
+def finalize_supplier_bill(request, bill, payment_data=None):
+    """Post a bill, optional cash settlement and receipt in one DB transaction."""
+    if bill.status != "Draft":
+        raise ValidationError({"bill": "Supplier bill was already posted; inventory and liability were not posted again."})
+    if bill.receive_into_stock:
+        for row in bill.items:
+            item = get_object_or_404(StockItem.objects.select_for_update(),
+                pk=row["itemId"], company_id=request.user.company_id)
+            if item.branch_id and item.branch_id != bill.branch_id:
+                raise ValidationError({"itemId": "Stock item branch no longer matches the purchase."})
+            count = Decimal(row["quantity"])
+            cost = Decimal(row["purchaseRate"])
+            item.on_hand += count
+            item.save(update_fields=["on_hand", "updated_at"])
+            StockMovement.objects.create(
+                company_id=request.user.company_id, branch=bill.branch,
+                item=item, movement_type="purchase", quantity=count,
+                unit_cost=cost, unit_selling_price=item.selling_price,
+                reference=f"SUPBILL:{bill.pk}", job=bill.related_job,
+                note=f"Supplier invoice {bill.invoice_number}",
+                created_by=request.user,
+            )
+    bill.status = "Posted"
+    bill.posted_at = timezone.now()
+    bill.save(update_fields=["status", "posted_at", "updated_at"])
+    result = bill_info(bill)
+    if payment_data is not None:
+        if not isinstance(payment_data, dict):
+            raise ValidationError({"payment": "Payment must be a valid object."})
+        if payment_data.get("supplierId") and str(payment_data["supplierId"]) != str(bill.supplier_id):
+            raise ValidationError({"payment": "Payment Supplier does not match the bill."})
+        payload = {**payment_data, "supplierId": str(bill.supplier_id)}
+        if "allocations" not in payload:
+            payload["allocations"] = [{"billId": str(bill.pk), "amount": payload.get("amount")}]
+        else:
+            if not isinstance(payload["allocations"], list):
+                raise ValidationError({"allocations": "Allocations must be a list."})
+            payload["allocations"] = [
+                {**row, "billId": row.get("billId") or str(bill.pk)}
+                if isinstance(row, dict) else row
+                for row in payload["allocations"]
+            ]
+        result["payment"] = record_supplier_payment(request, payload)
+        result = {**bill_info(bill), "payment": result["payment"]}
+    return result
+
 
 
 class AccountCollection(APIView):
@@ -231,6 +408,10 @@ class SupplierBillCollection(APIView):
         supplier = supplier_for(request, request.data.get("supplierId"))
         if not supplier.is_active:
             raise ValidationError({"supplierId": "Supplier is inactive."})
+        # Lock the supplier while checking invoice references, including case variants.
+        Supplier.objects.select_for_update().get(pk=supplier.pk)
+        if request.data.get("postNow") is True and not user_has_permission(request.user, "stock.edit"):
+            raise PermissionDenied("Purchase posting requires Inventory Edit permission.")
         invoice_number = str(request.data.get("invoiceNumber") or "").strip()
         if not invoice_number or len(invoice_number) > 100:
             raise ValidationError({"invoiceNumber": "Enter a supplier invoice reference (1–100 characters)."})
@@ -256,6 +437,12 @@ class SupplierBillCollection(APIView):
             items=items, subtotal=subtotal, tax=tax, total=subtotal + tax,
             receive_into_stock=receive, created_by=request.user,
         )
+        if request.data.get("postNow") is True:
+            return Response(finalize_supplier_bill(
+                request, bill, request.data.get("payment"),
+            ), status=201)
+        if request.data.get("payment") is not None:
+            raise ValidationError({"payment": "Immediate payments require postNow=true."})
         return Response(bill_info(bill), status=201)
 
 
@@ -266,30 +453,7 @@ class SupplierBillPost(APIView):
     @transaction.atomic
     def post(self, request, pk):
         bill = bill_for(request, pk, lock=True)
-        if bill.status != "Draft":
-            raise ValidationError({"bill": "Supplier bill was already posted; inventory and liability were not posted again."})
-        if bill.receive_into_stock:
-            for row in bill.items:
-                item = get_object_or_404(StockItem.objects.select_for_update(),
-                    pk=row["itemId"], company_id=request.user.company_id)
-                if item.branch_id and item.branch_id != bill.branch_id:
-                    raise ValidationError({"itemId": "Stock item branch no longer matches the purchase."})
-                count = Decimal(row["quantity"])
-                cost = Decimal(row["purchaseRate"])
-                item.on_hand += count
-                item.save(update_fields=["on_hand", "updated_at"])
-                StockMovement.objects.create(
-                    company_id=request.user.company_id, branch=bill.branch,
-                    item=item, movement_type="purchase", quantity=count,
-                    unit_cost=cost, unit_selling_price=item.selling_price,
-                    reference=f"SUPBILL:{bill.pk}", job=bill.related_job,
-                    note=f"Supplier invoice {bill.invoice_number}",
-                    created_by=request.user,
-                )
-        bill.status = "Posted"
-        bill.posted_at = timezone.now()
-        bill.save(update_fields=["status", "posted_at", "updated_at"])
-        return Response(bill_info(bill))
+        return Response(finalize_supplier_bill(request, bill, request.data.get("payment")))
 
 
 class SupplierPaymentCollection(APIView):
@@ -314,86 +478,7 @@ class SupplierPaymentCollection(APIView):
 
     @transaction.atomic
     def post(self, request):
-        supplier = supplier_for(request, request.data.get("supplierId"))
-        account = account_for(request, request.data.get("accountId"), lock=True)
-        if not account.is_active:
-            raise ValidationError({"accountId": "Select an active cash/bank account."})
-        amount = money(request.data.get("amount"), "amount", positive=True)
-        kind = request.data.get("kind", "Payment")
-        if kind not in {"Payment", "Advance"}:
-            raise ValidationError({"kind": "Choose Payment or Advance."})
-        method = str(request.data.get("method") or "").strip()
-        if method not in {"Cash", "Bank Transfer", "UPI"}:
-            raise ValidationError({"method": "Select Cash, Bank Transfer, or UPI."})
-        if (method == "Cash" and account.kind != "Cash") or (
-            method != "Cash" and account.kind not in {"Bank", "UPI"}
-        ):
-            raise ValidationError({"accountId": "Payment method does not match the account type."})
-        key = str(request.data.get("idempotencyKey") or "").strip()
-        if len(key) < 8 or len(key) > 120:
-            raise ValidationError({"idempotencyKey": "A unique request key (8–120 characters) is required."})
-        existing = SupplierPayment.objects.filter(company_id=request.user.company_id, idempotency_key=key).first()
-        if existing:
-            raise ValidationError({"idempotencyKey": "This supplier payment was already recorded."})
-        try:
-            paid_on = date.fromisoformat(str(request.data.get("paidOn") or timezone.localdate()))
-        except (TypeError, ValueError):
-            raise ValidationError({"paidOn": "Enter a valid payment date."})
-        reference = str(request.data.get("reference") or "").strip()
-        if len(reference) > 120:
-            raise ValidationError({"reference": "Reference is too long."})
-        if account_balance(account) < amount:
-            raise ValidationError({"accountId": "Insufficient recorded account balance."})
-        rows = request.data.get("allocations", [])
-        if not isinstance(rows, list):
-            raise ValidationError({"allocations": "Allocations must be a list."})
-        if kind == "Advance" and rows:
-            raise ValidationError({"allocations": "Record the advance first; apply it to bills separately."})
-        if kind == "Payment" and not rows:
-            raise ValidationError({"allocations": "Choose at least one posted bill, or record an Advance."})
-        validated = []
-        seen = set()
-        allocated = Decimal("0")
-        for row in rows:
-            if not isinstance(row, dict) or not row.get("billId"):
-                raise ValidationError({"allocations": "Each allocation needs a billId."})
-            bill_id = str(row["billId"])
-            if bill_id in seen:
-                raise ValidationError({"allocations": "Cannot allocate the same bill twice in one payment."})
-            seen.add(bill_id)
-            bill = bill_for(request, bill_id, lock=True)
-            if bill.supplier_id != supplier.pk or bill.status != "Posted":
-                raise ValidationError({"allocations": "Bill is not a posted bill for this supplier."})
-            value = money(row.get("amount"), "amount", positive=True)
-            if value > bill.total - bill_paid(bill):
-                raise ValidationError({"allocations": "Allocation exceeds the bill outstanding."})
-            allocated += value
-            validated.append((bill, value))
-        if kind == "Payment" and allocated != amount:
-            raise ValidationError({"allocations": "Allocations must total the payment amount."})
-        payment = SupplierPayment.objects.create(
-            company_id=request.user.company_id, branch=request.user.branch,
-            supplier=supplier, account=account, amount=amount, kind=kind,
-            method=method, reference=reference, paid_on=paid_on,
-            idempotency_key=key, created_by=request.user,
-        )
-        for bill, allocated_amount in validated:
-            SupplierPaymentAllocation.objects.create(
-                company_id=request.user.company_id, branch=request.user.branch,
-                bill=bill, payment=payment, amount=allocated_amount,
-            )
-        WorkshopAccountEntry.objects.create(
-            company_id=request.user.company_id, branch=request.user.branch,
-            account=account, amount=-amount, entry_type="Supplier " + kind,
-            source_key=f"supplier-payment:{payment.pk}", reference=reference,
-            posted_at=timezone.now(), created_by=request.user,
-        )
-        return Response({
-            "id": str(payment.pk), "amount": str(payment.amount),
-            "kind": payment.kind, "applied": str(allocated),
-            "availableAdvance": str(amount) if kind == "Advance" else "0.00",
-            "recordedAccountBalance": str(account_balance(account)),
-        }, status=201)
+        return Response(record_supplier_payment(request, request.data), status=201)
 
 
 class SupplierAdvanceApply(APIView):

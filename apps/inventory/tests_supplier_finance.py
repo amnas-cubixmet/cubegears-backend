@@ -6,7 +6,7 @@ from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.inventory.models import (
-    Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation,
+    Supplier, SupplierBill, SupplierPayment, SupplierPaymentAllocation, SupplierLinePaymentAllocation,
     StockItem, StockMovement, WorkshopAccountEntry,
 )
 from apps.roles.models import Role
@@ -255,3 +255,79 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(len(ledger.data["entries"]), 2)
         self.assertEqual(ledger.data["entries"][-1]["runningPayable"], "750.00")
         self.assertEqual(ledger.data["outstanding"], "750.00")
+
+    def test_atomic_full_paid_purchase_receives_stock_once_and_debits_bank_once(self):
+        posted = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "POST-FULL-001",
+            "invoiceDate": "2026-11-06", "postNow": True, "receiveIntoStock": True,
+            "items": [{"itemId": str(self.stock.pk), "quantity": "2", "purchaseRate": "1000", "gstRate": "0"}],
+            "payment": {
+                "accountId": self.account_id, "amount": "2000.00",
+                "method": "Bank Transfer", "paidOn": "2026-11-06",
+                "kind": "Payment", "idempotencyKey": "post-full-001",
+            },
+        }, format="json")
+        self.assertEqual(posted.status_code, 201, getattr(posted, "data", None))
+        self.assertEqual(posted.data["postingStatus"], "Posted")
+        self.assertEqual(posted.data["outstanding"], "0")
+        self.assertEqual(self.summary()["outstanding"], "0.00")
+        self.assertEqual(self.account_balance(), "18000.00")
+        self.stock.refresh_from_db()
+        self.assertEqual(str(self.stock.on_hand), "4.00")
+        self.assertEqual(SupplierPayment.objects.count(), 1)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
+        bill = SupplierBill.objects.get(invoice_number="POST-FULL-001")
+        self.assertEqual(StockMovement.objects.filter(reference=f"SUPBILL:{bill.pk}").count(), 1)
+        self.assertEqual(self.post_bill(bill.pk).status_code, 400)
+        self.assertEqual(StockMovement.objects.filter(reference=f"SUPBILL:{bill.pk}").count(), 1)
+
+    def test_partial_payment_by_purchase_item_reconciles_one_bill_liability(self):
+        result = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "LINE-PARTIAL-001",
+            "invoiceDate": "2026-11-06", "postNow": True,
+            "items": [
+                {"description": "Brake Pad", "quantity": "1", "purchaseRate": "3000", "gstRate": "0"},
+                {"description": "Oil Filter", "quantity": "1", "purchaseRate": "2000", "gstRate": "0"},
+            ],
+            "payment": {
+                "accountId": self.account_id, "amount": "4000.00",
+                "kind": "Payment", "method": "Bank Transfer",
+                "idempotencyKey": "partial-item-payment-001",
+                "allocations": [{
+                    "amount": "4000.00",
+                    "lineAllocations": [
+                        {"lineIndex": 0, "amount": "3000.00"},
+                        {"lineIndex": 1, "amount": "1000.00"},
+                    ],
+                }],
+            },
+        }, format="json")
+        self.assertEqual(result.status_code, 201, getattr(result, "data", None))
+        self.assertEqual(SupplierBill.objects.count(), 1)
+        self.assertEqual(SupplierPayment.objects.count(), 1)
+        self.assertEqual(SupplierPaymentAllocation.objects.count(), 1)
+        self.assertEqual(SupplierLinePaymentAllocation.objects.count(), 2)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
+        self.assertEqual(self.summary()["outstanding"], "1000.00")
+        self.assertEqual(self.account_balance(), "16000.00")
+        self.assertEqual(result.data["items"][0]["paidAllocation"], "3000.00")
+        self.assertEqual(result.data["items"][1]["lineOutstanding"], "1000.00")
+
+    def test_post_failure_rolls_back_bill_inventory_and_bank(self):
+        response = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk), "invoiceNumber": "ROLLBACK-001",
+            "invoiceDate": "2026-11-06", "postNow": True, "receiveIntoStock": True,
+            "items": [{"itemId": str(self.stock.pk), "quantity": "1", "purchaseRate": "25000"}],
+            "payment": {
+                "accountId": self.account_id, "amount": "25000.00",
+                "kind": "Payment", "method": "Bank Transfer",
+                "idempotencyKey": "rollback-payment-001",
+            },
+        }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(SupplierBill.objects.count(), 0)
+        self.assertEqual(SupplierPayment.objects.count(), 0)
+        self.assertEqual(StockMovement.objects.count(), 0)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+        self.stock.refresh_from_db()
+        self.assertEqual(str(self.stock.on_hand), "2.00")
