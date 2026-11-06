@@ -2,6 +2,7 @@ from django.urls import path
 from .supplier_finance_api import (
     AccountCollection, AccountLedger, SupplierBillCollection, SupplierBillPost,
     SupplierPaymentCollection, SupplierAdvanceApply, SupplierSummary, SupplierLedger,
+    SupplierPurchaseGSTOptions,
 )
 from rest_framework.routers import DefaultRouter
 from .views import *
@@ -15,6 +16,7 @@ router.register("audit",StockAuditViewSet,basename="stock-audit")
 router.register("items",StockItemViewSet,basename="stock-items")
 router.register("",StockItemViewSet,basename="stock")
 urlpatterns = [
+    path("procurement/gst-options", SupplierPurchaseGSTOptions.as_view(), name="inventory-gst-options"),
     path("procurement/accounts", AccountCollection.as_view(), name="workshop-accounts"),
     path("procurement/accounts/<uuid:pk>/ledger", AccountLedger.as_view(), name="workshop-account-ledger"),
     path("procurement/bills", SupplierBillCollection.as_view(), name="supplier-bills"),
