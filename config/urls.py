@@ -38,6 +38,8 @@ urlpatterns = [
     re_path(r"^api/v1/outside-labour/?", include("apps.jobs.outside_labour_urls")),
     path("api/v1/", include("apps.jobs.compat_urls")),
 
+    # Canonical Supplier APIs; stock/inventory procurement routes remain compatible.
+    re_path(r"^api/v1/suppliers(?:/|$)", include("apps.suppliers.urls")),
     re_path(r"^api/v1/stock/?", include("apps.inventory.urls")),
     re_path(r"^api/v1/inventory/?", include("apps.inventory.urls")),
 
