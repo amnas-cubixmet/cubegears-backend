@@ -32,6 +32,8 @@ class StockItemSerializer(serializers.ModelSerializer):
     def validate_sku(self, value):
         value = value.strip()
         if not value:
+            if self.instance is not None:
+                raise serializers.ValidationError("An existing SKU cannot be blank.")
             return value  # An empty SKU is generated safely during creation.
         request = self.context.get("request")
         company_id = getattr(getattr(request, "user", None), "company_id", None)
