@@ -214,3 +214,20 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(dash.status_code, 200, getattr(dash, "data", None))
         self.assertEqual(dash.data["totalReceived"], "700.00")
         self.assertEqual(dash.data["outstandingCustomer"], "800.00")
+
+    def test_retrying_paid_expense_creation_does_not_add_second_liability(self):
+        payload = {
+            "date": "2026-11-06", "category": "Workshop Rent",
+            "amount": "150.00", "status": "Paid",
+            "account": str(self.cash.pk), "payment_method": "Cash",
+            "idempotencyKey": "expense-rent-creation-once",
+        }
+        first = self.client.post("/api/v1/expenses", payload, format="json")
+        self.assertEqual(first.status_code, 201, getattr(first, "data", None))
+        first_count = Expense.objects.count()
+        duplicate = self.client.post("/api/v1/expenses", payload, format="json")
+        self.assertEqual(duplicate.status_code, 400, getattr(duplicate, "data", None))
+        self.assertEqual(Expense.objects.count(), first_count)
+        self.assertEqual(ExpenseSettlement.objects.count(), 1)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
+        self.assertEqual(account_balance(self.cash), Decimal("850.00"))
