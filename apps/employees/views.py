@@ -272,6 +272,13 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             shift_label=serializer.validated_data.get("shift_label") or _shift_label(shift),
         )
         _record_activity(obj, "Staff Created", f"{_employee_display_no(obj)} profile created.", self.request.user)
+        if obj.whatsapp_consent:
+            _record_activity(
+                obj, "Staff WhatsApp Consent Granted",
+                "Staff consent to workshop WhatsApp onboarding was recorded.",
+                self.request.user,
+                {"source": obj.whatsapp_consent_source},
+            )
         if user and user.is_active:
             self._issue_staff_invitation(obj, user)
 
