@@ -1,8 +1,7 @@
-"""Supplier accounting API.
+"""Compatibility import for established inventory/stock procurement endpoints.
 
-Bill posting creates payable exactly once; only posting a supplier payment
-changes recorded cash/bank balances. Advance allocations never move cash twice.
-Legacy PurchaseOrders, Expenses, Payments, and Stock movements stay intact.
+The canonical accounting implementation now lives at apps.suppliers.finance_api.
+Legacy URLs and imports intentionally resolve to the SAME view classes.
 """
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP

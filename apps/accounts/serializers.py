@@ -78,13 +78,25 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
-def user_can_sign_in(user):
+def user_can_sign_in(user, *, allow_pending_setup=False):
     """All login methods must enforce the same active tenant and role checks."""
     if not user or not user.is_active:
         return False
     if not user.company_id:
         return True
     role = user.role
+    try:
+        employee = user.employee_profile
+    except Exception:
+        employee = None
+    # A profile edited to Suspended/Inactive must not keep working JWT-login
+    # credentials, even if a legacy code path omitted syncing is_active.
+    if employee and employee.status not in {"Active", "Probation", "Notice Period"}:
+        return False
+    # Password-setup links use a separate, one-time authorization check.
+    # A pending staff identity must never sign in via older magic-link paths.
+    if employee and not user.has_usable_password() and not allow_pending_setup:
+        return False
     return bool(
         user.company and user.company.is_active
         and role and role.is_active and role.company_id == user.company_id
@@ -143,7 +155,31 @@ class LoginSerializer(serializers.Serializer):
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
+    # Mobile recovery is workshop-scoped and never requires an email address.
+    # Keep the legacy email path for existing owner/platform accounts.
+    email = serializers.EmailField(required=False, allow_blank=True)
+    mobile = serializers.CharField(required=False, allow_blank=True)
+    workshop = serializers.SlugField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        mobile = str(attrs.get("mobile") or "").strip()
+        email = str(attrs.get("email") or "").strip()
+        if mobile:
+            try:
+                attrs["mobile"] = normalize_phone(mobile)
+            except Exception:
+                raise serializers.ValidationError({
+                    "mobile": "Use an international mobile number, e.g. +919876543210."
+                })
+            if not attrs.get("workshop"):
+                raise serializers.ValidationError({
+                    "workshop": "Enter your workshop code to request a secure WhatsApp reset."
+                })
+        elif not email:
+            raise serializers.ValidationError({
+                "mobile": "Enter your mobile number with country code."
+            })
+        return attrs
 
 
 class ResetPasswordSerializer(serializers.Serializer):

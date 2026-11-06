@@ -1,0 +1,1 @@
+"""Supplier management Django application."""

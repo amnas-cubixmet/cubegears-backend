@@ -2,7 +2,7 @@ from django.db import transaction
 from django.db.models import F,Q
 from rest_framework import decorators,response
 from common.viewsets import CompanyScopedModelViewSet
-from .models import StockCategory,Supplier,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 from .serializers import *
 
 class StockItemViewSet(CompanyScopedModelViewSet):
@@ -253,33 +253,9 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
 class StockCategoryViewSet(CompanyScopedModelViewSet):
     queryset=StockCategory.objects.all(); serializer_class=StockCategorySerializer
-class SupplierViewSet(CompanyScopedModelViewSet):
-    queryset = Supplier.objects.all()
-    serializer_class = SupplierSerializer
+# Backwards-compatible inventory URL alias for canonical supplier CRUD.
+from apps.suppliers.views import SupplierViewSet as SupplierViewSet
 
-    def get_queryset(self):
-        qs = super().get_queryset()
-        search = self.request.query_params.get("search", "").strip()[:120]
-        if search:
-            qs = qs.filter(
-                Q(name__icontains=search) |
-                Q(contact_person__icontains=search) |
-                Q(phone__icontains=search) |
-                Q(gstin__icontains=search)
-            )
-        state = self.request.query_params.get("active")
-        if state in {"true", "false"}:
-            qs = qs.filter(is_active=(state == "true"))
-        return qs
-
-    def destroy(self, request, *args, **kwargs):
-        supplier = self.get_object()
-        if supplier.items.exists() or supplier.purchase_orders.exists():
-            return response.Response(
-                {"message": "This supplier has inventory or purchase history. Deactivate the supplier instead."},
-                status=409,
-            )
-        return super().destroy(request, *args, **kwargs)
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
     def create(self, request, *args, **kwargs):
