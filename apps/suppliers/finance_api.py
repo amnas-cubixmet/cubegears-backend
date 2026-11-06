@@ -343,6 +343,28 @@ def finalize_supplier_bill(request, bill, payment_data=None):
 
 
 
+class SupplierPurchaseGSTOptions(APIView):
+    """State names and rate presets, never an HSN/SAC classification engine."""
+    permission_classes = [RolePermission]
+    permission_map = {"GET": "stock.view"}
+
+    def get(self, request):
+        from apps.jobs.india_gst import STATE_NAMES
+
+        return Response({
+            "states": [
+                {"code": code, "name": name.title()}
+                for name, code in sorted(STATE_NAMES.items())
+            ],
+            "rates": [
+                {"total": "0", "cgst": "0", "stateTax": "0", "igst": "0"},
+                {"total": "5", "cgst": "2.5", "stateTax": "2.5", "igst": "5"},
+                {"total": "18", "cgst": "9", "stateTax": "9", "igst": "18"},
+            ],
+            "note": "Confirm HSN/SAC classification and tax treatment before posting.",
+        })
+
+
 class AccountCollection(APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": "payments.view", "POST": "payments.create"}
