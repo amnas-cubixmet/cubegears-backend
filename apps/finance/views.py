@@ -171,8 +171,8 @@ class FinanceAccountCollection(APIView):
         if not name:
             raise ValidationError({"name": "Account name is required."})
         kind = d.get("kind", "Cash")
-        if kind not in ("Cash", "Bank", "UPI", "Wallet"):
-            raise ValidationError({"kind": "Choose Cash, Bank, UPI or Wallet."})
+        if kind not in ("Cash", "Bank", "UPI", "Wallet", "Other"):
+            raise ValidationError({"kind": "Choose Cash, Bank, UPI, Wallet or Other."})
         opening = valid_money(d.get("openingBalance", "0"), "openingBalance", allow_zero=True)
         if WorkshopFinancialAccount.objects.filter(company=request.user.company, name=name).exists():
             raise ValidationError({"name": "An account with this name already exists."})
