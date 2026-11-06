@@ -13,4 +13,6 @@ class Expense(CompanyOwnedModel):
     attachment=models.URLField(blank=True)
     status=models.CharField(max_length=30,default="Paid")
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+    # Finance account linkage
+    account=models.ForeignKey("inventory.WorkshopFinancialAccount",on_delete=models.SET_NULL,null=True,blank=True,related_name="expense_payments")
     class Meta: ordering=["-date","-created_at"]

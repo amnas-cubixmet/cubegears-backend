@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     "apps.saas",
     "apps.credits",
     "apps.control_panel",
+    "apps.finance",
 ]
 
 MIDDLEWARE = [

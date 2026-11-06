@@ -106,12 +106,19 @@ class StockAudit(CompanyOwnedModel):
 # Supplier financial records are separate from PurchaseOrder drafts and from
 # customer Payment. A posted bill is a payable, not a second expense.
 class WorkshopFinancialAccount(CompanyOwnedModel):
-    KIND_CHOICES = [("Cash", "Cash"), ("Bank", "Bank"), ("UPI", "UPI")]
+    KIND_CHOICES = [("Cash", "Cash"), ("Bank", "Bank"), ("UPI", "UPI"), ("Wallet", "Wallet")]
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    # Bank/account detail fields
+    bank_name = models.CharField(max_length=120, blank=True, default="")
+    account_number = models.CharField(max_length=50, blank=True, default="")
+    ifsc = models.CharField(max_length=20, blank=True, default="")
+    branch_name = models.CharField(max_length=120, blank=True, default="")
+    opening_date = models.DateField(null=True, blank=True)
+    description = models.TextField(blank=True, default="")
     class Meta:
         constraints = [models.UniqueConstraint(fields=["company", "name"], name="unique_workshop_money_account")]
 
@@ -197,4 +204,21 @@ class WorkshopAccountEntry(CompanyOwnedModel):
         ordering = ["posted_at", "created_at"]
         constraints = [
             models.UniqueConstraint(fields=["company", "source_key"], name="unique_workshop_account_posting"),
+        ]
+
+
+class FinanceTransfer(CompanyOwnedModel):
+    """Atomic inter-account transfer. Never an income or expense."""
+    from_account = models.ForeignKey(WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="transfers_out")
+    to_account = models.ForeignKey(WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="transfers_in")
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    transfer_date = models.DateField()
+    reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+    idempotency_key = models.CharField(max_length=160, unique=False)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    class Meta:
+        ordering = ["-transfer_date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["company", "idempotency_key"], name="unique_finance_transfer")
         ]

@@ -63,6 +63,7 @@ urlpatterns = [
     path("api/v1/settings/<str:category>", SettingsView.as_view(), name="settings-category"),
     path("api/v1/saas/credits/", include("apps.credits.urls")),
     path("api/v1/saas/", include("apps.saas.urls")),
+    path("api/v1/finance/", include("apps.finance.urls")),
 ]
 
 if settings.DEBUG:

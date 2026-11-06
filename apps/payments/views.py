@@ -84,6 +84,24 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                                  f'Payment registered against {locked_invoice.number}',
                                  {'paymentId': str(payment.pk), 'invoiceId': str(locked_invoice.pk)})
 
+        # Post to workshop account ledger if an account is linked
+        if payment.account_id:
+            from apps.inventory.models import WorkshopAccountEntry
+            # IN = money received = positive; OUT = money paid = negative
+            signed_amount = payment.amount if payment.direction == "IN" else -payment.amount
+            source_key = f"customer_payment_{payment.pk}"
+            WorkshopAccountEntry.objects.create(
+                company=company,
+                branch=self.request.user.branch,
+                account=payment.account,
+                amount=signed_amount,
+                entry_type="customer_payment",
+                source_key=source_key,
+                reference=f"Payment {payment.pk}" + (f" | {payment.reference}" if payment.reference else ""),
+                posted_at=timezone.now(),
+                created_by=self.request.user,
+            )
+
     def update(self, request, *args, **kwargs):
         # Mutating posted financial rows would desync Invoice.paid and the ledger.
         raise PermissionDenied("Posted payments are immutable. Use the audited reversal endpoint.")
