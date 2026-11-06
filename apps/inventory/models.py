@@ -22,6 +22,8 @@ class Supplier(CompanyOwnedModel):
 class StockItem(CompanyOwnedModel):
     name=models.CharField(max_length=180)
     sku=models.CharField(max_length=80)
+    # Manufacturer reference; never inferred from a workshop SKU.
+    part_number=models.CharField(max_length=100,blank=True,default="")
     barcode=models.CharField(max_length=100,blank=True)
     category=models.ForeignKey(StockCategory,on_delete=models.SET_NULL,null=True,blank=True,related_name="items")
     brand=models.CharField(max_length=100,blank=True)
