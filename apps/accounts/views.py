@@ -390,7 +390,7 @@ class StaffInvitationConsumeView(APIView):
             return Response({"password":list(exc.messages)}, status=400)
         if user is None:
             return Response({"message":"Invalid or expired setup link."}, status=400)
-        return Response({"message":"Password saved. Sign in with your mobile number or email."})
+        return Response({"message":"Password saved. Sign in with your registered mobile number and password."})
 
 
 class SetupPasswordView(APIView):
