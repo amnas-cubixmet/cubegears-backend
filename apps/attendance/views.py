@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db.models import Q
 from django.db import transaction
 from rest_framework import decorators,response,status
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from apps.notifications.models import Notification
 from rest_framework.views import APIView
 from rest_framework.exceptions import ValidationError
@@ -16,12 +16,20 @@ from .services import finish_session, get_attendance_rule, get_attendance_state,
 
 class AttendanceRecordViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRecord.objects.select_related("employee").prefetch_related("sessions").all(); serializer_class=AttendanceRecordSerializer
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.records.manage",
+                      "PUT": "attendance.records.manage", "PATCH": "attendance.records.manage",
+                      "DELETE": "attendance.records.manage"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage"):
+            return qs.filter(employee__branch_id=self.request.user.branch_id)
+        return qs
 
     def perform_create(self, serializer):
         employee = serializer.validated_data["employee"]
-        if employee.company_id != self.request.user.company_id:
-            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        if employee.company_id != self.request.user.company_id or (self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id):
+            raise ValidationError({"employee": "Employee is outside your permitted workshop branch."})
         serializer.save(company=employee.company, branch=employee.branch)
 
     @transaction.atomic
@@ -45,12 +53,20 @@ class AttendanceRecordViewSet(CompanyScopedModelViewSet):
             serializer.save()
 class LeaveRequestViewSet(CompanyScopedModelViewSet):
     queryset=LeaveRequest.objects.select_related("employee").all(); serializer_class=LeaveRequestSerializer
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.records.manage",
+                      "PUT": "attendance.records.manage", "PATCH": "attendance.records.manage",
+                      "DELETE": "attendance.records.manage"}
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage"):
+            return qs.filter(employee__branch_id=self.request.user.branch_id)
+        return qs
 
     def perform_create(self, serializer):
         employee = serializer.validated_data["employee"]
-        if employee.company_id != self.request.user.company_id:
-            raise ValidationError({"employee": "Employee does not belong to this workshop."})
+        if employee.company_id != self.request.user.company_id or (self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id):
+            raise ValidationError({"employee": "Employee is outside your permitted workshop branch."})
         serializer.save(
             company=employee.company, branch=employee.branch,
             leave_type="Unpaid Leave",
@@ -59,10 +75,17 @@ class LeaveRequestViewSet(CompanyScopedModelViewSet):
 class OvertimeRequestViewSet(CompanyScopedModelViewSet):
     queryset=OvertimeRequest.objects.select_related("employee","approved_by").all()
     serializer_class=OvertimeRequestSerializer
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.records.manage",
+                      "PUT": "attendance.records.manage", "PATCH": "attendance.records.manage",
+                      "DELETE": "attendance.records.manage"}
+    action_permission_map = {"approve": "attendance.overtime.approve",
+                             "reject": "attendance.overtime.approve",
+                             "cancel": "attendance.records.manage"}
 
     def get_queryset(self):
         qs=super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage"):
+            qs=qs.filter(employee__branch_id=self.request.user.branch_id)
         month=self.request.query_params.get("month")
         staff_id=self.request.query_params.get("staffId")
         st=self.request.query_params.get("status")
@@ -99,6 +122,9 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
             except Exception as exc:
                 raise ValidationError({"staffId":"Employee not found."}) from exc
 
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "company.manage") and employee.branch_id != self.request.user.branch_id:
+            raise ValidationError({"staffId": "Employee is outside your permitted branch."})
+
         hours=float(self.request.data.get("overtimeHours") or 0)
         minutes=int(self.request.data.get("minutes") or round(hours*60))
 
@@ -122,6 +148,9 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=True,methods=["post"])
     def approve(self,request,pk=None):
         obj=self.get_object()
+        rule = get_attendance_rule(request.user.company, request.user.branch)
+        if not rule.allow_self_approval and obj.employee.user_id == request.user.id:
+            return response.Response({"message": "Self-approval is disabled by attendance rules."}, status=403)
 
         raw_rate=request.data.get("rate")
         if raw_rate in (None,""):
@@ -184,7 +213,11 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["post"])
     def reject(self,request,pk=None):
-        obj=self.get_object(); obj.status="Rejected"; obj.rejection_reason=request.data.get("reason") or "Not authorized"
+        obj=self.get_object()
+        rule = get_attendance_rule(request.user.company, request.user.branch)
+        if not rule.allow_self_approval and obj.employee.user_id == request.user.id:
+            return response.Response({"message": "Self-approval is disabled by attendance rules."}, status=403)
+        obj.status="Rejected"; obj.rejection_reason=request.data.get("reason") or "Not authorized"
         history=list(obj.audit_history or []); history.insert(0,{"action":"Rejected Overtime","actor":request.user.name,"timestamp":timezone.now().isoformat(),"reason":obj.rejection_reason}); obj.audit_history=history
         obj.save()
         if obj.employee.user_id:
@@ -207,10 +240,14 @@ class OvertimeRequestViewSet(CompanyScopedModelViewSet):
         return response.Response(self.get_serializer(obj).data)
 class HolidayViewSet(CompanyScopedModelViewSet):
     queryset=Holiday.objects.all(); serializer_class=HolidaySerializer
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.holidays.manage",
+                      "PUT": "attendance.holidays.manage", "PATCH": "attendance.holidays.manage",
+                      "DELETE": "attendance.holidays.manage"}
 class AttendanceRuleViewSet(CompanyScopedModelViewSet):
     queryset=AttendanceRule.objects.all(); serializer_class=AttendanceRuleSerializer
-    permission_code="attendance.manage"
+    permission_map = {"GET": "attendance.team.view", "POST": "attendance.rules.manage",
+                      "PUT": "attendance.rules.manage", "PATCH": "attendance.rules.manage",
+                      "DELETE": "attendance.rules.manage"}
 
 class AttendanceStatusView(APIView):
     permission_classes=[RolePermission]

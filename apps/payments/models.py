@@ -12,4 +12,7 @@ class Payment(CompanyOwnedModel):
     status=models.CharField(max_length=30,default="Completed")
     notes=models.TextField(blank=True)
     recorded_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+    reversed_at=models.DateTimeField(null=True,blank=True)
+    reversed_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True,related_name="reversed_customer_payments")
+    reversal_reason=models.TextField(blank=True)
     class Meta: ordering=["-date","-created_at"]

@@ -5,7 +5,19 @@ TENANT_PERMISSIONS = sorted({f'{module}.{action}' for module in CRUD_MODULES
                             for action in ['view', 'create', 'edit', 'delete']} | {
     'dashboard.view', 'reports.view', 'company.manage', 'attendance.self',
     'attendance.manage', 'billing.view', 'billing.edit', 'storage.view',
-    'storage.manage', 'settings.view', 'settings.manage', 'payroll.view', 'payroll.edit',
+    'storage.manage', 'settings.view', 'settings.manage',
+    # Legacy attendance.manage and payroll.edit remain catalogued by CRUD_MODULES
+    # and explicit compatibility values; new codes always require explicit checks.
+    'attendance.team.view', 'attendance.records.manage',
+    'attendance.corrections.approve', 'attendance.leave.approve',
+    'attendance.overtime.approve', 'attendance.shifts.manage',
+    'attendance.rules.manage', 'attendance.holidays.manage',
+    'payroll.rates.manage', 'payroll.wages.finalize',
+    'payroll.extras.manage', 'payroll.extras.approve',
+    'payroll.adjustments.manage', 'payroll.process', 'payroll.approve',
+    'payroll.payments.record', 'payroll.payments.reverse',
+    'payroll.payments.view',
+    'payments.reverse',
 })
 PANEL_MODULES = ['companies', 'users', 'branches', 'roles', 'subscriptions',
                  'plans', 'features', 'requests', 'credits',

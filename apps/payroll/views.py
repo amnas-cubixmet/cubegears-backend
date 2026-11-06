@@ -261,7 +261,7 @@ class EmployeeWorkLogViewSet(CompanyScopedModelViewSet):
     ).all()
     serializer_class=EmployeeWorkLogSerializer
     permission_prefix="payroll"
-    action_permission_map={"approve":"payroll.edit","reject":"payroll.edit"}
+    action_permission_map={"approve":"payroll.adjustments.manage","reject":"payroll.adjustments.manage"}
 
     def get_queryset(self):
         qs=super().get_queryset()
@@ -416,9 +416,9 @@ class PayrollRunViewSet(CompanyScopedModelViewSet):
     serializer_class=PayrollRunSerializer
     permission_prefix="payroll"
     action_permission_map={
-        "process":"payroll.edit",
-        "approve":"payroll.edit",
-        "submit":"payroll.edit",
+        "process":"payroll.process",
+        "approve":"payroll.approve",
+        "submit":"payroll.process",
     }
 
     def get_queryset(self):
@@ -493,7 +493,7 @@ class PayslipViewSet(CompanyScopedModelViewSet):
     ).prefetch_related("line_items","adjustments","salary_payments").all()
     serializer_class=PayslipSerializer
     permission_prefix="payroll"
-    action_permission_map={"payment":"payroll.edit"}
+    action_permission_map={"payment":"payroll.payments.record"}
 
     def get_queryset(self):
         qs=super().get_queryset()
@@ -655,6 +655,7 @@ class PayrollAdjustmentViewSet(CompanyScopedModelViewSet):
 
 
 class SalaryPaymentViewSet(CompanyScopedModelViewSet):
+    permission_map = {"GET": "payroll.payments.view"}
     queryset=SalaryPayment.objects.select_related("payslip","employee","recorded_by").all()
     serializer_class=SalaryPaymentSerializer
     permission_prefix="payroll"

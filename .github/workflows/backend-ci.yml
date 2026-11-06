@@ -28,6 +28,8 @@ jobs:
           python manage.py test \
             apps.accounts.tests_email_delivery \
             apps.accounts.tests_owner_permissions \
+            apps.roles.tests_granular_permissions \
+            apps.payments.tests_reversal \
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
             apps.customers.tests_branch_assignment \
