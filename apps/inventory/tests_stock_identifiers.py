@@ -78,3 +78,52 @@ class StockIdentifiersTests(TestCase):
             items = results.data if isinstance(results.data, list) else results.data["results"]
             self.assertEqual(len(items), 1)
             self.assertEqual(items[0]["id"], created.data["id"])
+
+    def test_zero_gst_classification_is_persisted_without_changing_rate(self):
+        for index, classification in enumerate(("exempt", "nil_rated", "zero_rated", "non_gst")):
+            response = self.create_part(
+                partName=f"0% Category Part {index}",
+                tax="0",
+                zeroTaxClassification=classification,
+            )
+            self.assertEqual(response.status_code, 201, getattr(response, "data", None))
+            self.assertEqual(response.data["zeroTaxClassification"], classification)
+            saved = StockItem.objects.get(pk=response.data["id"])
+            self.assertEqual(saved.gst_zero_classification, classification)
+            self.assertEqual(saved.tax, 0)
+            detail = self.client.get(f"/api/v1/stock/items/{saved.pk}")
+            self.assertEqual(detail.status_code, 200)
+            self.assertEqual(detail.data["zeroTaxClassification"], classification)
+
+    def test_invalid_zero_classification_or_nonzero_rate_mismatch_is_rejected(self):
+        invalid = self.create_part(
+            partName="Invalid category", zeroTaxClassification="other"
+        )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertIn("zeroTaxClassification", invalid.data)
+
+        mismatch = self.create_part(
+            partName="Wrong tax mode", tax="5", zeroTaxClassification="exempt"
+        )
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertIn("zeroTaxClassification", mismatch.data)
+
+    def test_changing_a_classified_zero_rate_to_five_clears_stale_category(self):
+        created = self.create_part(
+            partName="Changeable classification", tax="0", zeroTaxClassification="exempt"
+        )
+        self.assertEqual(created.status_code, 201, getattr(created, "data", None))
+        updated = self.client.patch(
+            f"/api/v1/stock/items/{created.data['id']}",
+            {"tax": "5"}, format="json",
+        )
+        self.assertEqual(updated.status_code, 200, getattr(updated, "data", None))
+        self.assertEqual(updated.data["zeroTaxClassification"], "")
+        item = StockItem.objects.get(pk=created.data["id"])
+        self.assertEqual(item.tax, 5)
+        self.assertEqual(item.gst_zero_classification, "")
+
+    def test_legacy_unclassified_zero_rate_remains_supported(self):
+        response = self.create_part(partName="Legacy part")
+        self.assertEqual(response.status_code, 201, getattr(response, "data", None))
+        self.assertEqual(response.data["zeroTaxClassification"], "")

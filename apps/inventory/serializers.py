@@ -27,6 +27,12 @@ class StockItemSerializer(serializers.ModelSerializer):
     compatibleVehicle=serializers.CharField(source="compatible_vehicle",required=False,allow_blank=True)
     location=serializers.CharField(source="rack",required=False,allow_blank=True)
     hsnCode=serializers.CharField(source="hsn_code",required=False,allow_blank=True)
+    zeroTaxClassification=serializers.ChoiceField(
+        source="gst_zero_classification",
+        choices=StockItem.ZERO_GST_CLASSIFICATION_CHOICES,
+        allow_blank=True,
+        required=False,
+    )
     onHand=serializers.DecimalField(source="on_hand",max_digits=12,decimal_places=2,required=False)
 
     def validate_sku(self, value):
@@ -56,9 +62,26 @@ class StockItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Stock quantity cannot be negative.")
         return value
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        tax = attrs.get("tax", self.instance.tax if self.instance else 0)
+        classification = attrs.get(
+            "gst_zero_classification",
+            self.instance.gst_zero_classification if self.instance else "",
+        )
+        if tax is not None and tax != 0 and classification:
+            # Dropping the rate to non-zero must never leave a stale 0% label.
+            if "gst_zero_classification" in attrs:
+                raise serializers.ValidationError({
+                    "zeroTaxClassification": "This classification applies only to 0% GST."
+                })
+            attrs["gst_zero_classification"] = ""
+        # Legacy records with tax=0 and blank classification remain readable.
+        return attrs
+
     class Meta:
         model=StockItem
-        exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand","part_number")
+        exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand","part_number","gst_zero_classification")
 
 class StockMovementSerializer(serializers.ModelSerializer):
     unitSellingPrice=serializers.DecimalField(source="unit_selling_price",max_digits=12,decimal_places=2,read_only=True)

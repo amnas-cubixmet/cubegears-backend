@@ -38,6 +38,17 @@ class StockItem(CompanyOwnedModel):
     rack=models.CharField(max_length=80,blank=True)
     supplier=models.ForeignKey(Supplier,on_delete=models.SET_NULL,null=True,blank=True,related_name="items")
     tax=models.DecimalField(max_digits=5,decimal_places=2,default=Decimal("0"))
+    ZERO_GST_CLASSIFICATION_CHOICES = [
+        ("exempt", "Exempt"),
+        ("nil_rated", "Nil-rated"),
+        ("zero_rated", "Zero-rated"),
+        ("non_gst", "Non-GST"),
+    ]
+    # 0% item classification is distinct from the numeric tax rate.
+    # Blank remains valid for existing imported/historical stock items.
+    gst_zero_classification=models.CharField(
+        max_length=16, choices=ZERO_GST_CLASSIFICATION_CHOICES, blank=True, default=""
+    )
     hsn_code=models.CharField(max_length=20,blank=True)
     status=models.CharField(max_length=20,default="Active")
     class Meta:
