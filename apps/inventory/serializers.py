@@ -1,11 +1,11 @@
 from rest_framework import serializers
-from .models import StockCategory,Supplier,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 
 class StockCategorySerializer(serializers.ModelSerializer):
     class Meta: model=StockCategory; exclude=("company","branch")
 
 # Supplier validation is now owned by the suppliers app; legacy imports remain stable.
-from apps.suppliers.serializers import SupplierSerializer
+from apps.suppliers.serializers import SupplierSerializer as SupplierSerializer
 
 
 class StockItemSerializer(serializers.ModelSerializer):
