@@ -346,3 +346,136 @@ class MobileStaffOnboardingTests(TestCase):
             "token": setup_token,
         }, format="json")
         self.assertEqual(valid.status_code, 200, valid.data)
+
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_incomplete_waba_configuration_requires_manual_share_not_false_queue(self):
+        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, notifications_enabled=True,
+            messaging_mode="automatic", phone_number_id="official-number",
+            waba_id="", encrypted_access_token="",
+            event_settings={"staff_onboarding": True},
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="staff_onboarding",
+            template_name="approved_staff_onboarding", approval_status="APPROVED",
+        )
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.get(pk=reply.data["id"])
+        self.assertEqual(reply.status_code, 201, reply.data)
+        self.assertEqual(reply.data["whatsappInviteStatus"], "manual")
+        res = self.admin.post(f"/api/v1/employees/{employee.pk}/invite", {}, format="json")
+        # A still-valid manual link can be re-used briefly without duplicate sends.
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["whatsappInviteStatus"], "manual")
+        self.assertTrue(res.data["setupLink"])
+        self.assertEqual(
+            StaffPasswordInvitation.objects.filter(user=employee.user, delivery_status="queued").count(),
+            0,
+        )
+
+    @override_settings(WHATSAPP_SEND_ENABLED=True, CELERY_BROKER_URL="redis://localhost:6379/1")
+    def test_queued_invite_does_not_disclose_capability_url_in_staff_api(self):
+        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True, notifications_enabled=True,
+            messaging_mode="automatic", phone_number_id="official-number",
+            waba_id="official-waba", encrypted_access_token="encrypted-credential",
+            event_settings={"staff_onboarding": True},
+        )
+        WhatsAppMessageTemplate.objects.create(
+            company=self.company, event="staff_onboarding",
+            template_name="approved_staff_onboarding", approval_status="APPROVED",
+        )
+        reply = self.create_staff(consent=True)
+        self.assertEqual(reply.status_code, 201, reply.data)
+        self.assertEqual(reply.data["whatsappInviteStatus"], "queued")
+        self.assertIsNone(reply.data["setupLink"])
+        employee_id = reply.data["id"]
+        resent = self.admin.post(f"/api/v1/employees/{employee_id}/invite", {}, format="json")
+        self.assertEqual(resent.status_code, 200, resent.data)
+        self.assertEqual(resent.data["whatsappInviteStatus"], "queued")
+        self.assertIsNone(resent.data["setupLink"])
+        self.assertEqual(StaffPasswordInvitation.objects.count(), 1)
+
+    def test_revoking_staff_whatsapp_consent_audits_source_and_cancels_queue(self):
+        from apps.employees.models import EmployeeActivity
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.get(pk=reply.data["id"])
+        previous_source = employee.whatsapp_consent_source
+        invitation = employee.user.staff_password_invitations.latest("created_at")
+        invitation.delivery_status = "queued"
+        invitation.save(update_fields=["delivery_status"])
+        updated = self.admin.patch(
+            f"/api/v1/employees/{employee.pk}",
+            {"whatsappConsent": False},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        employee.refresh_from_db()
+        invitation.refresh_from_db()
+        self.assertFalse(employee.whatsapp_consent)
+        self.assertEqual(employee.whatsapp_consent_source, previous_source)
+        self.assertEqual(invitation.delivery_status, "manual")
+        self.assertTrue(EmployeeActivity.objects.filter(
+            employee=employee, action="Staff WhatsApp Consent Revoked", actor=self.owner,
+        ).exists())
+
+    @override_settings(WHATSAPP_META_APP_SECRET="signed-staff-stop-test")
+    def test_signed_staff_stop_opt_out_preserves_consent_provenance(self):
+        import hashlib
+        import hmac
+        import json
+        from apps.employees.models import EmployeeActivity
+        from apps.whatsapp.models import WhatsAppBusinessConnection
+        from apps.whatsapp.staff_invites import send_staff_invitation
+        reply = self.create_staff(consent=True)
+        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
+        source = employee.whatsapp_consent_source
+        invitation = employee.user.staff_password_invitations.latest("created_at")
+        invitation.delivery_status = "queued"
+        invitation.save(update_fields=["delivery_status"])
+        WhatsAppBusinessConnection.objects.create(
+            company=self.company, connected=True,
+            phone_number_id="signed-staff-phone",
+        )
+        body = json.dumps({
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "metadata": {"phone_number_id": "signed-staff-phone"},
+                        "messages": [{
+                            "from": employee.user.normalized_phone.lstrip("+"),
+                            "text": {"body": "STOP"},
+                        }],
+                    },
+                }],
+            }],
+        }).encode()
+        signature = hmac.new(b"signed-staff-stop-test", body, hashlib.sha256).hexdigest()
+        result = self.public.generic(
+            "POST", "/api/v1/whatsapp/webhook", data=body,
+            content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256="sha256=" + signature,
+        )
+        self.assertEqual(result.status_code, 200)
+        employee.refresh_from_db()
+        invitation.refresh_from_db()
+        self.assertFalse(employee.whatsapp_consent)
+        self.assertEqual(employee.whatsapp_consent_source, source)
+        self.assertEqual(invitation.delivery_status, "manual")
+        self.assertEqual(send_staff_invitation.run(str(invitation.pk)), "disabled")
+        self.assertEqual(EmployeeActivity.objects.filter(
+            employee=employee, action="Staff WhatsApp Consent Revoked",
+        ).count(), 1)
+        # Meta may redeliver inbound webhooks; no second consent audit event.
+        duplicate = self.public.generic(
+            "POST", "/api/v1/whatsapp/webhook", data=body,
+            content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256="sha256=" + signature,
+        )
+        self.assertEqual(duplicate.status_code, 200)
+        self.assertEqual(EmployeeActivity.objects.filter(
+            employee=employee, action="Staff WhatsApp Consent Revoked",
+        ).count(), 1)

@@ -14,6 +14,7 @@ from .models import (
 )
 from apps.customers.models import Customer
 from apps.accounts.models import StaffPasswordInvitation
+from apps.employees.models import Employee, EmployeeActivity
 
 
 def _digits(value):
@@ -90,6 +91,31 @@ class MetaWhatsAppWebhookView(APIView):
                     sender = _digits(message.get("from"))
                     if not sender:
                         continue
+                    # Inbound STOP is a revocation of consent for staff as well
+                    # as customers. Match only this workshop's exact E.164
+                    # identity; never infer a different country code or tenant.
+                    staff_matches = Employee.objects.filter(
+                        company=connection.company,
+                        user__normalized_phone="+" + sender,
+                        whatsapp_consent=True,
+                    )
+                    for staff in staff_matches:
+                        staff.whatsapp_consent = False
+                        # Preserve the original grant source as an audit trail.
+                        staff.save(update_fields=["whatsapp_consent", "updated_at"])
+                        EmployeeActivity.objects.create(
+                            company=connection.company, branch=staff.branch,
+                            employee=staff, action="Staff WhatsApp Consent Revoked",
+                            details="Inbound STOP received from the staff mobile number.",
+                            metadata={"source": "Signed Meta WhatsApp webhook"},
+                        )
+                        StaffPasswordInvitation.objects.filter(
+                            user=staff.user, used_at__isnull=True,
+                            invalidated_at__isnull=True, delivery_status="queued",
+                        ).update(
+                            delivery_status="manual",
+                            failure_reason="Staff opted out before automatic WhatsApp delivery.",
+                        )
                     for customer in Customer.objects.filter(company=connection.company).only(
                         "id", "company_id", "branch_id", "phone", "whatsapp"
                     )[:2000]:

@@ -45,20 +45,15 @@ def queue_staff_whatsapp_invitation(invitation, employee):
         invitation.failure_reason = "WhatsApp consent not recorded; manual secure delivery required."
         invitation.save(update_fields=["delivery_status", "failure_reason"])
         return "manual"
-    connection = WhatsAppBusinessConnection.objects.filter(
-        company=employee.company, connected=True, notifications_enabled=True,
-    ).first()
-    template = WhatsAppMessageTemplate.objects.filter(
-        company=employee.company, event="staff_onboarding", approval_status="APPROVED",
-    ).first()
-    if not connection or connection.messaging_mode != "automatic" or not connection.event_settings.get("staff_onboarding", False) or not template:
+    # Use the same strict preflight as mobile password recovery. A connected
+    # flag alone is insufficient: Meta phone/WABA/token, approved staff template
+    # and the asynchronous sender must all be configured before showing Queued.
+    if not staff_auto_delivery_available(employee):
         invitation.delivery_status = "manual"
-        invitation.failure_reason = "Workshop WhatsApp disconnected or staff template not enabled."
-        invitation.save(update_fields=["delivery_status", "failure_reason"])
-        return "manual"
-    if not settings.WHATSAPP_SEND_ENABLED or not settings.CELERY_BROKER_URL:
-        invitation.delivery_status = "manual"
-        invitation.failure_reason = "Workshop WhatsApp sender and Celery worker are disabled."
+        invitation.failure_reason = (
+            "Automatic staff WhatsApp delivery is unavailable. "
+            "Check the official workshop connection, approved template and sender."
+        )
         invitation.save(update_fields=["delivery_status", "failure_reason"])
         return "manual"
     invitation.delivery_status = "queued"
@@ -96,8 +91,9 @@ def send_staff_invitation(invitation_id):
         ).first()
         if (not user.is_active or not employee or not employee.whatsapp_consent_source
                 or normalize_recipient(employee.phone) != normalize_recipient(user.normalized_phone)
-                or not connection or connection.messaging_mode != "automatic" or not template
-                or not connection.event_settings.get("staff_onboarding", False)):
+                or not connection or not connection.phone_number_id or not connection.waba_id
+                or not connection.encrypted_access_token or connection.messaging_mode != "automatic"
+                or not template or not connection.event_settings.get("staff_onboarding", False)):
             invite.delivery_status = "failed"
             invite.failure_reason = "Staff, consent or WhatsApp connection is unavailable."
             invite.save(update_fields=["delivery_status", "failure_reason"])
