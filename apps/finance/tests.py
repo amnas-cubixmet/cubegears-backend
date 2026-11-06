@@ -165,3 +165,19 @@ class FinanceAccountingTests(TestCase):
         )
         self.assertEqual(invalid.status_code, 400)
         self.assertEqual(account_balance(self.cash), Decimal("1000.00"))
+
+    def test_ledger_csv_and_pdf_exports_are_scoped_and_downloadable(self):
+        WorkshopAccountEntry.objects.create(
+            company=self.company, account=self.cash, amount=Decimal("12.00"),
+            entry_type="manual_adjustment", source_key="export-test-once",
+            reference="Cash adjustment", posted_at=__import__("django.utils.timezone", fromlist=["now"]).now(),
+            created_by=self.owner,
+        )
+        csv_response = self.client.get("/api/v1/finance/ledger?export=csv")
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertEqual(csv_response["Content-Type"], "text/csv")
+        self.assertIn(b"Cash adjustment", csv_response.content)
+        pdf_response = self.client.get("/api/v1/finance/ledger?export=pdf")
+        self.assertEqual(pdf_response.status_code, 200, getattr(pdf_response, "data", None))
+        self.assertEqual(pdf_response["Content-Type"], "application/pdf")
+        self.assertTrue(pdf_response.content.startswith(b"%PDF"))
