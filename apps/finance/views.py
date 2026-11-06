@@ -46,7 +46,9 @@ def account_balance(account):
 
 
 def accounts_summary(company_id):
-    accounts = WorkshopFinancialAccount.objects.filter(company_id=company_id, is_active=True)
+    # An inactive account can still hold funds. Account deactivation must
+    # block NEW postings, not make historical money disappear from balances.
+    accounts = WorkshopFinancialAccount.objects.filter(company_id=company_id)
     bank_total = Decimal("0")
     cash_total = Decimal("0")
     result = []
