@@ -11,8 +11,38 @@ class Expense(CompanyOwnedModel):
     payment_method=models.CharField(max_length=50,blank=True)
     reference=models.CharField(max_length=120,blank=True)
     attachment=models.URLField(blank=True)
-    status=models.CharField(max_length=30,default="Paid")
+    status=models.CharField(max_length=30,default="Unpaid")
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
     # Finance account linkage
     account=models.ForeignKey("inventory.WorkshopFinancialAccount",on_delete=models.SET_NULL,null=True,blank=True,related_name="expense_payments")
     class Meta: ordering=["-date","-created_at"]
+
+
+class ExpenseSettlement(CompanyOwnedModel):
+    """Audited, idempotent settlement of an expense payable."""
+    expense = models.ForeignKey(Expense, on_delete=models.PROTECT, related_name="settlements")
+    account = models.ForeignKey(
+        "inventory.WorkshopFinancialAccount", on_delete=models.PROTECT,
+        related_name="expense_settlements",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    method = models.CharField(max_length=50, default="Cash")
+    reference = models.CharField(max_length=120, blank=True)
+    idempotency_key = models.CharField(max_length=128)
+    posted_at = models.DateTimeField()
+    recorded_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
+    reversed_at = models.DateTimeField(null=True, blank=True)
+    reversed_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="reversed_expense_settlements",
+    )
+    reversal_reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-posted_at", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "idempotency_key"],
+                name="unique_expense_settlement_request",
+            ),
+        ]

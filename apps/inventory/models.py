@@ -106,7 +106,7 @@ class StockAudit(CompanyOwnedModel):
 # Supplier financial records are separate from PurchaseOrder drafts and from
 # customer Payment. A posted bill is a payable, not a second expense.
 class WorkshopFinancialAccount(CompanyOwnedModel):
-    KIND_CHOICES = [("Cash", "Cash"), ("Bank", "Bank"), ("UPI", "UPI"), ("Wallet", "Wallet")]
+    KIND_CHOICES = [("Cash", "Cash"), ("Bank", "Bank"), ("UPI", "UPI"), ("Wallet", "Wallet"), ("Other", "Other")]
     name = models.CharField(max_length=120)
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))

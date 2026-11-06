@@ -39,8 +39,30 @@ class PaymentViewSet(CompanyScopedModelViewSet):
         if serializer.validated_data.get("status", "Completed") != "Completed":
             raise ValidationError({"status": "New payments must be completed. Record only confirmed collections."})
 
-        if amount is None or amount <= Decimal("0"):
+        if amount is None or not amount.is_finite() or amount <= Decimal("0"):
             raise ValidationError({"amount": "Payment must be greater than zero."})
+        direction = serializer.validated_data.get("direction", "IN")
+        if direction not in ("IN", "OUT"):
+            raise ValidationError({"direction": "Choose IN or OUT."})
+        if invoice and direction != "IN":
+            raise ValidationError({"direction": "Invoice collections must be incoming payments."})
+        account = serializer.validated_data.get("account")
+        if direction == "OUT" and not account:
+            raise ValidationError({"account": "Select an account for outgoing payments."})
+        key = serializer.validated_data.get("idempotency_key")
+        if key and Payment.objects.filter(company=company, idempotency_key=key).exists():
+            raise ValidationError({"idempotency_key": "This payment has already been recorded."})
+        if account:
+            from apps.inventory.models import WorkshopFinancialAccount
+            from apps.finance.views import account_balance
+            account = WorkshopFinancialAccount.objects.select_for_update().filter(
+                pk=account.pk, company=company, is_active=True
+            ).first()
+            if not account:
+                raise ValidationError({"account": "Select an active account owned by your company."})
+            if direction == "OUT" and account_balance(account) < amount:
+                raise ValidationError({"amount": "Insufficient funds in the selected account."})
+
         if customer and customer.company_id != company.id:
             raise ValidationError({"customer": "Customer belongs to another company."})
         if invoice and invoice.company_id != company.id:
@@ -95,7 +117,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 branch=self.request.user.branch,
                 account=payment.account,
                 amount=signed_amount,
-                entry_type="customer_payment",
+                entry_type="customer_payment" if payment.direction == "IN" else "outgoing_payment",
                 source_key=source_key,
                 reference=f"Payment {payment.pk}" + (f" | {payment.reference}" if payment.reference else ""),
                 posted_at=timezone.now(),
@@ -130,6 +152,21 @@ class PaymentViewSet(CompanyScopedModelViewSet):
         if payment.status != "Completed":
             raise ValidationError({"status": "Only completed payments can be reversed."})
 
+        # Reverse the original financial posting, not an unrelated legacy balance.
+        original_entry = None
+        if payment.account_id:
+            from apps.inventory.models import WorkshopAccountEntry
+            from apps.finance.views import account_balance
+            original_entry = WorkshopAccountEntry.objects.select_related("account").filter(
+                company=request.user.company,
+                source_key=f"customer_payment_{payment.pk}",
+            ).first()
+            if original_entry and original_entry.amount > 0:
+                if account_balance(original_entry.account) < original_entry.amount:
+                    raise ValidationError({
+                        "account": "Insufficient funds for reversal. Reconcile the account first."
+                    })
+
         if payment.invoice_id:
             invoice = Invoice.objects.select_for_update().filter(
                 company=request.user.company, pk=payment.invoice_id
@@ -145,6 +182,19 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             if invoice.status == "Paid" and invoice.balance > 0:
                 invoice.status = "Finalized"
             invoice.save(update_fields=["paid", "balance", "status", "updated_at"])
+
+        if original_entry:
+            WorkshopAccountEntry.objects.create(
+                company=request.user.company,
+                branch=request.user.branch,
+                account=original_entry.account,
+                amount=-original_entry.amount,
+                entry_type="payment_reversal",
+                source_key=f"customer_payment_reverse_{payment.pk}",
+                reference=reason[:120],
+                posted_at=timezone.now(),
+                created_by=request.user,
+            )
 
         payment.status = "Reversed"
         payment.reversed_at = timezone.now()
