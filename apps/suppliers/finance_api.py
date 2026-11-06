@@ -323,6 +323,14 @@ def finalize_supplier_bill(request, bill, payment_data=None):
         payload = {**payment_data, "supplierId": str(bill.supplier_id)}
         if "allocations" not in payload:
             payload["allocations"] = [{"billId": str(bill.pk), "amount": payload.get("amount")}]
+        else:
+            if not isinstance(payload["allocations"], list):
+                raise ValidationError({"allocations": "Allocations must be a list."})
+            payload["allocations"] = [
+                {**row, "billId": row.get("billId") or str(bill.pk)}
+                if isinstance(row, dict) else row
+                for row in payload["allocations"]
+            ]
         result["payment"] = record_supplier_payment(request, payload)
         result = {**bill_info(bill), "payment": result["payment"]}
     return result
