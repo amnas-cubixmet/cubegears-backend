@@ -304,3 +304,18 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(report.data["todayReceived"], "0.00")
         self.assertEqual(report.data["bankBalance"], "500.00")
         self.assertEqual(report.data["cashBalance"], "1000.00")
+
+    def test_inactive_bank_funds_stay_in_book_balances_without_allowing_posting(self):
+        self.bank.is_active = False
+        self.bank.save(update_fields=["is_active"])
+        report = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data["bankBalance"], "500.00")
+        self.assertTrue(any(
+            a["id"] == str(self.bank.pk) and a["isActive"] is False
+            for a in report.data["accounts"]
+        ))
+        blocked = self.client.post("/api/v1/finance/accounts/" + str(self.bank.pk) + "/adjust", {
+            "direction": "credit", "amount": "50.00", "reason": "Attempt to post to inactive account"
+        }, format="json")
+        self.assertEqual(blocked.status_code, 400)
