@@ -6,13 +6,14 @@ from .finance_api import (
     AccountCollection, AccountLedger,
     SupplierBillCollection, SupplierBillPost,
     SupplierPaymentCollection, SupplierAdvanceApply,
-    SupplierSummary, SupplierLedger,
+    SupplierSummary, SupplierLedger, SupplierPurchaseGSTOptions,
 )
 
 router = DefaultRouter(trailing_slash=False)
 router.register("", SupplierViewSet, basename="suppliers")
 
 urlpatterns = [
+    path("procurement/gst-options", SupplierPurchaseGSTOptions.as_view(), name="suppliers-gst-options"),
     path("procurement/accounts", AccountCollection.as_view(), name="suppliers-workshop-accounts"),
     path("procurement/accounts/<uuid:pk>/ledger", AccountLedger.as_view(), name="suppliers-workshop-account-ledger"),
     path("procurement/bills", SupplierBillCollection.as_view(), name="suppliers-bills"),
