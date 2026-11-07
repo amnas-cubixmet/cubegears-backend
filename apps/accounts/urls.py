@@ -24,6 +24,12 @@ urlpatterns = [
     path("logout", LogoutView.as_view(), name="logout"),
     path("me", MeView.as_view(), name="me"),
     path("refresh", SecureTokenRefreshView.as_view(), name="token-refresh"),
+    # Older clients sometimes use the trailing slash. Both variants preserve
+    # the same auth rules without redirecting POSTs or dropping request bodies.
+    path("login/", LoginView.as_view(), name="login-with-slash"),
+    path("logout/", LogoutView.as_view(), name="logout-with-slash"),
+    path("me/", MeView.as_view(), name="me-with-slash"),
+    path("refresh/", SecureTokenRefreshView.as_view(), name="token-refresh-with-slash"),
     path("change-password", ChangePasswordView.as_view(), name="change-password"),
     path("forgot-password", ForgotPasswordView.as_view(), name="forgot-password"),
     path("reset-password", ResetPasswordView.as_view(), name="reset-password"),
