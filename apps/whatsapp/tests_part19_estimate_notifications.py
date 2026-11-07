@@ -145,7 +145,7 @@ class Part19EstimateNotificationTests(TestCase):
             "/api/v1/whatsapp/manual-share", {
                 "targetType": "estimate", "targetId": str(self.quote.pk)
             }, format="json",
-        ).status_code, 403)
+        ).status_code, 401)
         unshared = self.staff.post("/api/v1/whatsapp/manual-share", {
             "targetType": "estimate", "targetId": str(self.quote.pk)
         }, format="json")
