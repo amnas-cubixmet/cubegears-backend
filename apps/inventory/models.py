@@ -125,12 +125,17 @@ class StockTransfer(CompanyOwnedModel):
         ]
 
 class StockAudit(CompanyOwnedModel):
+    request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT,related_name="audits")
     expected_qty=models.DecimalField(max_digits=12,decimal_places=2)
     counted_qty=models.DecimalField(max_digits=12,decimal_places=2)
     difference=models.DecimalField(max_digits=12,decimal_places=2)
     reason=models.CharField(max_length=255,blank=True)
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+    class Meta:
+        constraints=[
+            models.UniqueConstraint(fields=["company","request_key"],name="unique_inventory_count_request"),
+        ]
 
 
 # Supplier financial records are separate from PurchaseOrder drafts and from
