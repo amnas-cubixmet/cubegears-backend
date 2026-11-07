@@ -68,6 +68,25 @@ class CompanyWebsiteSettings(models.Model):
         return f"Customer website for {self.company.name}"
 
 
+
+class CompanyWebsiteSubdomain(models.Model):
+    """Dedicated public-site hostname; never mutate Company.slug (staff login ID).
+
+    The unique label is a global namespace shared by all workshop customer
+    websites under CUSTOMER_PORTAL_ROOT_DOMAIN. Backfilled for legacy tenants.
+    """
+    id = models.BigAutoField(primary_key=True)
+    company = models.OneToOneField(
+        Company, on_delete=models.CASCADE, related_name="website_subdomain"
+    )
+    label = models.SlugField(max_length=63, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.label
+
+
 class CompanyDomain(models.Model):
     id = models.BigAutoField(primary_key=True)
     """Custom domains are NEVER active on user submission alone."""

@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.companies.models import Company, CompanyDomain, CompanyWebsiteSettings
+from apps.companies.models import Company, CompanyDomain, CompanyWebsiteSettings, CompanyWebsiteSubdomain
 from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
 from apps.customers.estimate_review import public_estimate
@@ -67,10 +67,23 @@ def _tenant(request):
         if slug:
             return get_object_or_404(Company, slug=slug, is_active=True)
     root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
+    if settings.DEBUG and hostname.endswith(".localhost"):
+        root = "localhost"
     if hostname.endswith("." + root):
-        slug = hostname[:-(len(root) + 1)]
-        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", slug):
-            return get_object_or_404(Company, slug=slug, is_active=True)
+        label = hostname[:-(len(root) + 1)]
+        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
+            entry = CompanyWebsiteSubdomain.objects.select_related("company").filter(
+                label=label, company__is_active=True
+            ).first()
+            if entry:
+                return entry.company
+            # Legacy test/admin-created companies may not yet have a registry
+            # row. Never fall back to the login slug of a renamed website.
+            fallback = Company.objects.filter(
+                slug=label, is_active=True, website_subdomain__isnull=True
+            ).first()
+            if fallback:
+                return fallback
     domain = CompanyDomain.objects.select_related("company").filter(
         hostname=hostname, status=CompanyDomain.ACTIVE,
         is_approved=True, dns_configured=True, ownership_verified=True,

@@ -292,11 +292,20 @@ class PublicWorkshopSignupView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        base_slug = slugify(data["workshop_name"]) or "workshop"
+        # A login slug must fit one DNS label so signup never creates an
+        # unrouteable default address. Existing website aliases reserve names
+        # independently of login slugs.
+        from apps.companies.models import CompanyWebsiteSubdomain
+        from apps.companies.subdomains import RESERVED_LABELS, ensure_default_subdomain
+        base_slug = (slugify(data["workshop_name"])[:53].strip("-") or "workshop")
+        if len(base_slug) < 3 or base_slug in RESERVED_LABELS:
+            base_slug = "workshop-" + base_slug
         slug = base_slug
         suffix = 2
-        while Company.objects.filter(slug=slug).exists():
-            slug = f"{base_slug}-{suffix}"
+        while (Company.objects.filter(slug=slug).exists()
+               or CompanyWebsiteSubdomain.objects.filter(label=slug).exists()):
+            addition = "-" + str(suffix)
+            slug = base_slug[:63 - len(addition)].rstrip("-") + addition
             suffix += 1
 
         company = Company.objects.create(
@@ -310,6 +319,10 @@ class PublicWorkshopSignupView(APIView):
             require_paid_features=True,
             is_active=True,
         )
+
+        # Backend owns the default website reservation. No new Vercel
+        # project/domain is provisioned for each workshop signup.
+        ensure_default_subdomain(company)
 
         branch = Branch.objects.create(
             company=company,
