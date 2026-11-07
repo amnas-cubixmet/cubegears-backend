@@ -265,20 +265,41 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         return response.Response(InvoiceSerializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"])
-    def cancel(self,request,pk=None):
-        obj=self.get_object()
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        # Lock the record so a concurrent finalize or cancellation cannot
+        # bypass the state check or erase a document's legal audit trail.
+        scoped = self.get_object()
+        obj = Invoice.objects.select_for_update().get(
+            pk=scoped.pk, company_id=request.user.company_id,
+        )
         if obj.status == "Cancelled":
-            return response.Response(InvoiceSerializer(obj).data)
+            return response.Response(self.get_serializer(obj).data)
         if obj.status != "Draft" or obj.finalized_at:
-            raise ValidationError({"status": "Finalized invoices require an authorized credit-note or reversal workflow; they cannot be silently cancelled."})
+            raise ValidationError({
+                "status": "Finalized or issued documents require a credit-note/reversal workflow."
+            })
+        if obj.payments.exists() or obj.converted_invoices.exists():
+            raise ValidationError({
+                "status": "Documents linked to payments or converted invoices cannot be cancelled."
+            })
         reason = str(request.data.get("reason") or "").strip()
-        if len(reason) < 5 or len(reason) > 500:
+        if not 5 <= len(reason) <= 500:
             raise ValidationError({"reason": "Provide a cancellation reason (5–500 characters)."})
-        obj.status="Cancelled"; obj.cancelled_at=timezone.now(); obj.save(update_fields=["status","cancelled_at","updated_at"])
+        obj.status = "Cancelled"
+        obj.cancelled_at = timezone.now()
+        obj.cancellation_reason = reason
+        obj.save(update_fields=[
+            "status", "cancelled_at", "cancellation_reason", "updated_at",
+        ])
         if obj.job_id:
-            record_job_event(obj.job, request.user, "Invoice Cancelled",
-                             f"{obj.number} cancelled", {"invoiceId": str(obj.pk)})
-        return response.Response(InvoiceSerializer(obj).data)
+            record_job_event(
+                obj.job, request.user, "Invoice Cancelled",
+                f"{obj.number} cancelled", {
+                    "invoiceId": str(obj.pk), "reason": reason,
+                },
+            )
+        return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"],url_path="convert-to-invoice")
     @transaction.atomic
