@@ -39,6 +39,7 @@ class WhatsAppManualShareView(APIView):
         kind = str(request.data.get("targetType") or "").lower().strip()
         ident = request.data.get("targetId")
         company = request.user.company
+        estimate = None
 
         if kind == "customer":
             _require(request, "customers.view")
@@ -92,6 +93,13 @@ class WhatsAppManualShareView(APIView):
             customer, job, invoice = log.customer, log.job, None
             if not customer:
                 return Response({"message": "No customer is attached to this failed notification."}, status=409)
+            if log.event in {"estimate_shared", "estimate_reminder"}:
+                from .tasks import _active_estimate
+                estimate = _active_estimate(log.event, log.idempotency_key, customer, job)
+                if estimate is None:
+                    return Response({
+                        "message": "This estimate is no longer awaiting customer review."
+                    }, status=409)
         else:
             return Response({"message": "Select customer, job, estimate, invoice, or failed log."}, status=400)
 
@@ -113,7 +121,7 @@ class WhatsAppManualShareView(APIView):
             return Response({"message": "Tracking link cannot be recovered. Regenerate the customer link."}, status=409)
 
         workshop = company.name
-        if kind == "estimate":
+        if estimate is not None:
             message = (
                 f"Hello {customer.name}, Estimate V{estimate.version} for job card "
                 f"{job.job_number} at {workshop} is ready for your review "
