@@ -319,3 +319,40 @@ class FinanceAccountingTests(TestCase):
             "direction": "credit", "amount": "50.00", "reason": "Attempt to post to inactive account"
         }, format="json")
         self.assertEqual(blocked.status_code, 400)
+
+
+    def test_finance_balance_fields_require_explicit_role_grant(self):
+        role = Role.objects.create(
+            company=self.company, name="Payment Clerk", code="PAYMENT_CLERK",
+            permissions=["payments.view"],
+        )
+        clerk = User.objects.create_user(
+            email="finance-clerk@example.test", password="test-password-do-not-use",
+            name="Payment Clerk", company=self.company, role=role,
+        )
+        self.client.force_authenticate(user=clerk)
+
+        accounts = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(accounts.status_code, 200, accounts.data)
+        bank = next(row for row in accounts.data if row["id"] == str(self.bank.id))
+        self.assertNotIn("currentBalance", bank)
+        self.assertNotIn("openingBalance", bank)
+
+        detail = self.client.get(f"/api/v1/finance/accounts/{self.bank.pk}")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertNotIn("currentBalance", detail.data)
+        self.assertNotIn("openingBalance", detail.data)
+        self.assertTrue(all("runningBalance" not in row for row in detail.data["ledger"]))
+
+        dashboard = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertNotIn("bankBalance", dashboard.data)
+        self.assertNotIn("cashBalance", dashboard.data)
+
+        role.permissions = ["payments.view", "finance.accounts.balance.view"]
+        role.save(update_fields=["permissions"])
+        granted = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(granted.status_code, 200, granted.data)
+        bank = next(row for row in granted.data if row["id"] == str(self.bank.id))
+        self.assertIn("currentBalance", bank)
+        self.assertEqual(bank["currentBalance"], "500.00")
