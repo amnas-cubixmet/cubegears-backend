@@ -246,7 +246,10 @@ class Part17CustomerEstimateTests(TestCase):
     def test_stale_old_version_cannot_be_shared(self):
         newer = JobEstimate.objects.create(
             company=self.company, branch=self.job.branch, job=self.job,
-            version=2, status="Draft", total=Decimal("1600.00"),
+            version=2, status="Draft", subtotal=Decimal("1600.00"),
+            total=Decimal("1600.00"),
+            items=[{"description": "Revised brake service", "type": "Labour",
+                    "quantity": "1", "unitPrice": "1600.00", "total": "1600.00"}],
         )
         self.assertEqual(self.share().status_code, 400)
         self.assertEqual(self.staff.post(
