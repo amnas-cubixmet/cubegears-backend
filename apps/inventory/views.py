@@ -196,6 +196,8 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         item_id = request.data.get("itemId") or request.data.get("item")
         if not item_id:
             return response.Response({"message": "Select an existing product."}, status=400)
+        key = stock_request_key(request)
+        Company.objects.select_for_update().get(pk=request.user.company_id)
         try:
             item = get_object_or_404(
                 StockItem.objects.select_for_update(),
@@ -203,8 +205,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             )
         except (ValueError, DjangoValidationError):
             return response.Response({"message": "Invalid product."}, status=400)
-        if item.branch_id is not None and item.branch_id != getattr(request.user, "branch_id", None):
-            return response.Response({"message": "This product belongs to another branch."}, status=403)
+        balance = locked_branch_balance(item, request.user.branch)
 
         def money_field(value, label):
             try:
@@ -226,6 +227,23 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         except ValueError as exc:
             return response.Response({"message": str(exc)}, status=400)
 
+        prior = replay_movement(request, key, item=item, kind="purchase", quantity=quantity)
+        if prior:
+            if prior.unit_cost != purchase_cost or prior.unit_selling_price != selling_price:
+                raise ValidationError({"requestKey": "This key belongs to an earlier receipt with different prices."})
+            return response.Response(self._movement_response(request, prior), status=200)
+        supplier_bill_id = request.data.get("supplierBillId")
+        if supplier_bill_id:
+            from .models import SupplierBill
+            try:
+                already_received = SupplierBill.objects.filter(
+                    company=request.user.company, pk=supplier_bill_id,
+                    status="Posted", receive_into_stock=True,
+                ).exists()
+            except (ValueError, TypeError):
+                raise ValidationError({"supplierBillId": "Select a valid supplier bill."})
+            if already_received:
+                raise ValidationError({"supplierBillId": "Stock was already received when this supplier bill was posted."})
         prices_changed = purchase_cost != item.cost_price or selling_price != item.selling_price
         mode = request.data.get("priceMode") or ""
         if mode and mode not in {"apply_new", "keep_existing"}:
@@ -249,10 +267,11 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             item.on_hand += quantity
             item.save(update_fields=["on_hand", "updated_at"])
 
+        move_balance(balance, quantity)
         movement = StockMovement.objects.create(
             company=item.company,
-            branch=item.branch or request.user.branch,
-            item=item,
+            branch=request.user.branch,
+            item=item, request_key=key,
             movement_type="purchase",
             quantity=quantity,
             unit_cost=purchase_cost,
