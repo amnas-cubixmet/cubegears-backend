@@ -108,7 +108,7 @@ def send_staff_invitation(invitation_id):
             invite.failure_reason = "Automatic WhatsApp requirements no longer met."
             invite.save(update_fields=["delivery_status", "failure_reason"])
             return "manual"
-        if not resolve_invitation(invitation_url(invite)):
+        if not resolve_invitation(invitation_url(invite).rsplit("/", 1)[-1]):
             invite.delivery_status = "failed"
             invite.failure_reason = "Invitation expired, was consumed or was revoked."
             invite.save(update_fields=["delivery_status", "failure_reason"])
