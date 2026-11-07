@@ -11,7 +11,15 @@ from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsCompanyAdmin
+from apps.accounts.permissions import is_company_owner
+from rest_framework.permissions import BasePermission
+
+
+class IsVerifiedWorkshopOwner(BasePermission):
+    """Paid entitlements do not block setup; staff permissions cannot impersonate owner."""
+
+    def has_permission(self, request, view):
+        return is_company_owner(request.user)
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.saas.models import CompanySetting
@@ -137,7 +145,7 @@ def snapshot(company):
 
 
 class WorkshopSetupView(APIView):
-    permission_classes = [IsCompanyAdmin]
+    permission_classes = [IsVerifiedWorkshopOwner]
 
     def get(self, request):
         return Response(snapshot(request.user.company))
@@ -198,7 +206,7 @@ class WorkshopSetupView(APIView):
 
 
 class WorkshopSetupCompleteView(APIView):
-    permission_classes = [IsCompanyAdmin]
+    permission_classes = [IsVerifiedWorkshopOwner]
 
     @transaction.atomic
     def post(self, request):
