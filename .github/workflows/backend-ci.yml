@@ -41,6 +41,7 @@ jobs:
             apps.customers.tests_branch_assignment \
             apps.customers.tests_website \
             apps.vehicles.tests_inspection_photo \
+            apps.vehicles.tests_customer_vehicle_workflow \
             apps.jobs.tests_create_vehicle_complaints \
             apps.jobs.tests_manual_complaints \
             apps.jobs.tests_work_skip \

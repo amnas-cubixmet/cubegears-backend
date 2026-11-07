@@ -15,6 +15,26 @@ class CustomerSerializer(serializers.ModelSerializer):
         exclude = ("company",)
         read_only_fields = ("id","created_at","updated_at")
 
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Customer name is required.")
+        return value
+
+    def validate_phone(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Customer contact number is required.")
+        return value
+
+    def validate_branch(self, branch):
+        request = self.context.get("request")
+        if branch and (
+            branch.company_id != request.user.company_id or not branch.is_active
+        ):
+            raise serializers.ValidationError("Select an active branch in your company.")
+        return branch
+
 class CustomerActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomerActivity

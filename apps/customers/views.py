@@ -1,4 +1,5 @@
 import uuid
+from django.db import transaction
 from django.db.models import Q, Sum
 from rest_framework import decorators, response, status
 from common.viewsets import CompanyScopedModelViewSet
@@ -19,6 +20,7 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         "activity": "customers.view",
         "outstanding": "invoices.view",
         "branch_options": "customers.view",
+        "restore": "customers.edit",
     }
 
     def get_queryset(self):
@@ -43,10 +45,11 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         # The base view assigns the user's default branch; honor a selected
         # branch only after the base create() validates its tenant ownership.
         selected = serializer.validated_data.get("branch")
-        serializer.save(
-            company=self.request.user.company,
-            branch=selected if selected is not None else self.request.user.branch,
-        )
+        branch = selected if selected is not None else self.request.user.branch
+        if branch is not None and not branch.is_active:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({"branch": "Select an active workshop branch."})
+        serializer.save(company=self.request.user.company, branch=branch)
 
     @decorators.action(detail=False, methods=["get"], url_path="branch-options")
     def branch_options(self, request):
@@ -61,7 +64,9 @@ class CustomerViewSet(CompanyScopedModelViewSet):
     def check_duplicate(self, request):
         phone = str(request.data.get("phone") or "").strip()
         email = str(request.data.get("email") or "").strip()
-        qs = self.get_queryset()
+        # Duplicate detection must be based on ALL records in this tenant,
+        # not user-supplied list filters like status/search/branch.
+        qs = Customer.objects.filter(company_id=request.user.company_id)
         if phone or email:
             match_filter = Q(phone=phone) if phone else Q(pk__isnull=True)
             if email:
@@ -71,22 +76,67 @@ class CustomerViewSet(CompanyScopedModelViewSet):
             match = None
         return response.Response({"duplicate": bool(match), "customer": CustomerSerializer(match).data if match else None})
 
+    def _set_archived(self, request, customer, archived):
+        previous = customer.status
+        new_status = "archived" if archived else "active"
+        if previous != new_status:
+            customer.status = new_status
+            customer.save(update_fields=["status", "updated_at"])
+            CustomerActivity.objects.create(
+                company=customer.company, branch=customer.branch, customer=customer,
+                activity_type="Customer Archived" if archived else "Customer Restored",
+                description="Customer status changed without deleting historical records.",
+                actor=request.user,
+                metadata={"previous": previous, "status": new_status},
+            )
+        return customer
+
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        # DELETE is intentionally non-destructive. Preserve jobs, invoices,
+        # vehicles, payments, photo references and customer portal audit.
+        customer = self.get_object()
+        self._set_archived(request, customer, True)
+        return response.Response(status=status.HTTP_204_NO_CONTENT)
+
+    @transaction.atomic
     @decorators.action(detail=True, methods=["patch"])
     def archive(self, request, pk=None):
-        obj=self.get_object(); obj.status="archived"; obj.save(update_fields=["status","updated_at"])
-        return response.Response(CustomerSerializer(obj).data)
+        customer = self._set_archived(request, self.get_object(), True)
+        return response.Response(self.get_serializer(customer).data)
+
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        customer = self._set_archived(request, self.get_object(), False)
+        return response.Response(self.get_serializer(customer).data)
 
     @decorators.action(detail=True, methods=["get","post"])
     def vehicles(self, request, pk=None):
         from apps.vehicles.models import Vehicle
         from apps.vehicles.serializers import VehicleSerializer
         customer=self.get_object()
-        if request.method=="POST":
-            s=VehicleSerializer(data={**request.data,"customer":str(customer.id)})
+        if request.method == "POST":
+            if customer.status == "archived":
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"customer": "Restore the archived customer before adding a vehicle."})
+            s = VehicleSerializer(
+                data={**request.data, "customer": str(customer.id)},
+                context={"request": request},
+            )
             s.is_valid(raise_exception=True)
-            vehicle=s.save(company=request.user.company, branch=request.user.branch, customer=customer)
-            return response.Response(VehicleSerializer(vehicle).data,status=status.HTTP_201_CREATED)
-        return response.Response(VehicleSerializer(Vehicle.objects.filter(customer=customer),many=True).data)
+            branch = customer.branch or request.user.branch
+            if branch and not branch.is_active:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError({"branch": "The customer branch is inactive."})
+            vehicle = s.save(company=request.user.company, branch=branch, customer=customer)
+            return response.Response(self._vehicle_response(vehicle, request), status=status.HTTP_201_CREATED)
+        vehicles = Vehicle.objects.filter(company_id=request.user.company_id, customer=customer)
+        return response.Response(VehicleSerializer(vehicles, many=True, context={"request": request}).data)
+
+    def _vehicle_response(self, vehicle, request):
+        from apps.vehicles.serializers import VehicleSerializer
+        return VehicleSerializer(vehicle, context={"request": request}).data
 
     @decorators.action(detail=True, methods=["get"])
     def jobs(self, request, pk=None):
