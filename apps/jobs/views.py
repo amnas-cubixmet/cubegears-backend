@@ -59,6 +59,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "quick_estimate": "jobs.edit",
         "quick_estimate_detail": "jobs.edit",
         "estimate_decision": "jobs.edit",
+        "estimate_share": "jobs.edit",
         "estimate_skip": "jobs.edit",
         "photos": {"GET": "jobs.view", "POST": "jobs.edit"},
         "upload_work_photo": "jobs.edit",
@@ -683,14 +684,25 @@ class JobViewSet(CompanyScopedModelViewSet):
             selected_version = request.data.get("estimateVersion")
             if selected_version is not None and str(selected_version) != str(estimate.version):
                 raise ValidationError({"estimateVersion": "The displayed estimate version changed. Refresh before approving."})
-            if estimate.status != "Draft":
-                raise ValidationError({"stage":"Only the latest draft estimate can be approved. Save a revised estimate first."})
+            if estimate.status not in {"Draft", "Customer Approved"}:
+                raise ValidationError({"stage": "Only a draft or customer-accepted estimate can be finalized. Refresh the latest version."})
+            customer_decision = (job.workflow_progress or {}).get("customerEstimateDecision") or {}
+            portal_accepted = (
+                estimate.status == "Customer Approved"
+                and customer_decision.get("status") == "Accepted"
+                and customer_decision.get("estimateId") == str(estimate.pk)
+                and customer_decision.get("version") == estimate.version
+            )
+            if estimate.status == "Customer Approved" and not portal_accepted:
+                raise ValidationError({"stage": "Customer acceptance record does not match this estimate."})
+            if job.company.require_customer_estimate_approval and not portal_accepted:
+                raise ValidationError({"stage": "The customer must accept this exact published estimate in their portal."})
             if (job.inspection or {}).get("revisedAt"):
                 revised = parse_datetime(job.inspection["revisedAt"])
                 if revised and estimate.created_at < revised:
                     raise ValidationError({"stage": "Inspection changed. Save a revised estimate before approval."})
             if not request.data.get("approveEstimate"):
-                raise ValidationError({"stage":"Confirm customer estimate approval to continue."})
+                raise ValidationError({"stage":"Confirm the estimate before completing this stage."})
             estimate.status = "Approved"
             estimate.approved_at = timezone.now()
             estimate.save(update_fields=["status","approved_at","updated_at"])
@@ -701,7 +713,9 @@ class JobViewSet(CompanyScopedModelViewSet):
                 "version": estimate.version, "total": str(estimate.total),
                 "confirmedByStaffId": str(request.user.pk),
                 "approvedAt": estimate.approved_at.isoformat(),
-                "confirmationSource": "workshop_staff_attestation",
+                "confirmationSource": (
+                    "customer_portal_session" if portal_accepted else "workshop_staff_attestation"
+                ),
             }
         elif stage == "work":
             if not request.data.get("confirmWorkDone"):
@@ -1272,6 +1286,50 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(
         detail=True, methods=["post"],
+        url_path=r"estimates/(?P<estimate_id>[^/.]+)/share",
+    )
+    @transaction.atomic
+    def estimate_share(self, request, pk=None, estimate_id=None):
+        """Explicitly publish/withdraw only the newest draft for customer review."""
+        job = Job.objects.select_for_update().get(
+            pk=self.get_object().pk, company=request.user.company,
+        )
+        if workflow_state(job)["current"] != "estimate":
+            raise ValidationError({"estimate": "Customer review is closed after the estimate stage."})
+        estimate = job.estimates.select_for_update().filter(pk=estimate_id).first()
+        latest = job.estimates.order_by("-version", "-created_at").first()
+        if not estimate or not latest or estimate.pk != latest.pk:
+            raise ValidationError({"estimate": "Only the latest estimate can be shared or withdrawn."})
+        action = request.data.get("action", "share")
+        if action not in {"share", "withdraw"}:
+            raise ValidationError({"action": "Choose share or withdraw."})
+        if action == "share":
+            if estimate.status == "Awaiting Customer":
+                return response.Response(JobEstimateSerializer(estimate).data)
+            if estimate.status != "Draft":
+                raise ValidationError({"estimate": "Only a draft can be shared for customer review."})
+            revised = parse_datetime((job.inspection or {}).get("revisedAt") or "")
+            if revised and estimate.created_at < revised:
+                raise ValidationError({"estimate": "Inspection changed; save a revised estimate first."})
+            estimate.status = "Awaiting Customer"
+            event = "Estimate Shared With Customer"
+        else:
+            if estimate.status == "Draft":
+                return response.Response(JobEstimateSerializer(estimate).data)
+            if estimate.status != "Awaiting Customer":
+                raise ValidationError({"estimate": "A customer-decided estimate cannot be withdrawn."})
+            estimate.status = "Draft"
+            event = "Customer Estimate Withdrawn"
+        estimate.save(update_fields=["status", "updated_at"])
+        record_job_event(
+            job, request.user, event, f"Estimate V{estimate.version}: {action}",
+            {"estimateId": str(estimate.pk), "version": estimate.version,
+             "total": str(estimate.total)},
+        )
+        return response.Response(JobEstimateSerializer(estimate).data)
+
+    @decorators.action(
+        detail=True, methods=["post"],
         url_path=r"estimates/(?P<estimate_id>[^/.]+)/decision",
     )
     @transaction.atomic
@@ -1526,6 +1584,9 @@ class JobViewSet(CompanyScopedModelViewSet):
                     return response.Response(JobEstimateSerializer(previous).data)
         if workflow_state(job)["current"] != "estimate":
             raise ValidationError({"estimate": "Only the active Estimate stage can create a quotation."})
+        latest = job.estimates.order_by("-version", "-created_at").first()
+        if latest and latest.status in {"Awaiting Customer", "Customer Approved"}:
+            raise ValidationError({"estimate": "The latest estimate is under customer review or accepted. Withdraw it before editing."})
         values = self._quick_estimate_values(request.data)
         attach_identity(values["items"], identity)
         version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
@@ -1585,6 +1646,9 @@ class JobViewSet(CompanyScopedModelViewSet):
                 raise ValidationError({"estimate": "Create estimates only during the Estimate stage."})
             if request.data.get("status", "Draft") != "Draft":
                 raise ValidationError({"status": "Only draft estimates can be created."})
+            latest = job.estimates.order_by("-version", "-created_at").first()
+            if latest and latest.status in {"Awaiting Customer", "Customer Approved"}:
+                raise ValidationError({"estimate": "Withdraw the shared estimate before saving another version."})
             s=JobEstimateSerializer(data=request.data); s.is_valid(raise_exception=True)
             version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
             obj=s.save(company=job.company,branch=job.branch,job=job,
