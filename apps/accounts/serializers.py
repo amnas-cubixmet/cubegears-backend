@@ -135,9 +135,18 @@ class LoginSerializer(serializers.Serializer):
         if not ident:
             raise serializers.ValidationError({"identifier":"Enter your email or mobile number."})
         if "@" in ident:
+            # Legacy email identifiers can contain mixed-case local parts.
+            # Authenticate using the stored identifier, but never guess
+            # between different users whose emails differ only by case.
+            email_matches = list(
+                User.objects.filter(email__iexact=ident)
+                .values_list("email", flat=True)[:2]
+            )
+            if len(email_matches) != 1:
+                raise serializers.ValidationError(generic)
             user = authenticate(
                 request=self.context.get("request"),
-                email=ident.lower(), password=password,
+                email=email_matches[0], password=password,
             )
             if not user or not user_can_sign_in(user):
                 raise serializers.ValidationError(generic)
