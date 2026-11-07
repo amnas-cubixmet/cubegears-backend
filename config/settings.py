@@ -108,6 +108,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "common.request_ids.RequestIdMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -293,6 +294,8 @@ CORS_ALLOWED_ORIGINS = env_list(
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000",
 )
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
+# Expose only the opaque request reference to cross-origin browser clients.
+CORS_EXPOSE_HEADERS = ["X-Request-ID"]
 
 # Use console mail locally, direct Django SMTP by default in production.
 # Override EMAIL_BACKEND in .env when a different provider is required.
