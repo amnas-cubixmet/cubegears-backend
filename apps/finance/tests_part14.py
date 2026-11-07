@@ -190,3 +190,34 @@ class Part14DoubleEntryTests(TestCase):
         ):
             reply = self.client.get(endpoint)
             self.assertEqual(reply.status_code, 403, (endpoint, getattr(reply, "data", None)))
+
+    def test_draft_expense_is_not_profit_and_status_changes_reconcile_once(self):
+        from apps.expenses.models import Expense
+        draft = Expense.objects.create(
+            company=self.company, date=timezone.localdate(),
+            category="Workshop Rent", description="Unapproved draft",
+            amount=Decimal("240.00"), status="Draft", created_by=self.owner,
+        )
+        root = "expense:" + str(draft.pk) + ":revision:"
+        self.assertEqual(JournalEntry.objects.filter(
+            company=self.company, source_key__startswith=root,
+        ).count(), 0)
+        profit = self.client.get("/api/v1/finance/statements/profit-loss")
+        self.assertEqual(profit.data["netProfit"], "0.00")
+        draft.status = "Approved"
+        draft.save(update_fields=["status"])
+        self.assertEqual(JournalEntry.objects.filter(
+            company=self.company, source_key__startswith=root,
+        ).count(), 1)
+        self.assertEqual(self.client.get(
+            "/api/v1/finance/statements/profit-loss",
+        ).data["netProfit"], "-240.00")
+        draft.status = "Cancelled"
+        draft.save(update_fields=["status"])
+        self.assertEqual(JournalEntry.objects.filter(
+            company=self.company, source_key__startswith=root,
+        ).count(), 2)
+        self.assertEqual(self.client.get(
+            "/api/v1/finance/statements/profit-loss",
+        ).data["netProfit"], "0.00")
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
