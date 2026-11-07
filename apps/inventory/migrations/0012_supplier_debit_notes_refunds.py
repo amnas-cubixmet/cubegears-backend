@@ -1,5 +1,4 @@
 """Supplier returns, debit note credits and refunds; no legacy record mutations."""
-from decimal import Decimal
 from uuid import uuid4
 
 from django.db import migrations, models
