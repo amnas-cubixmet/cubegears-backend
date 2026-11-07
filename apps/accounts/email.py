@@ -33,7 +33,7 @@ def email_delivery_mode():
 
 
 def queue_email(subject, message, recipient_list, *, action_url=None,
-                action_label=None, on_delivery=None):
+                action_label=None, on_delivery=None, smtp_timeout_seconds=None):
     """Dispatch only after commit. 'queued' != delivered; 'sent' == SMTP accepted.
 
     Direct SMTP is optional and synchronous for hosts without Celery support.
@@ -55,9 +55,13 @@ def queue_email(subject, message, recipient_list, *, action_url=None,
             return
         try:
             if mode == "smtp":
+                kwargs = (
+                    {"smtp_timeout_seconds": smtp_timeout_seconds}
+                    if smtp_timeout_seconds is not None else {}
+                )
                 send_account_email(
                     subject, message, recipients, settings.DEFAULT_FROM_EMAIL,
-                    action_url, action_label,
+                    action_url, action_label, **kwargs,
                 )
                 notify("sent")
                 return
