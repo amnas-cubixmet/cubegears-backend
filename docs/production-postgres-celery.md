@@ -77,8 +77,13 @@ until each workflow is individually verified.
 **A database ENV switch does not migrate any data.** Do not point production
 to an empty PostgreSQL server until workshop data is copied and audited.
 
-1. Schedule maintenance; stop old Django and Celery writers, back up the
-   original SQLite database using SQLite backup API or offline file copy.
+1. Schedule maintenance; stop old Django and Celery writers. Back up
+   SQLite with a non-destructive, integrity-checked helper:
+
+~~~powershell
+python scripts/backup_sqlite.py --source db.sqlite3 --output db-backups/pre-postgres.sqlite3
+~~~
+
    Back up both public and private media directories. Keep files outside Git.
 2. With the OLD SQLite ENV active, export data:
 
