@@ -99,7 +99,6 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         if serializer.validated_data.get("reserved", item.reserved) != item.reserved:
             raise ValidationError({"reserved": "Reservations must be changed through the job allocation workflow."})
         if next_qty != item.on_hand:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError({"onHand": "Use Stock In, Stock Out, or Adjustment to change quantity."})
         serializer.save()
 
