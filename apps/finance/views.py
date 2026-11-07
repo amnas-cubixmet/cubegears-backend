@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, is_company_owner
 from apps.inventory.models import (
     WorkshopFinancialAccount, WorkshopAccountEntry, FinanceTransfer
 )
@@ -36,6 +36,47 @@ def valid_money(value, field="amount", allow_zero=False):
     except (ValueError, TypeError, ArithmeticError):
         raise ValidationError({field: "Enter a valid amount (up to two decimal places)."})
 
+
+
+
+def can_view_finance_balances(user):
+    """Require an explicit balance grant; a broad payments.view grant is insufficient."""
+    if is_company_owner(user):
+        return True
+    role = getattr(user, "role", None)
+    grants = getattr(role, "permissions", [])
+    return bool(role and role.is_active and isinstance(grants, list)
+                and "finance.accounts.balance.view" in grants)
+
+
+def hide_finance_balances(payload):
+    """Remove account balance values from serialized finance responses."""
+    hidden_keys = {
+        "openingBalance", "currentBalance", "bankBalance", "cashBalance",
+        "fromBalance", "toBalance", "runningBalance", "newBalance",
+    }
+    if isinstance(payload, dict):
+        return {
+            key: hide_finance_balances(value)
+            for key, value in payload.items()
+            if key not in hidden_keys
+        }
+    if isinstance(payload, list):
+        return [hide_finance_balances(value) for value in payload]
+    return payload
+
+
+class FinanceBalanceRedactionMixin:
+    """Apply balance field redaction to every finance API response."""
+
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        if (
+            response.status_code < 400
+            and not can_view_finance_balances(getattr(request, "user", None))
+        ):
+            response.data = hide_finance_balances(response.data)
+        return response
 
 
 def account_balance(account):
@@ -68,7 +109,7 @@ def accounts_summary(company_id):
     return result, bank_total, cash_total
 
 
-class FinanceDashboard(APIView):
+class FinanceDashboard(FinanceBalanceRedactionMixin, APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"]}
 
@@ -263,7 +304,7 @@ class FinanceDashboard(APIView):
         })
 
 
-class FinanceAccountCollection(APIView):
+class FinanceAccountCollection(FinanceBalanceRedactionMixin, APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"], "POST": ["payments.edit"]}
 
@@ -313,7 +354,7 @@ class FinanceAccountCollection(APIView):
                          "currentBalance": str(acc.opening_balance), "isActive": True}, status=201)
 
 
-class FinanceAccountDetail(APIView):
+class FinanceAccountDetail(FinanceBalanceRedactionMixin, APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"], "PATCH": ["payments.edit"]}
 
@@ -391,7 +432,7 @@ class FinanceAccountDetail(APIView):
         return Response({"id": str(acc.pk), "name": acc.name, "isActive": acc.is_active})
 
 
-class FinanceAdjustment(APIView):
+class FinanceAdjustment(FinanceBalanceRedactionMixin, APIView):
     """Create an auditable manual balance adjustment entry."""
     permission_classes = [RolePermission]
     permission_map = {"POST": ["payments.edit"]}
@@ -429,7 +470,7 @@ class FinanceAdjustment(APIView):
         return Response({"newBalance": str(account_balance(acc)), "adjustment": str(signed)}, status=201)
 
 
-class FinanceTransferCollection(APIView):
+class FinanceTransferCollection(FinanceBalanceRedactionMixin, APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"], "POST": ["payments.edit"]}
 
@@ -524,7 +565,7 @@ class FinanceTransferCollection(APIView):
         }, status=201)
 
 
-class FinanceLedger(APIView):
+class FinanceLedger(FinanceBalanceRedactionMixin, APIView):
     """Unified transaction ledger across all accounts with running balance."""
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"]}
@@ -663,7 +704,7 @@ class FinanceLedger(APIView):
         return response
 
 
-class FinanceReports(APIView):
+class FinanceReports(FinanceBalanceRedactionMixin, APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["payments.view"]}
 

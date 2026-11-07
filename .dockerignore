@@ -1,0 +1,21 @@
+# Never put secrets, live databases or local uploads in container build layers.
+.env
+.env.*
+!*.example
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.pgdump
+db-backups/
+.backups/
+media/
+private_job_media/
+staticfiles/
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.git/
+.github/
+logs/
+*.log

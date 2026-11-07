@@ -215,54 +215,30 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(dash.data["totalReceived"], "700.00")
         self.assertEqual(dash.data["outstandingCustomer"], "800.00")
 
-    def test_payment_page_totals_separate_invoiced_revenue_from_cash_collection(self):
-        from django.utils import timezone
-        from apps.customers.models import Customer
-        from apps.invoices.models import Invoice, InvoiceItem
+    def test_retrying_paid_expense_creation_does_not_add_second_liability(self):
+        payload = {
+            "date": "2026-11-06", "category": "Workshop Rent",
+            "amount": "150.00", "status": "Paid",
+            "account": str(self.cash.pk), "payment_method": "Cash",
+            "idempotencyKey": "expense-rent-creation-once",
+        }
+        first = self.client.post("/api/v1/expenses", payload, format="json")
+        self.assertEqual(first.status_code, 201, getattr(first, "data", None))
+        first_count = Expense.objects.count()
+        duplicate = self.client.post("/api/v1/expenses", payload, format="json")
+        self.assertEqual(duplicate.status_code, 400, getattr(duplicate, "data", None))
+        self.assertEqual(Expense.objects.count(), first_count)
+        self.assertEqual(ExpenseSettlement.objects.count(), 1)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
+        self.assertEqual(account_balance(self.cash), Decimal("850.00"))
 
-        today = timezone.localdate()
-        customer = Customer.objects.create(
-            company=self.company, name="Payment Dashboard Customer", phone="+919876500000",
+    def test_unlinked_legacy_receipt_disclosed_without_creating_bank_money(self):
+        legacy = Payment.objects.create(
+            company=self.company, date="2026-11-06", direction="IN",
+            amount=Decimal("100.00"), method="Cash", status="Completed",
+            reference="OLD-CASH-RECEIPT", recorded_by=self.owner,
         )
-        invoice = Invoice.objects.create(
-            company=self.company, customer=customer,
-            kind="invoice", number="INV-PAYMENTS-SUMMARY-1",
-            date=today, status="Finalized",
-            total=Decimal("1500.00"), paid=Decimal("700.00"),
-            balance=Decimal("800.00"),
-            cgst=Decimal("90.00"), sgst=Decimal("90.00"),
-        )
-        InvoiceItem.objects.create(
-            invoice=invoice, item_type="Spare Part",
-            description="Paint", quantity=Decimal("2.00"),
-            purchase_price=Decimal("200.00"), rate=Decimal("750.00"),
-        )
-        WorkshopAccountEntry.objects.create(
-            company=self.company, account=self.bank,
-            amount=Decimal("700.00"), entry_type="customer_payment",
-            source_key="dashboard-collection",
-            posted_at=timezone.now(), created_by=self.owner,
-        )
-        WorkshopAccountEntry.objects.create(
-            company=self.company, account=self.cash,
-            amount=Decimal("-100.00"), entry_type="Supplier Payment",
-            source_key="dashboard-supplier-pay",
-            posted_at=timezone.now(), created_by=self.owner,
-        )
-        # Internal transfers, opening balances, and manual adjustments are
-        # NOT revenue, operating cost, or today's business collection.
-        for entry_type, amount in (
-            ("transfer_in", Decimal("200.00")),
-            ("transfer_out", Decimal("-200.00")),
-            ("manual_adjustment", Decimal("50.00")),
-        ):
-            WorkshopAccountEntry.objects.create(
-                company=self.company, account=self.cash,
-                amount=amount, entry_type=entry_type,
-                source_key=f"summary-{entry_type}",
-                posted_at=timezone.now(), created_by=self.owner,
-            )
-        response = self.client.get("/api/v1/finance/dashboard?period=today")
+        response = self.client.get("/api/v1/finance/payment-activity")
         self.assertEqual(response.status_code, 200, getattr(response, "data", None))
         data = response.data
         self.assertEqual(data["period"], "today")
@@ -319,3 +295,40 @@ class FinanceAccountingTests(TestCase):
             "direction": "credit", "amount": "50.00", "reason": "Attempt to post to inactive account"
         }, format="json")
         self.assertEqual(blocked.status_code, 400)
+
+
+    def test_finance_balance_fields_require_explicit_role_grant(self):
+        role = Role.objects.create(
+            company=self.company, name="Payment Clerk", code="PAYMENT_CLERK",
+            permissions=["payments.view"],
+        )
+        clerk = User.objects.create_user(
+            email="finance-clerk@example.test", password="test-password-do-not-use",
+            name="Payment Clerk", company=self.company, role=role,
+        )
+        self.client.force_authenticate(user=clerk)
+
+        accounts = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(accounts.status_code, 200, accounts.data)
+        bank = next(row for row in accounts.data if row["id"] == str(self.bank.id))
+        self.assertNotIn("currentBalance", bank)
+        self.assertNotIn("openingBalance", bank)
+
+        detail = self.client.get(f"/api/v1/finance/accounts/{self.bank.pk}")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertNotIn("currentBalance", detail.data)
+        self.assertNotIn("openingBalance", detail.data)
+        self.assertTrue(all("runningBalance" not in row for row in detail.data["ledger"]))
+
+        dashboard = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertNotIn("bankBalance", dashboard.data)
+        self.assertNotIn("cashBalance", dashboard.data)
+
+        role.permissions = ["payments.view", "finance.accounts.balance.view"]
+        role.save(update_fields=["permissions"])
+        granted = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(granted.status_code, 200, granted.data)
+        bank = next(row for row in granted.data if row["id"] == str(self.bank.id))
+        self.assertIn("currentBalance", bank)
+        self.assertEqual(bank["currentBalance"], "500.00")

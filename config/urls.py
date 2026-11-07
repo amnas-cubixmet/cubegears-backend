@@ -5,16 +5,27 @@ from django.urls import include, path, re_path
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from apps.search.views import WorkspaceSearchView
 from apps.reports.views import DashboardView
 from apps.saas.views import SettingsView
 
 class HealthView(APIView):
+    # Public liveness: no authentication, tenant records or configuration secrets.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def get(self, request):
-        return Response({"status": "ok", "service": "cubegears-backend"})
+        response = Response({
+            "status": "ok",
+            "service": "cubegears-backend",
+            "api_version": "v1",
+            "server_time": timezone.now().isoformat(),
+            "request_id": getattr(request, "request_id", None),
+        })
+        response["Cache-Control"] = "no-store"
+        return response
 
 urlpatterns = [
     path("admin/", admin.site.urls),

@@ -96,10 +96,13 @@ class StockItemViewSet(CompanyScopedModelViewSet):
     def dashboard(self,request):
         from django.db.models import Sum
         qs=self.get_queryset()
-        total_value=sum(float(x.on_hand*x.cost_price) for x in qs)
+        from decimal import Decimal
+        from apps.accounts.permissions import user_has_permission
+        can_view_cost = user_has_permission(request.user, "stock.edit")
+        total_value = sum((x.on_hand * x.cost_price for x in qs), Decimal("0")) if can_view_cost else None
         return response.Response({
             "totalItems":qs.count(),
-            "totalValue":total_value,
+            **({"totalValue": str(total_value)} if can_view_cost else {}),
             "lowStock":qs.filter(on_hand__lte=F("minimum_stock")+F("reserved"),on_hand__gt=0).count(),
             "outOfStock":qs.filter(on_hand__lte=0).count(),
             "reservedStock":qs.aggregate(v=Sum("reserved"))["v"] or 0,
@@ -107,6 +110,9 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             "receivedToday":StockMovement.objects.filter(company=request.user.company,movement_type="purchase",created_at__date=__import__("django.utils.timezone",fromlist=["localdate"]).localdate()).count(),
             "pendingPurchases":PurchaseOrder.objects.filter(company=request.user.company,status__in=["Draft","Ordered","Partially Received"]).count(),
         })
+
+    def _movement_response(self, request, movement):
+        return StockMovementSerializer(movement, context={"request": request}).data
 
     @transaction.atomic
     def _movement(self, request, movement_type, sign=1):
@@ -156,7 +162,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             note=request.data.get("notes") or "",
             created_by=request.user,
         )
-        return response.Response(StockMovementSerializer(movement).data, status=201)
+        return response.Response(self._movement_response(request, movement), status=201)
 
     @decorators.action(detail=False, methods=["post"], url_path="in")
     @transaction.atomic
@@ -239,9 +245,10 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             note=request.data.get("notes") or "",
             created_by=request.user,
         )
-        result = StockMovementSerializer(movement).data
+        result = self._movement_response(request, movement)
         result["pricesUpdated"] = mode == "apply_new" and prices_changed
-        result["catalogCostPrice"] = str(item.cost_price)
+        if user_has_permission(request.user, "stock.edit"):
+            result["catalogCostPrice"] = str(item.cost_price)
         result["catalogSellingPrice"] = str(item.selling_price)
         return response.Response(result, status=201)
 
@@ -260,7 +267,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False,methods=["get"])
     def ledger(self,request):
-        return response.Response(StockMovementSerializer(StockMovement.objects.filter(company=request.user.company).select_related("item"),many=True).data)
+        return response.Response(StockMovementSerializer(StockMovement.objects.filter(company=request.user.company).select_related("item"),many=True,context={"request": request}).data)
 
     @decorators.action(detail=False,methods=["get"])
     def purchases(self,request):

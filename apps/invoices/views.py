@@ -196,8 +196,11 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
     @transaction.atomic
     def finalize(self,request,pk=None):
         from apps.inventory.models import StockItem,StockMovement
-        obj=self.get_object()
+        scoped = self.get_object()
+        obj = Invoice.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
         if obj.status in {"Finalized","Paid","Issued","Converted"}: return response.Response(InvoiceSerializer(obj).data)
+        if obj.status != "Draft":
+            raise ValidationError({"status": "Only draft documents can be finalized."})
         if obj.kind=="invoice":
             # Only invoices that consume stock require the additional Stock permission.
             if obj.items.filter(stock_item__isnull=False).exists() and not user_has_permission(request.user, "stock.edit"):
@@ -234,7 +237,15 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True,methods=["post"])
     def cancel(self,request,pk=None):
-        obj=self.get_object(); obj.status="Cancelled"; obj.cancelled_at=timezone.now(); obj.save(update_fields=["status","cancelled_at","updated_at"])
+        obj=self.get_object()
+        if obj.status == "Cancelled":
+            return response.Response(InvoiceSerializer(obj).data)
+        if obj.status != "Draft" or obj.finalized_at:
+            raise ValidationError({"status": "Finalized invoices require an authorized credit-note or reversal workflow; they cannot be silently cancelled."})
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 5 or len(reason) > 500:
+            raise ValidationError({"reason": "Provide a cancellation reason (5–500 characters)."})
+        obj.status="Cancelled"; obj.cancelled_at=timezone.now(); obj.save(update_fields=["status","cancelled_at","updated_at"])
         if obj.job_id:
             record_job_event(obj.job, request.user, "Invoice Cancelled",
                              f"{obj.number} cancelled", {"invoiceId": str(obj.pk)})
