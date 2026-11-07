@@ -12,6 +12,8 @@ import time
 from mimetypes import guess_type
 
 from django.conf import settings
+from django.db import transaction
+from django.utils import timezone
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
@@ -26,7 +28,8 @@ from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
 from apps.customers.portal_views import _job_public
 from apps.invoices.models import Invoice
-from apps.jobs.models import Job, JobEstimate
+from apps.jobs.models import Job, JobActivity, JobEstimate
+from apps.jobs.workflow import workflow_state
 from apps.vehicles.models import VehicleInspectionPhoto
 from apps.vehicles.photo_views import _file_response
 
@@ -157,7 +160,8 @@ def _dashboard(access):
         company=company, customer=customer, vehicle__customer=customer
     ).select_related("vehicle").order_by("-created_at")[:100])
     estimates = JobEstimate.objects.filter(
-        company=company, job__customer=customer, job__company=company, status="Approved"
+        company=company, job__customer=customer, job__company=company,
+        status__in=["Awaiting Customer", "Customer Approved", "Customer Rejected", "Approved"]
     ).order_by("-created_at")[:100]
     invoices = Invoice.objects.filter(
         company=company, customer=customer, finalized_at__isnull=False
@@ -174,7 +178,7 @@ def _dashboard(access):
         ],
         "jobs": [_job_public(j) for j in jobs],
         "estimates": [
-            {"jobId": str(e.job_id), "version": e.version,
+            {"id": str(e.pk), "jobId": str(e.job_id), "version": e.version,
              "status": e.status, "total": str(e.total)} for e in estimates
         ],
         "invoices": [
@@ -252,6 +256,88 @@ class WebsiteLogoutView(PortalBaseView):
             return _no_store(Response({"message": "Invalid request token."}, status=403))
         request.session.flush()
         return _no_store(Response({"authenticated": False}))
+
+
+class WebsiteEstimateDecisionView(PortalBaseView):
+    """Customer's explicit response to one staff-published immutable quote.
+
+    This records customer intent and an audit event. It never charges money,
+    advances the Job Card, issues inventory or finalizes an invoice.
+    """
+    @transaction.atomic
+    def post(self, request, estimate_id):
+        company = _tenant(request)
+        if not _verify_csrf(request):
+            return _no_store(Response({"message": "Invalid request token."}, status=403))
+        access = _session_access(request, company)
+        if not access:
+            return _no_store(Response({"message": "Customer session required."}, status=401))
+        decision = request.data.get("decision")
+        if decision not in {"accept", "decline"}:
+            return _no_store(Response({"message": "Choose accept or decline."}, status=400))
+
+        found = JobEstimate.objects.filter(
+            pk=estimate_id, company=company,
+            job__company=company, job__customer=access.customer,
+            job__vehicle__customer=access.customer,
+        ).values_list("job_id", flat=True).first()
+        if not found:
+            raise Http404("Estimate not found.")
+        # Lock the job first, like the workshop approval API, so competing
+        # staff/customer decisions cannot advance an outdated quote.
+        job = get_object_or_404(
+            Job.objects.select_for_update(), pk=found, company=company,
+            customer=access.customer, vehicle__customer=access.customer,
+        )
+        estimate = get_object_or_404(
+            JobEstimate.objects.select_for_update(),
+            pk=estimate_id, job=job, company=company,
+        )
+        latest = job.estimates.order_by("-version", "-created_at").first()
+        if not latest or latest.pk != estimate.pk or workflow_state(job)["current"] != "estimate":
+            return _no_store(Response({"message": "This quotation is no longer open."}, status=409))
+        if str(request.data.get("version")) != str(estimate.version):
+            return _no_store(Response({"message": "Quotation version changed. Refresh before responding."}, status=409))
+
+        target = "Customer Approved" if decision == "accept" else "Customer Rejected"
+        if estimate.status == target:
+            return _no_store(Response({
+                "id": str(estimate.pk), "version": estimate.version,
+                "status": estimate.status, "total": str(estimate.total),
+            }))
+        if estimate.status != "Awaiting Customer":
+            return _no_store(Response({"message": "This quote is not available for customer review."}, status=409))
+        if (job.inspection or {}).get("revisedAt"):
+            from django.utils.dateparse import parse_datetime
+            revised = parse_datetime(job.inspection["revisedAt"])
+            if revised and estimate.created_at < revised:
+                return _no_store(Response({"message": "Inspection changed. Ask for a revised estimate."}, status=409))
+
+        estimate.status = target
+        estimate.save(update_fields=["status", "updated_at"])
+        now = timezone.now().isoformat()
+        progress = dict(job.workflow_progress or {})
+        progress["customerEstimateDecision"] = {
+            "status": "Accepted" if decision == "accept" else "Declined",
+            "estimateId": str(estimate.pk), "version": estimate.version,
+            "total": str(estimate.total), "respondedAt": now,
+            "confirmationSource": "customer_portal_session",
+        }
+        job.workflow_progress = progress
+        job.save(update_fields=["workflow_progress", "updated_at"])
+        JobActivity.objects.create(
+            company=company, branch=job.branch, job=job, actor=None,
+            event="Customer Estimate Accepted" if decision == "accept" else "Customer Estimate Declined",
+            description=f"Customer responded to estimate V{estimate.version} via secure portal",
+            metadata={
+                "estimateId": str(estimate.pk), "version": estimate.version,
+                "total": str(estimate.total), "source": "customer_portal_session",
+            },
+        )
+        return _no_store(Response({
+            "id": str(estimate.pk), "version": estimate.version,
+            "status": estimate.status, "total": str(estimate.total),
+        }))
 
 
 class WebsiteLogoView(PortalBaseView):
