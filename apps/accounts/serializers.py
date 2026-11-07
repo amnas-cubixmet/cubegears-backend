@@ -33,11 +33,23 @@ class UserSerializer(serializers.ModelSerializer):
     role = RoleMiniSerializer(read_only=True)
     isCompanyOwner = serializers.SerializerMethodField()
     paidAccessRequired = serializers.SerializerMethodField()
+    onboardingRequired = serializers.SerializerMethodField()
     effectivePermissions = serializers.SerializerMethodField()
 
     def get_isCompanyOwner(self, obj):
         from .permissions import is_company_owner
         return is_company_owner(obj)
+
+    def get_onboardingRequired(self, obj):
+        # Legacy tenants have no wizard state: never force a migration-time
+        # redirect or block existing owner logins.
+        if not obj.company_id or obj.company.owner_id != obj.pk:
+            return False
+        from apps.saas.models import CompanySetting
+        state = CompanySetting.objects.filter(
+            company_id=obj.company_id, category="onboarding",
+        ).values_list("data", flat=True).first() or {}
+        return bool(state.get("required") and not state.get("completed"))
 
     def get_paidAccessRequired(self, obj):
         return bool(obj.company_id and obj.company.require_paid_features)
@@ -72,7 +84,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "email", "phone", "normalized_phone", "avatar",
             "company", "branch", "role",
-            "employeeProfileId", "employeeDisplayNo", "effectivePermissions", "isCompanyOwner", "paidAccessRequired",
+            "employeeProfileId", "employeeDisplayNo", "effectivePermissions", "isCompanyOwner", "paidAccessRequired", "onboardingRequired",
             "is_staff", "is_superuser", "email_verified",
             "created_at",
         ]
