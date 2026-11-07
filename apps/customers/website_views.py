@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from apps.companies.models import Company, CompanyDomain, CompanyWebsiteSettings
 from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
+from apps.customers.estimate_review import public_estimate
 from apps.customers.portal_views import _job_public
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobActivity, JobEstimate
@@ -153,6 +154,19 @@ def _branding(company):
     }
 
 
+def _customer_quote(estimate):
+    result = public_estimate(estimate)
+    record = (estimate.job.workflow_progress or {}).get("customerEstimateDecision") or {}
+    if record.get("estimateId") == str(estimate.pk) and record.get("version") == estimate.version:
+        if record.get("status") in {"Accepted", "Declined"}:
+            result["decisionReceipt"] = {
+                "id": record.get("receiptId") or None,
+                "status": record["status"],
+                "respondedAt": record.get("respondedAt"),
+            }
+    return result
+
+
 def _dashboard(access):
     company, customer = access.company, access.customer
     vehicles = list(customer.vehicles.filter(company=company).order_by("registration")[:100])
@@ -162,7 +176,7 @@ def _dashboard(access):
     estimates = JobEstimate.objects.filter(
         company=company, job__customer=customer, job__company=company,
         status__in=["Awaiting Customer", "Customer Approved", "Customer Rejected", "Approved"]
-    ).order_by("-created_at")[:100]
+    ).select_related("job").order_by("-created_at")[:100]
     invoices = Invoice.objects.filter(
         company=company, customer=customer, finalized_at__isnull=False
     ).exclude(status__in=["Draft", "Cancelled"]).order_by("-date")[:100]
@@ -177,10 +191,7 @@ def _dashboard(access):
             for v in vehicles
         ],
         "jobs": [_job_public(j) for j in jobs],
-        "estimates": [
-            {"id": str(e.pk), "jobId": str(e.job_id), "version": e.version,
-             "status": e.status, "total": str(e.total)} for e in estimates
-        ],
+        "estimates": [_customer_quote(e) for e in estimates],
         "invoices": [
             {"jobId": str(inv.job_id) if inv.job_id else None,
              "number": inv.number, "date": inv.date, "status": inv.status,
@@ -299,11 +310,21 @@ class WebsiteEstimateDecisionView(PortalBaseView):
         if str(request.data.get("version")) != str(estimate.version):
             return _no_store(Response({"message": "Quotation version changed. Refresh before responding."}, status=409))
 
+        review = public_estimate(estimate)
+        supplied_hash = str(request.data.get("reviewHash") or "")
+        if not review["reviewable"] or not review["reviewHash"] or not hmac.compare_digest(
+            supplied_hash, review["reviewHash"]
+        ):
+            return _no_store(Response({
+                "message": "Quotation breakdown is missing or has changed. Refresh and review before responding."
+            }, status=409))
+
         target = "Customer Approved" if decision == "accept" else "Customer Rejected"
         if estimate.status == target:
             return _no_store(Response({
                 "id": str(estimate.pk), "version": estimate.version,
                 "status": estimate.status, "total": str(estimate.total),
+                "decisionReceipt": _customer_quote(estimate).get("decisionReceipt"),
             }))
         if estimate.status != "Awaiting Customer":
             return _no_store(Response({"message": "This quote is not available for customer review."}, status=409))
@@ -316,27 +337,34 @@ class WebsiteEstimateDecisionView(PortalBaseView):
         estimate.status = target
         estimate.save(update_fields=["status", "updated_at"])
         now = timezone.now().isoformat()
-        progress = dict(job.workflow_progress or {})
-        progress["customerEstimateDecision"] = {
-            "status": "Accepted" if decision == "accept" else "Declined",
-            "estimateId": str(estimate.pk), "version": estimate.version,
-            "total": str(estimate.total), "respondedAt": now,
-            "confirmationSource": "customer_portal_session",
-        }
-        job.workflow_progress = progress
-        job.save(update_fields=["workflow_progress", "updated_at"])
-        JobActivity.objects.create(
+        activity = JobActivity.objects.create(
             company=company, branch=job.branch, job=job, actor=None,
             event="Customer Estimate Accepted" if decision == "accept" else "Customer Estimate Declined",
             description=f"Customer responded to estimate V{estimate.version} via secure portal",
             metadata={
                 "estimateId": str(estimate.pk), "version": estimate.version,
                 "total": str(estimate.total), "source": "customer_portal_session",
+                "reviewHash": review["reviewHash"],
             },
         )
+        progress = dict(job.workflow_progress or {})
+        progress["customerEstimateDecision"] = {
+            "status": "Accepted" if decision == "accept" else "Declined",
+            "estimateId": str(estimate.pk), "version": estimate.version,
+            "total": str(estimate.total), "respondedAt": now,
+            "receiptId": str(activity.pk), "reviewHash": review["reviewHash"],
+            "confirmationSource": "customer_portal_session",
+        }
+        job.workflow_progress = progress
+        job.save(update_fields=["workflow_progress", "updated_at"])
         return _no_store(Response({
             "id": str(estimate.pk), "version": estimate.version,
             "status": estimate.status, "total": str(estimate.total),
+            "decisionReceipt": {
+                "id": str(activity.pk),
+                "status": "Accepted" if decision == "accept" else "Declined",
+                "respondedAt": now,
+            },
         }))
 
 
