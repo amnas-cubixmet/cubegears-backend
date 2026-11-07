@@ -298,8 +298,12 @@ def journal_invoice_cancelled(invoice):
 
 def journal_expense(expense):
     """Accrue operating expense; revising unpaid amounts creates a signed correction."""
-    if expense.amount <= ZERO:
-        return None
+    # Never recognize draft/rejected/cancelled operating costs as posted P&L.
+    # Status changes reverse any accrual already recorded.
+    eligible = str(expense.status or "").strip().lower() not in {
+        "draft", "rejected", "cancelled",
+    }
+    target = Decimal(expense.amount) if eligible else ZERO
     account_expense = account_for(expense.company_id, "5100")
     existing = JournalEntry.objects.filter(
         company_id=expense.company_id, source_key__startswith=f"expense:{expense.pk}:",
@@ -307,11 +311,13 @@ def journal_expense(expense):
     already = ZERO
     for row in JournalLine.objects.filter(journal__in=existing, account=account_expense):
         already += row.debit - row.credit
-    delta = Decimal(expense.amount) - already
+    delta = target - already
     if not delta:
         return None
     direction = delta > ZERO
-    version = f"expense:{expense.pk}:{expense.updated_at.isoformat()}"
+    # Auto-now can be unchanged when callers use update_fields. Ledger
+    # revision numbers are based on posted corrections, not timestamps.
+    version = f"expense:{expense.pk}:revision:{existing.count() + 1}"
     return pair(
         expense.company_id, version,
         "Expense accrual or correction " + str(expense.pk),
