@@ -1,5 +1,4 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
 from apps.branches.models import Branch
 from apps.accounts.permissions import can_delegate
 from apps.roles.models import Role
