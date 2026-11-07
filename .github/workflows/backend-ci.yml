@@ -33,6 +33,7 @@ jobs:
             apps.accounts.tests_email_delivery \
             apps.accounts.tests_owner_permissions \
             apps.roles.tests_granular_permissions \
+            apps.employees.tests_staff_assignments \
             apps.payments.tests_reversal \
             apps.finance.tests \
             apps.accounts.tests_mobile_staff_onboarding \
