@@ -179,7 +179,7 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
-        if legacy_only_workforce_bundle(
+        if legacy_individual_feature_bundle(
             set(bundle.features.values_list("key", flat=True))
         ) and not CompanyBundleAccess.objects.filter(
             company=request.user.company, bundle=bundle,
