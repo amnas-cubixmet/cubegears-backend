@@ -355,6 +355,15 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         selected_id = serializer.validated_data.pop("roleId", None)
         requested_name=serializer.validated_data.get("role_name")
         requested_email=serializer.validated_data.get("email")
+        requested_phone=serializer.validated_data.get("phone")
+        if instance.user and requested_phone is not None and requested_phone != (instance.user.normalized_phone or ""):
+            if not user_has_permission(self.request.user, "company.manage"):
+                raise PermissionDenied("Only the company owner can update a linked staff login mobile.")
+            from apps.accounts.models import User
+            if User.objects.filter(
+                company_id=instance.company_id, normalized_phone=requested_phone,
+            ).exclude(pk=instance.user_id).exists():
+                raise ValidationError({"phone": "This mobile already belongs to a login in this workshop."})
         if instance.user and requested_email is not None and requested_email.strip().lower() != (instance.user.email or '').lower():
             raise ValidationError({"email": "To change a linked login email, contact your company administrator."})
         if requested_name is not None and (requested_name != instance.role_name or (selected_id and instance.user and selected_id != instance.user.role_id)):
@@ -427,13 +436,37 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             if obj.user.name!=obj.name:
                 obj.user.name=obj.name
                 fields.append("name")
+            # Keep branch-scoped API access aligned with the staff profile.
+            if obj.user.branch_id != obj.branch_id:
+                obj.user.branch=obj.branch
+                fields.append("branch")
+            if requested_phone is not None and requested_phone != (obj.user.normalized_phone or ""):
+                obj.user.phone=requested_phone
+                obj.user.normalized_phone=requested_phone
+                fields.extend(["phone","normalized_phone"])
+                # Old unconsumed invitation links were issued for the old
+                # mobile number and must not remain usable after a change.
+                from django.utils import timezone
+                from apps.accounts.models import StaffPasswordInvitation
+                StaffPasswordInvitation.objects.filter(
+                    user=obj.user, used_at__isnull=True,
+                    invalidated_at__isnull=True,
+                ).update(
+                    invalidated_at=timezone.now(),
+                    delivery_status="superseded",
+                )
+                _record_activity(
+                    obj, "Staff Login Mobile Changed",
+                    "Staff login mobile updated; previous setup links revoked.",
+                    self.request.user,
+                )
             if "role_name" in serializer.validated_data:
                 role=self._resolve_role(obj.role_name, selected_id)
                 if obj.user.role_id != (role.pk if role else None):
                     obj.user.role=role
                     fields.append("role")
             if fields:
-                obj.user.save(update_fields=fields)
+                obj.user.save(update_fields=[*fields,"updated_at"])
 
         after={
             "role":obj.role_name,
