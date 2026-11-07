@@ -20,6 +20,7 @@ class Migration(migrations.Migration):
     initial = True
     dependencies = [
         ("inventory", "0012_supplier_debit_notes_refunds"),
+        ("invoices", "0006_invoice_cancellation_reason"),
         ("accounts", "0002_mobile_login_staff_tokens"),
         ("companies", "0008_require_customer_estimate_approval"),
     ]
