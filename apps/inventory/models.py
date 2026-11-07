@@ -4,6 +4,7 @@ from common.models import CompanyOwnedModel
 
 class StockCategory(CompanyOwnedModel):
     name=models.CharField(max_length=120)
+    parent=models.ForeignKey("self",on_delete=models.PROTECT,null=True,blank=True,related_name="subcategories")
     description=models.TextField(blank=True)
     is_active=models.BooleanField(default=True)
     class Meta: ordering=["name"]
@@ -60,9 +61,30 @@ class StockItem(CompanyOwnedModel):
     def low_stock(self): return self.available_quantity <= self.minimum_stock
     def __str__(self): return f"{self.sku} - {self.name}"
 
+class StockBranchBalance(CompanyOwnedModel):
+    """Quantity available at one workshop branch; StockItem.on_hand is the total."""
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT, related_name="branch_balances")
+    branch = models.ForeignKey(
+        "branches.Branch", on_delete=models.PROTECT, related_name="inventory_balances",
+    )
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    reserved = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "item", "branch"], name="unique_inventory_branch_balance",
+            ),
+            models.CheckConstraint(condition=models.Q(quantity__gte=0), name="inventory_branch_nonnegative"),
+            models.CheckConstraint(condition=models.Q(reserved__gte=0), name="inventory_branch_reserved_nonnegative"),
+        ]
+
+
 class StockMovement(CompanyOwnedModel):
     TYPES=[(x,x) for x in ["purchase","job_issue","sale","return","transfer_in","transfer_out","adjustment","opening"]]
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT,related_name="movements")
+    request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
+    origin_movement=models.ForeignKey("self",on_delete=models.PROTECT,null=True,blank=True,related_name="return_movements")
     movement_type=models.CharField(max_length=30,choices=TYPES)
     quantity=models.DecimalField(max_digits=12,decimal_places=2)
     unit_cost=models.DecimalField(max_digits=12,decimal_places=2,default=Decimal("0"))
@@ -71,7 +93,11 @@ class StockMovement(CompanyOwnedModel):
     job=models.ForeignKey("jobs.Job",on_delete=models.SET_NULL,null=True,blank=True,related_name="stock_movements")
     note=models.TextField(blank=True)
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
-    class Meta: ordering=["-created_at"]
+    class Meta:
+        ordering=["-created_at"]
+        constraints=[
+            models.UniqueConstraint(fields=["company","request_key"],name="unique_inventory_movement_request"),
+        ]
 
 class PurchaseOrder(CompanyOwnedModel):
     number=models.CharField(max_length=50)
@@ -87,20 +113,30 @@ class PurchaseOrder(CompanyOwnedModel):
         constraints=[models.UniqueConstraint(fields=["company","number"],name="unique_po_number_per_company")]
 
 class StockTransfer(CompanyOwnedModel):
+    request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
     number=models.CharField(max_length=50)
     from_branch=models.ForeignKey("branches.Branch",on_delete=models.PROTECT,related_name="stock_transfers_out")
     to_branch=models.ForeignKey("branches.Branch",on_delete=models.PROTECT,related_name="stock_transfers_in")
     status=models.CharField(max_length=30,default="Draft")
     items=models.JSONField(default=list,blank=True)
     transferred_at=models.DateTimeField(null=True,blank=True)
+    class Meta:
+        constraints=[
+            models.UniqueConstraint(fields=["company","request_key"],name="unique_inventory_transfer_request"),
+        ]
 
 class StockAudit(CompanyOwnedModel):
+    request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT,related_name="audits")
     expected_qty=models.DecimalField(max_digits=12,decimal_places=2)
     counted_qty=models.DecimalField(max_digits=12,decimal_places=2)
     difference=models.DecimalField(max_digits=12,decimal_places=2)
     reason=models.CharField(max_length=255,blank=True)
     created_by=models.ForeignKey("accounts.User",on_delete=models.SET_NULL,null=True,blank=True)
+    class Meta:
+        constraints=[
+            models.UniqueConstraint(fields=["company","request_key"],name="unique_inventory_count_request"),
+        ]
 
 
 # Supplier financial records are separate from PurchaseOrder drafts and from

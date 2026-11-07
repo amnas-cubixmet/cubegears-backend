@@ -5,7 +5,10 @@ from rest_framework import decorators,response
 from rest_framework.exceptions import ValidationError
 from apps.companies.models import Company
 from common.viewsets import CompanyScopedModelViewSet
-from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit,StockBranchBalance
+from .branch_stock import locked_branch_balance, move_balance, available_in_branch
+from .request_keys import stock_request_key, replay_movement
+from .part12_operations import transfer_inventory, return_issued_stock, count_inventory
 from .serializers import *
 
 class StockItemViewSet(CompanyScopedModelViewSet):
@@ -22,6 +25,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         "counts": "stock.view",
         "transfer": "stock.edit",
         "low_stock": "stock.view",
+        "branch_balances": "stock.view",
     }
     def get_queryset(self):
         qs=super().get_queryset(); q=self.request.query_params.get("search")
@@ -71,6 +75,11 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         serializer.validated_data["sku"] = sku
         super().perform_create(serializer)
         item = serializer.instance
+        if item.branch_id:
+            StockBranchBalance.objects.create(
+                company=item.company, branch=item.branch, item=item,
+                quantity=item.on_hand, reserved=item.reserved,
+            )
         if item.on_hand > 0:
             StockMovement.objects.create(
                 company=item.company,
@@ -87,10 +96,18 @@ class StockItemViewSet(CompanyScopedModelViewSet):
     def perform_update(self, serializer):
         item = serializer.instance
         next_qty = serializer.validated_data.get("on_hand", item.on_hand)
+        if serializer.validated_data.get("reserved", item.reserved) != item.reserved:
+            raise ValidationError({"reserved": "Reservations must be changed through the job allocation workflow."})
         if next_qty != item.on_hand:
-            from rest_framework.exceptions import ValidationError
             raise ValidationError({"onHand": "Use Stock In, Stock Out, or Adjustment to change quantity."})
         serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        # Historic stock ledger and invoices continue to refer to the same SKU.
+        item = self.get_object()
+        item.status = "Inactive"
+        item.save(update_fields=["status", "updated_at"])
+        return response.Response({"id": str(item.pk), "status": "Inactive"})
 
     @decorators.action(detail=False,methods=["get"])
     def dashboard(self,request):
@@ -130,6 +147,8 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             return response.Response({"message": "Enter a valid quantity."}, status=400)
         if not qty.is_finite() or qty <= 0 or qty.as_tuple().exponent < -2:
             return response.Response({"message": "Quantity must be positive, with at most two decimal places."}, status=400)
+        key = stock_request_key(request)
+        Company.objects.select_for_update().get(pk=request.user.company_id)
         try:
             item = get_object_or_404(
                 StockItem.objects.select_for_update(),
@@ -139,22 +158,18 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         except (ValueError, DjangoValidationError):
             return response.Response({"message": "Invalid stock item."}, status=400)
 
-        user_branch_id = getattr(request.user, "branch_id", None)
-        if item.branch_id is not None and item.branch_id != user_branch_id:
-            return response.Response({"message": "This part belongs to another branch."}, status=403)
-
         delta = qty * sign
-        if delta < 0 and item.available_quantity < qty:
-            return response.Response({"message": "Insufficient available stock."}, status=400)
-        if item.on_hand + delta < 0:
-            return response.Response({"message": "Stock cannot be negative."}, status=400)
-
+        existing = replay_movement(request, key, item=item, kind=movement_type, quantity=delta)
+        if existing:
+            return response.Response(self._movement_response(request, existing), status=200)
+        balance = locked_branch_balance(item, request.user.branch)
+        move_balance(balance, delta)
         item.on_hand += delta
         item.save(update_fields=["on_hand", "updated_at"])
         movement = StockMovement.objects.create(
             company=item.company,
-            branch=item.branch or request.user.branch,
-            item=item,
+            branch=request.user.branch,
+            item=item, request_key=key,
             movement_type=movement_type,
             quantity=delta,
             unit_cost=item.cost_price,
@@ -180,6 +195,8 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         item_id = request.data.get("itemId") or request.data.get("item")
         if not item_id:
             return response.Response({"message": "Select an existing product."}, status=400)
+        key = stock_request_key(request)
+        Company.objects.select_for_update().get(pk=request.user.company_id)
         try:
             item = get_object_or_404(
                 StockItem.objects.select_for_update(),
@@ -187,8 +204,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             )
         except (ValueError, DjangoValidationError):
             return response.Response({"message": "Invalid product."}, status=400)
-        if item.branch_id is not None and item.branch_id != getattr(request.user, "branch_id", None):
-            return response.Response({"message": "This product belongs to another branch."}, status=403)
+        balance = locked_branch_balance(item, request.user.branch)
 
         def money_field(value, label):
             try:
@@ -210,6 +226,23 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         except ValueError as exc:
             return response.Response({"message": str(exc)}, status=400)
 
+        prior = replay_movement(request, key, item=item, kind="purchase", quantity=quantity)
+        if prior:
+            if prior.unit_cost != purchase_cost or prior.unit_selling_price != selling_price:
+                raise ValidationError({"requestKey": "This key belongs to an earlier receipt with different prices."})
+            return response.Response(self._movement_response(request, prior), status=200)
+        supplier_bill_id = request.data.get("supplierBillId")
+        if supplier_bill_id:
+            from .models import SupplierBill
+            try:
+                already_received = SupplierBill.objects.filter(
+                    company=request.user.company, pk=supplier_bill_id,
+                    status="Posted", receive_into_stock=True,
+                ).exists()
+            except (ValueError, TypeError):
+                raise ValidationError({"supplierBillId": "Select a valid supplier bill."})
+            if already_received:
+                raise ValidationError({"supplierBillId": "Stock was already received when this supplier bill was posted."})
         prices_changed = purchase_cost != item.cost_price or selling_price != item.selling_price
         mode = request.data.get("priceMode") or ""
         if mode and mode not in {"apply_new", "keep_existing"}:
@@ -233,10 +266,11 @@ class StockItemViewSet(CompanyScopedModelViewSet):
             item.on_hand += quantity
             item.save(update_fields=["on_hand", "updated_at"])
 
+        move_balance(balance, quantity)
         movement = StockMovement.objects.create(
             company=item.company,
-            branch=item.branch or request.user.branch,
-            item=item,
+            branch=request.user.branch,
+            item=item, request_key=key,
             movement_type="purchase",
             quantity=quantity,
             unit_cost=purchase_cost,
@@ -257,17 +291,39 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False,methods=["post"],url_path="return")
     def stock_return(self,request):
-        condition=request.data.get("condition","Reusable")
-        return self._movement(request,"return",1 if condition=="Reusable" else 0)
+        movement, created = return_issued_stock(request)
+        return response.Response(self._movement_response(request, movement), status=201 if created else 200)
 
     @decorators.action(detail=False,methods=["post"])
     def adjustment(self,request):
-        sign=1 if request.data.get("adjustmentType","Increase")=="Increase" else -1
+        mode = str(request.data.get("adjustmentType") or "")
+        if mode not in {"Increase", "Decrease"}:
+            raise ValidationError({"adjustmentType": "Choose Increase or Decrease."})
+        if len(str(request.data.get("reason") or "").strip()) < 5:
+            raise ValidationError({"reason": "Explain this adjustment (minimum 5 characters)."})
+        sign = 1 if mode == "Increase" else -1
         return self._movement(request,"adjustment",sign)
+
+    @decorators.action(detail=False,methods=["get"],url_path="branch-balances")
+    def branch_balances(self, request):
+        from apps.accounts.permissions import user_has_permission
+        qs = StockBranchBalance.objects.filter(company=request.user.company).select_related("item","branch")
+        if request.user.branch_id and not user_has_permission(request.user, "stock.manage"):
+            qs = qs.filter(branch_id=request.user.branch_id)
+        return response.Response([{
+            "itemId": str(row.item_id), "sku": row.item.sku,
+            "name": row.item.name, "branchId": str(row.branch_id),
+            "branchName": row.branch.name, "onHand": str(row.quantity),
+            "reserved": str(row.reserved), "available": str(available_in_branch(row)),
+        } for row in qs.order_by("branch__name", "item__name")[:2000]])
 
     @decorators.action(detail=False,methods=["get"])
     def ledger(self,request):
-        return response.Response(StockMovementSerializer(StockMovement.objects.filter(company=request.user.company).select_related("item"),many=True,context={"request": request}).data)
+        from apps.accounts.permissions import user_has_permission
+        qs = StockMovement.objects.filter(company=request.user.company).select_related("item")
+        if request.user.branch_id and not user_has_permission(request.user, "stock.manage"):
+            qs = qs.filter(branch_id=request.user.branch_id)
+        return response.Response(StockMovementSerializer(qs,many=True,context={"request": request}).data)
 
     @decorators.action(detail=False,methods=["get"])
     def purchases(self,request):
@@ -282,17 +338,9 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         return response.Response(StockAuditSerializer(StockAudit.objects.filter(company=request.user.company),many=True).data)
 
     @decorators.action(detail=False,methods=["post"])
-    def transfer(self,request):
-        from apps.branches.models import Branch
-        company=request.user.company
-        from_value=request.data.get("fromBranch")
-        to_value=request.data.get("toBranch")
-        from_branch=Branch.objects.filter(company=company,name=from_value).first() or request.user.branch
-        to_branch=Branch.objects.filter(company=company,name=to_value).first()
-        if not from_branch or not to_branch:
-            return response.Response({"message":"Valid from/to branches are required."},status=400)
-        obj=StockTransfer.objects.create(company=company,branch=request.user.branch,number=f"TRF-{__import__('time').time_ns()}",from_branch=from_branch,to_branch=to_branch,status="Requested",items=[request.data])
-        return response.Response(StockTransferSerializer(obj).data,status=201)
+    def transfer(self, request):
+        transfer, created = transfer_inventory(request)
+        return response.Response(StockTransferSerializer(transfer).data, status=201 if created else 200)
 
     @decorators.action(detail=False,methods=["get"],url_path="low-stock")
     def low_stock(self,request):
@@ -301,11 +349,25 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
 class StockCategoryViewSet(CompanyScopedModelViewSet):
     queryset=StockCategory.objects.all(); serializer_class=StockCategorySerializer
+
+    def destroy(self, request, *args, **kwargs):
+        category = self.get_object()
+        category.is_active = False
+        category.save(update_fields=["is_active", "updated_at"])
+        return response.Response({"id": str(category.pk), "status": "Inactive"})
+
 # Backwards-compatible inventory URL alias for canonical supplier CRUD.
 from apps.suppliers.views import SupplierViewSet as SupplierViewSet
 
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        return qs
+
     def create(self, request, *args, **kwargs):
         return response.Response(
             {"message": "Use Stock In, Internal Use, Return, or Adjustment actions to record movements."},
@@ -341,9 +403,47 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
         instance.delete()
 class StockTransferViewSet(CompanyScopedModelViewSet):
     queryset=StockTransfer.objects.all(); serializer_class=StockTransferSerializer
+
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        branch_id = self.request.user.branch_id
+        if branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(Q(from_branch_id=branch_id) | Q(to_branch_id=branch_id))
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        return response.Response({"message": "Use the atomic /stock/transfer action."}, status=405)
+
+    def update(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock transfer history is immutable."}, status=405)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock transfers cannot be deleted."}, status=405)
+
 class StockAuditViewSet(CompanyScopedModelViewSet):
     queryset=StockAudit.objects.all(); serializer_class=StockAuditSerializer
-    def perform_create(self,serializer):
-        item=serializer.validated_data["item"]; counted=serializer.validated_data["counted_qty"]
-        serializer.save(company=self.request.user.company,branch=self.request.user.branch,expected_qty=item.on_hand,difference=counted-item.on_hand,created_by=self.request.user)
+    action_permission_map = {"create": "stock.edit"}
 
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        audit, created = count_inventory(request)
+        return response.Response(self.get_serializer(audit).data, status=201 if created else 200)
+
+    def update(self, request, *args, **kwargs):
+        return response.Response({"message": "Physical count history is immutable."}, status=405)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return response.Response({"message": "Physical count history cannot be deleted."}, status=405)

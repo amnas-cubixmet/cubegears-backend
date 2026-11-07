@@ -1692,6 +1692,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         from decimal import InvalidOperation
         from django.core.exceptions import ValidationError as DjangoValidationError
         from apps.inventory.models import StockItem, StockMovement
+        from apps.inventory.branch_stock import locked_branch_balance, available_in_branch, move_balance
+        from apps.accounts.permissions import user_has_permission
 
         job = self.get_object()  # Company scoped; permissions also require jobs.edit + stock.edit.
         item_id = request.data.get("item")
@@ -1713,9 +1715,11 @@ class JobViewSet(CompanyScopedModelViewSet):
         except (StockItem.DoesNotExist, ValueError, TypeError, DjangoValidationError):
             raise ValidationError({"item": "Stock item not found in this workshop."})
 
-        expected_branch_id = job.branch_id or getattr(request.user, "branch_id", None)
-        if item.branch_id and item.branch_id != expected_branch_id:
-            raise ValidationError({"item": "This stock item belongs to another branch."})
+        expected_branch = job.branch or request.user.branch
+        if job.branch_id and request.user.branch_id and job.branch_id != request.user.branch_id:
+            if not user_has_permission(request.user, "stock.manage"):
+                raise ValidationError({"branch": "Only an authorized source-branch staff member may issue parts."})
+        branch_balance = locked_branch_balance(item, expected_branch)
         idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
         if idempotency_key and (len(idempotency_key) > 48 or not idempotency_key.isascii() or not all(ch.isalnum() or ch in "-_" for ch in idempotency_key)):
             raise ValidationError({"idempotencyKey": "Use an ASCII alphanumeric idempotency key (max 48 characters)."})
@@ -1729,9 +1733,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                 if part:
                     return response.Response(JobPartSerializer(part).data, status=status.HTTP_200_OK)
                 raise ValidationError({"idempotencyKey": "Existing stock issue requires reconciliation; no additional stock was deducted."})
-        if item.available_quantity < qty:
-            raise ValidationError({"quantity": "Insufficient available stock."})
+        if available_in_branch(branch_balance) < qty or item.on_hand - item.reserved < qty:
+            raise ValidationError({"quantity": "Insufficient available stock at this branch."})
 
+        move_balance(branch_balance, -qty)
         item.on_hand -= qty
         item.save(update_fields=["on_hand", "updated_at"])
         part = JobPart.objects.create(
@@ -1739,7 +1744,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             job=job, item=item, quantity=qty, unit_price=item.selling_price, issued=True,
         )
         StockMovement.objects.create(
-            company=job.company, branch=item.branch or job.branch or request.user.branch,
+            company=job.company, branch=expected_branch,
             item=item, movement_type="job_issue", quantity=-qty,
             unit_cost=item.cost_price, reference=movement_reference,
             note=f"jobPart:{part.pk}", job=job, created_by=request.user,
