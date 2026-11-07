@@ -30,6 +30,41 @@ DEFAULT_OPERATIONS = {"workingStart": "09:00", "workingEnd": "18:30",
 DEFAULT_BILLING = {"invoicePrefix": "INV-", "paymentTermsDays": 0,
                    "defaultTaxRate": 18, "rounding": True}
 
+# Required for NEW signups only. GSTIN requires an explicit opt-out if
+# unregistered; email, GPS and logo can be omitted for mobile-only workshops.
+REQUIRED_COMPANY_FIELDS = ("name", "legal_name", "phone", "address", "city", "state", "country", "pincode")
+REQUIRED_BRANCH_FIELDS = ("name", "phone", "address", "city", "state", "pincode")
+
+
+def onboarding_pending(company):
+    """Legacy tenants without onboarding state are never locked retroactively."""
+    if not company:
+        return False
+    record = CompanySetting.objects.filter(
+        company=company, category="onboarding"
+    ).values_list("data", flat=True).first() or {}
+    return bool(record.get("required") and not record.get("completed"))
+
+
+def required_field_errors(step, values):
+    required = (REQUIRED_COMPANY_FIELDS if step == "company"
+                else REQUIRED_BRANCH_FIELDS if step == "branch" else ())
+    return {key: ["This workshop detail is required before continuing."]
+            for key in required if not str(values.get(key) or "").strip()}
+
+
+def persisted_setup_errors(company):
+    """Never mark signup complete solely because four progress flags were saved."""
+    branch = head_branch(company)
+    errors = {"company": required_field_errors("company", vars(company)),
+              "branch": required_field_errors("branch", vars(branch) if branch else {})}
+    state = setting_data(company, "onboarding")
+    if not state.get("gstNotRegistered") and not company.gstin:
+        errors["company"]["gstin"] = ["Enter a GSTIN or confirm no GST registration."]
+    if state.get("gstNotRegistered") and company.gstin:
+        errors["company"]["gstin"] = ["The GST registration choice does not match saved GSTIN."]
+    return {step: fields for step, fields in errors.items() if fields}
+
 
 class CompanySetupForm(serializers.Serializer):
     name = serializers.CharField(max_length=180)
@@ -42,6 +77,7 @@ class CompanySetupForm(serializers.Serializer):
     country = serializers.CharField(required=False, allow_blank=True, max_length=100)
     pincode = serializers.CharField(required=False, allow_blank=True, max_length=12)
     gstin = serializers.CharField(required=False, allow_blank=True, max_length=15)
+    gstNotRegistered = serializers.BooleanField(required=False, default=False)
 
     def validate_gstin(self, value):
         value = value.upper().strip()
@@ -124,12 +160,19 @@ def snapshot(company):
     fields = ("name", "legal_name", "phone", "email", "address",
               "city", "state", "country", "pincode", "gstin")
     branch_fields = ("name", "phone", "address", "city", "state", "pincode")
+    from apps.credits.models import CreditWallet
+    wallet = CreditWallet.objects.filter(company=company).values_list(
+        "balance", flat=True,
+    ).first()
     return {
         "required": bool(state.get("required", False)),
         "completed": bool(state.get("completed") and len(done) == len(STEPS)),
         "completedSteps": done,
         "steps": [{"key": step, "completed": step in done} for step in STEPS],
-        "company": {key: getattr(company, key) for key in fields},
+        "company": {
+            **{key: getattr(company, key) for key in fields},
+            "gstNotRegistered": bool(state.get("gstNotRegistered", False)),
+        },
         "branch": {
             **({key: getattr(branch, key) for key in branch_fields} if branch else
                {"name": "Head Office", "phone": "", "address": "",
@@ -141,6 +184,17 @@ def snapshot(company):
         "operations": {key: operations[key] for key in DEFAULT_OPERATIONS},
         "billing": {key: billing[key] for key in DEFAULT_BILLING},
         "logoAvailable": bool(company.logo_image),
+        "account": {
+            "companyName": company.name,
+            "companySlug": company.slug,
+            "ownerName": company.owner.name if company.owner_id else "",
+            "contactPhone": company.phone,
+            "contactEmail": company.email,
+            "walletBalanceCredits": str(wallet) if wallet is not None else None,
+            "walletAvailable": wallet is not None,
+            "walletPath": "/account",
+            "companySettingsPath": "/account/company",
+        },
     }
 
 
@@ -162,11 +216,28 @@ class WorkshopSetupView(APIView):
         values = form.validated_data
         company = Company.objects.select_for_update().get(pk=request.user.company_id)
         branch = head_branch(company)
+        pending = onboarding_pending(company)
+        if pending:
+            errors = required_field_errors(step, values)
+            if step == "company":
+                if values.get("gstNotRegistered") and values.get("gstin"):
+                    errors["gstin"] = ["Clear GSTIN when confirming no GST registration."]
+                elif not values.get("gstNotRegistered") and not values.get("gstin"):
+                    errors["gstin"] = ["Provide GSTIN or tick No GST registration."]
+            if errors:
+                return Response(errors, status=400)
 
         if step == "company":
+            gst_not_registered = values.pop("gstNotRegistered", False)
+            if pending and gst_not_registered:
+                values["gstin"] = ""
             for key, value in values.items():
                 setattr(company, key, value)
             company.save(update_fields=[*values, "updated_at"])
+            if pending:
+                update_setting(company, branch, "onboarding", {
+                    "gstNotRegistered": bool(gst_not_registered),
+                })
         elif step == "branch":
             if branch is None:
                 from apps.saas.access import enforce_branch_limit
@@ -215,6 +286,13 @@ class WorkshopSetupCompleteView(APIView):
         missing = [step for step in STEPS if step not in state.get("completedSteps", [])]
         if missing:
             return Response({"message": "Save all setup steps first.", "missingSteps": missing}, status=400)
+        if state.get("required"):
+            errors = persisted_setup_errors(company)
+            if errors:
+                return Response({
+                    "message": "Required workshop information is incomplete.",
+                    "missingFields": errors,
+                }, status=400)
         state["completed"] = True
         update_setting(company, head_branch(company), "onboarding", state)
         return Response(snapshot(company))

@@ -16,6 +16,8 @@ from apps.accounts.permissions import MODEL_PERMISSION_PREFIX
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
 from apps.saas.access import FREE_TENANT_MODULES
+from apps.saas.feature_discovery import module_inventory
+from apps.saas.module_groups import WORKFLOW_PACKAGES
 
 
 CORE_MODULES = frozenset({
@@ -61,7 +63,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         modules = discover_modules()
         existing = set(PlanFeature.objects.values_list("key", flat=True))
-        missing = [key for key, item in modules.items() if item["priceable"] and key not in existing]
+        offers = [item for item in module_inventory() if item["billable"]]
+        missing = [item["key"] for item in offers if item["key"] not in existing]
         created = []
         if options["sync"]:
             with transaction.atomic():
@@ -73,8 +76,8 @@ class Command(BaseCommand):
                     feature, was_created = PlanFeature.objects.get_or_create(
                         key=key,
                         defaults={
-                            "label": key.replace("_", " ").title(),
-                            "description": "Registered from backend permission catalog; review before pricing.",
+                            "label": next(item["label"] for item in offers if item["key"] == key),
+                            "description": "Registered from workflow product catalog; review before pricing.",
                             "group": group,
                             # Admin must review and publish explicitly.
                             "is_active": False,
@@ -84,6 +87,13 @@ class Command(BaseCommand):
                         created.append(feature.key)
         self.stdout.write(json.dumps({
             "discoveredModules": list(modules.values()),
+            "workflowPackages": [{
+                "key": key, "label": info["label"],
+                "modules": list(info["modules"]),
+                "dependsOn": list(info["dependencies"]),
+                "flows": list(info["flows"]),
+            } for key, info in WORKFLOW_PACKAGES.items()],
+            "billableProducts": offers,
             "registeredFeatureKeys": sorted(existing),
             "missingBillableKeys": missing,
             "createdDisabledKeys": created,
@@ -93,5 +103,7 @@ class Command(BaseCommand):
                 "Registration does not imply paid access, role permission or new functionality.",
                 "Seat billing must count active login users, not Employee records.",
                 "Storage billing must use actual company bytes and a separate ledger charge.",
+                "Operations, finance, HR/payroll and reports packages cover related modules once; RBAC remains per permission.",
+                "Legacy individual purchases are retained, not republished as new packages.",
             ],
         }, indent=2))

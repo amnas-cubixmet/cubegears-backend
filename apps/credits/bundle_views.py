@@ -10,6 +10,9 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.saas.feature_discovery import module_inventory
+from apps.saas.module_groups import (
+    WORKFLOW_PACKAGES, package_metadata, legacy_individual_feature_bundle,
+)
 from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess, ModulePriceLabel, CompanyPostpaidFeature
@@ -35,6 +38,9 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
     mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).first()
     postpaid = bool(mapping)
     postpaid_state = CompanyPostpaidFeature.objects.filter(company=company, feature=mapping.feature).first() if mapping and company else None
+    workflow_key = next((item["key"] for item in active_features
+                         if item["key"] in WORKFLOW_PACKAGES), None)
+    workflow_info = package_metadata(workflow_key) if workflow_key else None
     can_resume = bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
         access.billing_type_at_purchase == "permanent" or (
             access.billing_type_at_purchase in {"ten_seconds", "hourly", "daily", "weekly", "monthly"}
@@ -69,6 +75,16 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "id": bundle.pk, "key": bundle.key,
         "name": f"{bundle.name} (Previous period)" if bundle.is_retired else bundle.name,
         "description": bundle.description,
+        "includedModules": (
+            [item.replace("_", " ").title().replace("Gstr", "GST")
+             for item in workflow_info["includedModules"]]
+            if workflow_info else [feature["label"] for feature in active_features]
+        ),
+        "includedModuleKeys": workflow_info["includedModules"] if workflow_info else [
+            feature["key"] for feature in active_features
+        ],
+        "workflowDependencies": workflow_info["workflowDependencies"] if workflow_info else [],
+        "workflowPaths": workflow_info["workflowPaths"] if workflow_info else [],
         "perUserCredits": str(bundle.per_user_credits),
         "userCount": user_count,
         "totalCredits": str((bundle.per_user_credits * user_count).quantize(Decimal("0.01"))),
@@ -94,6 +110,11 @@ class BundleListView(APIView):
     def get(self, request):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
+        # Old per-module feature purchases remain valid for their owners
+        # but are never offered as duplicate new purchases.
+        legacy_purchased_ids = set(CompanyBundleAccess.objects.filter(
+            company=request.user.company,
+        ).values_list("bundle_id", flat=True))
         # Old published labels can still reference Dashboard/Settings/Staff.
         # Exclude free-only labels from the paid marketplace rather than
         # presenting free core access as an activation or renewal product.
@@ -102,10 +123,12 @@ class BundleListView(APIView):
             for bundle in FeatureBundle.objects.filter(is_active=True).filter(
                 Q(is_retired=False) | Q(company_access__company=request.user.company)
             ).distinct().prefetch_related("features")
-            if not bundle.features.all() or any(
+            if (not bundle.features.all() or any(
                 feature.key not in FREE_TENANT_MODULES
                 for feature in bundle.features.all()
-            )
+            )) and (not legacy_individual_feature_bundle(
+                {feature.key for feature in bundle.features.all()}
+            ) or bundle.id in legacy_purchased_ids)
         ]
         accesses = {
             a.bundle_id: a for a in CompanyBundleAccess.objects.filter(
@@ -124,6 +147,16 @@ class BundleListView(APIView):
                 'description': 'A SaaS administrator must publish a price before activation.',
                 'perUserCredits': '0.00', 'userCount': count, 'totalCredits': '0.00',
                 'billingType': 'monthly', 'features': [{'key': module['key'], 'label': module['label']}],
+                'includedModules': (
+                    [item.replace("_", " ").title().replace("Gstr", "GST")
+                     for item in WORKFLOW_PACKAGES[module["key"]]["modules"]]
+                    if module['key'] in WORKFLOW_PACKAGES else [module['label']]),
+                'includedModuleKeys': list(WORKFLOW_PACKAGES[module["key"]]["modules"])
+                    if module['key'] in WORKFLOW_PACKAGES else [module['key']],
+                'workflowDependencies': list(WORKFLOW_PACKAGES[module["key"]]["dependencies"])
+                    if module['key'] in WORKFLOW_PACKAGES else [],
+                'workflowPaths': list(WORKFLOW_PACKAGES[module["key"]]["flows"])
+                    if module['key'] in WORKFLOW_PACKAGES else [],
                 'active': False, 'canResume': False, 'validUntil': None,
                 'usesRemaining': 0, 'meteredReady': True,
                 'purchaseEnabled': False, 'purchaseDisabledReason': 'MODULE_PRICE_NOT_SET',
@@ -146,6 +179,52 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
+        if legacy_individual_feature_bundle(
+            set(bundle.features.values_list("key", flat=True))
+        ) and not CompanyBundleAccess.objects.filter(
+            company=request.user.company, bundle=bundle,
+        ).exists():
+            return Response({
+                "code": "LEGACY_MODULE_REPLACED",
+                "message": "Attendance and Payroll are now one feature. Choose the combined plan.",
+            }, status=409)
+        # Do not charge a group that overlaps a legacy standalone entitlement.
+        # A billing migration or explicit upgrade credit is required first;
+        # never silently collect two fees for the same access.
+        package_keys = set(bundle.features.values_list("key", flat=True))
+        for key in package_keys & set(WORKFLOW_PACKAGES):
+            from .service import bundle_is_usable
+            legacy_members = set(WORKFLOW_PACKAGES[key]["modules"])
+            owned_legacy = CompanyBundleAccess.objects.filter(
+                company=request.user.company, enabled=True,
+                bundle__features__key__in=legacy_members,
+            ).select_related("bundle").distinct()
+            from .models import CompanyCreditFeature, FeatureUsageSession
+            postpaid_legacy = CompanyPostpaidFeature.objects.filter(
+                company=request.user.company, feature__key__in=legacy_members,
+                enabled=True, suspended=False,
+            ).exists()
+            prepaid_legacy = CompanyCreditFeature.objects.filter(
+                company=request.user.company, feature__key__in=legacy_members,
+                enabled=True, next_charge_at__gt=timezone.now(),
+            ).exists()
+            active_metered_legacy = (
+                settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+                and CompanyCreditFeature.objects.filter(
+                    company=request.user.company, feature__key__in=legacy_members,
+                    enabled=True,
+                ).exists()
+                and FeatureUsageSession.objects.filter(
+                    company=request.user.company, feature__key__in=legacy_members,
+                    ended_at__isnull=True,
+                ).exists()
+            )
+            if (any(bundle_is_usable(record) for record in owned_legacy)
+                    or postpaid_legacy or prepaid_legacy or active_metered_legacy):
+                return Response({
+                    "code": "EXISTING_LEGACY_ENTITLEMENT",
+                    "message": "You already own a related individual module. Ask support to migrate or credit remaining access before buying this combined feature.",
+                }, status=409)
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features):
             return Response({
                 "message": "Paid feature enforcement must be enabled by the platform administrator before purchasing labels.",

@@ -363,6 +363,12 @@ class PublicWorkshopSignupView(APIView):
 
         company.owner = user
         company.save(update_fields=["owner", "updated_at"])
+        # Initialize an empty, company-scoped billing wallet. This does NOT
+        # grant credits, create a ledger debit or activate any paid feature.
+        # Its real 0.00 balance is visible during mandatory onboarding.
+        from apps.credits.models import CreditWallet
+        CreditWallet.objects.get_or_create(company=company)
+
         # Newly registered owners resume setup after signing in; existing
         # workshops without this record retain their current workspace.
         from apps.saas.models import CompanySetting

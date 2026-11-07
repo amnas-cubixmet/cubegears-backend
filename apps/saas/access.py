@@ -1,6 +1,7 @@
 """Plan entitlement checks. Legacy subscriptions stay compatible until linked to a plan."""
 from rest_framework.exceptions import ValidationError
 from .models import Subscription
+from .module_groups import billed_feature_keys, expand_entitlements
 
 # Always included for every active tenant, subject to the role's explicit permissions.
 # `billing` remains company-owner-only in user_has_permission().
@@ -71,7 +72,7 @@ def active_label_modules(company):
             feature__module_price_label__monthly_postpaid=True,
             feature__module_price_label__bundle__is_active=True,
         ).values_list("feature__key", flat=True))
-    return purchased - FREE_TENANT_MODULES
+    return expand_entitlements(purchased) - FREE_TENANT_MODULES
 
 
 
@@ -79,6 +80,7 @@ def feature_allowed(user, permission):
     """Paid feature access never grants tenant RBAC; it can only restrict it."""
     from django.conf import settings
     module = permission.split(".")[0]
+    module_keys = billed_feature_keys(module)
     strict_company = user.company.require_paid_features
     # Past-due companies keep only owner recovery, balance and read-only audit.
     # Check BEFORE free modules and paid labels so Dashboard itself is denied.
@@ -123,10 +125,10 @@ def feature_allowed(user, permission):
         if settings.CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED:
             from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
             if ModulePriceLabel.objects.filter(
-                feature__key=module, monthly_postpaid=True, bundle__is_active=True,
+                feature__key__in=module_keys, monthly_postpaid=True, bundle__is_active=True,
             ).exists():
                 return CompanyPostpaidFeature.objects.filter(
-                    company=user.company, feature__key=module,
+                    company=user.company, feature__key__in=module_keys,
                     feature__is_active=True, enabled=True, suspended=False,
                 ).exists()
         return False
@@ -138,22 +140,25 @@ def feature_allowed(user, permission):
     from .models import PlanFeature
     from apps.credits.models import CompanyCreditFeature
     from django.utils import timezone
-    if not PlanFeature.objects.filter(key=module, is_active=True).exists():
+    if not PlanFeature.objects.filter(key__in=module_keys, is_active=True).exists():
         # Legacy installations allow unregistered modules. Strict tenant
         # rollouts deny them instead; otherwise an unregistered permission
         # would bypass a company's feature purchases.
         return not (strict_company or settings.CREDIT_STRICT_MODULE_GATING_ENABLED)
     if settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED:
         from apps.credits.models import FeatureUsageSession
-        individually_enabled = CompanyCreditFeature.objects.filter(
-            company=user.company, feature__key=module, feature__is_active=True,
-            enabled=True,
-        ).exists() and FeatureUsageSession.objects.filter(
-            company=user.company, feature__key=module, ended_at__isnull=True,
-        ).exists()
+        individually_enabled = any(
+            CompanyCreditFeature.objects.filter(
+                company=user.company, feature__key=key, feature__is_active=True,
+                enabled=True,
+            ).exists() and FeatureUsageSession.objects.filter(
+                company=user.company, feature__key=key, ended_at__isnull=True,
+            ).exists()
+            for key in module_keys
+        )
     else:
         individually_enabled = CompanyCreditFeature.objects.filter(
-            company=user.company, feature__key=module, feature__is_active=True,
+            company=user.company, feature__key__in=module_keys, feature__is_active=True,
             enabled=True, next_charge_at__gt=timezone.now(),
         ).exists()
     if individually_enabled:
@@ -164,10 +169,10 @@ def feature_allowed(user, permission):
     # Celery cycle; the frontend never decides the permission.
     if getattr(settings, "CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED", False):
         from apps.credits.models import CompanyPostpaidFeature, ModulePriceLabel
-        if ModulePriceLabel.objects.filter(feature__key=module, monthly_postpaid=True, bundle__is_active=False).exists():
+        if ModulePriceLabel.objects.filter(feature__key__in=module_keys, monthly_postpaid=True, bundle__is_active=False).exists():
             return False
         if CompanyPostpaidFeature.objects.filter(
-            company=user.company, feature__key=module,
+            company=user.company, feature__key__in=module_keys,
             feature__is_active=True, enabled=True, suspended=False,
         ).exists():
             return True
@@ -180,7 +185,7 @@ def feature_allowed(user, permission):
     from apps.credits.models import CompanyBundleAccess
     return CompanyBundleAccess.objects.filter(
         company=user.company, enabled=True, bundle__is_active=True,
-        bundle__features__key=module, bundle__features__is_active=True,
+        bundle__features__key__in=module_keys, bundle__features__is_active=True,
     ).filter(
         Q(billing_type_at_purchase="permanent", valid_until__isnull=True) |
         Q(billing_type_at_purchase__in=["ten_seconds", "hourly", "daily", "weekly", "monthly"],
