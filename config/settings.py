@@ -145,7 +145,11 @@ WSGI_APPLICATION = "config.wsgi.application"
 # temporarily opt in with ALLOW_LEGACY_PRODUCTION_SQLITE=True during migration.
 DATABASE_URL = (env("DATABASE_URL") or "").strip()
 POSTGRES_HOST = (env("POSTGRES_HOST") or "").strip()
-POSTGRES_SSLMODE = (env("POSTGRES_SSLMODE") or ("require" if not DEBUG else "prefer")).strip()
+POSTGRES_SSLMODE_RAW = (env("POSTGRES_SSLMODE") or "").strip()
+POSTGRES_SSLMODE = POSTGRES_SSLMODE_RAW or ("require" if not DEBUG else "prefer")
+POSTGRES_CONNECT_TIMEOUT_SECONDS = int(env("POSTGRES_CONNECT_TIMEOUT_SECONDS", 10))
+if not 1 <= POSTGRES_CONNECT_TIMEOUT_SECONDS <= 120:
+    raise ImproperlyConfigured("POSTGRES_CONNECT_TIMEOUT_SECONDS must be 1–120.")
 DB_CONN_MAX_AGE = int(env("DB_CONN_MAX_AGE", 60))
 if DB_CONN_MAX_AGE < 0:
     raise ImproperlyConfigured("DB_CONN_MAX_AGE must be 0 or a positive integer.")
@@ -188,7 +192,13 @@ if DATABASE_URL or POSTGRES_HOST:
             "CONN_MAX_AGE": DB_CONN_MAX_AGE,
             "CONN_HEALTH_CHECKS": True,
         }
-    database.setdefault("OPTIONS", {})["sslmode"] = POSTGRES_SSLMODE
+    # Preserve stricter SSL options explicitly supplied by managed PostgreSQL URLs.
+    options = database.setdefault("OPTIONS", {})
+    if POSTGRES_SSLMODE_RAW:
+        options["sslmode"] = POSTGRES_SSLMODE
+    else:
+        options.setdefault("sslmode", POSTGRES_SSLMODE)
+    options.setdefault("connect_timeout", POSTGRES_CONNECT_TIMEOUT_SECONDS)
     DATABASES = {"default": database}
 else:
     if not DEBUG and not env_bool("ALLOW_LEGACY_PRODUCTION_SQLITE", False):
@@ -237,7 +247,22 @@ MEDIA_ROOT = Path(env("DJANGO_MEDIA_ROOT", str(BASE_DIR / "media"))).expanduser(
 if not MEDIA_ROOT.is_absolute():
     MEDIA_ROOT = BASE_DIR / MEDIA_ROOT
 # Outside MEDIA_ROOT: public /media/ routes must never expose private job photos.
-PRIVATE_JOB_MEDIA_ROOT = Path(env("PRIVATE_JOB_MEDIA_ROOT", str(BASE_DIR / "private_job_media")))
+PRIVATE_JOB_MEDIA_ROOT = Path(env("PRIVATE_JOB_MEDIA_ROOT", str(BASE_DIR / "private_job_media"))).expanduser()
+if not PRIVATE_JOB_MEDIA_ROOT.is_absolute():
+    PRIVATE_JOB_MEDIA_ROOT = BASE_DIR / PRIVATE_JOB_MEDIA_ROOT
+
+# Private inspection media may never be placed within a publicly served media
+# or static directory, including through a symlink. Fail at Django startup.
+public_media_path = MEDIA_ROOT.resolve()
+static_root_path = STATIC_ROOT.resolve()
+private_media_path = PRIVATE_JOB_MEDIA_ROOT.resolve()
+if (private_media_path == public_media_path
+        or public_media_path in private_media_path.parents
+        or private_media_path == static_root_path
+        or static_root_path in private_media_path.parents):
+    raise ImproperlyConfigured(
+        "PRIVATE_JOB_MEDIA_ROOT must be outside DJANGO_MEDIA_ROOT and STATIC_ROOT."
+    )
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -356,6 +381,11 @@ LOGOUT_REDIRECT_URL = "panel:login"
 CREDIT_BILLING_CELERY_ENABLED = env_bool("CREDIT_BILLING_CELERY_ENABLED", False)
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
+REQUIRE_REDIS_READINESS = env_bool("REQUIRE_REDIS_READINESS", False)
+if REQUIRE_REDIS_READINESS and not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    raise ImproperlyConfigured(
+        "REQUIRE_REDIS_READINESS needs CELERY_BROKER_URL with redis:// or rediss://."
+    )
 # Web, Worker and Beat run in different OS processes/containers. Fail
 # explicitly if the worker/scheduler is deployed without its queue broker.
 SERVICE_ROLE = env("SERVICE_ROLE", "web").strip().lower()
