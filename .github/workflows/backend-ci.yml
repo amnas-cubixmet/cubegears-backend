@@ -47,6 +47,7 @@ jobs:
             apps.jobs.tests_manual_complaints \
             apps.jobs.tests_work_skip \
             apps.jobs.tests_estimate_skip_gst \
+            apps.jobs.tests_estimate_version_workflow \
             apps.services.tests_hierarchy \
             apps.inventory.tests_supplier_finance \
             apps.inventory.tests_stock_identifiers \
