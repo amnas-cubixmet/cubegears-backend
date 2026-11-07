@@ -118,7 +118,7 @@ class Part17CustomerEstimateTests(TestCase):
             {"action": action}, format="json",
         )
 
-    def decide(self, decision, quote=None, version=1, csrf=True):
+    def decide(self, decision, quote=None, version=1, csrf=True, decline_reason="price", decline_note=""):
         quote = quote or self.quote
         extras = ({
             "HTTP_X_CG_CSRF": self.browser.cookies["cg_portal_csrf"].value,
@@ -132,7 +132,9 @@ class Part17CustomerEstimateTests(TestCase):
         )
         return self.browser.post(
             f"/api/v1/customer-website/estimates/{quote.pk}/decision",
-            {"decision": decision, "version": version, "reviewHash": review_hash},
+            {"decision": decision, "version": version, "reviewHash": review_hash,
+             **({"declineReason": decline_reason, "declineNote": decline_note}
+                if decision == "decline" else {})},
             format="json", **extras, **self.headers(),
         )
 
@@ -458,4 +460,112 @@ class Part17CustomerEstimateTests(TestCase):
             company=self.company,
             notification_type__startswith="customer_estimate_",
         ).count(), 0)
+
+    def test_part20_decline_reason_and_note_audited_without_leaking_to_inbox(self):
+        from apps.notifications.models import Notification
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        response = self.decide(
+            "decline", decline_reason="items",
+            decline_note="Please remove the additional brake service.",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["decisionReceipt"]["declineFeedback"], {
+            "reason": "items", "note": "Please remove the additional brake service.",
+        })
+        activity = JobActivity.objects.get(job=self.job, event="Customer Estimate Declined")
+        self.assertEqual(activity.metadata["declineReason"], "items")
+        self.assertEqual(activity.metadata["declineNote"], "Please remove the additional brake service.")
+        self.job.refresh_from_db()
+        record = self.job.workflow_progress["customerEstimateDecision"]
+        self.assertEqual(record["declineReason"], "items")
+        self.assertEqual(record["declineNote"], "Please remove the additional brake service.")
+        notice = Notification.objects.get(
+            company=self.company, notification_type="customer_estimate_declined"
+        )
+        self.assertEqual(notice.data["declineReason"], "items")
+        self.assertNotIn("Please remove", str(notice.data))
+        dashboard = self.browser.get("/api/v1/customer-website/session", **self.headers())
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertEqual(
+            dashboard.data["estimates"][0]["decisionReceipt"]["declineFeedback"],
+            {"reason": "items", "note": "Please remove the additional brake service."},
+        )
+
+    def test_part20_revised_quote_retains_old_decision_receipt(self):
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        declined = self.decide(
+            "decline", decline_reason="price",
+            decline_note="Can you offer a more affordable repair?",
+        )
+        self.assertEqual(declined.status_code, 200, declined.data)
+        old_receipt = declined.data["decisionReceipt"]["id"]
+        revision = self.staff.post(
+            f"/api/v1/jobs/{self.job.pk}/estimates/quick",
+            {"lines": [{"type": "Labour", "description": "Affordable brake repair",
+                        "quantity": "1", "unitPrice": "950"}],
+             "taxPercent": "0", "discount": "0"},
+            format="json",
+        )
+        self.assertEqual(revision.status_code, 201, revision.data)
+        self.assertEqual(revision.data["version"], 2)
+        shared = self.staff.post(
+            f"/api/v1/jobs/{self.job.pk}/estimates/{revision.data['id']}/share",
+            {"action": "share"}, format="json",
+        )
+        self.assertEqual(shared.status_code, 200, shared.data)
+        dashboard = self.browser.get("/api/v1/customer-website/session", **self.headers())
+        self.assertEqual(dashboard.status_code, 200)
+        estimates = {e["version"]: e for e in dashboard.data["estimates"]}
+        self.assertEqual(set(estimates), {1, 2})
+        self.assertEqual(estimates[1]["status"], "Customer Rejected")
+        self.assertEqual(estimates[1]["decisionReceipt"]["id"], old_receipt)
+        self.assertEqual(estimates[1]["decisionReceipt"]["declineFeedback"]["reason"], "price")
+        self.assertEqual(estimates[2]["status"], "Awaiting Customer")
+        self.assertNotIn("decisionReceipt", estimates[2])
+        latest_hash = estimates[2]["reviewHash"]
+        accepted = self.browser.post(
+            f"/api/v1/customer-website/estimates/{revision.data['id']}/decision",
+            {"decision": "accept", "version": 2, "reviewHash": latest_hash},
+            format="json",
+            HTTP_X_CG_CSRF=self.browser.cookies["cg_portal_csrf"].value,
+            **self.headers(),
+        )
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        refreshed = self.browser.get("/api/v1/customer-website/session", **self.headers())
+        refreshed_by_version = {e["version"]: e for e in refreshed.data["estimates"]}
+        self.assertEqual(refreshed_by_version[1]["decisionReceipt"]["id"], old_receipt)
+        self.assertEqual(refreshed_by_version[2]["decisionReceipt"]["status"], "Accepted")
+
+    def test_part20_invalid_feedback_and_replay_cannot_mutate_decision(self):
+        from apps.notifications.models import Notification
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        path = f"/api/v1/customer-website/estimates/{self.quote.pk}/decision"
+        quote = self.browser.get("/api/v1/customer-website/session", **self.headers()).data["estimates"][0]
+        base = {"decision": "decline", "version": 1, "reviewHash": quote["reviewHash"]}
+        def send(payload):
+            return self.browser.post(
+                path, payload, format="json",
+                HTTP_X_CG_CSRF=self.browser.cookies["cg_portal_csrf"].value,
+                **self.headers(),
+            )
+        self.assertEqual(send({**base, "declineReason": "not-an-option"}).status_code, 400)
+        self.assertEqual(send({**base, "declineReason": "price", "declineNote": "x" * 501}).status_code, 400)
+        self.assertEqual(send({**base, "declineReason": "price", "declineNote": 123}).status_code, 400)
+        self.assertEqual(send({
+            **base, "decision": "accept", "declineReason": "price"
+        }).status_code, 400)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Customer Estimate Declined").count(), 0)
+        accepted = send({**base, "declineReason": "price", "declineNote": "Too expensive"})
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        duplicate = send({**base, "declineReason": "price", "declineNote": "Too expensive"})
+        self.assertEqual(duplicate.status_code, 200, duplicate.data)
+        conflicting = send({**base, "declineReason": "items", "declineNote": "Different request"})
+        self.assertEqual(conflicting.status_code, 409, conflicting.data)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Customer Estimate Declined").count(), 1)
+        self.assertEqual(Notification.objects.filter(
+            company=self.company, notification_type="customer_estimate_declined",
+        ).count(), 1)
 

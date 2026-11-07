@@ -38,6 +38,8 @@ def notify_customer_estimate_response(job, estimate, decision, activity):
         "decision": "Accepted" if decision == "accept" else "Declined",
         "receiptId": receipt_id,
         "source": "customer_portal_session",
+        **({"declineReason": str(activity.metadata.get("declineReason", "unspecified"))}
+           if decision == "decline" else {}),
     }
 
     # The portal decision holds a lock on the job row, so the same receipt
