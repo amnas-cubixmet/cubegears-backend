@@ -30,17 +30,30 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 ~~~
 
 Generate strong UNIQUE Django and JWT keys and fill all blank production
-variables privately: DJANGO_SECRET_KEY, JWT_SIGNING_KEY, POSTGRES_PASSWORD,
+variables privately: DJANGO_SECRET_KEY, JWT_SIGNING_KEY, DB_PASSWORD,
 REDIS_PASSWORD, CELERY_BROKER_URL and CELERY_RESULT_BACKEND.
 
-For Docker Compose, POSTGRES_HOST=postgres and POSTGRES_SSLMODE=disable work
-**only on the isolated container network**. The Redis broker URL must include
-the URL-encoded Redis password, for example:
+Use ONLY this database configuration in the backend private .env:
+
+~~~env
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=cubixgear_db
+DB_USER=cubixgear_user
+DB_PASSWORD=
+DB_HOST=postgres
+DB_PORT=5432
+DB_CONN_MAX_AGE=0
+~~~
+
+Use DB_HOST=localhost for a database installed on the same development machine.
+For Docker Compose DB_HOST=postgres is a private container hostname. The official
+PostgreSQL Docker image receives the internally required POSTGRES_* variables
+mapped from DB_* by Compose; do not set POSTGRES_* in the backend .env.
+External production DB_HOST values require TLS.
+The Redis broker URL must include the URL-encoded Redis password, for example:
 redis://:URL_ENCODED_PASSWORD@redis:6379/0. Use /1 for result backend.
 Never expose ports 5432/6379 publicly.
 
-For managed PostgreSQL, use **either** DATABASE_URL with SSL enabled **or**
-POSTGRES_HOST/POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD. Never both.
 Set real HTTPS DJANGO_ALLOWED_HOSTS, FRONTEND_URL, CORS_ALLOWED_ORIGINS,
 CSRF_TRUSTED_ORIGINS and CUSTOMER_PORTAL_BASE_URL.
 
@@ -85,7 +98,9 @@ python scripts/backup_sqlite.py --source db.sqlite3 --output db-backups/pre-post
 ~~~
 
    Back up both public and private media directories. Keep files outside Git.
-2. With the OLD SQLite ENV active, export data:
+2. With the existing SQLite file, temporarily configure a local-only environment
+   with DB_ENGINE=django.db.backends.sqlite3 and DB_NAME=db.sqlite3,
+   then export the data. Do not use this configuration in production:
 
 ~~~powershell
 New-Item -ItemType Directory -Force db-backups
@@ -101,11 +116,11 @@ python manage.py dumpdata --natural-foreign --natural-primary --exclude contentt
 5. Only then run the final maintenance-window cutover. Keep the original
    database read-only for rollback. Never silently reset or overwrite it.
 
-On an EXISTING SQLite production host (for example PythonAnywhere), deploying
-a PostgreSQL-required version before provisioning PostgreSQL would interrupt
-the backend. Either postpone deployment or temporarily configure
-ALLOW_LEGACY_PRODUCTION_SQLITE=True in the existing private .env. This
-explicit compatibility switch must be removed after migration.
+On an EXISTING SQLite production host, deploying this PostgreSQL-required
+version before provisioning the PostgreSQL service and migrating data would
+interrupt the backend. Postpone the production deployment until a staging
+migration and a validated rollback plan are ready. No legacy SQLite production
+override exists.
 
 Do not generate schema on production via makemigrations; review schema changes
 in source control and deploy only vetted migrations using migrate --noinput.
@@ -133,7 +148,9 @@ before trying to activate this branch.
 
 ### Local Windows development (separate processes)
 
-Copy backend .env.example to backend/.env (local SQLite stays untouched).
+Copy backend .env.example to backend/.env; set your private DB_PASSWORD and
+ensure that PostgreSQL is running locally. This does not modify an existing
+SQLite file. Run python manage.py migrate against the intended database first.
 Use four separate PowerShell terminals:
 
 ~~~powershell
@@ -176,6 +193,8 @@ migrate existing customer data or configure real credentials automatically.
 - `GET /api/v1/ready/` checks PostgreSQL connectivity with a real `SELECT 1`. It responds with HTTP 503 when unavailable.
 - Set `REQUIRE_REDIS_READINESS=True` to additionally require Redis readiness for web traffic. This defaults to False because the web process may remain useful during a noncritical worker outage.
 - `python manage.py verify_production_foundation --require-redis` checks database and Redis plus the writable persistent public/private upload volumes. The command does not mutate customer or workshop records.
-- `POSTGRES_CONNECT_TIMEOUT_SECONDS=10` limits connection attempts. When `DATABASE_URL` already supplies a PostgreSQL `sslmode`, that choice is preserved unless `POSTGRES_SSLMODE` is explicitly set in the environment.
+- PostgreSQL connection timeout is 10 seconds. The backend automatically uses
+  SSL preference for local/private Compose hosts and requires TLS for external
+  production DB_HOST values. The connection format stays DB_* only.
 - `PRIVATE_JOB_MEDIA_ROOT` must not be nested inside public `DJANGO_MEDIA_ROOT` or `STATIC_ROOT`. Invalid paths fail at startup rather than publishing private inspection media.
 - Configure all environment values on backend services only; never put secrets in Vite `VITE_*` variables. Ensure persistent volumes exist before running the preflight command.

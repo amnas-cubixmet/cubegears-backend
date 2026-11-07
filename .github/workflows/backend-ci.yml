@@ -8,6 +8,11 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      DJANGO_DEBUG: "True"
+      DB_ENGINE: "django.db.backends.sqlite3"
+      DB_NAME: "/tmp/cubegears-ci.sqlite3"
+      DB_CONN_MAX_AGE: "0"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -103,12 +108,13 @@ jobs:
     env:
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
-      POSTGRES_HOST: "127.0.0.1"
-      POSTGRES_PORT: "5432"
-      POSTGRES_DB: "ci_cubegears"
-      POSTGRES_USER: "ci_cubegears"
-      POSTGRES_PASSWORD: "ci-only-not-a-production-password"
-      POSTGRES_SSLMODE: "disable"
+      DB_ENGINE: "django.db.backends.postgresql"
+      DB_HOST: "127.0.0.1"
+      DB_PORT: "5432"
+      DB_NAME: "ci_cubegears"
+      DB_USER: "ci_cubegears"
+      DB_PASSWORD: "ci-only-not-a-production-password"
+      DB_CONN_MAX_AGE: "0"
       SERVICE_ROLE: "web"
     steps:
       - uses: actions/checkout@v4
@@ -137,9 +143,9 @@ jobs:
         run: docker build --pull -t cubegears-backend:ci .
       - name: Check compose syntax without any live passwords
         env:
-          POSTGRES_DB: ci_cubegears
-          POSTGRES_USER: ci_cubegears
-          POSTGRES_PASSWORD: ci-only-not-a-production-password
+          DB_NAME: ci_cubegears
+          DB_USER: ci_cubegears
+          DB_PASSWORD: ci-only-not-a-production-password
           REDIS_PASSWORD: ci-only-not-a-production-redis-password
         run: |
           cp .env.production.example .env
