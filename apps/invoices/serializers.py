@@ -48,7 +48,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Invoice
         exclude = ("company", "branch")
-        read_only_fields = ("id", "created_at", "updated_at", "template_snapshot")
+        # Payment receipts, accounting totals, document status and finalized
+        # snapshots are controlled by server-side workflow actions only.
+        read_only_fields = (
+            "id", "created_at", "updated_at", "template_snapshot",
+            "status", "paid", "balance", "taxable", "cgst", "sgst", "igst",
+            "total", "tax_mode", "finalized_at", "cancelled_at",
+            "source_estimate",
+        )
 
     def validate(self, attrs):
         request = self.context.get("request")
@@ -77,6 +84,12 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if self.instance is None:
             attrs["invoice_type"] = expected_type
         else:
+            # A saved invoice/estimate number identifies a permanent audit
+            # record, even while its line items remain editable in Draft.
+            if "number" in attrs and attrs["number"] != self.instance.number:
+                raise serializers.ValidationError({
+                    "number": "Document number cannot be changed after the draft is saved."
+                })
             if self.instance.status != "Draft":
                 raise serializers.ValidationError({
                     "status": "Finalized or cancelled invoices cannot be edited. Use the dedicated workflow actions."
@@ -256,6 +269,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if not customer:
             raise serializers.ValidationError({"customer": "Customer is required."})
         vehicle = self._resolve_vehicle(vehicle_payload, company, customer) or (job.vehicle if job else None)
+        if vehicle is not None and vehicle.customer_id != customer.pk:
+            raise serializers.ValidationError({
+                "vehicle": "The selected vehicle belongs to a different customer."
+            })
 
         validated_data["customer"] = customer
         validated_data["vehicle"] = vehicle
@@ -298,9 +315,17 @@ class InvoiceSerializer(serializers.ModelSerializer):
                     instance.customer_snapshot = customer_payload
         if vehicle_payload is not None:
             vehicle = self._resolve_vehicle(vehicle_payload, company, instance.customer)
+            if vehicle is not None and vehicle.customer_id != instance.customer_id:
+                raise serializers.ValidationError({
+                    "vehicle": "The selected vehicle belongs to a different customer."
+                })
             instance.vehicle = vehicle
             if isinstance(vehicle_payload, dict):
                 instance.vehicle_snapshot = vehicle_payload
+        if instance.vehicle_id and instance.vehicle.customer_id != instance.customer_id:
+            raise serializers.ValidationError({
+                "vehicle": "Invoice customer and vehicle owner must match."
+            })
         if job_number is not None:
             instance.job = self._resolve_job(job_number, company)
 
