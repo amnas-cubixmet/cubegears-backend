@@ -138,107 +138,89 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# Production PostgreSQL (never silently switch the existing SQLite file).
-# Supply DATABASE_URL, POSTGRES_* or the equivalent DB_* variables.
-# Never mix these connection credential families in the same environment.
-# Local development remains SQLite unless PostgreSQL is explicitly selected.
-# Production requires PostgreSQL by default; an existing legacy SQLite host can
-# temporarily opt in with ALLOW_LEGACY_PRODUCTION_SQLITE=True during migration.
-DATABASE_URL = (env("DATABASE_URL") or "").strip()
-# DB_* is a supported compatibility format for local PostgreSQL environments.
-# POSTGRES_* remains the canonical format for existing deployments.
-DB_FIELD_NAMES = ("DB_ENGINE", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
-POSTGRES_FIELD_NAMES = (
-    "POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT",
+# One database environment contract for local, CI and production:
+# DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_CONN_MAX_AGE.
+# Do not accept competing URL/POSTGRES_* formats or silently switch databases.
+LEGACY_DB_VARIABLES = (
+    "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER",
+    "POSTGRES_PASSWORD", "POSTGRES_PORT", "POSTGRES_SSLMODE",
+    "POSTGRES_CONNECT_TIMEOUT_SECONDS", "SQLITE_DATABASE_PATH",
+    "ALLOW_LEGACY_PRODUCTION_SQLITE",
 )
-USE_DB_PREFIX = any((env(name) or "").strip() for name in DB_FIELD_NAMES)
-if USE_DB_PREFIX and (DATABASE_URL or any(
-    (env(name) or "").strip() for name in POSTGRES_FIELD_NAMES
-)):
+legacy_variables = [name for name in LEGACY_DB_VARIABLES if env(name)]
+if legacy_variables:
     raise ImproperlyConfigured(
-        "Configure only one PostgreSQL connection format: DATABASE_URL, POSTGRES_* or DB_*."
-    )
-if USE_DB_PREFIX and (env("DB_ENGINE") or "django.db.backends.postgresql").strip() != "django.db.backends.postgresql":
-    raise ImproperlyConfigured("DB_ENGINE must be django.db.backends.postgresql.")
-POSTGRES_HOST = ((env("DB_HOST") if USE_DB_PREFIX else env("POSTGRES_HOST")) or "").strip()
-POSTGRES_SSLMODE_RAW = (env("POSTGRES_SSLMODE") or "").strip()
-POSTGRES_SSLMODE = POSTGRES_SSLMODE_RAW or ("require" if not DEBUG else "prefer")
-POSTGRES_CONNECT_TIMEOUT_SECONDS = int(env("POSTGRES_CONNECT_TIMEOUT_SECONDS", 10))
-if not 1 <= POSTGRES_CONNECT_TIMEOUT_SECONDS <= 120:
-    raise ImproperlyConfigured("POSTGRES_CONNECT_TIMEOUT_SECONDS must be 1–120.")
-DB_CONN_MAX_AGE = int(env("DB_CONN_MAX_AGE", 60))
-if DB_CONN_MAX_AGE < 0:
-    raise ImproperlyConfigured("DB_CONN_MAX_AGE must be 0 or a positive integer.")
-
-if DATABASE_URL and POSTGRES_HOST:
-    raise ImproperlyConfigured(
-        "Configure only DATABASE_URL or POSTGRES_HOST/POSTGRES_* fields, not both."
+        "Remove old database environment variables (" + ", ".join(legacy_variables)
+        + "); configure only DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, "
+        "DB_HOST, DB_PORT, DB_CONN_MAX_AGE."
     )
 
-if DATABASE_URL or POSTGRES_HOST:
-    if POSTGRES_SSLMODE not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
-        raise ImproperlyConfigured("Invalid POSTGRES_SSLMODE.")
-    if DATABASE_URL:
-        import dj_database_url
-        database = dj_database_url.parse(
-            DATABASE_URL, conn_max_age=DB_CONN_MAX_AGE, conn_health_checks=True,
+DB_ENGINE = (env("DB_ENGINE") or "").strip()
+DB_NAME = (env("DB_NAME") or "").strip()
+if not DB_ENGINE:
+    raise ImproperlyConfigured("DB_ENGINE must be set in your private .env.")
+if DB_ENGINE not in {"django.db.backends.postgresql", "django.db.backends.sqlite3"}:
+    raise ImproperlyConfigured(
+        "DB_ENGINE must be django.db.backends.postgresql "
+        "(or django.db.backends.sqlite3 for explicit local/CI tests)."
+    )
+if not DB_NAME:
+    raise ImproperlyConfigured("DB_NAME must be set in your private .env.")
+
+try:
+    DB_CONN_MAX_AGE = int(env("DB_CONN_MAX_AGE", "0"))
+    if DB_CONN_MAX_AGE < 0:
+        raise ValueError()
+except (TypeError, ValueError) as exc:
+    raise ImproperlyConfigured("DB_CONN_MAX_AGE must be 0 or a positive integer.") from exc
+
+if DB_ENGINE == "django.db.backends.postgresql":
+    required = ("DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
+    missing = [key for key in required if not (env(key) or "").strip()]
+    if missing:
+        raise ImproperlyConfigured(
+            "PostgreSQL connection is missing: " + ", ".join(missing)
         )
-        if database["ENGINE"] != "django.db.backends.postgresql":
-            raise ImproperlyConfigured("DATABASE_URL must use PostgreSQL (postgresql://).")
-    else:
-        prefix = "DB" if USE_DB_PREFIX else "POSTGRES"
-        name_key = "DB_NAME" if USE_DB_PREFIX else "POSTGRES_DB"
-        user_key = f"{prefix}_USER"
-        password_key = f"{prefix}_PASSWORD"
-        host_key = f"{prefix}_HOST"
-        port_key = f"{prefix}_PORT"
-        required = [host_key, name_key, user_key, password_key]
-        missing = [name for name in required if not (env(name) or "").strip()]
-        if missing:
-            raise ImproperlyConfigured(
-                "PostgreSQL connection is missing: " + ", ".join(missing)
-            )
-        try:
-            port = int(env(port_key, "5432"))
-            if not 1 <= port <= 65535:
-                raise ValueError()
-        except (TypeError, ValueError) as exc:
-            raise ImproperlyConfigured(f"{port_key} must be a valid TCP port.") from exc
-        database = {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": env(name_key),
-            "USER": env(user_key),
-            "PASSWORD": env(password_key),
-            "HOST": POSTGRES_HOST,
+    try:
+        port = int(env("DB_PORT"))
+        if not 1 <= port <= 65535:
+            raise ValueError()
+    except (TypeError, ValueError) as exc:
+        raise ImproperlyConfigured("DB_PORT must be a valid TCP port.") from exc
+
+    db_host = (env("DB_HOST") or "").strip()
+    # Local connections and the private Docker Compose service may use libpq's
+    # prefer mode. External production database connections must use TLS.
+    local_hosts = {"localhost", "127.0.0.1", "::1", "postgres"}
+    sslmode = "prefer" if DEBUG or db_host in local_hosts else "require"
+    DATABASES = {
+        "default": {
+            "ENGINE": DB_ENGINE,
+            "NAME": DB_NAME,
+            "USER": env("DB_USER"),
+            "PASSWORD": env("DB_PASSWORD"),
+            "HOST": db_host,
             "PORT": port,
             "CONN_MAX_AGE": DB_CONN_MAX_AGE,
             "CONN_HEALTH_CHECKS": True,
+            "OPTIONS": {"connect_timeout": 10, "sslmode": sslmode},
         }
-    # Preserve stricter SSL options explicitly supplied by managed PostgreSQL URLs.
-    options = database.setdefault("OPTIONS", {})
-    if POSTGRES_SSLMODE_RAW:
-        options["sslmode"] = POSTGRES_SSLMODE
-    else:
-        options.setdefault("sslmode", POSTGRES_SSLMODE)
-    options.setdefault("connect_timeout", POSTGRES_CONNECT_TIMEOUT_SECONDS)
-    DATABASES = {"default": database}
+    }
 else:
-    if not DEBUG and not env_bool("ALLOW_LEGACY_PRODUCTION_SQLITE", False):
-        raise ImproperlyConfigured(
-            "Production needs PostgreSQL: set DATABASE_URL or POSTGRES_HOST and "
-            "POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD. Do not deploy before "
-            "backing up and migrating any existing SQLite data. Existing "
-            "SQLite-only hosts may temporarily use ALLOW_LEGACY_PRODUCTION_SQLITE=True."
-        )
-    SQLITE_DATABASE_PATH = Path(
-        env("SQLITE_DATABASE_PATH") or str(BASE_DIR / "db.sqlite3")
-    ).expanduser()
-    if not SQLITE_DATABASE_PATH.is_absolute():
-        SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
+    # SQLite is allowed only when explicitly selected in local/test setups.
+    # Never silently fall back to an empty SQLite database.
+    if not DEBUG:
+        raise ImproperlyConfigured("Production requires DB_ENGINE=django.db.backends.postgresql.")
+    if any((env(key) or "").strip() for key in ("DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")):
+        raise ImproperlyConfigured("SQLite configuration uses DB_ENGINE and DB_NAME only.")
+    sqlite_path = Path(DB_NAME).expanduser()
+    if not sqlite_path.is_absolute():
+        sqlite_path = BASE_DIR / sqlite_path
     DATABASES = {
         "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": SQLITE_DATABASE_PATH,
+            "ENGINE": DB_ENGINE,
+            "NAME": sqlite_path,
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
             "OPTIONS": {"timeout": 30},
         }
     }
