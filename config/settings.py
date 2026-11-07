@@ -287,6 +287,9 @@ WHATSAPP_WEBHOOK_VERIFY_TOKEN = env("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
 WHATSAPP_TOKEN_ENCRYPTION_KEY = env("WHATSAPP_TOKEN_ENCRYPTION_KEY", "")
 WHATSAPP_GRAPH_VERSION = env("WHATSAPP_GRAPH_VERSION", "v25.0")
 WHATSAPP_SEND_ENABLED = env_bool("WHATSAPP_SEND_ENABLED", False)
+# Part 19: opt-in separately from WhatsApp sending. Only one Beat should
+# run the daily cadence sweep, and each tenant must enable reminders as well.
+WHATSAPP_ESTIMATE_REMINDERS_ENABLED = env_bool("WHATSAPP_ESTIMATE_REMINDERS_ENABLED", False)
 # Dedicated explicit opt-in. No automatic messages with unverified WABA/consent.
 STAFF_WHATSAPP_AUTO_SEND_ENABLED = env_bool("STAFF_WHATSAPP_AUTO_SEND_ENABLED", False)
 
@@ -446,6 +449,17 @@ if CREDIT_BILLING_CELERY_ENABLED:
     CELERY_BEAT_SCHEDULE["cubegear-settle-calendar-credit-statements"] = {
         "task": "credits.settle_calendar_cycles",
         "schedule": crontab(hour=0, minute=10),
+    }
+
+if WHATSAPP_ESTIMATE_REMINDERS_ENABLED:
+    if not (WHATSAPP_SEND_ENABLED and CELERY_BROKER_URL.startswith(("redis://", "rediss://"))):
+        raise ImproperlyConfigured(
+            "WHATSAPP_ESTIMATE_REMINDERS_ENABLED needs WHATSAPP_SEND_ENABLED and a Redis Celery broker."
+        )
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE["cubegear-remind-published-customer-estimates"] = {
+        "task": "whatsapp.remind_open_estimates",
+        "schedule": crontab(hour=10, minute=30),
     }
 
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.
