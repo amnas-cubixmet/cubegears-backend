@@ -102,9 +102,10 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"direction": "Invoice collections must be incoming payments."})
         if invoice and customer is None:
             customer = invoice.customer
-        if direction == "IN" and not invoice:
-            if not customer:
-                raise ValidationError({"customer": "Select the customer for this advance receipt."})
+        # Customer-linked receipts without an invoice are advance credits.
+        # Standalone incoming finance receipts remain supported, but they are
+        # never treated as customer advances or included in customer ledgers.
+        if direction == "IN" and not invoice and customer:
             if not serializer.validated_data.get("idempotency_key"):
                 raise ValidationError({"idempotency_key": "A unique request key is required for advances."})
         if direction == "OUT" and customer:
