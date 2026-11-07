@@ -75,3 +75,48 @@ Company Panel checks: `npm run check && npm test && npm run build`.
 Real Meta credentials, signed callbacks, message delivery and phone apps
 must be verified in a staging workshop separately. Tests mock official Meta
 responses and do not prove live delivery.
+
+## Part 19 — Customer Estimate WhatsApp notification and reminders
+
+From **Job Card → Quick Estimate**, staff must **Save & Share with Customer**
+to publish the newest itemized quote. The backend registers the
+`estimate_shared` event **only after the database transaction commits**.
+Repeated sharing of the same estimate never creates a second log. The
+scheduled `estimate_reminder` event is separate, disabled by default,
+and sends no earlier than the configured 24 or 48 hours after publication.
+
+**Automatic setup:** Each workshop chooses Automatic mode, enables the
+`estimate_shared` and optionally `estimate_reminder` event switches,
+chooses the `estimate_reminder_hours` interval (24 or 48), and maps
+approved Meta templates for both events. Templates must accept the same
+three body parameters as other CubeGears updates (vehicle registration,
+Job Card number, secure customer portal URL). Explicit customer WhatsApp
+opt-in and valid country-coded phone remain mandatory. The platform must
+enable `WHATSAPP_SEND_ENABLED=True`, deploy a Redis Celery worker, and
+separately set `WHATSAPP_ESTIMATE_REMINDERS_ENABLED=True` to register
+one daily 10:30 AM Beat sweep. Run **one** Beat scheduler per deployment.
+
+**Manual fallback:** A published estimate offers **Send Estimate via
+WhatsApp**, which calls the authenticated `manual-share` API with
+`targetType="estimate"` and the quote's UUID. Staff sees the quote
+version, amount and private portal link in a WhatsApp draft, then manually
+presses Send. `manual_prepared` does not mean delivered. The API refuses
+draft, superseded, withdrawn, accepted or declined quotes. Failed
+estimate-specific automatic logs can only prepare a manual message while
+the original estimate is still awaiting review.
+
+**Safety and no duplication:** Each automatic event has a unique
+`estimate:<uuid>:shared` or
+`estimate:<uuid>:reminder:<elapsed-cadence-bucket>` key. The existing
+notification-log unique constraint prevents duplicate queue records.
+The Celery worker checks tenant, quote version, customer consent,
+approved template, link authorization and live estimate stage again
+immediately before sending. It skips a stale queued message, without
+sending after a withdrawal, approval or rejection. Failed/uncertain
+provider responses never cause blind retries. No raw private portal URL
+is stored in notification logs.
+
+Default configuration does not send reminders or enable WhatsApp
+automatically. Deployment still requires real Meta Business verification
+and a customer-consent compliance review; the CI mocks Meta calls and
+does not establish live message delivery.
