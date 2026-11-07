@@ -163,7 +163,9 @@ def count_inventory(request):
     Company.objects.select_for_update().get(pk=company.pk)
     existing = StockAudit.objects.filter(company=company, request_key=key).first()
     if existing:
-        if str(existing.item_id) != str(request.data.get("item") or request.data.get("itemId")) or existing.counted_qty != qty:
+        if (str(existing.item_id) != str(request.data.get("item") or request.data.get("itemId"))
+                or existing.counted_qty != qty
+                or existing.branch_id != request.user.branch_id):
             raise ValidationError({"requestKey": "This physical count key was used for another count."})
         return existing, False
     try:
