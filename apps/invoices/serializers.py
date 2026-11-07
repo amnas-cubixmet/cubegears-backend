@@ -44,6 +44,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     vehicleId = serializers.UUIDField(source="vehicle_id", read_only=True)
     paymentMode = serializers.CharField(source="payment_mode", required=False, allow_blank=True)
     paymentTerms = serializers.CharField(source="payment_terms", required=False, allow_blank=True)
+    cancellationReason = serializers.CharField(source="cancellation_reason", read_only=True)
 
     class Meta:
         model = Invoice
@@ -54,7 +55,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "id", "created_at", "updated_at", "template_snapshot",
             "status", "paid", "balance", "taxable", "cgst", "sgst", "igst",
             "total", "tax_mode", "finalized_at", "cancelled_at",
-            "source_estimate",
+            "source_estimate", "cancellation_reason",
         )
 
     def validate(self, attrs):
