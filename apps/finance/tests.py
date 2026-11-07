@@ -133,9 +133,12 @@ class FinanceAccountingTests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, 201, getattr(response, "data", None))
         self.assertEqual(account_balance(self.cash), Decimal("900.00"))
-        self.assertEqual(self.client.post("/api/v1/payments", {
+        repeated = self.client.post("/api/v1/payments", {
             **base, "account": str(self.cash.pk),
-        }, format="json").status_code, 400)
+        }, format="json")
+        self.assertEqual(repeated.status_code, 200, getattr(repeated, "data", None))
+        self.assertEqual(repeated.data["id"], response.data["id"])
+        self.assertEqual(account_balance(self.cash), Decimal("900.00"))
         self.assertEqual(Payment.objects.count(), 1)
 
     def test_incoming_payment_reversal_restores_account_balance(self):
@@ -209,7 +212,9 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(invoice.paid, Decimal("700.00"))
         self.assertEqual(invoice.balance, Decimal("800.00"))
         self.assertEqual(account_balance(self.cash), Decimal("1700.00"))
-        self.assertEqual(self.client.post("/api/v1/payments", payload, format="json").status_code, 400)
+        repeated = self.client.post("/api/v1/payments", payload, format="json")
+        self.assertEqual(repeated.status_code, 200, getattr(repeated, "data", None))
+        self.assertEqual(repeated.data["id"], first.data["id"])
         self.assertEqual(account_balance(self.cash), Decimal("1700.00"))
         self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
         dash = self.client.get("/api/v1/finance/dashboard")
