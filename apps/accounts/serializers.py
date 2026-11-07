@@ -82,6 +82,10 @@ def user_can_sign_in(user, *, allow_pending_setup=False):
     """All login methods must enforce the same active tenant and role checks."""
     if not user or not user.is_active:
         return False
+    # A pending password setup must never become a usable API session, even
+    # if an imported legacy account has no Employee profile yet.
+    if not allow_pending_setup and not user.has_usable_password():
+        return False
     if not user.company_id:
         return True
     role = user.role
