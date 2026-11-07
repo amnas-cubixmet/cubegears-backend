@@ -1,5 +1,6 @@
 """GSTR APIs: preparation only, no portal filing or financial mutations."""
 import csv
+import hashlib
 import json
 import re
 from collections import Counter
@@ -173,20 +174,42 @@ class GSTR2BReconcileView(APIView):
             raise ValidationError({"file": "Select the official GSTR-2B JSON download."})
         if uploaded.size > 5 * 1024 * 1024:
             raise ValidationError({"file": "Maximum JSON upload size is 5 MB."})
+        raw = uploaded.read()
         try:
-            payload = json.loads(uploaded.read().decode("utf-8-sig"))
+            payload = json.loads(raw.decode("utf-8-sig"))
         except (ValueError, UnicodeError):
             raise ValidationError({"file": "Invalid UTF-8 JSON file."})
         statement, unsupported = _official_2b_rows(payload, company.gstin, period["period"])
         from .services import inward_rows
         books = inward_rows(company)[0]
         results = _reconcile(books, statement)
+        import_id = None
+        if request.query_params.get("save") == "1":
+            from django.db import transaction
+            from apps.companies.models import Company
+            from .models import GSTR2BImport
+            # A persisted match is only documentary evidence, never an ITC claim.
+            with transaction.atomic():
+                Company.objects.select_for_update().get(pk=company.pk)
+                saved, _ = GSTR2BImport.objects.get_or_create(
+                    company=company, period=period["period"],
+                    fingerprint=hashlib.sha256(raw).hexdigest(),
+                    defaults={
+                        "branch": request.user.branch, "rows": results,
+                        "unsupported_sections": unsupported,
+                        "imported_by": request.user,
+                    },
+                )
+                import_id = str(saved.pk)
         return Response({
             "period": period["period"], "rows": results,
+            "importId": import_id, "saved": bool(import_id),
             "counts": dict(Counter(r["status"] for r in results)),
             "unsupportedSections": unsupported,
-            "notice": ("Matching is read-only. This import is not retained. "
-                       "ITC eligibility, reverse charges and unmatched sections need independent review."),
+            "notice": (
+                "2B reconciliation results are saved as evidence only when Save is selected. "
+                "ITC eligibility requires a separate authorized review, including tax exclusions."
+            ),
         })
 
 
@@ -211,8 +234,37 @@ class GSTRCSVExportView(APIView):
             fields = ["hsnSac", "description", "unit", "rate", "classification",
                       "quantity", "taxablePreview", "cgst", "sgst", "igst"]
             rows = data["hsn"]["rows"]
+        elif report == "credits":
+            fields = ["number", "date", "invoiceNumber", "reason",
+                      "taxable", "cgst", "sgst", "igst", "total"]
+            rows = data["gstr1"]["creditNotes"]
+        elif report == "gstr3b":
+            fields = ["metric", "amount"]
+            rows = [
+                {"metric": key, "amount": value}
+                for key, value in data["gstr3b"].items()
+                if key in {
+                    "outwardTaxable", "outputCGST", "outputSGST",
+                    "outputIGST", "eligibleITC", "reversedITC",
+                    "indicativeGapBeforeUtilization",
+                }
+            ]
+        elif report == "itc":
+            from .models import GSTInputTaxClaim
+            fields = ["invoiceNumber", "period", "cgst", "sgst", "igst", "reason"]
+            claims = GSTInputTaxClaim.objects.filter(
+                company=request.user.company, period=data["period"],
+            ).select_related("bill")
+            rows = [{
+                "invoiceNumber": row.bill.invoice_number,
+                "period": row.period, "cgst": str(row.cgst),
+                "sgst": str(row.sgst), "igst": str(row.igst),
+                "reason": row.eligibility_reason,
+            } for row in claims]
         else:
-            raise ValidationError({"report": "Select gstr1 or hsn for preparation CSV export."})
+            raise ValidationError({
+                "report": "Select gstr1, gstr3b, credits, itc or hsn preparation CSV.",
+            })
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = (
             f'attachment; filename="cubegears-{report}-{data["period"]}-PREPARATION.csv"')
