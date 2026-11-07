@@ -48,6 +48,10 @@ def transfer_inventory(request):
     target = branch_from(company, request.data.get("toBranch"))
     if not source or not target or source.pk == target.pk or source.company_id != company.pk:
         raise ValidationError({"toBranch": "Choose two distinct active branches in this workshop."})
+    if request.user.branch_id and source.pk != request.user.branch_id:
+        from apps.accounts.permissions import user_has_permission
+        if not user_has_permission(request.user, "stock.manage"):
+            raise ValidationError({"fromBranch": "Only the source branch may transfer inventory."})
     previous = StockTransfer.objects.filter(company=company, request_key=key).first()
     if previous:
         original = previous.items[0] if previous.items else {}
@@ -57,10 +61,7 @@ def transfer_inventory(request):
                 or previous.to_branch_id != target.pk):
             raise ValidationError({"requestKey": "This key belongs to another stock transfer."})
         return previous, False
-    if request.user.branch_id and source.pk != request.user.branch_id:
-        from apps.accounts.permissions import user_has_permission
-        if not user_has_permission(request.user, "stock.manage"):
-            raise ValidationError({"fromBranch": "Only the source branch may transfer inventory."})
+
     try:
         item = StockItem.objects.select_for_update().get(
             company=company, pk=request.data.get("itemId"),
