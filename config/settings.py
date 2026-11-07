@@ -136,22 +136,79 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# SQLite-only: no Prisma/PostgreSQL connection or DATABASE_URL is used.
-# For a persistent deployment, mount a writable volume and point this variable
-# to an absolute filename, e.g. /var/lib/cubixgear/db.sqlite3.
-SQLITE_DATABASE_PATH = Path(
-    (env("SQLITE_DATABASE_PATH") or str(BASE_DIR / "db.sqlite3"))
-).expanduser()
-if not SQLITE_DATABASE_PATH.is_absolute():
-    SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
+# Production PostgreSQL (never silently switch the existing SQLite file).
+# Supply either DATABASE_URL OR POSTGRES_HOST / DB / USER / PASSWORD.
+# Local development remains SQLite unless PostgreSQL is explicitly selected.
+# Production requires PostgreSQL by default; an existing legacy SQLite host can
+# temporarily opt in with ALLOW_LEGACY_PRODUCTION_SQLITE=True during migration.
+DATABASE_URL = (env("DATABASE_URL") or "").strip()
+POSTGRES_HOST = (env("POSTGRES_HOST") or "").strip()
+POSTGRES_SSLMODE = (env("POSTGRES_SSLMODE") or ("require" if not DEBUG else "prefer")).strip()
+DB_CONN_MAX_AGE = int(env("DB_CONN_MAX_AGE", 60))
+if DB_CONN_MAX_AGE < 0:
+    raise ImproperlyConfigured("DB_CONN_MAX_AGE must be 0 or a positive integer.")
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": SQLITE_DATABASE_PATH,
-        "OPTIONS": {"timeout": 30},
+if DATABASE_URL and POSTGRES_HOST:
+    raise ImproperlyConfigured(
+        "Configure only DATABASE_URL or POSTGRES_HOST/POSTGRES_* fields, not both."
+    )
+
+if DATABASE_URL or POSTGRES_HOST:
+    if POSTGRES_SSLMODE not in {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}:
+        raise ImproperlyConfigured("Invalid POSTGRES_SSLMODE.")
+    if DATABASE_URL:
+        import dj_database_url
+        database = dj_database_url.parse(
+            DATABASE_URL, conn_max_age=DB_CONN_MAX_AGE, conn_health_checks=True,
+        )
+        if database["ENGINE"] != "django.db.backends.postgresql":
+            raise ImproperlyConfigured("DATABASE_URL must use PostgreSQL (postgresql://).")
+    else:
+        required = ["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]
+        missing = [name for name in required if not (env(name) or "").strip()]
+        if missing:
+            raise ImproperlyConfigured(
+                "PostgreSQL connection is missing: " + ", ".join(missing)
+            )
+        try:
+            port = int(env("POSTGRES_PORT", "5432"))
+            if not 1 <= port <= 65535:
+                raise ValueError()
+        except (TypeError, ValueError) as exc:
+            raise ImproperlyConfigured("POSTGRES_PORT must be a valid TCP port.") from exc
+        database = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": env("POSTGRES_DB"),
+            "USER": env("POSTGRES_USER"),
+            "PASSWORD": env("POSTGRES_PASSWORD"),
+            "HOST": POSTGRES_HOST,
+            "PORT": port,
+            "CONN_MAX_AGE": DB_CONN_MAX_AGE,
+            "CONN_HEALTH_CHECKS": True,
+        }
+    database.setdefault("OPTIONS", {})["sslmode"] = POSTGRES_SSLMODE
+    DATABASES = {"default": database}
+else:
+    if not DEBUG and not env_bool("ALLOW_LEGACY_PRODUCTION_SQLITE", False):
+        raise ImproperlyConfigured(
+            "Production needs PostgreSQL: set DATABASE_URL or POSTGRES_HOST and "
+            "POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD. Do not deploy before "
+            "backing up and migrating any existing SQLite data. Existing "
+            "SQLite-only hosts may temporarily use ALLOW_LEGACY_PRODUCTION_SQLITE=True."
+        )
+    SQLITE_DATABASE_PATH = Path(
+        env("SQLITE_DATABASE_PATH") or str(BASE_DIR / "db.sqlite3")
+    ).expanduser()
+    if not SQLITE_DATABASE_PATH.is_absolute():
+        SQLITE_DATABASE_PATH = BASE_DIR / SQLITE_DATABASE_PATH
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": SQLITE_DATABASE_PATH,
+            "OPTIONS": {"timeout": 30},
+        }
     }
-}
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -291,6 +348,15 @@ LOGOUT_REDIRECT_URL = "panel:login"
 CREDIT_BILLING_CELERY_ENABLED = env_bool("CREDIT_BILLING_CELERY_ENABLED", False)
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", "")
+# Web, Worker and Beat run in different OS processes/containers. Fail
+# explicitly if the worker/scheduler is deployed without its queue broker.
+SERVICE_ROLE = env("SERVICE_ROLE", "web").strip().lower()
+if SERVICE_ROLE not in {"web", "worker", "beat"}:
+    raise ImproperlyConfigured("SERVICE_ROLE must be web, worker or beat.")
+if SERVICE_ROLE in {"worker", "beat"} and not CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    raise ImproperlyConfigured(
+        "Separate Celery workers and Beat require a Redis CELERY_BROKER_URL."
+    )
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 CELERY_ACCEPT_CONTENT = ["json"]
