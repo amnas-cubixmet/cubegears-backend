@@ -131,7 +131,9 @@ def coverage(company):
     expense_missing = sum(
         1 for pk in Expense.objects.filter(
             company=company, amount__gt=0,
-        ).values_list("pk", flat=True)
+        ).exclude(status__iexact="draft").exclude(
+            status__iexact="rejected"
+        ).exclude(status__iexact="cancelled").values_list("pk", flat=True)
         if not any(k.startswith(f"expense:{pk}:") for k in source_keys)
     )
     missing = cash_missing + opening_missing + bill_missing + invoice_missing + expense_missing
