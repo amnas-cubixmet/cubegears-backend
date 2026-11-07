@@ -199,7 +199,28 @@ class BundlePurchaseView(APIView):
                 company=request.user.company, enabled=True,
                 bundle__features__key__in=legacy_members,
             ).select_related("bundle").distinct()
-            if any(bundle_is_usable(record) for record in owned_legacy):
+            from .models import CompanyCreditFeature, FeatureUsageSession
+            postpaid_legacy = CompanyPostpaidFeature.objects.filter(
+                company=request.user.company, feature__key__in=legacy_members,
+                enabled=True, suspended=False,
+            ).exists()
+            prepaid_legacy = CompanyCreditFeature.objects.filter(
+                company=request.user.company, feature__key__in=legacy_members,
+                enabled=True, next_charge_at__gt=timezone.now(),
+            ).exists()
+            active_metered_legacy = (
+                settings.CREDIT_POSTPAID_FEATURE_BILLING_ENABLED
+                and CompanyCreditFeature.objects.filter(
+                    company=request.user.company, feature__key__in=legacy_members,
+                    enabled=True,
+                ).exists()
+                and FeatureUsageSession.objects.filter(
+                    company=request.user.company, feature__key__in=legacy_members,
+                    ended_at__isnull=True,
+                ).exists()
+            )
+            if (any(bundle_is_usable(record) for record in owned_legacy)
+                    or postpaid_legacy or prepaid_legacy or active_metered_legacy):
                 return Response({
                     "code": "EXISTING_LEGACY_ENTITLEMENT",
                     "message": "You already own a related individual module. Ask support to migrate or credit remaining access before buying this combined feature.",
