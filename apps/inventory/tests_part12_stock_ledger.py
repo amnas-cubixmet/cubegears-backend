@@ -153,3 +153,30 @@ class InventoryPart12Tests(TestCase):
             "movement_type": "purchase",
         }, format="json").status_code, 405)
         self.assertEqual(StockMovement.objects.count(), 0)
+
+    def test_product_categories_have_tenant_safe_one_level_hierarchy(self):
+        from apps.inventory.models import StockCategory
+        root = self.client.post("/api/v1/stock/categories", {
+            "name": "Engine", "description": "Engine components",
+        }, format="json")
+        self.assertEqual(root.status_code, 201, getattr(root, "data", None))
+        child = self.client.post("/api/v1/stock/categories", {
+            "name": "Filters", "parent": root.data["id"],
+        }, format="json")
+        self.assertEqual(child.status_code, 201, getattr(child, "data", None))
+        self.assertEqual(child.data["parentName"], "Engine")
+        self.assertEqual(self.client.post("/api/v1/stock/categories", {
+            "name": "filters", "parent": root.data["id"],
+        }, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/v1/stock/categories", {
+            "name": "Deep Nested", "parent": child.data["id"],
+        }, format="json").status_code, 400)
+        another = Company.objects.create(name="Different Workshop", slug="part12-category-tenant")
+        foreign = StockCategory.objects.create(company=another, name="Private Category")
+        self.assertEqual(self.client.post("/api/v1/stock/categories", {
+            "name": "Cross-tenant", "parent": str(foreign.pk),
+        }, format="json").status_code, 400)
+        archived = self.client.delete(f"/api/v1/stock/categories/{root.data['id']}")
+        self.assertEqual(archived.status_code, 200, getattr(archived, "data", None))
+        self.assertFalse(StockCategory.objects.get(pk=root.data["id"]).is_active)
+        self.assertEqual(StockCategory.objects.get(pk=child.data["id"]).parent_id, StockCategory.objects.get(pk=root.data["id"]).pk)
