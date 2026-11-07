@@ -118,7 +118,7 @@ class Part17CustomerEstimateTests(TestCase):
             {"action": action}, format="json",
         )
 
-    def decide(self, decision, quote=None, version=1, csrf=True):
+    def decide(self, decision, quote=None, version=1, csrf=True, decline_reason="price", decline_note=""):
         quote = quote or self.quote
         extras = ({
             "HTTP_X_CG_CSRF": self.browser.cookies["cg_portal_csrf"].value,
@@ -132,7 +132,9 @@ class Part17CustomerEstimateTests(TestCase):
         )
         return self.browser.post(
             f"/api/v1/customer-website/estimates/{quote.pk}/decision",
-            {"decision": decision, "version": version, "reviewHash": review_hash},
+            {"decision": decision, "version": version, "reviewHash": review_hash,
+             **({"declineReason": decline_reason, "declineNote": decline_note}
+                if decision == "decline" else {})},
             format="json", **extras, **self.headers(),
         )
 
