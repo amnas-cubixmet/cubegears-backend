@@ -167,8 +167,8 @@ class ForgotPasswordView(APIView):
             token = default_token_generator.make_token(user)
             reset_url = password_action_url(request, user, uid, token)
             queue_email(
-                subject="Reset your CubeGears password",
-                message="A request was received to reset the password for your CubeGears account. This link expires according to the account security policy.",
+                subject="Reset your CubixGear password",
+                message="A request was received to reset the password for your CubixGear account. This link expires according to the account security policy.",
                 recipient_list=[user.email],
                 action_url=reset_url, action_label="Reset password",
             )
@@ -238,10 +238,10 @@ class MagicLinkRequestView(APIView):
             raw_token = MagicLink.issue(user)
             url = magic_action_url(request, user, raw_token)
             queue_email(
-                subject="Your CubeGears magic login link",
+                subject="Your CubixGear magic login link",
                 message="Use the button below to securely sign in without entering a password. This single-use link expires in 15 minutes.",
                 recipient_list=[user.email],
-                action_url=url, action_label="Sign in to CubeGears",
+                action_url=url, action_label="Sign in to CubixGear",
             )
 
         return Response({"message": "If the account exists, a magic link has been sent."})
@@ -396,8 +396,8 @@ class PublicWorkshopSignupView(APIView):
             # delivery for older clients that do not submit a password.
             if user.email:
                 queue_email(
-                    subject="Set up your CubeGears password",
-                    message="Welcome to CubeGears. Complete your workshop account setup using the secure link.",
+                    subject="Set up your CubixGear password",
+                    message="Welcome to CubixGear. Complete your workshop account setup using the secure link.",
                     recipient_list=[user.email],
                     action_url=setup_url, action_label="Set up password",
                     # In direct SMTP mode, cap each network wait below the
