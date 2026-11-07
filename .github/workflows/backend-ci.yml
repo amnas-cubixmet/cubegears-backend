@@ -41,6 +41,7 @@ jobs:
             apps.customers.tests_website \
             apps.vehicles.tests_inspection_photo \
             apps.jobs.tests_create_vehicle_complaints \
+            apps.jobs.tests_part08_job_inspection \
             apps.jobs.tests_manual_complaints \
             apps.jobs.tests_work_skip \
             apps.jobs.tests_estimate_skip_gst \
