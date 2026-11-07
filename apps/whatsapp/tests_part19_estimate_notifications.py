@@ -145,7 +145,7 @@ class Part19EstimateNotificationTests(TestCase):
             "/api/v1/whatsapp/manual-share", {
                 "targetType": "estimate", "targetId": str(self.quote.pk)
             }, format="json",
-        ).status_code, 401)
+        ).status_code, 403)
         unshared = self.staff.post("/api/v1/whatsapp/manual-share", {
             "targetType": "estimate", "targetId": str(self.quote.pk)
         }, format="json")
@@ -196,7 +196,7 @@ class Part19EstimateNotificationTests(TestCase):
             JobEstimate.objects.filter(pk=self.quote.pk).update(updated_at=updated)
             with self.captureOnCommitCallbacks(execute=True):
                 self.assertEqual(remind_open_estimates.run(), 1)
-                self.assertEqual(remind_open_estimates.run(), 1)
+                self.assertEqual(remind_open_estimates.run(), 0)
             self.assertEqual(WhatsAppNotificationLog.objects.filter(
                 event="estimate_reminder",
             ).count(), 1)
