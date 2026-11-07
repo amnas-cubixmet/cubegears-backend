@@ -240,8 +240,95 @@ class FinanceAccountingTests(TestCase):
         )
         response = self.client.get("/api/v1/finance/payment-activity")
         self.assertEqual(response.status_code, 200, getattr(response, "data", None))
-        row = next(v for v in response.data["results"] if v["sourceId"] == str(legacy.pk))
-        self.assertFalse(row["ledgerPosted"])
-        self.assertEqual(row["account"], "")
-        self.assertEqual(account_balance(self.cash), Decimal("1000.00"))
-        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+        data = response.data
+        self.assertEqual(data["period"], "today")
+        self.assertEqual(data["todayReceived"], "700.00")
+        self.assertEqual(data["todayPaid"], "100.00")
+        self.assertEqual(data["netSalesRevenue"], "1320.00")
+        self.assertEqual(data["salesTaxExcluded"], "180.00")
+        self.assertEqual(data["knownCostOfSales"], "400.00")
+        # Original test fixture expense is dated 2026-11-06. All-time
+        # reporting always includes its recorded payable.
+        self.assertEqual(data["bankBalance"], "1200.00")
+        self.assertEqual(data["cashBalance"], "950.00")
+        self.assertIn("estimated", data["profitNote"].lower())
+
+        all_time = self.client.get("/api/v1/finance/dashboard?period=all")
+        self.assertEqual(all_time.status_code, 200)
+        self.assertEqual(all_time.data["netSalesRevenue"], "1320.00")
+        self.assertEqual(all_time.data["recordedExpenses"], "300.00")
+        self.assertEqual(all_time.data["estimatedProfit"], "620.00")
+        self.assertEqual(self.client.get("/api/v1/finance/dashboard?period=bad").status_code, 400)
+
+    def test_draft_invoice_does_not_generate_revenue_or_profit(self):
+        from django.utils import timezone
+        from apps.customers.models import Customer
+        from apps.invoices.models import Invoice
+
+        customer = Customer.objects.create(company=self.company, name="Draft Customer")
+        Invoice.objects.create(
+            company=self.company, customer=customer,
+            number="DRAFT-NOT-REVENUE", kind="invoice",
+            date=timezone.localdate(), status="Draft",
+            total=Decimal("9000.00"), balance=Decimal("9000.00"),
+        )
+        report = self.client.get("/api/v1/finance/dashboard?period=all")
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data["netSalesRevenue"], "0.00")
+        self.assertEqual(report.data["recordedExpenses"], "300.00")
+        self.assertEqual(report.data["estimatedProfit"], "-300.00")
+        self.assertEqual(report.data["todayReceived"], "0.00")
+        self.assertEqual(report.data["bankBalance"], "500.00")
+        self.assertEqual(report.data["cashBalance"], "1000.00")
+
+    def test_inactive_bank_funds_stay_in_book_balances_without_allowing_posting(self):
+        self.bank.is_active = False
+        self.bank.save(update_fields=["is_active"])
+        report = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(report.status_code, 200)
+        self.assertEqual(report.data["bankBalance"], "500.00")
+        self.assertTrue(any(
+            a["id"] == str(self.bank.pk) and a["isActive"] is False
+            for a in report.data["accounts"]
+        ))
+        blocked = self.client.post("/api/v1/finance/accounts/" + str(self.bank.pk) + "/adjust", {
+            "direction": "credit", "amount": "50.00", "reason": "Attempt to post to inactive account"
+        }, format="json")
+        self.assertEqual(blocked.status_code, 400)
+
+
+    def test_finance_balance_fields_require_explicit_role_grant(self):
+        role = Role.objects.create(
+            company=self.company, name="Payment Clerk", code="PAYMENT_CLERK",
+            permissions=["payments.view"],
+        )
+        clerk = User.objects.create_user(
+            email="finance-clerk@example.test", password="test-password-do-not-use",
+            name="Payment Clerk", company=self.company, role=role,
+        )
+        self.client.force_authenticate(user=clerk)
+
+        accounts = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(accounts.status_code, 200, accounts.data)
+        bank = next(row for row in accounts.data if row["id"] == str(self.bank.id))
+        self.assertNotIn("currentBalance", bank)
+        self.assertNotIn("openingBalance", bank)
+
+        detail = self.client.get(f"/api/v1/finance/accounts/{self.bank.pk}")
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertNotIn("currentBalance", detail.data)
+        self.assertNotIn("openingBalance", detail.data)
+        self.assertTrue(all("runningBalance" not in row for row in detail.data["ledger"]))
+
+        dashboard = self.client.get("/api/v1/finance/dashboard")
+        self.assertEqual(dashboard.status_code, 200, dashboard.data)
+        self.assertNotIn("bankBalance", dashboard.data)
+        self.assertNotIn("cashBalance", dashboard.data)
+
+        role.permissions = ["payments.view", "finance.accounts.balance.view"]
+        role.save(update_fields=["permissions"])
+        granted = self.client.get("/api/v1/finance/accounts")
+        self.assertEqual(granted.status_code, 200, granted.data)
+        bank = next(row for row in granted.data if row["id"] == str(self.bank.id))
+        self.assertIn("currentBalance", bank)
+        self.assertEqual(bank["currentBalance"], "500.00")
