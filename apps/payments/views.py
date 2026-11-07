@@ -2,6 +2,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import decorators, response, status
 from rest_framework.exceptions import PermissionDenied
@@ -10,14 +11,21 @@ from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from apps.invoices.models import Invoice
 from apps.jobs.audit import record_job_event
-from .models import Payment
+from .models import Payment, CustomerCreditAllocation
+from .customer_credit import available_advance, paid_status
 from .serializers import PaymentSerializer
 
 
 class PaymentViewSet(CompanyScopedModelViewSet):
     queryset = Payment.objects.select_related("customer", "invoice", "recorded_by").all()
     serializer_class = PaymentSerializer
-    action_permission_map = {"reverse": "payments.reverse"}
+    action_permission_map = {
+        "reverse": "payments.reverse",
+        "apply_advance": "payments.create",
+        "reverse_advance_application": "payments.reverse",
+        "refund_advance": "payments.reverse",
+        "advances": "payments.view",
+    }
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -28,7 +36,42 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             except (ValueError, TypeError, AttributeError):
                 return qs.none()
             qs = qs.filter(invoice_id=invoice_id)
+        customer_id = self.request.query_params.get("customer")
+        if customer_id:
+            try:
+                UUID(str(customer_id))
+            except (ValueError, TypeError, AttributeError):
+                return qs.none()
+            qs = qs.filter(customer_id=customer_id)
         return qs
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """A repeated request key returns the original receipt, never posts twice."""
+        from apps.companies.models import Company
+
+        key = str(request.data.get("idempotency_key") or "").strip()
+        if key:
+            # All company write requests with a key serialize on this lock.
+            Company.objects.select_for_update().get(pk=request.user.company_id)
+            existing = Payment.objects.filter(
+                company_id=request.user.company_id, idempotency_key=key,
+            ).first()
+            if existing:
+                customer = str(request.data.get("customer") or "")
+                invoice = str(request.data.get("invoice") or "")
+                account = str(request.data.get("account") or "")
+                if (
+                    str(existing.customer_id or "") != customer
+                    or str(existing.invoice_id or "") != invoice
+                    or str(existing.account_id or "") != account
+                    or str(existing.amount) != str(request.data.get("amount") or "")
+                    and Decimal(str(existing.amount)) != Decimal(str(request.data.get("amount") or "0"))
+                    or existing.direction != str(request.data.get("direction") or "IN")
+                ):
+                    raise ValidationError({"idempotency_key": "Request key belongs to a different payment."})
+                return response.Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
 
     @transaction.atomic
     def perform_create(self, serializer):
@@ -53,6 +96,17 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 })
         if invoice and direction != "IN":
             raise ValidationError({"direction": "Invoice collections must be incoming payments."})
+        if invoice and customer is None:
+            customer = invoice.customer
+        if direction == "IN" and not invoice:
+            if not customer:
+                raise ValidationError({"customer": "Select the customer for this advance receipt."})
+            if not serializer.validated_data.get("idempotency_key"):
+                raise ValidationError({"idempotency_key": "A unique request key is required for advances."})
+        if direction == "OUT" and customer:
+            raise ValidationError({
+                "customer": "Customer refunds must use the controlled refund-advance workflow."
+            })
         account = serializer.validated_data.get("account")
         if not account:
             raise ValidationError({"account": "Select an authorized receiving or paying account."})
@@ -94,6 +148,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
 
         payment = serializer.save(
             status="Completed",
+            customer=customer,
             company=company,
             branch=self.request.user.branch,
             recorded_by=self.request.user,
@@ -103,8 +158,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             locked_invoice.balance = max(
                 Decimal("0"), locked_invoice.total - locked_invoice.paid
             )
-            if locked_invoice.balance == 0:
-                locked_invoice.status = "Paid"
+            locked_invoice.status = paid_status(locked_invoice)
             locked_invoice.save(
                 update_fields=["paid", "balance", "status", "updated_at"]
             )
@@ -158,6 +212,16 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             return response.Response(self.get_serializer(payment).data)
         if payment.status != "Completed":
             raise ValidationError({"status": "Only completed payments can be reversed."})
+        if payment.invoice_id is None and payment.direction == "IN" and payment.customer_id:
+            active_credit = payment.credit_allocations.filter(reversed_at__isnull=True).exists()
+            if active_credit:
+                raise ValidationError({
+                    "payment": "This advance has been applied or refunded. Reverse its allocations first."
+                })
+        refund_allocation = CustomerCreditAllocation.objects.select_for_update().filter(
+            company=request.user.company, refund_payment=payment,
+            reversed_at__isnull=True,
+        ).first()
 
         # Reverse the original financial posting, not an unrelated legacy balance.
         original_entry = None
@@ -186,8 +250,7 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 )
             invoice.paid -= payment.amount
             invoice.balance = max(Decimal("0"), invoice.total - invoice.paid)
-            if invoice.status == "Paid" and invoice.balance > 0:
-                invoice.status = "Finalized"
+            invoice.status = paid_status(invoice)
             invoice.save(update_fields=["paid", "balance", "status", "updated_at"])
 
         if original_entry:
@@ -203,6 +266,13 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 created_by=request.user,
             )
 
+        if refund_allocation:
+            refund_allocation.reversed_at = timezone.now()
+            refund_allocation.reversed_by = request.user
+            refund_allocation.reversal_reason = reason
+            refund_allocation.save(update_fields=[
+                "reversed_at", "reversed_by", "reversal_reason", "updated_at",
+            ])
         payment.status = "Reversed"
         payment.reversed_at = timezone.now()
         payment.reversed_by = request.user
