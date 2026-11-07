@@ -95,6 +95,18 @@ def user_has_permission(user, permission_code):
         if not role or not role.is_active or role.company_id != user.company_id:
             return False
 
+    # New-workshop onboarding is server-enforced as well as a full-screen UI
+    # lock. A direct authenticated URL must not create jobs, invoices, staff,
+    # payroll, or read operational data before the initial registration closes.
+    # Legacy accounts with no required onboarding record are unaffected.
+    if not permission_code.startswith("panel."):
+        from apps.companies.onboarding import onboarding_pending
+        if onboarding_pending(user.company) and (
+            not is_company_owner(user) or
+            permission_code not in {"company.manage", "billing.view"}
+        ):
+            return False
+
     # Ownership cannot be delegated through a wildcard or billing role permission.
     if permission_code.startswith("billing."):
         return is_company_owner(user)
