@@ -19,7 +19,7 @@ from apps.suppliers.purchase_gst import purchase_bill_components
 CENT = Decimal("0.01")
 ZERO = Decimal("0.00")
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z0-9]{13}$")
-FINAL_STATUSES = ("Finalized", "Paid", "Issued")
+FINAL_STATUSES = ("Finalized", "Paid", "Issued", "Partially Paid", "Overdue")
 
 
 def money(value):
@@ -212,10 +212,15 @@ def prepare(company, period):
     purchases, purchase_issues = inward_rows(company, period)
     hsn, hsn_issues = hsn_summary(invoices)
     gross_totals = _totals(sales)
+    cancelled_credits = GSTSalesCreditNote.objects.filter(
+        company=company, invoice__status="Cancelled",
+        date__gte=period["from"], date__lte=period["to"],
+    )
     notes = list(GSTSalesCreditNote.objects.filter(
         company=company,
         date__gte=period["from"], date__lte=period["to"],
-    ).select_related("invoice").order_by("-date", "-created_at"))
+    ).exclude(invoice__status="Cancelled")
+     .select_related("invoice").order_by("-date", "-created_at"))
     note_rows = [{
         "id": str(note.pk), "number": note.number, "date": note.date.isoformat(),
         "invoiceId": str(note.invoice_id), "invoiceNumber": note.invoice.number,
@@ -239,6 +244,12 @@ def prepare(company, period):
     approved_items = GSTInputTaxClaim.objects.filter(company=company, period=period["period"])
     reversed_items = GSTInputTaxReversal.objects.filter(company=company, period=period["period"])
     issues = sales_issues + purchase_issues + hsn_issues
+    for note in cancelled_credits:
+        issues.append({
+            "type": "cancelled_original_credit_note", "record": str(note.invoice_id),
+            "number": note.number,
+            "message": "Credit note source invoice is cancelled; credit was excluded from the net GST preview to prevent double reduction. Review portal amendment.",
+        })
     if not str(company.gstin or "").strip():
         issues.append({
             "type": "missing_registration", "record": "",
