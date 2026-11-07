@@ -31,6 +31,7 @@ from apps.customers.portal_views import _job_public
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobActivity, JobEstimate
 from apps.jobs.workflow import workflow_state
+from apps.notifications.estimate_responses import notify_customer_estimate_response
 from apps.vehicles.models import VehicleInspectionPhoto
 from apps.vehicles.photo_views import _file_response
 
@@ -357,6 +358,10 @@ class WebsiteEstimateDecisionView(PortalBaseView):
         }
         job.workflow_progress = progress
         job.save(update_fields=["workflow_progress", "updated_at"])
+        # Keep this inside the same transaction as the customer decision.
+        # Per-recipient inbox alerts are emitted only after a successful
+        # first response; an idempotent retry returns above without repeats.
+        notify_customer_estimate_response(job, estimate, decision, activity)
         return _no_store(Response({
             "id": str(estimate.pk), "version": estimate.version,
             "status": estimate.status, "total": str(estimate.total),

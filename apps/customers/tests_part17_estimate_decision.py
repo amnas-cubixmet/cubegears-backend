@@ -15,6 +15,7 @@ from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.customers.portal_tokens import ensure_portal_access, issue_link, rotate_link
 from apps.jobs.models import Job, JobActivity, JobEstimate
+from apps.notifications.models import Notification
 from apps.roles.models import Role
 from apps.vehicles.models import Vehicle
 
@@ -333,4 +334,128 @@ class Part17CustomerEstimateTests(TestCase):
                              "unitPrice": "1200", "total": "1200"}]
         self.quote.save(update_fields=["items"])
         self.assertEqual(self.share().status_code, 200)
+
+    def test_part19_owner_gets_one_private_actionable_notification_per_decision(self):
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        first = self.decide("accept")
+        self.assertEqual(first.status_code, 200, first.data)
+        self.assertEqual(self.decide("accept").status_code, 200)
+        notices = Notification.objects.filter(
+            company=self.company, notification_type="customer_estimate_accepted",
+        )
+        self.assertEqual(notices.count(), 1)
+        notice = notices.get()
+        self.assertEqual(notice.user_id, self.company.owner_id)
+        self.assertEqual(notice.branch_id, self.job.branch_id)
+        self.assertEqual(notice.data["jobId"], str(self.job.pk))
+        self.assertEqual(notice.data["estimateId"], str(self.quote.pk))
+        self.assertEqual(notice.data["receiptId"], first.data["decisionReceipt"]["id"])
+        self.assertEqual(notice.data["route"], f"/jobs/{self.job.pk}/estimate")
+        self.assertFalse(notice.is_read)
+        self.assertNotIn("919999999999", str(notice.data))
+
+        visible = self.staff.get("/api/v1/notifications")
+        self.assertEqual(visible.status_code, 200, visible.data)
+        rows = visible.data if isinstance(visible.data, list) else visible.data["results"]
+        self.assertEqual(sum(row["id"] == str(notice.pk) for row in rows), 1)
+
+    def test_part19_recipients_are_branch_and_role_scoped_and_reads_are_private(self):
+        other_branch = Branch.objects.create(
+            company=self.company, name="Side Branch", code="SIDE",
+        )
+        full_role = Role.objects.create(
+            company=self.company, name="Estimator", code="ESTIMATOR",
+            permissions=["jobs.view", "notifications.view", "notifications.edit"],
+        )
+        restricted_role = Role.objects.create(
+            company=self.company, name="Only Jobs", code="JOBS_ONLY",
+            permissions=["jobs.view"],
+        )
+        eligible = User.objects.create_user(
+            email="part19-estimator@example.test", password="test-only-password",
+            name="Estimator", company=self.company, branch=self.job.branch,
+            role=full_role,
+        )
+        User.objects.create_user(
+            email="part19-other-branch@example.test", password="test-only-password",
+            name="Other Branch", company=self.company, branch=other_branch,
+            role=full_role,
+        )
+        User.objects.create_user(
+            email="part19-no-notify@example.test", password="test-only-password",
+            name="Jobs Only", company=self.company, branch=self.job.branch,
+            role=restricted_role,
+        )
+        User.objects.create_user(
+            email="part19-inactive@example.test", password="test-only-password",
+            name="Inactive", company=self.company, branch=self.job.branch,
+            role=full_role, is_active=False,
+        )
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        self.assertEqual(self.decide("decline").status_code, 200)
+        notices = Notification.objects.filter(
+            company=self.company, notification_type="customer_estimate_declined",
+        )
+        self.assertEqual(notices.count(), 2)
+        self.assertEqual(
+            set(notices.values_list("user_id", flat=True)),
+            {self.company.owner_id, eligible.pk},
+        )
+        self.assertEqual(notices.filter(company=self.other).count(), 0)
+        owner_notice = notices.get(user=self.company.owner)
+        staff_notice = notices.get(user=eligible)
+        other_client = APIClient()
+        other_client.force_authenticate(eligible)
+        self.assertEqual(self.staff.patch(
+            f"/api/v1/notifications/{staff_notice.pk}/read", {}, format="json",
+        ).status_code, 404)
+        self.assertEqual(other_client.patch(
+            f"/api/v1/notifications/{owner_notice.pk}/read", {}, format="json",
+        ).status_code, 404)
+        self.assertEqual(other_client.patch(
+            f"/api/v1/notifications/{staff_notice.pk}/read", {}, format="json",
+        ).status_code, 200)
+        staff_notice.refresh_from_db()
+        owner_notice.refresh_from_db()
+        self.assertTrue(staff_notice.is_read)
+        self.assertIsNotNone(staff_notice.read_at)
+        self.assertFalse(owner_notice.is_read)
+        self.assertIsNone(owner_notice.read_at)
+
+    def test_part19_customer_estimate_alerts_cannot_be_forged_or_rewritten(self):
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        notice_before = Notification.objects.count()
+        self.assertEqual(self.decide("accept").status_code, 200)
+        notice = Notification.objects.get(
+            company=self.company, notification_type="customer_estimate_accepted",
+        )
+        forged = self.staff.post(
+            "/api/v1/notifications",
+            {"title": "Fake accepted", "message": "Fake customer response",
+             "notification_type": "customer_estimate_accepted"},
+            format="json",
+        )
+        self.assertEqual(forged.status_code, 400)
+        tampered = self.staff.patch(
+            f"/api/v1/notifications/{notice.pk}",
+            {"title": "Forged new amount", "data": {"route": "/jobs/fake/estimate"}},
+            format="json",
+        )
+        self.assertEqual(tampered.status_code, 400)
+        self.assertEqual(Notification.objects.count(), notice_before + 1)
+        notice.refresh_from_db()
+        self.assertNotEqual(notice.title, "Forged new amount")
+
+    def test_part19_invalid_customer_decisions_do_not_create_inbox_alerts(self):
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        self.assertEqual(self.decide("accept", version=99).status_code, 409)
+        self.assertEqual(self.decide("accept", csrf=False).status_code, 403)
+        self.assertEqual(Notification.objects.filter(
+            company=self.company,
+            notification_type__startswith="customer_estimate_",
+        ).count(), 0)
 
