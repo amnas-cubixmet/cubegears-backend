@@ -103,6 +103,10 @@ class JobSerializer(serializers.ModelSerializer):
                 "vehicle": "Vehicle does not belong to the selected customer.",
             })
         if not self.instance:
+            if attrs.get("status", Job.STATUS_NEW) != Job.STATUS_NEW:
+                raise serializers.ValidationError({
+                    "status": "New Job Cards must start at the Overview stage.",
+                })
             if customer and customer.status == "archived":
                 raise serializers.ValidationError({
                     "customer": "Restore the archived customer before creating a Job Card.",
