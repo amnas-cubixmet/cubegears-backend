@@ -14,6 +14,7 @@ from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .audit import record_job_event
+from .inspection_inputs import validate_finding, validate_diagnostic
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
@@ -892,55 +893,163 @@ class JobViewSet(CompanyScopedModelViewSet):
         if previous != check_status: self._audit_inspection_change(job, f"{item} updated", previous, check_status)
         return response.Response(job.inspection)
 
-    @decorators.action(detail=True,methods=["post"],url_path="inspection/findings")
-    def inspection_findings(self,request,pk=None):
-        import uuid
-        job=self.get_object()
+    @decorators.action(detail=True, methods=["post"], url_path="inspection/findings")
+    @transaction.atomic
+    def inspection_findings(self, request, pk=None):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
         self._assert_inspection_editable(job)
-        data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
-        finding={"id":f"FND-{uuid.uuid4().hex[:10].upper()}","dateTime":timezone.now().isoformat(),"addedToEstimate":False,"estimateStatus":"Not Added",**request.data}
-        findings.insert(0,finding); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        payload = validate_finding(request.data)
+        data = dict(job.inspection or {})
+        findings = list(data.get("findings") or [])
+        if len(findings) >= 200:
+            raise ValidationError({"findings": "Maximum 200 findings per Job Card."})
+        finding = {
+            **payload,
+            "id": f"FND-{uuid4().hex[:10].upper()}",
+            "dateTime": timezone.now().isoformat(),
+            "addedToEstimate": False,
+            "estimateStatus": "Not Added",
+        }
+        findings.insert(0, finding)
+        data["findings"] = findings
+        job.inspection = data
+        job.save(update_fields=["inspection", "updated_at"])
         self._audit_inspection_change(job, "Finding added", None, finding)
-        return response.Response(finding,status=status.HTTP_201_CREATED)
+        record_job_event(job, request.user, "Inspection Finding Added",
+                         finding["description"], {"findingId": finding["id"],
+                         "severity": finding["severity"]})
+        return response.Response(finding, status=status.HTTP_201_CREATED)
 
-    @decorators.action(detail=True,methods=["put","delete"],url_path=r"inspection/findings/(?P<finding_id>[^/.]+)")
-    def inspection_finding_detail(self,request,pk=None,finding_id=None):
-        job=self.get_object()
+    @decorators.action(detail=True, methods=["put", "delete"],
+                       url_path=r"inspection/findings/(?P<finding_id>[^/.]+)")
+    @transaction.atomic
+    def inspection_finding_detail(self, request, pk=None, finding_id=None):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
         self._assert_inspection_editable(job)
-        data=dict(job.inspection or {}); findings=list(data.get("findings") or [])
-        idx=next((i for i,x in enumerate(findings) if str(x.get("id"))==str(finding_id)),None)
-        if idx is None: return response.Response({"message":"Finding not found."},status=404)
-        if request.method=="DELETE":
-            removed=findings.pop(idx); data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        data = dict(job.inspection or {})
+        findings = list(data.get("findings") or [])
+        index = next((i for i, entry in enumerate(findings)
+                      if str(entry.get("id")) == str(finding_id)), None)
+        if index is None:
+            return response.Response({"message": "Finding not found."}, status=404)
+        original = dict(findings[index])
+        if request.method == "DELETE":
+            if original.get("addedToEstimate"):
+                raise ValidationError({
+                    "finding": "Remove this finding from the draft estimate before deleting it.",
+                })
+            removed = findings.pop(index)
+            data["findings"] = findings
+            job.inspection = data
+            job.save(update_fields=["inspection", "updated_at"])
             self._audit_inspection_change(job, "Finding removed", removed, None)
+            record_job_event(job, request.user, "Inspection Finding Removed",
+                             str(removed.get("description") or ""),
+                             {"findingId": str(finding_id)})
             return response.Response(removed)
-        old_finding = dict(findings[idx])
-        findings[idx]={**findings[idx],**request.data}; data["findings"]=findings; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
-        self._audit_inspection_change(job, "Finding edited", old_finding, findings[idx])
-        return response.Response(findings[idx])
 
-    @decorators.action(detail=True,methods=["post"],url_path="inspection/diagnostic")
-    def inspection_diagnostic(self,request,pk=None):
-        import uuid
-        job=self.get_object()
+        editable_keys = (
+            "description", "title", "category", "severity", "recommendedAction",
+            "technicianFinding", "requiredParts", "estimatedLabourTime",
+            "estimatedLabourCharge", "estimatedPartCharge", "estimatedCost",
+            "complaintId", "notes",
+        )
+        combined = {key: original[key] for key in editable_keys if key in original}
+        combined.update({
+            key: value for key, value in request.data.items() if key in editable_keys
+        })
+        validated = validate_finding(combined)
+        finding = {**original, **validated}
+        # Never accept client-supplied IDs, server timestamps, approval flags,
+        # estimate status, or raw image contents.
+        findings[index] = finding
+        data["findings"] = findings
+        job.inspection = data
+        job.save(update_fields=["inspection", "updated_at"])
+        self._audit_inspection_change(job, "Finding edited", original, finding)
+        record_job_event(job, request.user, "Inspection Finding Updated",
+                         str(finding.get("description") or ""),
+                         {"findingId": str(finding_id)})
+        return response.Response(finding)
+
+    @decorators.action(detail=True, methods=["post"], url_path="inspection/diagnostic")
+    @transaction.atomic
+    def inspection_diagnostic(self, request, pk=None):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
         self._assert_inspection_editable(job)
-        data=dict(job.inspection or {}); scan=dict(data.get("diagnosticScan") or {})
-        codes=list(scan.get("codes") or []); code={"id":f"OBD-{uuid.uuid4().hex[:8].upper()}",**request.data}
-        codes.append(code); scan.update({"performed":True,"scanTime":timezone.now().isoformat(),"codes":codes}); data["diagnosticScan"]=scan
-        job.inspection=data; job.save(update_fields=["inspection","updated_at"])
+        payload = validate_diagnostic(request.data)
+        data = dict(job.inspection or {})
+        scan = dict(data.get("diagnosticScan") or {})
+        codes = list(scan.get("codes") or [])
+        if len(codes) >= 200:
+            raise ValidationError({"diagnostic": "Maximum 200 diagnostic codes."})
+        code = {
+            **payload, "id": f"OBD-{uuid4().hex[:8].upper()}",
+            "dateTime": timezone.now().isoformat(),
+            "recordedById": str(request.user.pk),
+        }
+        codes.append(code)
+        scan.update({
+            "performed": True, "scanTime": timezone.now().isoformat(),
+            "codes": codes,
+        })
+        data["diagnosticScan"] = scan
+        job.inspection = data
+        job.save(update_fields=["inspection", "updated_at"])
         self._audit_inspection_change(job, "Diagnostic code added", None, code)
-        return response.Response(code,status=201)
+        record_job_event(job, request.user, "Diagnostic Code Recorded",
+                         code["code"], {"diagnosticId": code["id"]})
+        return response.Response(code, status=status.HTTP_201_CREATED)
 
-    @decorators.action(detail=True,methods=["post"],url_path="inspection/photos")
-    def inspection_photo(self,request,pk=None):
-        import uuid
-        job=self.get_object()
+    @decorators.action(detail=True, methods=["post"], url_path="inspection/photos")
+    @transaction.atomic
+    def inspection_photo(self, request, pk=None):
+        """Reference a real private image; never persist Base64 or an arbitrary URL."""
+        from apps.vehicles.models import VehicleInspectionPhoto
+        from uuid import UUID
+
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
         self._assert_inspection_editable(job)
-        data=dict(job.inspection or {}); photos=list(data.get("photos") or [])
-        photo={"id":f"PH-{uuid.uuid4().hex[:8].upper()}","dateTime":timezone.now().isoformat(),**request.data}
-        photos.append(photo); data["photos"]=photos; job.inspection=data; job.save(update_fields=["inspection","updated_at"])
-        self._audit_inspection_change(job, "Inspection photo added", None, {"id": photo["id"], "caption": photo.get("caption")})
-        return response.Response(photo,status=201)
+        raw_photo_id = request.data.get("photoId")
+        try:
+            photo_id = UUID(str(raw_photo_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({
+                "photoId": "Upload the photo through the private inspection photo API first.",
+            })
+        saved = VehicleInspectionPhoto.objects.filter(
+            pk=photo_id, company=job.company, vehicle=job.vehicle, job=job,
+        ).first()
+        if saved is None or not saved.file:
+            raise ValidationError({"photoId": "Photo does not belong to this Job Card."})
+        data = dict(job.inspection or {})
+        photos = list(data.get("photos") or [])
+        existing = next((p for p in photos
+                         if str(p.get("privatePhotoId")) == str(saved.pk)), None)
+        if existing:
+            return response.Response(existing)
+        if len(photos) >= 250:
+            raise ValidationError({"photos": "Maximum 250 photos per inspection."})
+        record = {
+            "id": f"PH-{saved.pk.hex[:12].upper()}",
+            "privatePhotoId": str(saved.pk),
+            "category": saved.category,
+            "caption": saved.caption,
+            "dateTime": saved.captured_at.isoformat(),
+        }
+        photos.append(record)
+        data["photos"] = photos
+        job.inspection = data
+        job.save(update_fields=["inspection", "updated_at"])
+        self._audit_inspection_change(job, "Inspection photo linked", None, record)
+        record_job_event(job, request.user, "Inspection Photo Linked",
+                         saved.caption or "Private inspection photo",
+                         {"photoId": str(saved.pk)})
+        return response.Response(record, status=status.HTTP_201_CREATED)
 
     @decorators.action(detail=True,methods=["post"],url_path="inspection/complete")
     @transaction.atomic
