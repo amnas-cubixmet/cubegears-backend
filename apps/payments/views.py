@@ -20,8 +20,8 @@ class PaymentViewSet(CompanyScopedModelViewSet):
     serializer_class = PaymentSerializer
     action_permission_map = {
         "reverse": "payments.reverse",
-        "apply_advance": "payments.create",
-        "reverse_advance_application": "payments.reverse",
+        "apply_advance": ["payments.create", "invoices.view"],
+        "reverse_advance_application": ["payments.reverse", "invoices.view"],
         "refund_advance": "payments.reverse",
         "advances": "payments.view",
     }
