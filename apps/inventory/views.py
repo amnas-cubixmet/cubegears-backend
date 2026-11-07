@@ -320,7 +320,11 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False,methods=["get"])
     def ledger(self,request):
-        return response.Response(StockMovementSerializer(StockMovement.objects.filter(company=request.user.company).select_related("item"),many=True,context={"request": request}).data)
+        from apps.accounts.permissions import user_has_permission
+        qs = StockMovement.objects.filter(company=request.user.company).select_related("item")
+        if request.user.branch_id and not user_has_permission(request.user, "stock.manage"):
+            qs = qs.filter(branch_id=request.user.branch_id)
+        return response.Response(StockMovementSerializer(qs,many=True,context={"request": request}).data)
 
     @decorators.action(detail=False,methods=["get"])
     def purchases(self,request):
@@ -351,6 +355,13 @@ from apps.suppliers.views import SupplierViewSet as SupplierViewSet
 
 class StockMovementViewSet(CompanyScopedModelViewSet):
     queryset=StockMovement.objects.select_related("item").all(); serializer_class=StockMovementSerializer
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        return qs
+
     def create(self, request, *args, **kwargs):
         return response.Response(
             {"message": "Use Stock In, Internal Use, Return, or Adjustment actions to record movements."},
@@ -387,6 +398,14 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
 class StockTransferViewSet(CompanyScopedModelViewSet):
     queryset=StockTransfer.objects.all(); serializer_class=StockTransferSerializer
 
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        branch_id = self.request.user.branch_id
+        if branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(Q(from_branch_id=branch_id) | Q(to_branch_id=branch_id))
+        return qs
+
     def create(self, request, *args, **kwargs):
         return response.Response({"message": "Use the atomic /stock/transfer action."}, status=405)
 
@@ -402,6 +421,13 @@ class StockTransferViewSet(CompanyScopedModelViewSet):
 class StockAuditViewSet(CompanyScopedModelViewSet):
     queryset=StockAudit.objects.all(); serializer_class=StockAuditSerializer
     action_permission_map = {"create": "stock.edit"}
+
+    def get_queryset(self):
+        from apps.accounts.permissions import user_has_permission
+        qs = super().get_queryset()
+        if self.request.user.branch_id and not user_has_permission(self.request.user, "stock.manage"):
+            qs = qs.filter(branch_id=self.request.user.branch_id)
+        return qs
 
     def create(self, request, *args, **kwargs):
         audit, created = count_inventory(request)
