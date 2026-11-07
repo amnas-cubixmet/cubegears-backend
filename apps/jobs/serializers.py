@@ -77,6 +77,51 @@ class JobSerializer(serializers.ModelSerializer):
         exclude=("company","branch")
         read_only_fields=("id","created_at","updated_at","workflow_progress","parts_workflow")
         extra_kwargs={"job_number": {"required": False}}
+    def validate(self, attrs):
+        """Reject forged cross-tenant assignments and historical owner changes.
+
+        Related model querysets are global for serializer compatibility, so
+        tenant ownership must be checked on every create/update request.
+        """
+        request = self.context.get("request")
+        company_id = getattr(getattr(request, "user", None), "company_id", None)
+        if not company_id:
+            raise serializers.ValidationError({"company": "Workshop membership is required."})
+
+        customer = attrs.get("customer", self.instance.customer if self.instance else None)
+        vehicle = attrs.get("vehicle", self.instance.vehicle if self.instance else None)
+        for key, value in (
+            ("customer", customer), ("vehicle", vehicle),
+            ("advisor", attrs.get("advisor")), ("technician", attrs.get("technician")),
+        ):
+            if value is not None and value.company_id != company_id:
+                raise serializers.ValidationError({
+                    key: "Choose a record from your own workshop.",
+                })
+        if customer and vehicle and vehicle.customer_id != customer.pk:
+            raise serializers.ValidationError({
+                "vehicle": "Vehicle does not belong to the selected customer.",
+            })
+        if not self.instance:
+            if customer and customer.status == "archived":
+                raise serializers.ValidationError({
+                    "customer": "Restore the archived customer before creating a Job Card.",
+                })
+            if vehicle and str(vehicle.status).lower() == "archived":
+                raise serializers.ValidationError({
+                    "vehicle": "Restore the archived vehicle before creating a Job Card.",
+                })
+        else:
+            for field in ("customer", "vehicle", "advisor", "job_number"):
+                if field not in attrs:
+                    continue
+                old = getattr(self.instance, field)
+                if attrs[field] != old:
+                    raise serializers.ValidationError({
+                        field: "Existing Job Card identity cannot be changed. Preserve service history.",
+                    })
+        return attrs
+
     def validate_workUpdates(self, value):
         if not isinstance(value, list) or len(value) > 500:
             raise serializers.ValidationError("Updates must be a list of at most 500 records.")
