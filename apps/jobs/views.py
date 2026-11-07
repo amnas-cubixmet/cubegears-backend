@@ -1069,8 +1069,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         state = workflow_state(job)
         if state["current"] != "estimate":
             raise ValidationError({"estimate": "Only the active Estimate stage can be skipped."})
-        if (job.inspection or {}).get("status") != "Completed":
-            raise ValidationError({"inspection": "Complete the required inspection before skipping an estimate."})
+        if (job.inspection or {}).get("status") not in {"Completed", "Skipped"}:
+            raise ValidationError({"inspection": "Complete or explicitly skip inspection before skipping an estimate."})
         if job.estimates.filter(status="Approved").exists():
             raise ValidationError({"estimate": "An approved estimate cannot be skipped."})
         if job.company.require_customer_estimate_approval:
@@ -1457,6 +1457,19 @@ class JobViewSet(CompanyScopedModelViewSet):
         expected_branch_id = job.branch_id or getattr(request.user, "branch_id", None)
         if item.branch_id and item.branch_id != expected_branch_id:
             raise ValidationError({"item": "This stock item belongs to another branch."})
+        idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
+        if idempotency_key and (len(idempotency_key) > 64 or not idempotency_key.isascii() or not all(ch.isalnum() or ch in "-_" for ch in idempotency_key)):
+            raise ValidationError({"idempotencyKey": "Use an ASCII alphanumeric idempotency key (max 64 characters)."})
+        movement_reference = f"job-issue:{job.pk}:{idempotency_key}" if idempotency_key else job.job_number
+        if idempotency_key:
+            existing = StockMovement.objects.filter(company=job.company, item=item, job=job, movement_type="job_issue", reference=movement_reference).first()
+            if existing:
+                if existing.quantity != -qty:
+                    raise ValidationError({"idempotencyKey": "This key was already used for a different quantity."})
+                part = job.parts.filter(item=item, issued=True, pk=existing.note.removeprefix("jobPart:")).first() if existing.note.startswith("jobPart:") else None
+                if part:
+                    return response.Response(JobPartSerializer(part).data, status=status.HTTP_200_OK)
+                raise ValidationError({"idempotencyKey": "Existing stock issue requires reconciliation; no additional stock was deducted."})
         if item.available_quantity < qty:
             raise ValidationError({"quantity": "Insufficient available stock."})
 
@@ -1469,8 +1482,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         StockMovement.objects.create(
             company=job.company, branch=item.branch or job.branch or request.user.branch,
             item=item, movement_type="job_issue", quantity=-qty,
-            unit_cost=item.cost_price, reference=job.job_number,
-            job=job, created_by=request.user,
+            unit_cost=item.cost_price, reference=movement_reference,
+            note=f"jobPart:{part.pk}", job=job, created_by=request.user,
         )
         record_job_event(job, request.user, "Part Issued",
                          f"{item.name} × {qty}", {"partId": str(part.pk)})
