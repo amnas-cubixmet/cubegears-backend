@@ -46,6 +46,11 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, null=True, blank=True, related_name="return_movements", to="inventory.stockmovement"),
         ),
         migrations.AddField(
+            model_name="stockaudit",
+            name="request_key",
+            field=models.CharField(max_length=120, null=True, blank=True, default=None),
+        ),
+        migrations.AddField(
             model_name="stocktransfer",
             name="request_key",
             field=models.CharField(max_length=120, null=True, blank=True, default=None),
@@ -69,6 +74,10 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="stocktransfer",
             constraint=models.UniqueConstraint(fields=("company", "request_key"), name="unique_inventory_transfer_request"),
+        ),
+        migrations.AddConstraint(
+            model_name="stockaudit",
+            constraint=models.UniqueConstraint(fields=("company", "request_key"), name="unique_inventory_count_request"),
         ),
         migrations.RunPython(initialize_branch_balances, migrations.RunPython.noop),
     ]
