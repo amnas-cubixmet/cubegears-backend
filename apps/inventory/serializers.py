@@ -10,6 +10,16 @@ from apps.suppliers.serializers import SupplierSerializer as SupplierSerializer
 
 
 class StockItemSerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        if request is not None:
+            from apps.accounts.permissions import user_has_permission
+            if not user_has_permission(request.user, "stock.edit"):
+                for name in ("cost", "costPrice", "cost_price"):
+                    fields.pop(name, None)
+        return fields
+
     sku=serializers.CharField(required=False,allow_blank=True,trim_whitespace=True,max_length=80)
     partNumber=serializers.CharField(source="part_number",required=False,allow_blank=True,max_length=100)
     partName=serializers.CharField(source="name",required=False)
@@ -84,6 +94,15 @@ class StockItemSerializer(serializers.ModelSerializer):
         exclude=("company","branch","name","cost_price","selling_price","minimum_stock","reorder_level","compatible_vehicle","hsn_code","on_hand","part_number","gst_zero_classification")
 
 class StockMovementSerializer(serializers.ModelSerializer):
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        if request is not None:
+            from apps.accounts.permissions import user_has_permission
+            if not user_has_permission(request.user, "stock.edit"):
+                fields.pop("unit_cost", None)
+        return fields
+
     unitSellingPrice=serializers.DecimalField(source="unit_selling_price",max_digits=12,decimal_places=2,read_only=True)
     itemName=serializers.CharField(source="item.name",read_only=True)
     partName=serializers.CharField(source="item.name",read_only=True)
