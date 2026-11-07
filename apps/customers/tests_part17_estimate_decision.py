@@ -227,7 +227,8 @@ class Part17CustomerEstimateTests(TestCase):
         self.assertEqual(self.decide("accept", quote=self.other_quote).status_code, 404)
         rotate_link(ensure_portal_access(self.customer))
         self.assertEqual(self.decide("accept").status_code, 401)
-        self.assertEqual(self.quote.status, "Draft" if False else "Awaiting Customer")
+        self.quote.refresh_from_db()
+        self.assertEqual(self.quote.status, "Awaiting Customer")
 
     def test_stale_old_version_cannot_be_shared(self):
         newer = JobEstimate.objects.create(
