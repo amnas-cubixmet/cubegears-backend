@@ -28,6 +28,9 @@ class VehicleSerializer(serializers.ModelSerializer):
     customerStatus = serializers.CharField(source="customer.status", read_only=True)
     branchId = serializers.UUIDField(source="branch_id", read_only=True)
     branchName = serializers.CharField(source="branch.name", read_only=True)
+    # Both the legacy regNo form and the canonical API registration field
+    # may be supplied; either is accepted independently.
+    registration = serializers.CharField(required=False)
     regNo = serializers.CharField(source="registration", required=False)
     licensePlate = serializers.CharField(source="registration", read_only=True)
     fuelType = serializers.CharField(source="fuel_type", required=False, allow_blank=True)
