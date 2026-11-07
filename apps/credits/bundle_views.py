@@ -10,6 +10,9 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from apps.saas.feature_discovery import module_inventory
+from apps.saas.module_groups import (
+    ATTENDANCE_PAYROLL_FEATURE, legacy_only_workforce_bundle,
+)
 from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from .models import FeatureBundle, CompanyBundleAccess, ModulePriceLabel, CompanyPostpaidFeature
@@ -69,6 +72,9 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "id": bundle.pk, "key": bundle.key,
         "name": f"{bundle.name} (Previous period)" if bundle.is_retired else bundle.name,
         "description": bundle.description,
+        "includedModules": ["Attendance", "Payroll"] if any(
+            feature["key"] == ATTENDANCE_PAYROLL_FEATURE for feature in active_features
+        ) else [feature["label"] for feature in active_features],
         "perUserCredits": str(bundle.per_user_credits),
         "userCount": user_count,
         "totalCredits": str((bundle.per_user_credits * user_count).quantize(Decimal("0.01"))),
@@ -94,6 +100,11 @@ class BundleListView(APIView):
     def get(self, request):
         if not request.user.company_id:
             return Response({"message": "Workshop account required."}, status=403)
+        # Legacy standalone Attendance or Payroll labels remain valid for
+        # existing purchasers but are never offered to NEW workshops.
+        legacy_purchased_ids = set(CompanyBundleAccess.objects.filter(
+            company=request.user.company,
+        ).values_list("bundle_id", flat=True))
         # Old published labels can still reference Dashboard/Settings/Staff.
         # Exclude free-only labels from the paid marketplace rather than
         # presenting free core access as an activation or renewal product.
@@ -102,10 +113,12 @@ class BundleListView(APIView):
             for bundle in FeatureBundle.objects.filter(is_active=True).filter(
                 Q(is_retired=False) | Q(company_access__company=request.user.company)
             ).distinct().prefetch_related("features")
-            if not bundle.features.all() or any(
+            if (not bundle.features.all() or any(
                 feature.key not in FREE_TENANT_MODULES
                 for feature in bundle.features.all()
-            )
+            )) and (not legacy_only_workforce_bundle(
+                {feature.key for feature in bundle.features.all()}
+            ) or bundle.id in legacy_purchased_ids)
         ]
         accesses = {
             a.bundle_id: a for a in CompanyBundleAccess.objects.filter(
@@ -124,6 +137,8 @@ class BundleListView(APIView):
                 'description': 'A SaaS administrator must publish a price before activation.',
                 'perUserCredits': '0.00', 'userCount': count, 'totalCredits': '0.00',
                 'billingType': 'monthly', 'features': [{'key': module['key'], 'label': module['label']}],
+                'includedModules': (['Attendance', 'Payroll']
+                    if module['key'] == ATTENDANCE_PAYROLL_FEATURE else [module['label']]),
                 'active': False, 'canResume': False, 'validUntil': None,
                 'usesRemaining': 0, 'meteredReady': True,
                 'purchaseEnabled': False, 'purchaseDisabledReason': 'MODULE_PRICE_NOT_SET',
@@ -146,6 +161,15 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
+        if legacy_only_workforce_bundle(
+            set(bundle.features.values_list("key", flat=True))
+        ) and not CompanyBundleAccess.objects.filter(
+            company=request.user.company, bundle=bundle,
+        ).exists():
+            return Response({
+                "code": "LEGACY_MODULE_REPLACED",
+                "message": "Attendance and Payroll are now one feature. Choose the combined plan.",
+            }, status=409)
         if not (settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features):
             return Response({
                 "message": "Paid feature enforcement must be enabled by the platform administrator before purchasing labels.",
