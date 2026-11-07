@@ -603,6 +603,7 @@ class SupplierPaymentCollection(APIView):
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.view", "payments.create"]}
 
     def get(self, request):
+        from .returns_api import advance_available
         qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account", "created_by").prefetch_related("allocations__bill")
         if request.query_params.get("supplier"):
             qs = qs.filter(supplier=supplier_for(request, request.query_params["supplier"]))
@@ -620,8 +621,7 @@ class SupplierPaymentCollection(APIView):
                 "reference": payment.reference, "paidOn": payment.paid_on.isoformat(),
                 "applied": str(applied),
                 "unapplied": str(
-                    __import__("apps.suppliers.returns_api", fromlist=["advance_available"])
-                    .advance_available(payment) if payment.kind == "Advance"
+                    advance_available(payment) if payment.kind == "Advance"
                     else max(Decimal("0"), payment.amount - applied)
                 ),
             })
@@ -644,7 +644,6 @@ class SupplierAdvanceApply(APIView):
         if bill.supplier_id != payment.supplier_id or bill.status != "Posted":
             raise ValidationError({"billId": "Choose a posted bill for the same supplier."})
         amount = money(request.data.get("amount"), "amount", positive=True)
-        applied = payment.allocations.aggregate(total=Sum("amount"))["total"] or Decimal("0")
         from .returns_api import advance_available, bill_due
         if amount > advance_available(payment):
             raise ValidationError({"amount": "Not enough unapplied supplier advance."})
