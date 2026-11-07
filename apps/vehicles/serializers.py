@@ -25,6 +25,7 @@ class VehicleSerializer(serializers.ModelSerializer):
         source="customer", queryset=Customer.objects.all(), required=False,
     )
     customerName = serializers.CharField(source="customer.name", read_only=True)
+    customerStatus = serializers.CharField(source="customer.status", read_only=True)
     branchId = serializers.UUIDField(source="branch_id", read_only=True)
     branchName = serializers.CharField(source="branch.name", read_only=True)
     regNo = serializers.CharField(source="registration", required=False)
