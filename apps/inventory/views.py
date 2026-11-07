@@ -349,6 +349,13 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
 class StockCategoryViewSet(CompanyScopedModelViewSet):
     queryset=StockCategory.objects.all(); serializer_class=StockCategorySerializer
+
+    def destroy(self, request, *args, **kwargs):
+        category = self.get_object()
+        category.is_active = False
+        category.save(update_fields=["is_active", "updated_at"])
+        return response.Response({"id": str(category.pk), "status": "Inactive"})
+
 # Backwards-compatible inventory URL alias for canonical supplier CRUD.
 from apps.suppliers.views import SupplierViewSet as SupplierViewSet
 
