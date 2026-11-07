@@ -6,4 +6,4 @@ class GstrConfig(AppConfig):
     name = "apps.gstr"
 
     def ready(self):
-        from . import signals  # noqa: F401; register synchronous tax reversals
+        from . import signals  # noqa: F401
