@@ -35,6 +35,17 @@ class GSTR2BHistory(APIView):
             "id": str(row.pk), "period": row.period,
             "fingerprint": row.fingerprint,
             "matchedCount": sum(1 for result in row.rows if result["status"] == "Matched"),
+            "matchedBills": [{
+                "billId": record["bookId"],
+                "number": record["number"],
+                "supplierGSTIN": record["supplierGSTIN"],
+                "itcAvailableOnPortal": record.get("itcAvailableOnPortal", ""),
+                "taxable": record["taxable"],
+                "cgst": record["cgst"],
+                "sgst": record["sgst"],
+                "igst": record["igst"],
+            } for record in row.rows if record.get("status") == "Matched"
+            and record.get("bookId")],
             "unsupportedSections": row.unsupported_sections,
             "importedAt": row.created_at.isoformat(),
         } for row in batches])
