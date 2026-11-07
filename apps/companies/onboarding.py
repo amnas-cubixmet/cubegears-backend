@@ -30,6 +30,36 @@ DEFAULT_OPERATIONS = {"workingStart": "09:00", "workingEnd": "18:30",
 DEFAULT_BILLING = {"invoicePrefix": "INV-", "paymentTermsDays": 0,
                    "defaultTaxRate": 18, "rounding": True}
 
+# Required for NEW signups only. GSTIN, email, GPS and logo remain optional:
+# some workshops are unregistered and some sign up by WhatsApp/mobile.
+REQUIRED_COMPANY_FIELDS = ("name", "legal_name", "phone", "address", "city", "state", "country", "pincode")
+REQUIRED_BRANCH_FIELDS = ("name", "phone", "address", "city", "state", "pincode")
+
+
+def onboarding_pending(company):
+    """Legacy tenants without onboarding state are never locked retroactively."""
+    if not company:
+        return False
+    record = CompanySetting.objects.filter(
+        company=company, category="onboarding"
+    ).values_list("data", flat=True).first() or {}
+    return bool(record.get("required") and not record.get("completed"))
+
+
+def required_field_errors(step, values):
+    required = (REQUIRED_COMPANY_FIELDS if step == "company"
+                else REQUIRED_BRANCH_FIELDS if step == "branch" else ())
+    return {key: ["This workshop detail is required before continuing."]
+            for key in required if not str(values.get(key) or "").strip()}
+
+
+def persisted_setup_errors(company):
+    """Never mark signup complete solely because four progress flags were saved."""
+    branch = head_branch(company)
+    errors = {"company": required_field_errors("company", vars(company)),
+              "branch": required_field_errors("branch", vars(branch) if branch else {})}
+    return {step: fields for step, fields in errors.items() if fields}
+
 
 class CompanySetupForm(serializers.Serializer):
     name = serializers.CharField(max_length=180)
@@ -124,6 +154,10 @@ def snapshot(company):
     fields = ("name", "legal_name", "phone", "email", "address",
               "city", "state", "country", "pincode", "gstin")
     branch_fields = ("name", "phone", "address", "city", "state", "pincode")
+    from apps.credits.models import CreditWallet
+    wallet = CreditWallet.objects.filter(company=company).values_list(
+        "balance", flat=True,
+    ).first()
     return {
         "required": bool(state.get("required", False)),
         "completed": bool(state.get("completed") and len(done) == len(STEPS)),
@@ -141,6 +175,17 @@ def snapshot(company):
         "operations": {key: operations[key] for key in DEFAULT_OPERATIONS},
         "billing": {key: billing[key] for key in DEFAULT_BILLING},
         "logoAvailable": bool(company.logo_image),
+        "account": {
+            "companyName": company.name,
+            "companySlug": company.slug,
+            "ownerName": company.owner.name if company.owner_id else "",
+            "contactPhone": company.phone,
+            "contactEmail": company.email,
+            "walletBalanceCredits": str(wallet) if wallet is not None else None,
+            "walletAvailable": wallet is not None,
+            "walletPath": "/account",
+            "companySettingsPath": "/account/company",
+        },
     }
 
 
@@ -162,6 +207,10 @@ class WorkshopSetupView(APIView):
         values = form.validated_data
         company = Company.objects.select_for_update().get(pk=request.user.company_id)
         branch = head_branch(company)
+        if onboarding_pending(company):
+            errors = required_field_errors(step, values)
+            if errors:
+                return Response(errors, status=400)
 
         if step == "company":
             for key, value in values.items():
@@ -215,6 +264,13 @@ class WorkshopSetupCompleteView(APIView):
         missing = [step for step in STEPS if step not in state.get("completedSteps", [])]
         if missing:
             return Response({"message": "Save all setup steps first.", "missingSteps": missing}, status=400)
+        if state.get("required"):
+            errors = persisted_setup_errors(company)
+            if errors:
+                return Response({
+                    "message": "Required workshop information is incomplete.",
+                    "missingFields": errors,
+                }, status=400)
         state["completed"] = True
         update_setting(company, head_branch(company), "onboarding", state)
         return Response(snapshot(company))
