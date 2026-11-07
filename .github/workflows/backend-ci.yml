@@ -119,7 +119,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.companies.tests_onboarding apps.invoices.tests_part10_integrity --noinput
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity --noinput
 
 
 
