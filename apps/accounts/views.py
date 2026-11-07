@@ -381,6 +381,10 @@ class PublicWorkshopSignupView(APIView):
                     message="Welcome to CubeGears. Complete your workshop account setup using the secure link.",
                     recipient_list=[user.email],
                     action_url=setup_url, action_label="Set up password",
+                    # In direct SMTP mode, cap each network wait below the
+                    # public website's HTTP deadline. Prefer Celery for reliable
+                    # delivery; a slow SMTP provider must not hold signup 15s.
+                    smtp_timeout_seconds=5,
                 )
             else:
                 from apps.whatsapp.staff_invites import queue_platform_owner_invitation
