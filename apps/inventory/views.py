@@ -292,13 +292,31 @@ class StockItemViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=False,methods=["post"],url_path="return")
     def stock_return(self,request):
-        condition=request.data.get("condition","Reusable")
-        return self._movement(request,"return",1 if condition=="Reusable" else 0)
+        movement, created = return_issued_stock(request)
+        return response.Response(self._movement_response(request, movement), status=201 if created else 200)
 
     @decorators.action(detail=False,methods=["post"])
     def adjustment(self,request):
-        sign=1 if request.data.get("adjustmentType","Increase")=="Increase" else -1
+        mode = str(request.data.get("adjustmentType") or "")
+        if mode not in {"Increase", "Decrease"}:
+            raise ValidationError({"adjustmentType": "Choose Increase or Decrease."})
+        if len(str(request.data.get("reason") or "").strip()) < 5:
+            raise ValidationError({"reason": "Explain this adjustment (minimum 5 characters)."})
+        sign = 1 if mode == "Increase" else -1
         return self._movement(request,"adjustment",sign)
+
+    @decorators.action(detail=False,methods=["get"],url_path="branch-balances")
+    def branch_balances(self, request):
+        from apps.accounts.permissions import user_has_permission
+        qs = StockBranchBalance.objects.filter(company=request.user.company).select_related("item","branch")
+        if request.user.branch_id and not user_has_permission(request.user, "stock.manage"):
+            qs = qs.filter(branch_id=request.user.branch_id)
+        return response.Response([{
+            "itemId": str(row.item_id), "sku": row.item.sku,
+            "name": row.item.name, "branchId": str(row.branch_id),
+            "branchName": row.branch.name, "onHand": str(row.quantity),
+            "reserved": str(row.reserved), "available": str(available_in_branch(row)),
+        } for row in qs.order_by("branch__name", "item__name")[:2000]])
 
     @decorators.action(detail=False,methods=["get"])
     def ledger(self,request):
@@ -317,17 +335,9 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         return response.Response(StockAuditSerializer(StockAudit.objects.filter(company=request.user.company),many=True).data)
 
     @decorators.action(detail=False,methods=["post"])
-    def transfer(self,request):
-        from apps.branches.models import Branch
-        company=request.user.company
-        from_value=request.data.get("fromBranch")
-        to_value=request.data.get("toBranch")
-        from_branch=Branch.objects.filter(company=company,name=from_value).first() or request.user.branch
-        to_branch=Branch.objects.filter(company=company,name=to_value).first()
-        if not from_branch or not to_branch:
-            return response.Response({"message":"Valid from/to branches are required."},status=400)
-        obj=StockTransfer.objects.create(company=company,branch=request.user.branch,number=f"TRF-{__import__('time').time_ns()}",from_branch=from_branch,to_branch=to_branch,status="Requested",items=[request.data])
-        return response.Response(StockTransferSerializer(obj).data,status=201)
+    def transfer(self, request):
+        transfer, created = transfer_inventory(request)
+        return response.Response(StockTransferSerializer(transfer).data, status=201 if created else 200)
 
     @decorators.action(detail=False,methods=["get"],url_path="low-stock")
     def low_stock(self,request):
@@ -376,9 +386,32 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
         instance.delete()
 class StockTransferViewSet(CompanyScopedModelViewSet):
     queryset=StockTransfer.objects.all(); serializer_class=StockTransferSerializer
+
+    def create(self, request, *args, **kwargs):
+        return response.Response({"message": "Use the atomic /stock/transfer action."}, status=405)
+
+    def update(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock transfer history is immutable."}, status=405)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return response.Response({"message": "Stock transfers cannot be deleted."}, status=405)
+
 class StockAuditViewSet(CompanyScopedModelViewSet):
     queryset=StockAudit.objects.all(); serializer_class=StockAuditSerializer
-    def perform_create(self,serializer):
-        item=serializer.validated_data["item"]; counted=serializer.validated_data["counted_qty"]
-        serializer.save(company=self.request.user.company,branch=self.request.user.branch,expected_qty=item.on_hand,difference=counted-item.on_hand,created_by=self.request.user)
+    action_permission_map = {"create": "stock.edit"}
 
+    def create(self, request, *args, **kwargs):
+        audit, created = count_inventory(request)
+        return response.Response(self.get_serializer(audit).data, status=201 if created else 200)
+
+    def update(self, request, *args, **kwargs):
+        return response.Response({"message": "Physical count history is immutable."}, status=405)
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return response.Response({"message": "Physical count history cannot be deleted."}, status=405)
