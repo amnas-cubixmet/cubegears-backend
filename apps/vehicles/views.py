@@ -1,7 +1,5 @@
 """Live company-owned vehicle directory, history and non-destructive archive."""
 
-import re
-
 from django.db import transaction
 from django.db.models import Q
 from rest_framework import decorators, response, status
