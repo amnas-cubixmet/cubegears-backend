@@ -293,7 +293,7 @@ if not DEBUG and not CUSTOMER_PORTAL_BASE_URL.startswith("https://"):
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.accounts.jwt_auth.CompanyJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",

@@ -25,6 +25,8 @@ jobs:
       - run: python manage.py migrate --noinput
       - name: Verify live database readiness contract and safe 503 responses
         run: python manage.py test common.tests_readiness --noinput
+      - name: Validate JWT session revocation for inactive staff and workshops
+        run: python manage.py test apps.accounts.tests_session_revocation --noinput
       - name: Run email, attendance, tenant, billing, and invoice regressions
         run: |
           python manage.py test \
