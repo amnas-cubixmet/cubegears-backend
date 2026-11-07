@@ -19,6 +19,7 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         "payments": "payments.view",
         "activity": "customers.view",
         "outstanding": "invoices.view",
+        "ledger": ["payments.view", "invoices.view"],
         "branch_options": "customers.view",
         "restore": "customers.edit",
     }
@@ -162,9 +163,21 @@ class CustomerViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True, methods=["get"])
     def outstanding(self, request, pk=None):
-        from apps.invoices.models import Invoice
-        total=Invoice.objects.filter(customer=self.get_object()).aggregate(total=Sum("balance"))["total"] or 0
-        return response.Response({"customerId":pk,"outstanding":total})
+        from apps.payments.customer_credit import active_invoice_queryset
+        customer = self.get_object()
+        total = active_invoice_queryset(request.user.company, customer).aggregate(
+            total=Sum("balance"),
+        )["total"] or 0
+        return response.Response({"customerId": str(customer.pk), "outstanding": total})
+
+    @decorators.action(detail=True, methods=["get"], url_path="ledger")
+    def ledger(self, request, pk=None):
+        # Requires BOTH payments.view and invoices.view, not customer read alone.
+        # No account opening/current balances are transmitted.
+        from apps.payments.customer_credit import customer_credit_snapshot
+
+        customer = self.get_object()
+        return response.Response(customer_credit_snapshot(request.user.company, customer))
 
 class CustomerReminderViewSet(CompanyScopedModelViewSet):
     queryset=CustomerReminder.objects.all()

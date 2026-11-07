@@ -35,6 +35,7 @@ jobs:
             apps.roles.tests_granular_permissions \
             apps.employees.tests_staff_assignments \
             apps.payments.tests_reversal \
+            apps.payments.tests_customer_credits \
             apps.finance.tests \
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
@@ -119,7 +120,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
 
 
 
