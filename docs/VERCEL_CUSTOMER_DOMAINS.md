@@ -59,3 +59,52 @@ python manage.py makemigrations --check --dry-run
 python manage.py migrate
 python manage.py test apps.companies.tests_vercel_domains apps.customers.tests_website
 ```
+
+## Default workshop websites: one wildcard, no per-workshop Vercel setup
+
+This is a **single Next.js multi-tenant Customer Website**, not one Vercel
+project per workshop. The signup backend reserves one unique public DNS label
+in `CompanyWebsiteSubdomain`. It does not create Vercel projects or add a
+project-domain entry for every workshop.
+
+1. Choose and **own** the platform root domain (for example `cubegears.com`
+   or any different registered domain). The root is configured on Django with
+   `CUSTOMER_PORTAL_ROOT_DOMAIN`. Example names do not imply ownership.
+2. In Vercel, add `*.YOUR-REGISTERED-DOMAIN` **once** to the dedicated
+   `cubegears-customers-website` project. Wildcard certificates require the
+   domain to use Vercel nameservers. Preserve/migrate the existing mail and
+   other DNS records before changing authoritative nameservers.
+3. Confirm wildcard ownership, DNS resolution, production deployment,
+   certificate, and signed Customer Website → Django proxy connectivity.
+   Configure the Customer Website server-only `CUBEGEARS_BACKEND_URL` and
+   `PORTAL_PROXY_SHARED_SECRET`. Django must use the same proxy secret.
+4. Only after live verification, set `CUSTOMER_WEBSITE_LINKS_ENABLED=true`
+   on Django to enable issuing default subdomain tracking links.
+5. New workshop "ABCD" automatically gets an available address such as
+   `abcd.YOUR-REGISTERED-DOMAIN`. If that label is taken, signup assigns
+   a unique suffixed label. The owner can change their public label using
+   `PATCH /api/v1/company/customer-website/subdomain` (`{"label":"new-garage"}`)
+   or the Company Panel Customer Website settings. This does not edit the
+   company's `slug` used for staff login or data access.
+6. The customer can optionally add their **own** domain, such as
+   `portal.mygarage.in`, through Customer Website → Domains. Backend
+   adds this to the same Vercel Customer Website project using the
+   server-only Vercel token, displays Vercel-provided DNS/TXT records
+   in the UI, and activates it only after ownership/DNS/HTTPS checks.
+   The owner adds those DNS records at their registrar. The default workshop
+   subdomain remains available and is the fallback if no custom domain exists.
+
+To test separately on localhost in development, use
+`http://abcd.localhost:3000` (or the local Next.js port) with Django DEBUG and
+the signed Customer Website BFF. Use `PORTAL_BACKEND_URL` to route to Django on
+`http://127.0.0.1:8000`, plus the shared local secret. Some devices and DNS
+resolvers do not resolve `*.localhost` automatically; use a supported local
+DNS/hosts mapping if required. Never rely on local wildcard DNS as evidence of
+live Vercel configuration.
+
+**Operational security:** A changed default label stops resolving at the old
+hostname; resend customer access links. Existing customer tokens remain bound
+to their company/customer, not to the hostname, and are still individually
+revocable. Custom domains require company/platform approval checks as before.
+Platform-level registration/DNS changes happen once; owners cannot buy, claim,
+or modify the platform root through the company website settings.
