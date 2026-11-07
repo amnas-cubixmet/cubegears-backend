@@ -65,10 +65,16 @@ class WhatsAppSettingsView(APIView):
         enabled = request.data.get("notificationsEnabled")
         if choices is not None:
             if not isinstance(choices, dict) or any(
-                key not in EVENTS or not isinstance(value, bool)
+                (
+                    (type(value) is not int or value not in {24, 48})
+                    if key == "estimate_reminder_hours" else
+                    (key not in EVENTS or not isinstance(value, bool))
+                )
                 for key, value in choices.items()
             ):
-                return Response({"message": "Invalid notification settings."}, status=400)
+                return Response({
+                    "message": "Invalid notification settings. Estimate reminder cadence must be 24 or 48 hours."
+                }, status=400)
             connection.event_settings = choices
         if enabled is not None:
             if not isinstance(enabled, bool):
