@@ -77,3 +77,33 @@ class WorkshopSessionRevocationTests(TestCase):
         result = self.client.post("/api/v1/auth/refresh", {"refresh": refresh}, format="json")
         self.assertEqual(result.status_code, 200, getattr(result, "data", None))
         self.assertTrue(result.data.get("access"))
+
+    def test_expired_bearer_header_cannot_block_public_login_or_refresh(self):
+        # A stale JWT must not force clients into a 401 loop before login.
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer expired.invalid.jwt")
+        login = self.client.post("/api/v1/auth/login", {
+            "identifier": "+919855550001", "password": "StrongStaffPass123!",
+        }, format="json")
+        self.assertEqual(login.status_code, 200, login.data)
+        refresh = self.client.post("/api/v1/auth/refresh", {
+            "refresh": login.data["refresh"],
+        }, format="json")
+        self.assertEqual(refresh.status_code, 200, refresh.data)
+        self.assertTrue(refresh.data.get("access"))
+        # Refreshing a session must never make stale access tokens valid.
+        self.assertEqual(self.client.get("/api/v1/auth/me").status_code, 401)
+
+    def test_trailing_slash_login_refresh_and_me_keep_correct_auth_rules(self):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer expired.invalid.jwt")
+        login = self.client.post("/api/v1/auth/login/", {
+            "identifier": "+919855550001", "password": "StrongStaffPass123!",
+        }, format="json")
+        self.assertEqual(login.status_code, 200, login.data)
+        refreshed = self.client.post("/api/v1/auth/refresh/", {
+            "refresh": login.data["refresh"],
+        }, format="json")
+        self.assertEqual(refreshed.status_code, 200, refreshed.data)
+        self.assertEqual(self.client.get("/api/v1/auth/me/").status_code, 401)
+        self.assertEqual(self.client.post("/api/v1/auth/logout/", {
+            "refresh": refreshed.data.get("refresh", login.data["refresh"]),
+        }, format="json").status_code, 200)

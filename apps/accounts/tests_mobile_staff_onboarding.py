@@ -156,6 +156,20 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(resolved.status_code,200,resolved.data)
         self.assertEqual(resolved.data["user"]["id"],str(self.owner.pk))
 
+    def test_mixed_case_legacy_email_login_is_case_insensitive(self):
+        # UserManager normalizes only the domain and preserves the local part.
+        user = User.objects.create_user(
+            email="Legacy.Owner@Example.test", password="LegacyOwnerPass123!",
+            name="Legacy Case Owner", phone="+919111111191",
+            company=self.company, role=self.owner_role,
+        )
+        result = self.public.post("/api/v1/auth/login", {
+            "identifier": "legacy.owner@example.test",
+            "password": "LegacyOwnerPass123!",
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data["user"]["id"], str(user.pk))
+
     def test_email_and_mobile_platform_admin_still_work(self):
         platform = User.objects.create_superuser(
             email="platform@example.test",password="PlatformPass123!",

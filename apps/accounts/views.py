@@ -42,7 +42,14 @@ class PublicSignupRateThrottle(AnonRateThrottle):
 
 
 class LoginRateThrottle(AnonRateThrottle):
+    scope = "workshop_login"
     rate = "10/minute"
+
+
+class TokenRefreshRateThrottle(AnonRateThrottle):
+    # Refreshing a valid session must not exhaust the interactive login limit.
+    scope = "workshop_token_refresh"
+    rate = "60/minute"
 
 
 class RecoveryRateThrottle(AnonRateThrottle):
@@ -60,6 +67,8 @@ def issue_tokens(user):
     }
 
 class LoginView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [LoginRateThrottle]
 
@@ -75,8 +84,11 @@ class SecureTokenRefreshView(TokenRefreshView):
     disabled. SimpleJWT still performs its usual revocation and rotation checks.
     """
 
+    # A valid refresh can repair an expired access token. Never authenticate
+    # the stale bearer header before validating the supplied refresh.
+    authentication_classes = []
     permission_classes = [AllowAny]
-    throttle_classes = [LoginRateThrottle]
+    throttle_classes = [TokenRefreshRateThrottle]
 
     def post(self, request, *args, **kwargs):
         raw = request.data.get("refresh")
@@ -123,6 +135,8 @@ class MeView(APIView):
         return Response(UserSerializer(user).data)
 
 class ForgotPasswordView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [RecoveryRateThrottle]
 
@@ -161,6 +175,8 @@ class ForgotPasswordView(APIView):
         return Response(generic)
 
 class ResetPasswordView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -208,6 +224,8 @@ class ResetPasswordView(APIView):
         return Response(tokens)
 
 class MagicLinkRequestView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [RecoveryRateThrottle]
 
@@ -229,6 +247,8 @@ class MagicLinkRequestView(APIView):
         return Response({"message": "If the account exists, a magic link has been sent."})
 
 class MagicLinkVerifyView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -261,6 +281,8 @@ class ChangePasswordView(APIView):
 
 
 class PublicWorkshopSignupView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [PublicSignupRateThrottle]
 
@@ -383,6 +405,8 @@ class PublicWorkshopSignupView(APIView):
 
 
 class StaffInvitationValidationView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [RecoveryRateThrottle]
 
@@ -394,6 +418,8 @@ class StaffInvitationValidationView(APIView):
 
 
 class StaffInvitationConsumeView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
     throttle_classes = [RecoveryRateThrottle]
 
@@ -416,6 +442,8 @@ class StaffInvitationConsumeView(APIView):
 
 
 class SetupPasswordView(APIView):
+    # Public auth routes must ignore stale Authorization headers from clients.
+    authentication_classes = []
     permission_classes = [AllowAny]
 
     def post(self, request):
