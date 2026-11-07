@@ -234,8 +234,37 @@ class GSTRCSVExportView(APIView):
             fields = ["hsnSac", "description", "unit", "rate", "classification",
                       "quantity", "taxablePreview", "cgst", "sgst", "igst"]
             rows = data["hsn"]["rows"]
+        elif report == "credits":
+            fields = ["number", "date", "invoiceNumber", "reason",
+                      "taxable", "cgst", "sgst", "igst", "total"]
+            rows = data["gstr1"]["creditNotes"]
+        elif report == "gstr3b":
+            fields = ["metric", "amount"]
+            rows = [
+                {"metric": key, "amount": value}
+                for key, value in data["gstr3b"].items()
+                if key in {
+                    "outwardTaxable", "outputCGST", "outputSGST",
+                    "outputIGST", "eligibleITC", "reversedITC",
+                    "indicativeGapBeforeUtilization",
+                }
+            ]
+        elif report == "itc":
+            from .models import GSTInputTaxClaim
+            fields = ["invoiceNumber", "period", "cgst", "sgst", "igst", "reason"]
+            claims = GSTInputTaxClaim.objects.filter(
+                company=request.user.company, period=data["period"],
+            ).select_related("bill")
+            rows = [{
+                "invoiceNumber": row.bill.invoice_number,
+                "period": row.period, "cgst": str(row.cgst),
+                "sgst": str(row.sgst), "igst": str(row.igst),
+                "reason": row.eligibility_reason,
+            } for row in claims]
         else:
-            raise ValidationError({"report": "Select gstr1 or hsn for preparation CSV export."})
+            raise ValidationError({
+                "report": "Select gstr1, gstr3b, credits, itc or hsn preparation CSV.",
+            })
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = (
             f'attachment; filename="cubegears-{report}-{data["period"]}-PREPARATION.csv"')
