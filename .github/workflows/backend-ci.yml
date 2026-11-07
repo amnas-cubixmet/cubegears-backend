@@ -109,3 +109,21 @@ jobs:
           python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal --noinput
 
 
+
+  docker-image:
+    name: Production image build (Django + shared Celery image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image with collected static files
+        run: docker build --pull -t cubegears-backend:ci .
+      - name: Check compose syntax without any live passwords
+        env:
+          POSTGRES_DB: ci_cubegears
+          POSTGRES_USER: ci_cubegears
+          POSTGRES_PASSWORD: ci-only-not-a-production-password
+          REDIS_PASSWORD: ci-only-not-a-production-redis-password
+        run: |
+          cp .env.production.example .env
+          docker compose -f compose.production.yml config --quiet
+          rm .env
