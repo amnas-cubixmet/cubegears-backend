@@ -27,6 +27,7 @@ def replay_movement(request, key, *, item, kind, quantity):
     ).first()
     if not entry:
         return None
-    if entry.item_id != item.pk or entry.movement_type != kind or entry.quantity != quantity:
+    if (entry.item_id != item.pk or entry.movement_type != kind or entry.quantity != quantity
+            or entry.branch_id != request.user.branch_id):
         raise ValidationError({"requestKey": "This request key belongs to a different inventory transaction."})
     return entry
