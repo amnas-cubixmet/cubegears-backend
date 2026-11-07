@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth import get_user_model
 from apps.branches.models import Branch
 from apps.accounts.permissions import can_delegate
 from apps.roles.models import Role
@@ -26,6 +27,23 @@ class TeamSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Invalid branch for this company.")
         return value
 
+    def validate(self, attrs):
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        lead = attrs.get("lead", getattr(self.instance, "lead", None))
+        if branch and not branch.is_active:
+            raise serializers.ValidationError({"branchId": "Select an active branch."})
+        if lead:
+            company = self.context["request"].user.company
+            if lead.company_id != company.pk or not lead.is_active or lead.is_staff or lead.is_superuser:
+                raise serializers.ValidationError({"lead": "Select an active staff account from this workshop."})
+            if branch is not None and lead.branch_id != branch.pk:
+                raise serializers.ValidationError({"lead": "Team lead must belong to the selected branch."})
+        if self.instance and "branch" in attrs:
+            invalid_members = self.instance.employees.exclude(branch=branch) if branch else self.instance.employees.none()
+            if invalid_members.exists():
+                raise serializers.ValidationError({"branchId": "Reassign existing team members before changing the team branch."})
+        return attrs
+
 class ShiftSerializer(serializers.ModelSerializer):
     assignedStaffIds=serializers.SerializerMethodField()
     branchId=serializers.PrimaryKeyRelatedField(
@@ -50,6 +68,17 @@ class ShiftSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Invalid branch for this company.")
         return value
 
+
+    def validate(self, attrs):
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if branch and not branch.is_active:
+            raise serializers.ValidationError({"branchId": "Select an active branch."})
+        if self.instance and "branch" in attrs and branch is not None:
+            if self.instance.employees.exclude(branch=branch).exists():
+                raise serializers.ValidationError({
+                    "branchId": "Reassign existing staff before changing the shift branch.",
+                })
+        return attrs
 
 class EmployeeDocumentSerializer(serializers.ModelSerializer):
     staffId=serializers.UUIDField(source="employee_id",read_only=True)
@@ -209,6 +238,19 @@ class EmployeeSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"teamId":"Invalid team for this company."})
         if shift and shift.company_id!=company.id:
             raise serializers.ValidationError({"shiftId":"Invalid shift for this company."})
+        target_branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        target_team = attrs.get("team", getattr(self.instance, "team", None))
+        target_shift = attrs.get("shift", getattr(self.instance, "shift", None))
+        if target_branch and not target_branch.is_active:
+            raise serializers.ValidationError({"branchId": "Select an active branch."})
+        if target_team and not target_team.is_active:
+            raise serializers.ValidationError({"teamId": "Select an active team."})
+        if target_shift and not target_shift.is_active:
+            raise serializers.ValidationError({"shiftId": "Select an active shift."})
+        if target_team and target_team.branch_id and target_team.branch_id != getattr(target_branch, "pk", None):
+            raise serializers.ValidationError({"teamId": "Staff must be in the same branch as their team."})
+        if target_shift and target_shift.branch_id and target_shift.branch_id != getattr(target_branch, "pk", None):
+            raise serializers.ValidationError({"shiftId": "Staff must be in the same branch as their shift."})
         return attrs
 
     def get_accountStatus(self,obj):

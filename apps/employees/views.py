@@ -61,14 +61,73 @@ def _record_activity(employee, action, details="", actor=None, metadata=None):
     )
 
 
+class StaffBatchAssignmentSerializer(serializers.Serializer):
+    staffIds = serializers.ListField(
+        child=serializers.UUIDField(), allow_empty=True, max_length=500,
+    )
+
+    def validate_staffIds(self, values):
+        if len(values) != len(set(values)):
+            raise serializers.ValidationError("Select each staff member only once.")
+        return values
+
+
+def validated_assignment_staff(request, staff_ids, *, branch=None):
+    """Lock and validate the complete batch before changing any assignments."""
+    if not staff_ids:
+        return []
+    employees = list(
+        Employee.objects.select_for_update().filter(
+            company_id=request.user.company_id,
+            id__in=staff_ids,
+        ).order_by("pk")
+    )
+    if len(employees) != len(staff_ids):
+        raise ValidationError({"staffIds": "One or more staff members do not belong to this workshop."})
+    for employee in employees:
+        if employee.status not in {"Active", "Probation", "Notice Period"}:
+            raise ValidationError({"staffIds": f"{employee.name} must have active employment before assignment."})
+        if branch is not None and employee.branch_id != branch.pk:
+            raise ValidationError({"staffIds": f"{employee.name} belongs to a different branch."})
+    return employees
+
+
 class TeamViewSet(CompanyScopedModelViewSet):
     queryset=Team.objects.all()
     serializer_class=TeamSerializer
     permission_prefix="staff"
+    action_permission_map={"assign": "staff.edit"}
 
     def perform_create(self,serializer):
         branch=serializer.validated_data.get("branch",getattr(self.request.user,"branch",None))
         serializer.save(company=self.request.user.company,branch=branch)
+
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, pk=None):
+        """Assign multiple staff as one transaction instead of partial PATCH calls."""
+        team = self.get_object()
+        form = StaffBatchAssignmentSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        employees = validated_assignment_staff(
+            request, form.validated_data["staffIds"], branch=team.branch,
+        )
+        for employee in employees:
+            if employee.team_id == team.pk:
+                continue
+            previous = employee.team.name if employee.team_id else "Unassigned"
+            employee.team = team
+            employee.department_name = team.name
+            employee.save(update_fields=["team", "department_name", "updated_at"])
+            _record_activity(
+                employee, "Team Assigned",
+                f"{previous} → {team.name}", request.user,
+                {"teamId": str(team.pk)},
+            )
+        return response.Response({
+            "teamId": str(team.pk),
+            "assignedStaffIds": [str(employee.pk) for employee in employees],
+        })
 
 
 class ShiftViewSet(CompanyScopedModelViewSet):
@@ -81,51 +140,48 @@ class ShiftViewSet(CompanyScopedModelViewSet):
         branch=serializer.validated_data.get("branch",getattr(self.request.user,"branch",None))
         serializer.save(company=self.request.user.company,branch=branch)
 
-    @decorators.action(detail=True,methods=["post"],url_path="assign")
-    def assign(self,request,pk=None):
-        shift=self.get_object()
-        staff_ids=[str(value) for value in (request.data.get("staffIds") or [])]
-        selected=Employee.objects.filter(
-            company=request.user.company,
-            id__in=staff_ids,
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="assign")
+    def assign(self, request, pk=None):
+        shift = self.get_object()
+        form = StaffBatchAssignmentSerializer(data=request.data)
+        form.is_valid(raise_exception=True)
+        staff_ids = form.validated_data["staffIds"]
+        selected = validated_assignment_staff(request, staff_ids, branch=shift.branch)
+        existing = list(
+            Employee.objects.select_for_update().filter(
+                company_id=request.user.company_id, shift=shift,
+            )
         )
-
-        removed=Employee.objects.filter(
-            company=request.user.company,
-            shift=shift,
-        ).exclude(id__in=staff_ids)
-
-        for employee in removed:
-            old_label=employee.shift_label or _shift_label(shift)
-            employee.shift=None
-            employee.shift_label=""
-            employee.save(update_fields=["shift","shift_label","updated_at"])
+        chosen = {employee.pk for employee in selected}
+        for employee in existing:
+            if employee.pk in chosen:
+                continue
+            old_label = employee.shift_label or _shift_label(shift)
+            employee.shift = None
+            employee.shift_label = ""
+            employee.save(update_fields=["shift", "shift_label", "updated_at"])
             _record_activity(
-                employee,
-                "Shift Removed",
-                old_label,
-                request.user,
-                {"shiftId":str(shift.id)},
+                employee, "Shift Removed", old_label, request.user,
+                {"shiftId": str(shift.pk)},
             )
-
         for employee in selected:
-            old_label=employee.shift_label or (
-                _shift_label(employee.shift) if employee.shift else "Unassigned"
+            if employee.shift_id == shift.pk and employee.shift_label == _shift_label(shift):
+                continue
+            old_label = employee.shift_label or (
+                _shift_label(employee.shift) if employee.shift_id else "Unassigned"
             )
-            employee.shift=shift
-            employee.shift_label=_shift_label(shift)
-            employee.save(update_fields=["shift","shift_label","updated_at"])
+            employee.shift = shift
+            employee.shift_label = _shift_label(shift)
+            employee.save(update_fields=["shift", "shift_label", "updated_at"])
             _record_activity(
-                employee,
-                "Shift Assigned",
-                f"{old_label} → {employee.shift_label}",
-                request.user,
-                {"shiftId":str(shift.id)},
+                employee, "Shift Assigned",
+                f"{old_label} → {employee.shift_label}", request.user,
+                {"shiftId": str(shift.pk)},
             )
-
         return response.Response({
-            "shift":self.get_serializer(shift).data,
-            "assignedStaffIds":[str(employee.id) for employee in selected],
+            "shift": self.get_serializer(shift).data,
+            "assignedStaffIds": [str(employee.pk) for employee in selected],
         })
 
 
