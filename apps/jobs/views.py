@@ -239,6 +239,17 @@ class JobViewSet(CompanyScopedModelViewSet):
                 raise ValidationError({
                     "status": "Completed workflow stages cannot be reopened through a generic Job Card edit.",
                 })
+        if "work" in serializer.validated_data:
+            if workflow_state(job)["current"] != "work":
+                raise ValidationError({"work": "Work lines are editable only during the active Work stage."})
+            proposed_work = serializer.validated_data["work"]
+            if not isinstance(proposed_work, list) or len(proposed_work) > 500:
+                raise ValidationError({"work": "Work records must be a list of at most 500 entries."})
+            for posted in (job.work or []):
+                # Records created by the audited catalogue-service endpoint
+                # cannot be silently deleted or repriced through generic PATCH.
+                if isinstance(posted, dict) and posted.get("requestId") and posted not in proposed_work:
+                    raise ValidationError({"work": "Posted catalogue work cannot be changed through general Job Card edits."})
         if "qc" in serializer.validated_data:
             # The client can edit checklist/notes, but the inspector's identity
             # must always come from the authenticated user actually saving QC.
