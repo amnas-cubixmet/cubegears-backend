@@ -10,6 +10,21 @@ from apps.suppliers.serializers import SupplierSerializer as SupplierSerializer
 
 
 class StockItemSerializer(serializers.ModelSerializer):
+    branchOnHand=serializers.SerializerMethodField()
+    branchAvailable=serializers.SerializerMethodField()
+
+    def _branch_snapshot(self, obj):
+        from .branch_stock import branch_stock_snapshot
+        request = self.context.get("request")
+        branch = getattr(getattr(request, "user", None), "branch", None)
+        return branch_stock_snapshot(obj, branch) or {}
+
+    def get_branchOnHand(self, obj):
+        return self._branch_snapshot(obj).get("branchOnHand")
+
+    def get_branchAvailable(self, obj):
+        return self._branch_snapshot(obj).get("branchAvailable")
+
     def get_fields(self):
         fields = super().get_fields()
         request = self.context.get("request")
