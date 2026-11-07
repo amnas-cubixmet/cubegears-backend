@@ -52,6 +52,7 @@ jobs:
             apps.services.tests_hierarchy \
             apps.inventory.tests_supplier_finance \
             apps.inventory.tests_stock_identifiers \
+            apps.inventory.tests_part12_stock_ledger \
             apps.suppliers \
             apps.jobs.tests_inspection_skip \
             apps.whatsapp.tests_integration \
@@ -120,7 +121,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
 
 
 
