@@ -82,3 +82,32 @@ class GSTFilingReview(CompanyOwnedModel):
                 fields=["company", "period"], name="unique_company_gst_filing_review",
             ),
         ]
+
+
+class GSTSalesCreditNote(CompanyOwnedModel):
+    """Internal outward-GST credit note preparation; not a customer refund."""
+    invoice = models.ForeignKey(
+        "invoices.Invoice", on_delete=models.PROTECT,
+        related_name="gst_credit_notes",
+    )
+    number = models.CharField(max_length=100)
+    date = models.DateField()
+    reason = models.CharField(max_length=500)
+    taxable = models.DecimalField(max_digits=14, decimal_places=2)
+    cgst = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    sgst = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    igst = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
+    request_key = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+    )
+    class Meta:
+        ordering = ["-date", "-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "number"], name="unique_gst_sales_credit_number",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_gst_sales_credit_key",
+            ),
+        ]
