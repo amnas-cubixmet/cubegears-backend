@@ -28,7 +28,7 @@ class OwnerPasswordSignupTests(TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["setupDelivery"], "password_created")
         self.assertNotIn("setupLink", response.data)
-        self.assertNotIn("password", str(response.data))
+        self.assertNotIn("StrongDirectPass2026!", str(response.data))
         owner = User.objects.get(pk=response.data["user"]["id"])
         self.assertTrue(owner.check_password("StrongDirectPass2026!"))
         self.assertFalse(StaffPasswordInvitation.objects.filter(user=owner).exists())
