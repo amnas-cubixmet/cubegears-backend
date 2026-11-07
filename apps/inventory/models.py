@@ -81,7 +81,7 @@ class StockBranchBalance(CompanyOwnedModel):
 
 
 class StockMovement(CompanyOwnedModel):
-    TYPES=[(x,x) for x in ["purchase","job_issue","sale","return","transfer_in","transfer_out","adjustment","opening"]]
+    TYPES=[(x,x) for x in ["purchase","job_issue","sale","return","transfer_in","transfer_out","adjustment","opening","purchase_return"]]
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT,related_name="movements")
     request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
     origin_movement=models.ForeignKey("self",on_delete=models.PROTECT,null=True,blank=True,related_name="return_movements")
