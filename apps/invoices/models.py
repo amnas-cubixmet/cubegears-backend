@@ -40,6 +40,7 @@ class Invoice(CompanyOwnedModel):
     source_estimate=models.ForeignKey("self",on_delete=models.SET_NULL,null=True,blank=True,related_name="converted_invoices")
     finalized_at=models.DateTimeField(null=True,blank=True)
     cancelled_at=models.DateTimeField(null=True,blank=True)
+    cancellation_reason=models.CharField(max_length=500,blank=True,default="")
     class Meta:
         ordering=["-date","-created_at"]
         constraints=[models.UniqueConstraint(fields=["company","number"],name="unique_invoice_number_per_company")]

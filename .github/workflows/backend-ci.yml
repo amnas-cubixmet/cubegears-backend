@@ -70,6 +70,7 @@ jobs:
             apps.gstr.tests \
             apps.invoices.tests_job_draft \
             apps.invoices.tests_part10_integrity \
+            apps.invoices.tests_part10_document_integrity \
             apps.inventory.tests_supplier_credit \
             --noinput
       - name: Verify production database/worker settings without live secrets
@@ -119,7 +120,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity --noinput
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
 
 
 
