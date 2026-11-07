@@ -248,6 +248,9 @@ class JobViewSet(CompanyScopedModelViewSet):
                 "inspector": inspector_name,
                 "inspectorUserId": str(self.request.user.pk),
             }
+        technician = serializer.validated_data.get("technician")
+        if technician and job.branch_id and technician.branch_id and technician.branch_id != job.branch_id:
+            raise ValidationError({"technician": "Technician must belong to the Job Card branch."})
         self._guard_active_timers(job,next_status)
         updated = serializer.save()
         if "status" in serializer.validated_data or "complaints" in serializer.validated_data:
@@ -463,6 +466,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                 ).select_related("user").first()
                 if not employee:
                     raise ValidationError({input_key: "Choose an active staff member from your workshop."})
+                if branch and employee.branch_id and employee.branch_id != branch.pk:
+                    raise ValidationError({
+                        input_key: "Selected staff belongs to a different workshop branch.",
+                    })
                 if employee.user_id and employee.user.is_active:
                     data[target_key] = str(employee.user_id)
 
@@ -485,6 +492,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"vehicle":"Vehicle does not belong to the selected customer."})
         if technician and technician.company_id != company.id:
             raise ValidationError({"technician":"Technician belongs to another company."})
+        target_branch = getattr(self, "_job_create_branch", self.request.user.branch)
+        if technician and target_branch and technician.branch_id and technician.branch_id != target_branch.pk:
+            raise ValidationError({"technician": "Technician must belong to the Job Card branch."})
         advisor=serializer.validated_data.get("advisor") or self.request.user
         if advisor.company_id != company.id:
             raise ValidationError({"advisor":"Service advisor belongs to another company."})
