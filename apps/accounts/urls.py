@@ -1,5 +1,5 @@
 from django.urls import path
-from .jwt_auth import CompanyTokenRefreshView
+from .jwt_refresh import CompanyTokenRefreshView
 
 from .views import (
     ChangePasswordView,
