@@ -1458,8 +1458,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         if item.branch_id and item.branch_id != expected_branch_id:
             raise ValidationError({"item": "This stock item belongs to another branch."})
         idempotency_key = str(request.headers.get("Idempotency-Key") or "").strip()
-        if idempotency_key and (len(idempotency_key) > 64 or not idempotency_key.isascii() or not all(ch.isalnum() or ch in "-_" for ch in idempotency_key)):
-            raise ValidationError({"idempotencyKey": "Use an ASCII alphanumeric idempotency key (max 64 characters)."})
+        if idempotency_key and (len(idempotency_key) > 48 or not idempotency_key.isascii() or not all(ch.isalnum() or ch in "-_" for ch in idempotency_key)):
+            raise ValidationError({"idempotencyKey": "Use an ASCII alphanumeric idempotency key (max 48 characters)."})
         movement_reference = f"job-issue:{job.pk}:{idempotency_key}" if idempotency_key else job.job_number
         if idempotency_key:
             existing = StockMovement.objects.filter(company=job.company, item=item, job=job, movement_type="job_issue", reference=movement_reference).first()
