@@ -7,7 +7,6 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.companies.models import Company
-from apps.expenses.models import Expense
 from apps.finance.models import (
     BankReconciliation, JournalEntry, JournalLine, LedgerAccount,
 )
