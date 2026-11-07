@@ -16,7 +16,9 @@ from apps.accounts.permissions import user_has_permission
 from apps.customers.models import Customer
 from apps.customers.portal_tokens import ensure_portal_access, issue_link
 from apps.invoices.models import Invoice
-from apps.jobs.models import Job
+from apps.jobs.models import Job, JobEstimate
+from apps.jobs.workflow import workflow_state
+from apps.customers.estimate_review import public_estimate
 from .models import WhatsAppNotificationLog
 from .phone import normalize_recipient
 
@@ -49,6 +51,27 @@ class WhatsAppManualShareView(APIView):
                 company=company, pk=ident, customer__company=company,
             )
             customer, invoice = job.customer, None
+        elif kind == "estimate":
+            _require(request, "jobs.view")
+            estimate = get_object_or_404(
+                JobEstimate.objects.select_related(
+                    "job__customer", "job__vehicle", "job__company"
+                ),
+                company=company, pk=ident, job__company=company,
+                job__customer__company=company,
+            )
+            job = estimate.job
+            latest_id = job.estimates.order_by("-version", "-created_at").values_list(
+                "pk", flat=True,
+            ).first()
+            if (latest_id != estimate.pk or estimate.status != "Awaiting Customer"
+                    or workflow_state(job)["current"] != "estimate"
+                    or job.vehicle.customer_id != job.customer_id
+                    or not public_estimate(estimate)["reviewable"]):
+                return Response({
+                    "message": "Only the latest published, itemized estimate can be shared."
+                }, status=409)
+            customer, invoice = job.customer, None
         elif kind == "invoice":
             _require(request, "invoices.view")
             invoice = get_object_or_404(
@@ -70,7 +93,7 @@ class WhatsAppManualShareView(APIView):
             if not customer:
                 return Response({"message": "No customer is attached to this failed notification."}, status=409)
         else:
-            return Response({"message": "Select customer, job, invoice, or failed log."}, status=400)
+            return Response({"message": "Select customer, job, estimate, invoice, or failed log."}, status=400)
 
         if not customer or customer.company_id != company.pk:
             return Response({"message": "Customer is unavailable for this workshop."}, status=404)
@@ -90,7 +113,14 @@ class WhatsAppManualShareView(APIView):
             return Response({"message": "Tracking link cannot be recovered. Regenerate the customer link."}, status=409)
 
         workshop = company.name
-        if invoice:
+        if kind == "estimate":
+            message = (
+                f"Hello {customer.name}, Estimate V{estimate.version} for job card "
+                f"{job.job_number} at {workshop} is ready for your review "
+                f"(total INR {estimate.total}). Review the itemized quote and "
+                f"accept or decline in your secure customer portal: {secure_url}"
+            )
+        elif invoice:
             message = (
                 f"Hello {customer.name}, your invoice {invoice.number} from {workshop} is ready. "
                 f"View your workshop service updates securely: {secure_url}"
