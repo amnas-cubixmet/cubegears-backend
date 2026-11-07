@@ -162,3 +162,58 @@ class GSTFilingReviews(APIView):
             "portalVerified": False,
             "message": "Internal filing evidence recorded; official GST Portal verification unavailable.",
         }, status=201)
+
+
+class GSTTaxLedger(APIView):
+    """Signed tax-head activity; not a governmental electronic credit ledger."""
+    permission_classes = [RolePermission]
+    permission_code = "gstr.view"
+
+    def get(self, request):
+        from .services import invoice_queryset
+
+        selected = parse_period(request.query_params.get("period"))
+        company = request.user.company
+        entries = []
+        for invoice in invoice_queryset(company, selected):
+            entries.append({
+                "date": invoice.date.isoformat(), "type": "Output GST Invoice",
+                "sourceId": str(invoice.pk), "number": invoice.number,
+                "cgst": str(invoice.cgst), "sgst": str(invoice.sgst),
+                "igst": str(invoice.igst), "claimCategory": "Output",
+            })
+        for note in GSTSalesCreditNote.objects.filter(
+            company=company, date__gte=selected["from"], date__lte=selected["to"],
+        ):
+            entries.append({
+                "date": note.date.isoformat(), "type": "Sales GST Credit Note",
+                "sourceId": str(note.pk), "number": note.number,
+                "cgst": str(-note.cgst), "sgst": str(-note.sgst),
+                "igst": str(-note.igst), "claimCategory": "Output",
+            })
+        for claim in GSTInputTaxClaim.objects.filter(
+            company=company, period=selected["period"],
+        ).select_related("bill"):
+            entries.append({
+                "date": claim.created_at.date().isoformat(),
+                "type": "Internally Approved ITC",
+                "sourceId": str(claim.pk), "number": claim.bill.invoice_number,
+                "cgst": str(claim.cgst), "sgst": str(claim.sgst),
+                "igst": str(claim.igst), "claimCategory": "ITC",
+            })
+        for reversal in GSTInputTaxReversal.objects.filter(
+            company=company, period=selected["period"],
+        ).select_related("debit_note"):
+            entries.append({
+                "date": reversal.debit_note.date.isoformat(),
+                "type": "Purchase Return ITC Reversal",
+                "sourceId": str(reversal.pk), "number": reversal.debit_note.number,
+                "cgst": str(-reversal.cgst), "sgst": str(-reversal.sgst),
+                "igst": str(-reversal.igst), "claimCategory": "ITC",
+            })
+        return Response({
+            "period": selected["period"], "entries": sorted(
+                entries, key=lambda row: (row["date"], row["type"], row["number"]),
+            ),
+            "notice": "This tax-head audit is from workshop records and internal approvals, not the official GST cash/credit ledger.",
+        })
