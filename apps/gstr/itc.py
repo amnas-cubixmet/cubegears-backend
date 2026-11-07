@@ -108,6 +108,21 @@ def approve_credit(request):
         raise ValidationError({
             "importId": "Requires exactly one verified GSTR-2B match marked ITC available by the source file.",
         })
+    # A saved match is evidence for the original posted snapshot only. Refuse
+    # silent changes to its date, taxable value or separate tax heads.
+    original_heads = values(bill)
+    row = found[0]
+    if (
+        key_period < bill.invoice_date.strftime("%Y-%m")
+        or Decimal(str(row.get("taxable", "0"))) != bill.subtotal
+        or any(
+            Decimal(str(row.get(head, "0"))) != original_heads[head]
+            for head in HEADS
+        )
+    ):
+        raise ValidationError({
+            "importId": "Saved GSTR-2B evidence differs from the current purchase tax snapshot.",
+        })
     reason = str(request.data.get("eligibilityReason") or "").strip()
     if not 20 <= len(reason) <= 500:
         raise ValidationError({
