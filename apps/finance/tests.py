@@ -243,24 +243,18 @@ class FinanceAccountingTests(TestCase):
         response = self.client.get("/api/v1/finance/payment-activity")
         self.assertEqual(response.status_code, 200, getattr(response, "data", None))
         data = response.data
-        self.assertEqual(data["period"], "today")
-        self.assertEqual(data["todayReceived"], "700.00")
-        self.assertEqual(data["todayPaid"], "100.00")
-        self.assertEqual(data["netSalesRevenue"], "1320.00")
-        self.assertEqual(data["salesTaxExcluded"], "180.00")
-        self.assertEqual(data["knownCostOfSales"], "400.00")
-        # Original test fixture expense is dated 2026-11-06. All-time
-        # reporting always includes its recorded payable.
-        self.assertEqual(data["bankBalance"], "1200.00")
-        self.assertEqual(data["cashBalance"], "950.00")
-        self.assertIn("estimated", data["profitNote"].lower())
+        self.assertEqual(data["count"], 1)
+        entry = next(row for row in data["results"] if row["reference"] == "OLD-CASH-RECEIPT")
+        self.assertEqual(entry["source"], "payment")
+        self.assertEqual(entry["amount"], "100.00")
+        self.assertEqual(entry["account"], "")
+        self.assertFalse(entry["ledgerPosted"])
+        # Imported legacy receipts without financial account entries must not
+        # invent cash/bank funds or silently post a financial transaction.
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+        self.assertEqual(account_balance(self.cash), Decimal("1000.00"))
+        self.assertEqual(account_balance(self.bank), Decimal("500.00"))
 
-        all_time = self.client.get("/api/v1/finance/dashboard?period=all")
-        self.assertEqual(all_time.status_code, 200)
-        self.assertEqual(all_time.data["netSalesRevenue"], "1320.00")
-        self.assertEqual(all_time.data["recordedExpenses"], "300.00")
-        self.assertEqual(all_time.data["estimatedProfit"], "620.00")
-        self.assertEqual(self.client.get("/api/v1/finance/dashboard?period=bad").status_code, 400)
 
     def test_draft_invoice_does_not_generate_revenue_or_profit(self):
         from django.utils import timezone
