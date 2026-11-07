@@ -16,6 +16,7 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .audit import record_job_event
 from .inspection_inputs import validate_finding, validate_diagnostic
+from .estimate_requests import estimate_identity, saved_estimate_identity, attach_identity
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
@@ -660,9 +661,17 @@ class JobViewSet(CompanyScopedModelViewSet):
             if (job.inspection or {}).get("status") != "Completed":
                 raise ValidationError({"stage":"Finish the vehicle inspection checklist first."})
         elif stage == "estimate":
-            estimate = job.estimates.order_by("-created_at").first()
+            # Approve one explicit, immutable version. A stale browser must
+            # never accidentally authorize a newer quotation.
+            estimate = job.estimates.select_for_update().order_by("-version", "-created_at").first()
             if not estimate:
                 raise ValidationError({"stage":"Create an estimate before approval."})
+            selected_id = request.data.get("estimateId")
+            if selected_id is not None and str(selected_id) != str(estimate.pk):
+                raise ValidationError({"estimateId": "The displayed estimate is no longer the latest version. Refresh before approving."})
+            selected_version = request.data.get("estimateVersion")
+            if selected_version is not None and str(selected_version) != str(estimate.version):
+                raise ValidationError({"estimateVersion": "The displayed estimate version changed. Refresh before approving."})
             if estimate.status != "Draft":
                 raise ValidationError({"stage":"Only the latest draft estimate can be approved. Save a revised estimate first."})
             if (job.inspection or {}).get("revisedAt"):
@@ -674,6 +683,15 @@ class JobViewSet(CompanyScopedModelViewSet):
             estimate.status = "Approved"
             estimate.approved_at = timezone.now()
             estimate.save(update_fields=["status","approved_at","updated_at"])
+            # A staff attestation is not equivalent to an authenticated
+            # customer e-signature. Keep the source of confirmation explicit.
+            estimate_approval = {
+                "status": "Approved", "estimateId": str(estimate.pk),
+                "version": estimate.version, "total": str(estimate.total),
+                "confirmedByStaffId": str(request.user.pk),
+                "approvedAt": estimate.approved_at.isoformat(),
+                "confirmationSource": "workshop_staff_attestation",
+            }
         elif stage == "work":
             if not request.data.get("confirmWorkDone"):
                 raise ValidationError({"stage":"Confirm that workshop work is complete."})
@@ -721,6 +739,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             }
 
         progress = dict(job.workflow_progress or {})
+        if stage == "estimate":
+            progress["estimateDecision"] = estimate_approval
+            job.estimate_total = estimate.total
         if stage == "invoice":
             progress["delivery"] = delivery_record
         completed = set(state["completed"])
@@ -742,6 +763,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         if stage == "invoice":
             job.delivered_at = timezone.now()
         fields = ["workflow_progress", "status", "delivered_at", "updated_at"]
+        if stage == "estimate":
+            fields.append("estimate_total")
         if sync_complaint_status(job):
             fields.append("complaints")
         job.save(update_fields=fields)
@@ -749,7 +772,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             company=job.company,branch=job.branch,job=job,actor=request.user,
             event="Workflow Stage Completed",description=f"{stage} completed",
             from_status=old_status,to_status=job.status,
-            metadata={"stage":stage},
+            metadata={"stage": stage, **({"estimateApproval": estimate_approval} if stage == "estimate" else {})},
         )
         return response.Response({
             **workflow_state(job),
@@ -1480,9 +1503,20 @@ class JobViewSet(CompanyScopedModelViewSet):
     @transaction.atomic
     def quick_estimate(self, request, pk=None):
         job = Job.objects.select_for_update().get(pk=self.get_object().pk, company=request.user.company)
+        identity = estimate_identity(request.data)
+        if identity:
+            # The job row lock serializes concurrent requests for this quote.
+            # A retry returns the original version without a second activity.
+            for previous in job.estimates.order_by("-version", "-created_at"):
+                saved = saved_estimate_identity(previous)
+                if saved and saved[0] == identity[0]:
+                    if saved[1] != identity[1]:
+                        raise ValidationError({"requestId": "This request ID was already used with different estimate values."})
+                    return response.Response(JobEstimateSerializer(previous).data)
         if workflow_state(job)["current"] != "estimate":
             raise ValidationError({"estimate": "Only the active Estimate stage can create a quotation."})
         values = self._quick_estimate_values(request.data)
+        attach_identity(values["items"], identity)
         version = (job.estimates.order_by("-version").values_list("version", flat=True).first() or 0) + 1
         obj = JobEstimate.objects.create(
             company=job.company, branch=job.branch, job=job,
@@ -1500,7 +1534,7 @@ class JobViewSet(CompanyScopedModelViewSet):
                        url_path=r"estimates/quick/(?P<estimate_id>[^/.]+)")
     @transaction.atomic
     def quick_estimate_detail(self, request, pk=None, estimate_id=None):
-        job = self.get_object()
+        job = Job.objects.select_for_update().get(pk=self.get_object().pk, company=request.user.company)
         if workflow_state(job)["current"] != "estimate":
             raise ValidationError({"estimate": "Estimate editing is closed after approval."})
         draft = JobEstimate.objects.select_for_update().filter(
@@ -1510,7 +1544,17 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"estimate": "Estimate not found for this Job Card."})
         if draft.status != "Draft":
             raise ValidationError({"estimate": "Only draft estimates can be edited."})
+        latest = job.estimates.order_by("-version", "-created_at").first()
+        if latest.pk != draft.pk:
+            raise ValidationError({"estimate": "Only the latest draft estimate can be edited. Refresh the Job Card."})
+        identity = estimate_identity(request.data)
+        existing_identity = saved_estimate_identity(draft)
+        if identity and existing_identity and identity[0] == existing_identity[0]:
+            if identity[1] != existing_identity[1]:
+                raise ValidationError({"requestId": "This request ID was already used with different estimate values."})
+            return response.Response(JobEstimateSerializer(draft).data)
         values = self._quick_estimate_values(request.data)
+        attach_identity(values["items"], identity)
         for field, value in values.items():
             setattr(draft, field, value)
         draft.save(update_fields=[*values.keys(), "updated_at"])
