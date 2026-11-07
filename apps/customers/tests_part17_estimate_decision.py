@@ -254,4 +254,80 @@ class Part17CustomerEstimateTests(TestCase):
             {"action": "share"}, format="json",
         ).status_code, 200)
 
+    def test_part18_exact_quote_review_hash_and_audited_receipt(self):
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        url = f"/api/v1/customer-website/estimates/{self.quote.pk}/decision"
+        bad = self.browser.post(
+            url, {"decision": "accept", "version": 1, "reviewHash": "0" * 64},
+            format="json",
+            HTTP_X_CG_CSRF=self.browser.cookies["cg_portal_csrf"].value,
+            **self.headers(),
+        )
+        self.assertEqual(bad.status_code, 409)
+        self.assertEqual(self.job.activities.filter(event="Customer Estimate Accepted").count(), 0)
+
+        accepted = self.decide("accept")
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+        receipt = accepted.data["decisionReceipt"]
+        self.assertEqual(receipt["status"], "Accepted")
+        self.assertTrue(receipt["id"])
+        repeat = self.decide("accept")
+        self.assertEqual(repeat.status_code, 200, repeat.data)
+        self.assertEqual(repeat.data["decisionReceipt"]["id"], receipt["id"])
+        self.assertEqual(self.job.activities.filter(event="Customer Estimate Accepted").count(), 1)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.workflow_progress["customerEstimateDecision"]["receiptId"], receipt["id"])
+        self.assertEqual(
+            str(self.job.activities.get(event="Customer Estimate Accepted").pk),
+            receipt["id"],
+        )
+        dashboard = self.browser.get("/api/v1/customer-website/session", **self.headers())
+        self.assertEqual(dashboard.data["estimates"][0]["decisionReceipt"]["id"], receipt["id"])
+
+    def test_part18_quote_breakdown_is_whitelisted_and_reconciles_gst(self):
+        self.quote.items = [
+            {"description": "Brake pad", "type": "Part", "quantity": "2",
+             "unitPrice": "500.00", "total": "1000.00", "hsnSac": "8708",
+             "taxRate": "18", "catalogId": "private-catalog-id",
+             "mechanicCost": "300.00"},
+            {"_pricing": {"discount": "100.00", "gst": {
+                "mode": "gst", "cgst": "81.00", "sgst": "81.00", "igst": "0.00",
+                "requestFingerprint": "private-fingerprint",
+            }, "requestId": "private-request-id"}},
+        ]
+        self.quote.subtotal = Decimal("1000.00")
+        self.quote.tax = Decimal("162.00")
+        self.quote.total = Decimal("1062.00")
+        self.quote.save(update_fields=["items", "subtotal", "tax", "total"])
+        self.login()
+        self.assertEqual(self.share().status_code, 200)
+        response = self.browser.get("/api/v1/customer-website/session", **self.headers())
+        quote = response.data["estimates"][0]
+        self.assertEqual(quote["subtotal"], "1000.00")
+        self.assertEqual(quote["discount"], "100.00")
+        self.assertEqual(quote["tax"], "162.00")
+        self.assertEqual(quote["total"], "1062.00")
+        self.assertEqual(quote["gst"], {
+            "cgst": "81.00", "sgst": "81.00", "igst": "0.00",
+        })
+        self.assertEqual(quote["lines"][0]["quantity"], "2.00")
+        self.assertEqual(quote["lines"][0]["hsnSac"], "8708")
+        for secret in ("private-catalog-id", "mechanicCost", "requestId",
+                       "private-request-id", "private-fingerprint", "_pricing"):
+            self.assertNotIn(secret, str(quote))
+        self.assertEqual(self.decide("accept").status_code, 200)
+
+    def test_part18_inconsistent_or_empty_itemization_cannot_be_published(self):
+        self.quote.subtotal = Decimal("1199.00")
+        self.quote.save(update_fields=["subtotal"])
+        self.assertEqual(self.share().status_code, 400)
+        self.quote.subtotal = Decimal("1200.00")
+        self.quote.items = [{"_pricing": {"requestId": "private"}}]
+        self.quote.save(update_fields=["subtotal", "items"])
+        self.assertEqual(self.share().status_code, 400)
+        self.quote.items = [{"description": "Valid repair", "quantity": "1",
+                             "unitPrice": "1200", "total": "1200"}]
+        self.quote.save(update_fields=["items"])
+        self.assertEqual(self.share().status_code, 200)
 
