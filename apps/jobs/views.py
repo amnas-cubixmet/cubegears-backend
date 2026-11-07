@@ -17,6 +17,7 @@ from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .audit import record_job_event
 from .inspection_inputs import validate_finding, validate_diagnostic
 from .estimate_requests import estimate_identity, saved_estimate_identity, attach_identity
+from apps.customers.estimate_review import public_estimate
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
 from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
@@ -1311,6 +1312,12 @@ class JobViewSet(CompanyScopedModelViewSet):
             revised = parse_datetime((job.inspection or {}).get("revisedAt") or "")
             if revised and estimate.created_at < revised:
                 raise ValidationError({"estimate": "Inspection changed; save a revised estimate first."})
+            # Consent requires an itemized quote whose lines, discount, tax and
+            # total agree exactly. Incomplete historical quotes need revision.
+            if not public_estimate(estimate)["reviewable"]:
+                raise ValidationError({
+                    "estimate": "Save a complete itemized estimate with reconciled totals before sharing."
+                })
             estimate.status = "Awaiting Customer"
             event = "Estimate Shared With Customer"
         else:
