@@ -6,7 +6,6 @@ Historical source rows are imported only through the explicit audit command.
 """
 from decimal import Decimal
 from django.db import transaction
-from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -147,9 +146,7 @@ def journal_opening(account):
 
 def journal_bank_entry(entry):
     """Cash entry always gets one opposite GL line. Never mutate cash balance."""
-    from apps.inventory.models import (
-        SupplierPayment, SupplierRefund, WorkshopAccountEntry,
-    )
+    from apps.inventory.models import SupplierRefund
     from apps.payments.models import Payment
     entry_type = str(entry.entry_type or "").lower().strip()
     source_key = str(entry.source_key or "")
@@ -303,7 +300,6 @@ def journal_expense(expense):
     """Accrue operating expense; revising unpaid amounts creates a signed correction."""
     if expense.amount <= ZERO:
         return None
-    from django.db.models import Sum
     account_expense = account_for(expense.company_id, "5100")
     existing = JournalEntry.objects.filter(
         company_id=expense.company_id, source_key__startswith=f"expense:{expense.pk}:",
