@@ -1,5 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
+import re
 from django.conf import settings
 import mimetypes
 from django.http import FileResponse
@@ -197,8 +198,19 @@ class JobViewSet(CompanyScopedModelViewSet):
             )
 
     @transaction.atomic
-    def perform_update(self,serializer):
-        job = self.get_object()
+    def perform_update(self, serializer):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(
+            pk=scoped.pk, company_id=self.request.user.company_id,
+        )
+        serializer.instance = job
+        if job.status == Job.STATUS_DELIVERED and any(
+            field not in {"customer_rating", "customer_feedback"}
+            for field in serializer.validated_data
+        ):
+            raise ValidationError({
+                "job": "Delivered Job Cards are locked. Customer feedback may still be recorded.",
+            })
         tracked = {
             key: getattr(job, key)
             for key in ("complaints", "work_updates", "qc", "work", "technician_id", "priority")
@@ -272,6 +284,30 @@ class JobViewSet(CompanyScopedModelViewSet):
         from django.db.models.functions import Replace, Upper
 
         data = request.data.copy()
+        # Lock the real Company row for the whole creation transaction. A
+        # repeated request key returns the prior Job Card BEFORE attempting to
+        # create another Customer/Vehicle or consuming a new job number.
+        from apps.companies.models import Company
+        Company.objects.select_for_update().get(pk=request.user.company_id)
+        raw_request_id = data.get("clientRequestId")
+        self._job_create_request_id = ""
+        if raw_request_id not in (None, ""):
+            if not isinstance(raw_request_id, str) or not re.fullmatch(
+                r"[a-zA-Z0-9:_-]{12,120}", raw_request_id,
+            ):
+                raise ValidationError({
+                    "clientRequestId": "Use a unique 12–120 character request ID.",
+                })
+            self._job_create_request_id = raw_request_id
+            previous_job = Job.objects.filter(
+                company_id=request.user.company_id,
+                workflow_progress__createRequestId=raw_request_id,
+            ).first()
+            if previous_job is not None:
+                return response.Response(
+                    self.get_serializer(previous_job).data, status=status.HTTP_200_OK,
+                )
+
         vehicle_value = data.get("vehicle")
         # Also support a preselected existing customer with a typed/new vehicle.
         # A canonical customer+vehicle UUID payload without a registration still
@@ -452,10 +488,38 @@ class JobViewSet(CompanyScopedModelViewSet):
         advisor=serializer.validated_data.get("advisor") or self.request.user
         if advisor.company_id != company.id:
             raise ValidationError({"advisor":"Service advisor belongs to another company."})
-        count=Job.objects.filter(company=company).count()+1
-        number=serializer.validated_data.get("job_number") or f"JOB-{timezone.now().year}-{count:05d}"
-        job=serializer.save(company=company,branch=getattr(self, '_job_create_branch', self.request.user.branch),job_number=number,advisor=advisor)
-        JobActivity.objects.create(company=company,branch=job.branch,job=job,event="Job Created",description=f"{number} created",actor=self.request.user,to_status=job.status)
+        # The Company row is locked by create(); generated numbers never
+        # silently reuse an existing number after an earlier Job was deleted.
+        selected_branch = getattr(self, "_job_create_branch", self.request.user.branch)
+        if selected_branch and (
+            selected_branch.company_id != company.pk or not selected_branch.is_active
+        ):
+            raise ValidationError({"branchId": "Select an active workshop branch."})
+        number = str(serializer.validated_data.get("job_number") or "").strip()
+        if number:
+            if len(number) > 40 or Job.objects.filter(
+                company=company, job_number=number,
+            ).exists():
+                raise ValidationError({"jobNumber": "Job Card number is invalid or already in use."})
+        else:
+            sequence = Job.objects.filter(company=company).count() + 1
+            while True:
+                number = f"JOB-{timezone.now().year}-{sequence:05d}"
+                if not Job.objects.filter(company=company, job_number=number).exists():
+                    break
+                sequence += 1
+        progress = {}
+        if getattr(self, "_job_create_request_id", ""):
+            progress["createRequestId"] = self._job_create_request_id
+        job = serializer.save(
+            company=company, branch=selected_branch, job_number=number,
+            advisor=advisor, workflow_progress=progress,
+        )
+        JobActivity.objects.create(
+            company=company, branch=job.branch, job=job,
+            event="Job Created", description=f"{number} created",
+            actor=self.request.user, to_status=job.status,
+        )
 
     @decorators.action(detail=True,methods=["patch"])
     def status(self,request,pk=None):
