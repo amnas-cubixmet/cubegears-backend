@@ -46,6 +46,42 @@ class EmailDeliveryModeTests(TestCase):
             self.assertEqual(result["status"], "failed")
 
     @override_settings(
+        ACCOUNT_EMAIL_DELIVERY_MODE="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.test", EMAIL_HOST_USER="service@example.test",
+        EMAIL_HOST_PASSWORD="test-secret", DEFAULT_FROM_EMAIL="service@example.test",
+    )
+    def test_signup_smtp_can_use_shorter_timeout_without_changing_other_mail(self):
+        with patch("apps.accounts.email.send_account_email",
+                   return_value={"acceptedByProvider": True}) as sender:
+            with self.captureOnCommitCallbacks(execute=True):
+                result = queue_email(
+                    "setup", "text", ["owner@example.test"],
+                    action_url="https://example.test/setup",
+                    smtp_timeout_seconds=5,
+                )
+            self.assertEqual(result["status"], "sent")
+            self.assertEqual(sender.call_args.kwargs, {"smtp_timeout_seconds": 5})
+            self.assertEqual(sender.call_args.args[-2:], (
+                "https://example.test/setup", None,
+            ))
+
+    @override_settings(
+        ACCOUNT_EMAIL_DELIVERY_MODE="smtp",
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+        EMAIL_HOST="smtp.example.test", EMAIL_HOST_USER="service@example.test",
+        EMAIL_HOST_PASSWORD="test-secret", DEFAULT_FROM_EMAIL="service@example.test",
+    )
+    def test_smtp_timeout_failure_is_nonfatal_to_committed_signup(self):
+        with patch("apps.accounts.email.send_account_email", side_effect=TimeoutError):
+            with self.captureOnCommitCallbacks(execute=True):
+                status = queue_email(
+                    "setup", "text", ["owner@example.test"],
+                    smtp_timeout_seconds=5,
+                )
+            self.assertEqual(status["status"], "failed")
+
+    @override_settings(
         ACCOUNT_EMAIL_DELIVERY_MODE="celery",
         EMAIL_CELERY_ENABLED=True,
         CELERY_BROKER_URL="redis://example.invalid:6379/0",
@@ -108,6 +144,15 @@ class BrandedEmailTemplateTests(TestCase):
         self.assertNotIn("<img src=x onerror=alert(1)>", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertIn("&lt;img", html)
+
+    def test_explicit_connection_timeout_still_renders_an_action_email(self):
+        send_account_email(
+            subject="Account setup", message="Complete setup",
+            recipient_list=["member@example.test"],
+            action_url="https://example.test/setup", smtp_timeout_seconds=5,
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("https://example.test/setup", mail.outbox[0].body)
 
     def test_non_action_email_remains_plain_text(self):
         send_account_email(
