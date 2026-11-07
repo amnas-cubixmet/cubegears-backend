@@ -61,5 +61,71 @@ jobs:
             apps.invoices.tests_job_draft \
             apps.inventory.tests_supplier_credit \
             --noinput
+      - name: Verify production database/worker settings without live secrets
+        run: python -m unittest -v config.test_production_settings
+      - name: Verify safe SQLite backup prior to migration
+        run: python -m unittest discover -s scripts -p 'test_backup_sqlite.py' -v
       # Staging/live broker and SMTP verification must be done on hosting.
 
+  postgresql:
+    name: PostgreSQL 16 migrations and finance tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_cubegears
+          POSTGRES_PASSWORD: ci-only-not-a-production-password
+          POSTGRES_DB: ci_cubegears
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci_cubegears -d ci_cubegears"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
+      POSTGRES_HOST: "127.0.0.1"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "ci_cubegears"
+      POSTGRES_USER: "ci_cubegears"
+      POSTGRES_PASSWORD: "ci-only-not-a-production-password"
+      POSTGRES_SSLMODE: "disable"
+      SERVICE_ROLE: "web"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - name: Check PostgreSQL models and apply all migrations
+        run: |
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+      - name: PostgreSQL finance, supplier and payments regressions
+        run: |
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.payments.tests_reversal --noinput
+
+
+
+  docker-image:
+    name: Production image build (Django + shared Celery image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the production image with collected static files
+        run: docker build --pull -t cubegears-backend:ci .
+      - name: Check compose syntax without any live passwords
+        env:
+          POSTGRES_DB: ci_cubegears
+          POSTGRES_USER: ci_cubegears
+          POSTGRES_PASSWORD: ci-only-not-a-production-password
+          REDIS_PASSWORD: ci-only-not-a-production-redis-password
+        run: |
+          cp .env.production.example .env
+          docker compose -f compose.production.yml config --quiet
+          rm .env

@@ -1,0 +1,107 @@
+# CubeGears PRODUCTION SERVICES — Docker Compose v2.
+# Copy .env.production.example to private .env; fill all empty secrets first.
+# HTTPS reverse proxy must forward api.example.com to 127.0.0.1:8000.
+# Do NOT put production database secrets inside this YAML.
+name: cubegears
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # Do not publish production Postgres port.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    command: ["sh", "-ec", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$REDIS_PASSWORD\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # Redis is private; do not publish 6379.
+
+  django-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cubegears-backend:production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_ROLE: web
+    command:
+      - gunicorn
+      - config.wsgi:application
+      - --bind
+      - 0.0.0.0:8000
+      - --workers
+      - "3"
+      - --timeout
+      - "120"
+      - --access-logfile
+      - "-"
+      - --error-logfile
+      - "-"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - media:/var/lib/cubegears/media
+      - private-job-media:/var/lib/cubegears/private_job_media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    image: cubegears-backend:production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_ROLE: worker
+    command: ["celery", "-A", "config", "worker", "--loglevel=INFO", "--concurrency=2"]
+    volumes:
+      - media:/var/lib/cubegears/media
+      - private-job-media:/var/lib/cubegears/private_job_media
+    depends_on:
+      django-web:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    # Start only when scheduling has been reviewed. RUN ONLY ONE BEAT.
+    profiles: ["scheduler"]
+    image: cubegears-backend:production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_ROLE: beat
+    command: ["celery", "-A", "config", "beat", "--loglevel=INFO", "--schedule=/tmp/celerybeat-schedule"]
+    depends_on:
+      django-web:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
+  private-job-media:
