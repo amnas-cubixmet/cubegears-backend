@@ -234,6 +234,10 @@ class JobViewSet(CompanyScopedModelViewSet):
             unlocked = workflow_state(job)["current"]
             if stage_index_from_status(next_status) > STAGES.index(unlocked):
                 raise ValidationError({"status": "Complete the current Job Card stage first."})
+            if stage_index_from_status(next_status) < stage_index_from_status(job.status):
+                raise ValidationError({
+                    "status": "Completed workflow stages cannot be reopened through a generic Job Card edit.",
+                })
         if "qc" in serializer.validated_data:
             # The client can edit checklist/notes, but the inspector's identity
             # must always come from the authenticated user actually saving QC.
@@ -531,22 +535,39 @@ class JobViewSet(CompanyScopedModelViewSet):
             actor=self.request.user, to_status=job.status,
         )
 
-    @decorators.action(detail=True,methods=["patch"])
-    def status(self,request,pk=None):
-        job=self.get_object(); new_status=request.data.get("status")
-        if new_status not in FLOW: raise ValidationError({"status":"Invalid job status."})
+    @decorators.action(detail=True, methods=["patch"])
+    @transaction.atomic
+    def status(self, request, pk=None):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(
+            pk=scoped.pk, company_id=request.user.company_id,
+        )
+        new_status = request.data.get("status")
+        if new_status not in FLOW:
+            raise ValidationError({"status": "Invalid Job Card status."})
+        if new_status == job.status:
+            return response.Response(self.get_serializer(job).data)
+        if stage_index_from_status(new_status) < stage_index_from_status(job.status):
+            raise ValidationError({
+                "status": "A completed Job Card stage cannot be reopened by changing its status.",
+            })
         if stage_index_from_status(new_status) > STAGES.index(workflow_state(job)["current"]):
-            raise ValidationError({"status":"Complete the current Job Card stage first."})
-        old=job.status
-        self._guard_active_timers(job,new_status)
-        if new_status==Job.STATUS_DELIVERED: job.delivered_at=timezone.now()
-        job.status=new_status
+            raise ValidationError({"status": "Complete the active Job Card stage first."})
+        old_status = job.status
+        self._guard_active_timers(job, new_status)
+        if new_status == Job.STATUS_DELIVERED:
+            job.delivered_at = timezone.now()
+        job.status = new_status
         fields = ["status", "delivered_at", "updated_at"]
         if sync_complaint_status(job):
             fields.append("complaints")
         job.save(update_fields=fields)
-        JobActivity.objects.create(company=job.company,branch=job.branch,job=job,event="Status Changed",description=f"{old} → {new_status}",actor=request.user,from_status=old,to_status=new_status)
-        return response.Response(JobSerializer(job).data)
+        JobActivity.objects.create(
+            company=job.company, branch=job.branch, job=job,
+            event="Status Changed", description=f"{old_status} → {new_status}",
+            actor=request.user, from_status=old_status, to_status=new_status,
+        )
+        return response.Response(self.get_serializer(job).data)
 
     @decorators.action(
         detail=True, methods=["post"],
