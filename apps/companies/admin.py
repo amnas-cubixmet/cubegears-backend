@@ -1,5 +1,5 @@
 from django.contrib import admin, messages
-from .models import Company, CompanyDomain, CompanyDomainAudit, CompanyWebsiteSettings
+from .models import Company, CompanyDomain, CompanyDomainAudit, CompanyWebsiteSettings, CompanyWebsiteSubdomain
 from .vercel_domains import VercelDomainError, record_domain_event, refresh_domain
 
 
@@ -15,6 +15,29 @@ class CompanyWebsiteSettingsAdmin(admin.ModelAdmin):
     list_display = ("company", "public_name", "updated_at")
     search_fields = ("company__name", "public_name")
 
+
+
+@admin.register(CompanyWebsiteSubdomain)
+class CompanyWebsiteSubdomainAdmin(admin.ModelAdmin):
+    """Platform audit view; tenant website labels are changed via owner API."""
+    list_display = ("company", "label", "updated_at")
+    search_fields = ("company__name", "company__slug", "label")
+    readonly_fields = ("company", "label", "created_at", "updated_at")
+
+    def has_module_permission(self, request):
+        return platform_superuser(request.user)
+
+    def has_view_permission(self, request, obj=None):
+        return platform_superuser(request.user)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 def platform_superuser(user):
     return bool(
