@@ -93,6 +93,40 @@ class Migration(migrations.Migration):
                 )),
             ],
         ),
+        migrations.CreateModel(
+            name="GSTSalesCreditNote",
+            fields=base_fields() + [
+                ("number", models.CharField(max_length=100)),
+                ("date", models.DateField()),
+                ("reason", models.CharField(max_length=500)),
+                ("taxable", models.DecimalField(max_digits=14, decimal_places=2)),
+                ("cgst", models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))),
+                ("sgst", models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))),
+                ("igst", models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))),
+                ("request_key", models.CharField(max_length=120)),
+                ("invoice", models.ForeignKey(
+                    to="invoices.invoice", on_delete=django.db.models.deletion.PROTECT,
+                    related_name="gst_credit_notes",
+                )),
+                ("created_by", models.ForeignKey(
+                    to="accounts.user", on_delete=django.db.models.deletion.SET_NULL,
+                    null=True, blank=True,
+                )),
+            ],
+            options={"ordering": ["-date", "-created_at"]},
+        ),
+        migrations.AddConstraint(
+            model_name="gstsalescreditnote",
+            constraint=models.UniqueConstraint(
+                fields=["company", "number"], name="unique_gst_sales_credit_number",
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name="gstsalescreditnote",
+            constraint=models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_gst_sales_credit_key",
+            ),
+        ),
         migrations.AddConstraint(
             model_name="gstr2bimport",
             constraint=models.UniqueConstraint(
