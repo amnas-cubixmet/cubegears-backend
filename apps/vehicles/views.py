@@ -51,6 +51,17 @@ class VehicleViewSet(CompanyScopedModelViewSet):
             customer=customer,
         )
 
+    @transaction.atomic
+    def perform_update(self, serializer):
+        # A history-free ownership reassignment must move the vehicle branch
+        # with its new owner, not retain the prior customer's branch.
+        customer = serializer.validated_data.get("customer")
+        current = serializer.instance
+        if customer is not None and customer.pk != current.customer_id:
+            serializer.save(branch=customer.branch or self.request.user.branch)
+        else:
+            serializer.save()
+
     def _set_archived(self, request, vehicle, archived):
         old = vehicle.status
         new = "Archived" if archived else "Active"
