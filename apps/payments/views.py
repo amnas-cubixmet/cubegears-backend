@@ -287,3 +287,234 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 {"paymentId": str(payment.pk), "invoiceId": str(payment.invoice_id), "reason": reason},
             )
         return response.Response(self.get_serializer(payment).data, status=status.HTTP_200_OK)
+
+
+    def _credit_request_key(self, data):
+        key = str(data.get("idempotency_key") or "").strip()
+        if not key or len(key) > 120:
+            raise ValidationError({
+                "idempotency_key": "Provide a unique request key (1–120 characters).",
+            })
+        return key
+
+    def _locked_advance(self, request, pk):
+        advance = Payment.objects.select_for_update().filter(
+            company_id=request.user.company_id, pk=pk,
+        ).first()
+        if not advance:
+            raise ValidationError({"advance": "Customer advance was not found."})
+        if advance.direction != "IN" or advance.invoice_id or not advance.customer_id:
+            raise ValidationError({"advance": "Choose a real unapplied customer advance receipt."})
+        if advance.status != "Completed" or advance.reversed_at:
+            raise ValidationError({"advance": "Reversed advances cannot be adjusted or refunded."})
+        return advance
+
+    @decorators.action(detail=False, methods=["get"], url_path="advances")
+    def advances(self, request):
+        from apps.customers.models import Customer
+
+        customer_id = request.query_params.get("customerId") or ""
+        try:
+            UUID(str(customer_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"customerId": "Select a valid customer."})
+        customer = Customer.objects.filter(
+            company_id=request.user.company_id, pk=customer_id,
+        ).first()
+        if customer is None:
+            raise ValidationError({"customerId": "Customer was not found in this workshop."})
+        rows = Payment.objects.filter(
+            company_id=request.user.company_id, customer=customer,
+            invoice__isnull=True, direction="IN", status="Completed",
+            reversed_at__isnull=True,
+        ).order_by("date", "created_at")
+        return response.Response([{
+            "id": str(payment.pk), "customerId": str(customer.pk),
+            "date": payment.date.isoformat(),
+            "amount": str(payment.amount),
+            "available": str(available_advance(payment)),
+            "method": payment.method, "reference": payment.reference,
+        } for payment in rows])
+
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="apply-advance")
+    def apply_advance(self, request, pk=None):
+        """Settle a finalized invoice from prepaid funds, with NO new bank posting."""
+        from apps.finance.views import valid_money
+
+        advance = self._locked_advance(request, pk)
+        key = self._credit_request_key(request.data)
+        invoice_id = request.data.get("invoiceId")
+        try:
+            UUID(str(invoice_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"invoiceId": "Select a valid finalized customer invoice."})
+        amount = valid_money(request.data.get("amount"))
+        existing = CustomerCreditAllocation.objects.filter(
+            company_id=request.user.company_id, idempotency_key=key,
+        ).first()
+        if existing:
+            if existing.advance_payment_id != advance.pk or existing.invoice_id != UUID(str(invoice_id)) or existing.amount != amount:
+                raise ValidationError({"idempotency_key": "Request key belongs to a different credit transaction."})
+            return response.Response({
+                "applicationId": str(existing.pk),
+                "advanceId": str(advance.pk),
+                "invoiceId": str(existing.invoice_id),
+                "appliedAmount": str(existing.amount),
+                "reversed": bool(existing.reversed_at),
+                "advanceAvailable": str(available_advance(advance)),
+            }, status=status.HTTP_200_OK)
+        invoice = Invoice.objects.select_for_update().filter(
+            company_id=request.user.company_id, pk=invoice_id,
+            customer_id=advance.customer_id, kind="invoice",
+            finalized_at__isnull=False,
+        ).exclude(status__in=["Draft", "Cancelled"]).first()
+        if not invoice:
+            raise ValidationError({"invoiceId": "Select a finalized invoice for the same customer."})
+        if amount > available_advance(advance):
+            raise ValidationError({"amount": "Credit amount exceeds the customer's available advance."})
+        due = max(Decimal("0.00"), invoice.total - invoice.paid)
+        if amount > due:
+            raise ValidationError({"amount": "Credit amount exceeds the invoice's outstanding balance."})
+        application = CustomerCreditAllocation.objects.create(
+            company_id=request.user.company_id, branch=invoice.branch,
+            advance_payment=advance, invoice=invoice, amount=amount,
+            idempotency_key=key, created_by=request.user,
+        )
+        invoice.paid += amount
+        invoice.balance = max(Decimal("0.00"), invoice.total - invoice.paid)
+        invoice.status = paid_status(invoice)
+        invoice.save(update_fields=["paid", "balance", "status", "updated_at"])
+        if invoice.job_id:
+            record_job_event(
+                invoice.job, request.user, "Customer Credit Applied",
+                f"Advance applied to {invoice.number}", {
+                    "applicationId": str(application.pk), "advanceId": str(advance.pk),
+                    "amount": str(amount),
+                },
+            )
+        return response.Response({
+            "applicationId": str(application.pk),
+            "advanceId": str(advance.pk),
+            "invoiceId": str(invoice.pk),
+            "appliedAmount": str(amount),
+            "invoiceBalance": str(invoice.balance),
+            "invoiceStatus": invoice.status,
+            "advanceAvailable": str(available_advance(advance)),
+        }, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="reverse-advance-application")
+    def reverse_advance_application(self, request, pk=None):
+        """Audited reversal of a credit application; no cash/bank movement."""
+        advance = self._locked_advance(request, pk)
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 5 or len(reason) > 1000:
+            raise ValidationError({"reason": "Provide a reason (5–1000 characters)."})
+        allocation_id = request.data.get("applicationId")
+        try:
+            UUID(str(allocation_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"applicationId": "Select a valid credit allocation."})
+        allocation = CustomerCreditAllocation.objects.select_for_update().filter(
+            company_id=request.user.company_id, pk=allocation_id,
+            advance_payment=advance, invoice__isnull=False,
+        ).first()
+        if not allocation:
+            raise ValidationError({"applicationId": "Credit application was not found."})
+        if allocation.reversed_at:
+            return response.Response({"applicationId": str(allocation.pk), "status": "Reversed"})
+        invoice = Invoice.objects.select_for_update().get(
+            pk=allocation.invoice_id, company_id=request.user.company_id,
+        )
+        if invoice.paid < allocation.amount:
+            raise ValidationError({
+                "invoice": "Invoice paid amount is below this credit application. Reconcile first.",
+            })
+        invoice.paid -= allocation.amount
+        invoice.balance = max(Decimal("0.00"), invoice.total - invoice.paid)
+        invoice.status = paid_status(invoice)
+        invoice.save(update_fields=["paid", "balance", "status", "updated_at"])
+        allocation.reversed_at = timezone.now()
+        allocation.reversed_by = request.user
+        allocation.reversal_reason = reason
+        allocation.save(update_fields=[
+            "reversed_at", "reversed_by", "reversal_reason", "updated_at",
+        ])
+        if invoice.job_id:
+            record_job_event(
+                invoice.job, request.user, "Customer Credit Reversed",
+                f"Credit application reversed on {invoice.number}", {
+                    "applicationId": str(allocation.pk), "reason": reason,
+                },
+            )
+        return response.Response({
+            "applicationId": str(allocation.pk), "status": "Reversed",
+            "invoiceBalance": str(invoice.balance),
+            "advanceAvailable": str(available_advance(advance)),
+        })
+
+    @transaction.atomic
+    @decorators.action(detail=True, methods=["post"], url_path="refund-advance")
+    def refund_advance(self, request, pk=None):
+        """Refund only unspent credit; debit the real account exactly once."""
+        from apps.finance.views import valid_money, account_balance
+        from apps.inventory.models import WorkshopFinancialAccount, WorkshopAccountEntry
+
+        advance = self._locked_advance(request, pk)
+        key = self._credit_request_key(request.data)
+        amount = valid_money(request.data.get("amount"))
+        reason = str(request.data.get("reason") or "").strip()
+        if len(reason) < 5 or len(reason) > 1000:
+            raise ValidationError({"reason": "Provide a refund reason (5–1000 characters)."})
+        existing = CustomerCreditAllocation.objects.select_related(
+            "refund_payment",
+        ).filter(company_id=request.user.company_id, idempotency_key=key).first()
+        if existing:
+            if existing.advance_payment_id != advance.pk or not existing.refund_payment_id or existing.amount != amount:
+                raise ValidationError({"idempotency_key": "Request key belongs to another credit transaction."})
+            return response.Response({
+                "refundId": str(existing.refund_payment_id),
+                "applicationId": str(existing.pk),
+                "reversed": bool(existing.reversed_at),
+                "advanceAvailable": str(available_advance(advance)),
+            })
+        if amount > available_advance(advance):
+            raise ValidationError({"amount": "Refund exceeds unapplied customer advance."})
+        account_id = request.data.get("accountId") or advance.account_id
+        account = WorkshopFinancialAccount.objects.select_for_update().filter(
+            company_id=request.user.company_id, pk=account_id, is_active=True,
+        ).first()
+        if not account:
+            raise ValidationError({"accountId": "Select an active workshop cash/bank account."})
+        if account_balance(account) < amount:
+            raise ValidationError({"amount": "Insufficient funds to refund the customer from this account."})
+        refund = Payment.objects.create(
+            company_id=request.user.company_id, branch=request.user.branch,
+            customer=advance.customer, account=account, invoice=None,
+            amount=amount, date=timezone.localdate(), direction="OUT",
+            method=str(request.data.get("method") or advance.method)[:50],
+            reference=str(request.data.get("reference") or "")[:120],
+            category="Customer Advance Refund", notes=reason,
+            status="Completed", recorded_by=request.user,
+            idempotency_key=f"rf-{key}",
+        )
+        WorkshopAccountEntry.objects.create(
+            company_id=request.user.company_id, branch=request.user.branch,
+            account=account, amount=-amount,
+            entry_type="outgoing_payment",
+            source_key=f"customer_payment_{refund.pk}",
+            reference=f"Refund {refund.pk}", posted_at=timezone.now(),
+            created_by=request.user,
+        )
+        allocation = CustomerCreditAllocation.objects.create(
+            company_id=request.user.company_id, branch=request.user.branch,
+            advance_payment=advance, refund_payment=refund, amount=amount,
+            idempotency_key=key, created_by=request.user,
+        )
+        return response.Response({
+            "refundId": str(refund.pk),
+            "applicationId": str(allocation.pk),
+            "refundedAmount": str(amount),
+            "advanceAvailable": str(available_advance(advance)),
+        }, status=status.HTTP_201_CREATED)
