@@ -2,7 +2,7 @@ from django.urls import path
 
 from .views import GSTRReportView, GSTR2BReconcileView, GSTRCSVExportView
 from .review_api import (
-    GSTR2BHistory, GSTITCApprovals, GSTOutwardCreditNotes, GSTFilingReviews,
+    GSTR2BHistory, GSTITCApprovals, GSTOutwardCreditNotes, GSTFilingReviews, GSTTaxLedger,
 )
 
 urlpatterns = [
@@ -18,4 +18,5 @@ urlpatterns = [
     path("itc", GSTITCApprovals.as_view()),
     path("credit-notes", GSTOutwardCreditNotes.as_view()),
     path("filing-review", GSTFilingReviews.as_view()),
+    path("tax-ledger", GSTTaxLedger.as_view()),
 ]
