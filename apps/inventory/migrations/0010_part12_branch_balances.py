@@ -25,7 +25,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name="StockBranchBalance",
             fields=[
-                ("id", models.UUIDField(primary_key=True, editable=False, default=__import__("uuid").uuid4)),
+                ("id", models.UUIDField(primary_key=True, editable=False, serialize=False, default=__import__("uuid").uuid4)),
                 ("created_at", models.DateTimeField(auto_now_add=True)),
                 ("updated_at", models.DateTimeField(auto_now=True)),
                 ("quantity", models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))),
