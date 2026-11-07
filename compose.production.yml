@@ -2,6 +2,8 @@
 # Copy .env.production.example to private .env; fill all empty secrets first.
 # HTTPS reverse proxy must forward api.example.com to 127.0.0.1:8000.
 # Do NOT put production database secrets inside this YAML.
+# The official PostgreSQL image requires internal POSTGRES_* names, mapped here
+# exclusively from the application-facing DB_* environment variables.
 name: cubegears
 
 services:
@@ -9,9 +11,9 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
-      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${DB_NAME:?Set DB_NAME in .env}
+      POSTGRES_USER: ${DB_USER:?Set DB_USER in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
