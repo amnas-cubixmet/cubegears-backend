@@ -3,7 +3,39 @@ from rest_framework import serializers
 from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit
 
 class StockCategorySerializer(serializers.ModelSerializer):
-    class Meta: model=StockCategory; exclude=("company","branch")
+    parentName=serializers.CharField(source="parent.name",read_only=True,default="")
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        company_id = getattr(getattr(request, "user", None), "company_id", None)
+        parent = attrs.get("parent", self.instance.parent if self.instance else None)
+        name = str(attrs.get("name", self.instance.name if self.instance else "")).strip()
+        if not name:
+            raise serializers.ValidationError({"name": "Category name is required."})
+        if parent:
+            if parent.company_id != company_id:
+                raise serializers.ValidationError({"parent": "Category belongs to another workshop."})
+            if parent.parent_id:
+                raise serializers.ValidationError({"parent": "Select a main category, not another subcategory."})
+            if self.instance and parent.pk == self.instance.pk:
+                raise serializers.ValidationError({"parent": "A category cannot be its own parent."})
+        if self.instance and parent and self.instance.subcategories.exists():
+            raise serializers.ValidationError({
+                "parent": "Move subcategories before converting this main category into a child."
+            })
+        duplicates = StockCategory.objects.filter(company_id=company_id, name__iexact=name)
+        duplicates = duplicates.filter(parent=parent)
+        if self.instance:
+            duplicates = duplicates.exclude(pk=self.instance.pk)
+        if duplicates.exists():
+            raise serializers.ValidationError({"name": "This category already exists at the chosen level."})
+        attrs["name"] = name
+        return attrs
+
+    class Meta:
+        model=StockCategory
+        exclude=("company","branch")
 
 # Supplier validation is now owned by the suppliers app; legacy imports remain stable.
 from apps.suppliers.serializers import SupplierSerializer as SupplierSerializer
