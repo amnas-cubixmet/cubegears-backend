@@ -82,8 +82,8 @@ def user_can_sign_in(user, *, allow_pending_setup=False):
     """All login methods must enforce the same active tenant and role checks."""
     if not user or not user.is_active:
         return False
-    # A pending password setup must never become a usable API session, even
-    # if an imported legacy account has no Employee profile yet.
+    # Pending password setup is not a valid API session, even for legacy
+    # workshop records with no Employee profile.
     if not allow_pending_setup and not user.has_usable_password():
         return False
     if not user.company_id:
@@ -233,10 +233,24 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
     mobile = serializers.CharField(max_length=30)
     email = serializers.EmailField(required=False, allow_blank=True)
     whatsapp_consent = serializers.BooleanField(required=False, default=False)
+    # An owner can securely choose a password at registration without waiting
+    # for a WhatsApp or email delivery channel. Legacy invitation signup remains.
+    password = serializers.CharField(required=False, write_only=True, trim_whitespace=False, max_length=128)
+    confirm_password = serializers.CharField(required=False, write_only=True, trim_whitespace=False, max_length=128)
 
     def validate(self, attrs):
-        if not attrs.get('email') and not attrs.get('whatsapp_consent'):
-            raise serializers.ValidationError({'whatsapp_consent': 'Agree to receive the password setup link through official WhatsApp, or supply an email.'})
+        password = attrs.get("password")
+        confirmation = attrs.pop("confirm_password", None)
+        if password:
+            if password != confirmation:
+                raise serializers.ValidationError({"confirm_password": "Passwords do not match."})
+            validate_password(password)
+        elif confirmation:
+            raise serializers.ValidationError({"password": "Enter a password."})
+        elif not attrs.get("email") and not attrs.get("whatsapp_consent"):
+            raise serializers.ValidationError({
+                "password": "Create a password or choose an authorized password invitation channel."
+            })
         return attrs
 
     def validate_mobile(self, value):
