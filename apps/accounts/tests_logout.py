@@ -3,6 +3,7 @@
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
 from apps.accounts.models import User
 from apps.companies.models import Company
@@ -31,28 +32,28 @@ class LogoutWithExpiredAccessTests(TestCase):
         self.client = APIClient()
 
     def test_logout_revokes_refresh_without_access_header(self):
-        refresh = str(RefreshToken.for_user(self.user))
+        token = RefreshToken.for_user(self.user)
+        refresh = str(token)
         response = self.client.post(
             "/api/v1/auth/logout", {"refresh": refresh}, format="json",
         )
         self.assertEqual(response.status_code, 200, response.data)
-        result = self.client.post(
-            "/api/v1/auth/refresh", {"refresh": refresh}, format="json",
+        # Assert revocation directly; login refresh is separately rate-limited
+        # and could return 429 after other tests using the same client IP.
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=token["jti"]).exists()
         )
-        self.assertEqual(result.status_code, 401, result.data)
 
     def test_invalid_access_header_does_not_prevent_refresh_revocation(self):
-        refresh = str(RefreshToken.for_user(self.user))
+        token = RefreshToken.for_user(self.user)
+        refresh = str(token)
         self.client.credentials(HTTP_AUTHORIZATION="Bearer expired.invalid.jwt")
         response = self.client.post(
             "/api/v1/auth/logout", {"refresh": refresh}, format="json",
         )
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(
-            self.client.post(
-                "/api/v1/auth/refresh", {"refresh": refresh}, format="json",
-            ).status_code,
-            401,
+        self.assertTrue(
+            BlacklistedToken.objects.filter(token__jti=token["jti"]).exists()
         )
 
     def test_repeated_or_missing_refresh_is_idempotent(self):
