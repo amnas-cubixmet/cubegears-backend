@@ -20,6 +20,14 @@ staticfiles/
 .env
 .env.*
 !.env.example
+!.env.production.example
+# Local database exports, secrets and backups are never source code
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.pgdump
+db-backups/
+.backups/
 
 # IDE / Editor
 .vscode/
