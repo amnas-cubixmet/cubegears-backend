@@ -60,6 +60,14 @@ services:
       - "-"
     ports:
       - "127.0.0.1:8000:8000"
+    # Actual Django + PostgreSQL readiness: liveness alone is insufficient.
+    # Only internal loopback access is used and no credentials are exposed.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/ready/', timeout=3).read()"]
+      interval: 15s
+      timeout: 6s
+      start_period: 45s
+      retries: 5
     volumes:
       - media:/var/lib/cubegears/media
       - private-job-media:/var/lib/cubegears/private_job_media

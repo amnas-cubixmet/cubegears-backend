@@ -168,3 +168,14 @@ These commands do not expose secret values.
 
 **Status**: This repository does not provision a cloud Postgres instance,
 migrate existing customer data or configure real credentials automatically.
+
+
+## Part 02: separate production dependencies
+
+- `GET /api/v1/health/` checks web process liveness without contacting the database.
+- `GET /api/v1/ready/` checks PostgreSQL connectivity with a real `SELECT 1`. It responds with HTTP 503 when unavailable.
+- Set `REQUIRE_REDIS_READINESS=True` to additionally require Redis readiness for web traffic. This defaults to False because the web process may remain useful during a noncritical worker outage.
+- `python manage.py verify_production_foundation --require-redis` checks database and Redis plus the writable persistent public/private upload volumes. The command does not mutate customer or workshop records.
+- `POSTGRES_CONNECT_TIMEOUT_SECONDS=10` limits connection attempts. When `DATABASE_URL` already supplies a PostgreSQL `sslmode`, that choice is preserved unless `POSTGRES_SSLMODE` is explicitly set in the environment.
+- `PRIVATE_JOB_MEDIA_ROOT` must not be nested inside public `DJANGO_MEDIA_ROOT` or `STATIC_ROOT`. Invalid paths fail at startup rather than publishing private inspection media.
+- Configure all environment values on backend services only; never put secrets in Vite `VITE_*` variables. Ensure persistent volumes exist before running the preflight command.

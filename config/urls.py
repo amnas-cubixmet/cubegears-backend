@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.search.views import WorkspaceSearchView
 from apps.reports.views import DashboardView
 from apps.saas.views import SettingsView
+from common.readiness import ReadinessView
 
 class HealthView(APIView):
     # Public liveness: no authentication, tenant records or configuration secrets.
@@ -31,6 +32,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("", include("apps.control_panel.urls")),
     path("api/v1/health/", HealthView.as_view(), name="health"),
+    path("api/v1/ready/", ReadinessView.as_view(), name="readiness"),
     path("api/v1/search", WorkspaceSearchView.as_view(), name="workspace-search"),
     path("api/v1/customer-website/", include("apps.customers.website_urls")),
     path("api/v1/", include("apps.customers.portal_urls")),
