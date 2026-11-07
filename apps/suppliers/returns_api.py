@@ -186,7 +186,23 @@ class SupplierDebitNotes(APIView):
             company_id=request.user.company_id, request_key=key,
         ).select_related("bill").first()
         if existing:
-            if existing.bill_id != bill.pk or existing.number != number or existing.reason != reason or existing.date != returned_on:
+            raw_lines = request.data.get("lines")
+            previous_lines = {
+                int(line["lineIndex"]): Decimal(line["quantity"])
+                for line in existing.lines
+            }
+            try:
+                requested_lines = {
+                    int(line["lineIndex"]): quantity(line["quantity"])
+                    for line in raw_lines
+                }
+            except (TypeError, ValueError, KeyError, AttributeError):
+                requested_lines = None
+            if (existing.bill_id != bill.pk or existing.number != number
+                    or existing.reason != reason or existing.date != returned_on
+                    or not isinstance(raw_lines, list)
+                    or len(requested_lines or {}) != len(raw_lines)
+                    or requested_lines != previous_lines):
                 raise ValidationError({"requestKey": "This request key already belongs to a different debit note."})
             return Response(debit_info(existing), status=200)
         if SupplierDebitNote.objects.filter(
@@ -344,7 +360,8 @@ class SupplierRefunds(APIView):
             if (existing.debit_note_id != (note.pk if note else None)
                     or existing.advance_id != (advance.pk if advance else None)
                     or existing.account_id != account.pk
-                    or existing.amount != amount or existing.method != method):
+                    or existing.amount != amount or existing.method != method
+                    or existing.reference != reference or existing.refunded_on != refunded_on):
                 raise ValidationError({"requestKey": "This refund key already belongs to another transaction."})
             return Response(refund_info(existing), status=200)
         available = debit_available(note) if note else advance_available(advance)
