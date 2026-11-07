@@ -4,6 +4,7 @@ from common.models import CompanyOwnedModel
 
 class StockCategory(CompanyOwnedModel):
     name=models.CharField(max_length=120)
+    parent=models.ForeignKey("self",on_delete=models.PROTECT,null=True,blank=True,related_name="subcategories")
     description=models.TextField(blank=True)
     is_active=models.BooleanField(default=True)
     class Meta: ordering=["name"]
