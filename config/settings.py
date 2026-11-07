@@ -139,12 +139,28 @@ TEMPLATES = [{
 WSGI_APPLICATION = "config.wsgi.application"
 
 # Production PostgreSQL (never silently switch the existing SQLite file).
-# Supply either DATABASE_URL OR POSTGRES_HOST / DB / USER / PASSWORD.
+# Supply DATABASE_URL, POSTGRES_* or the equivalent DB_* variables.
+# Never mix these connection credential families in the same environment.
 # Local development remains SQLite unless PostgreSQL is explicitly selected.
 # Production requires PostgreSQL by default; an existing legacy SQLite host can
 # temporarily opt in with ALLOW_LEGACY_PRODUCTION_SQLITE=True during migration.
 DATABASE_URL = (env("DATABASE_URL") or "").strip()
-POSTGRES_HOST = (env("POSTGRES_HOST") or "").strip()
+# DB_* is a supported compatibility format for local PostgreSQL environments.
+# POSTGRES_* remains the canonical format for existing deployments.
+DB_FIELD_NAMES = ("DB_ENGINE", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT")
+POSTGRES_FIELD_NAMES = (
+    "POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_PORT",
+)
+USE_DB_PREFIX = any((env(name) or "").strip() for name in DB_FIELD_NAMES)
+if USE_DB_PREFIX and (DATABASE_URL or any(
+    (env(name) or "").strip() for name in POSTGRES_FIELD_NAMES
+)):
+    raise ImproperlyConfigured(
+        "Configure only one PostgreSQL connection format: DATABASE_URL, POSTGRES_* or DB_*."
+    )
+if USE_DB_PREFIX and (env("DB_ENGINE") or "django.db.backends.postgresql").strip() != "django.db.backends.postgresql":
+    raise ImproperlyConfigured("DB_ENGINE must be django.db.backends.postgresql.")
+POSTGRES_HOST = (env("DB_HOST") if USE_DB_PREFIX else env("POSTGRES_HOST") or "").strip()
 POSTGRES_SSLMODE_RAW = (env("POSTGRES_SSLMODE") or "").strip()
 POSTGRES_SSLMODE = POSTGRES_SSLMODE_RAW or ("require" if not DEBUG else "prefer")
 POSTGRES_CONNECT_TIMEOUT_SECONDS = int(env("POSTGRES_CONNECT_TIMEOUT_SECONDS", 10))
@@ -170,23 +186,29 @@ if DATABASE_URL or POSTGRES_HOST:
         if database["ENGINE"] != "django.db.backends.postgresql":
             raise ImproperlyConfigured("DATABASE_URL must use PostgreSQL (postgresql://).")
     else:
-        required = ["POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"]
+        prefix = "DB" if USE_DB_PREFIX else "POSTGRES"
+        name_key = "DB_NAME" if USE_DB_PREFIX else "POSTGRES_DB"
+        user_key = f"{prefix}_USER"
+        password_key = f"{prefix}_PASSWORD"
+        host_key = f"{prefix}_HOST"
+        port_key = f"{prefix}_PORT"
+        required = [host_key, name_key, user_key, password_key]
         missing = [name for name in required if not (env(name) or "").strip()]
         if missing:
             raise ImproperlyConfigured(
                 "PostgreSQL connection is missing: " + ", ".join(missing)
             )
         try:
-            port = int(env("POSTGRES_PORT", "5432"))
+            port = int(env(port_key, "5432"))
             if not 1 <= port <= 65535:
                 raise ValueError()
         except (TypeError, ValueError) as exc:
-            raise ImproperlyConfigured("POSTGRES_PORT must be a valid TCP port.") from exc
+            raise ImproperlyConfigured(f"{port_key} must be a valid TCP port.") from exc
         database = {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": env("POSTGRES_DB"),
-            "USER": env("POSTGRES_USER"),
-            "PASSWORD": env("POSTGRES_PASSWORD"),
+            "NAME": env(name_key),
+            "USER": env(user_key),
+            "PASSWORD": env(password_key),
             "HOST": POSTGRES_HOST,
             "PORT": port,
             "CONN_MAX_AGE": DB_CONN_MAX_AGE,
