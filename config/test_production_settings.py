@@ -1,9 +1,10 @@
-"""Environment selection tests; no live database, Redis or SMTP required."""
+"""Single DB_* environment contract tests; no live database or broker required."""
 import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,10 +16,10 @@ class ProductionEnvironmentTests(unittest.TestCase):
         for key in (
             "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
             "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_SSLMODE",
-            "DB_ENGINE", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST",
-            "DB_PORT", "DB_CONN_MAX_AGE",
-            "ALLOW_LEGACY_PRODUCTION_SQLITE", "VERCEL", "CELERY_BROKER_URL",
-            "SERVICE_ROLE", "DJANGO_DEBUG", "SQLITE_DATABASE_PATH",
+            "POSTGRES_CONNECT_TIMEOUT_SECONDS", "SQLITE_DATABASE_PATH",
+            "ALLOW_LEGACY_PRODUCTION_SQLITE", "DB_ENGINE", "DB_NAME",
+            "DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT", "DB_CONN_MAX_AGE",
+            "VERCEL", "CELERY_BROKER_URL", "SERVICE_ROLE", "DJANGO_DEBUG",
         ):
             value.pop(key, None)
         value.update({
@@ -31,121 +32,111 @@ class ProductionEnvironmentTests(unittest.TestCase):
         value.update(updates)
         return value
 
-    def probe(self, **updates):
+    def probe(self, expression="settings.DATABASES['default']['ENGINE']", **updates):
         return subprocess.run(
-            [sys.executable, "-c",
-             "from django.conf import settings; print(settings.DATABASES['default']['ENGINE'])"],
+            [sys.executable, "-c", f"from django.conf import settings; print({expression})"],
             env=self.env(**updates), cwd=ROOT, capture_output=True,
             text=True, timeout=20, check=False,
         )
 
-    def test_local_sqlite_remains_supported(self):
-        result = self.probe(DJANGO_DEBUG="True")
+    def postgres(self, **updates):
+        fields = {
+            "DB_ENGINE": "django.db.backends.postgresql",
+            "DB_NAME": "cubixgear_db",
+            "DB_USER": "cubixgear_user",
+            "DB_PASSWORD": "unit-test-only-not-a-real-secret",
+            "DB_HOST": "localhost",
+            "DB_PORT": "5432",
+            "DB_CONN_MAX_AGE": "0",
+        }
+        fields.update(updates)
+        return fields
+
+    def test_local_sqlite_requires_explicit_engine(self):
+        result = self.probe(DJANGO_DEBUG="True", DB_ENGINE="django.db.backends.sqlite3", DB_NAME="db.sqlite3")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("django.db.backends.sqlite3", result.stdout)
 
-    def test_production_cannot_silently_create_sqlite(self):
-        result = self.probe()
+    def test_missing_db_engine_fails_closed(self):
+        result = self.probe(DJANGO_DEBUG="True")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Production needs PostgreSQL", result.stderr)
+        self.assertIn("DB_ENGINE must be set", result.stderr)
 
-    def test_production_postgres_fields_selected_without_connection(self):
+    def test_production_cannot_use_sqlite(self):
+        result = self.probe(DB_ENGINE="django.db.backends.sqlite3", DB_NAME="db.sqlite3")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Production requires DB_ENGINE", result.stderr)
+
+    def test_db_fields_select_postgres_and_zero_connection_age(self):
+        fields = self.postgres()
         result = self.probe(
-            POSTGRES_HOST="postgres", POSTGRES_DB="cubegears",
-            POSTGRES_USER="cubegears", POSTGRES_PASSWORD="test-only-not-real",
-            POSTGRES_SSLMODE="disable",
+            expression="(settings.DATABASES['default']['ENGINE'], settings.DATABASES['default']['CONN_MAX_AGE'])",
+            **fields,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("django.db.backends.postgresql", result.stdout)
+        self.assertIn(", 0)", result.stdout)
 
-    def test_db_prefixed_fields_select_postgresql_with_zero_connection_age(self):
-        result = self.probe(
-            DB_ENGINE="django.db.backends.postgresql",
-            DB_NAME="cubixgear_db", DB_USER="cubixgear_user",
-            DB_PASSWORD="unit-test-not-a-real-password",
-            DB_HOST="localhost", DB_PORT="5432", DB_CONN_MAX_AGE="0",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("django.db.backends.postgresql", result.stdout)
-
-    def test_db_prefix_missing_credentials_fail_closed(self):
-        result = self.probe(DB_ENGINE="django.db.backends.postgresql", DB_HOST="localhost")
+    def test_db_fields_missing_credentials_fail_closed(self):
+        result = self.probe(DB_ENGINE="django.db.backends.postgresql", DB_NAME="cubixgear_db")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("DB_NAME", result.stderr)
-        self.assertIn("DB_USER", result.stderr)
-        self.assertIn("DB_PASSWORD", result.stderr)
+        for field in ("DB_USER", "DB_PASSWORD", "DB_HOST", "DB_PORT"):
+            self.assertIn(field, result.stderr)
 
-    def test_db_prefix_rejects_non_postgres_engine(self):
-        result = self.probe(
-            DB_ENGINE="django.db.backends.sqlite3",
-            DB_HOST="localhost", DB_NAME="test", DB_USER="test", DB_PASSWORD="test",
-        )
+    def test_invalid_port_and_connection_age_fail(self):
+        for changes, expected in (
+            ({"DB_PORT": "65536"}, "DB_PORT"),
+            ({"DB_CONN_MAX_AGE": "-1"}, "DB_CONN_MAX_AGE"),
+            ({"DB_CONN_MAX_AGE": "garbage"}, "DB_CONN_MAX_AGE"),
+        ):
+            with self.subTest(changes=changes):
+                result = self.probe(**self.postgres(**changes))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+
+    def test_invalid_engine_fails(self):
+        result = self.probe(**self.postgres(DB_ENGINE="django.db.backends.mysql"))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("DB_ENGINE must be", result.stderr)
 
-    def test_db_prefix_rejects_mixed_connection_credentials(self):
-        result = self.probe(
-            DB_HOST="localhost", DB_NAME="test", DB_USER="test", DB_PASSWORD="test",
-            POSTGRES_HOST="postgres",
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Configure only one PostgreSQL connection format", result.stderr)
+    def test_old_connection_formats_are_rejected(self):
+        for obsolete in (
+            {"POSTGRES_HOST": "localhost"},
+            {"DATABASE_URL": "postgresql://legacy:legacy@localhost/legacy"},
+            {"SQLITE_DATABASE_PATH": "db.sqlite3"},
+            {"ALLOW_LEGACY_PRODUCTION_SQLITE": "True"},
+        ):
+            with self.subTest(obsolete=tuple(obsolete)):
+                result = self.probe(**self.postgres(**obsolete))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Remove old database environment variables", result.stderr)
 
-    def test_db_prefix_rejects_mixed_database_url(self):
+    def test_external_production_connection_requires_tls(self):
         result = self.probe(
-            DATABASE_URL="postgresql://test:test@localhost:5432/testdb",
-            DB_HOST="localhost",
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Configure only one PostgreSQL connection format", result.stderr)
-
-    def test_production_database_url_selected_without_connection(self):
-        result = self.probe(
-            DATABASE_URL="postgresql://testuser:testpass@localhost:5432/testdb",
-            POSTGRES_SSLMODE="require",
+            expression="settings.DATABASES['default']['OPTIONS']['sslmode']",
+            **self.postgres(DB_HOST="db.example.com"),
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("django.db.backends.postgresql", result.stdout)
+        self.assertIn("require", result.stdout)
 
-    def test_rejects_mixed_database_configuration(self):
-        result = self.probe(
-            DATABASE_URL="postgresql://test:test@localhost:5432/testdb",
-            POSTGRES_HOST="localhost",
-        )
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Configure only DATABASE_URL", result.stderr)
-
-    def test_rejects_sqlite_database_url_in_production(self):
-        result = self.probe(DATABASE_URL="sqlite:////tmp/do-not-create.sqlite3")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("DATABASE_URL must use PostgreSQL", result.stderr)
-
-    def test_legacy_sqlite_requires_explicit_temporary_opt_in(self):
-        result = self.probe(ALLOW_LEGACY_PRODUCTION_SQLITE="True")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("sqlite3", result.stdout)
-
-    def test_worker_requires_broker_even_with_all_billing_flags_off(self):
-        result = self.probe(
-            SERVICE_ROLE="worker",
-            POSTGRES_HOST="postgres", POSTGRES_DB="cubegears",
-            POSTGRES_USER="cubegears", POSTGRES_PASSWORD="not-real",
-        )
+    def test_worker_requires_broker(self):
+        result = self.probe(SERVICE_ROLE="worker", **self.postgres())
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Separate Celery workers", result.stderr)
 
-    def test_committed_templates_never_contain_credentials(self):
+    def test_committed_templates_contain_no_secrets(self):
         local = dotenv_values(ROOT / ".env.example")
         prod = dotenv_values(ROOT / ".env.production.example")
         for values in (local, prod):
             for key in (
-                "EMAIL_HOST_PASSWORD", "RAZORPAY_KEY_SECRET",
+                "DB_PASSWORD", "EMAIL_HOST_PASSWORD", "RAZORPAY_KEY_SECRET",
                 "RAZORPAY_WEBHOOK_SECRET", "WHATSAPP_PLATFORM_ACCESS_TOKEN",
             ):
                 self.assertFalse(values.get(key), key)
+            self.assertEqual(values.get("DB_ENGINE"), "django.db.backends.postgresql")
+            self.assertEqual(values.get("DB_CONN_MAX_AGE"), "0")
         self.assertFalse(prod.get("DJANGO_SECRET_KEY"))
         self.assertFalse(prod.get("JWT_SIGNING_KEY"))
-        self.assertFalse(prod.get("POSTGRES_PASSWORD"))
 
 
 if __name__ == "__main__":
