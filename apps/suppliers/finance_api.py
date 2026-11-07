@@ -331,13 +331,21 @@ def finalize_supplier_bill(request, bill, payment_data=None, payments_data=None)
     # Validate explicitly chosen components before changing any stock or ledger.
     validate_manual_purchase_lines(bill.items)
     if bill.receive_into_stock:
+        from apps.inventory.branch_stock import locked_branch_balance, move_balance
+        from apps.inventory.models import StockBranchBalance
         for row in bill.items:
             item = get_object_or_404(StockItem.objects.select_for_update(),
                 pk=row["itemId"], company_id=request.user.company_id)
-            if item.branch_id and item.branch_id != bill.branch_id:
-                raise ValidationError({"itemId": "Stock item branch no longer matches the purchase."})
+            receive_branch = bill.branch or request.user.branch
+            if item.branch_id and item.branch_id != getattr(receive_branch, "pk", None):
+                if not StockBranchBalance.objects.filter(
+                    company_id=request.user.company_id, item=item, branch=receive_branch,
+                ).exists():
+                    raise ValidationError({"itemId": "Transfer this item into the receiving branch first."})
             count = Decimal(row["quantity"])
             cost = Decimal(row["purchaseRate"])
+            balance = locked_branch_balance(item, receive_branch)
+            move_balance(balance, count)
             item.on_hand += count
             update_fields = ["on_hand", "updated_at"]
             if item.supplier_id is None:
