@@ -3,7 +3,7 @@ import re
 from django.db import transaction
 
 from apps.accounts.permissions import can_delegate
-from rest_framework import decorators, response
+from rest_framework import decorators, response, serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied
