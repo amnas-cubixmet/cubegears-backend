@@ -50,7 +50,8 @@ class EstimateVersionWorkflowTests(TestCase):
         self.user = user
 
     def path(self, suffix):
-        return f"/api/v1/jobs/{self.job.pk}/{suffix}"
+        base = f"/api/v1/jobs/{self.job.pk}"
+        return f"{base}/{suffix}" if suffix else base
 
     def payload(self, *, request_id=None, price="250"):
         data = {
