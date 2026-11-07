@@ -145,7 +145,13 @@ def return_issued_stock(request):
 def count_inventory(request):
     """Physical count posts exactly one signed variance with an audit trail."""
     company = request.user.company
-    qty = quantity(request.data.get("countedQty") or request.data.get("counted_qty")) if str(request.data.get("countedQty") or request.data.get("counted_qty")) not in ("0", "0.00", "0.0") else Decimal("0.00")
+    raw = request.data.get("countedQty", request.data.get("counted_qty"))
+    try:
+        qty = Decimal(str(raw))
+    except (ValueError, TypeError, InvalidOperation):
+        raise ValidationError({"countedQty": "Enter a valid physical quantity."})
+    if not qty.is_finite() or qty < 0 or qty.as_tuple().exponent < -2 or qty > Decimal("99999999.99"):
+        raise ValidationError({"countedQty": "Physical quantity must be nonnegative with at most two decimals."})
     key = stock_request_key(request)
     if not key:
         raise ValidationError({"requestKey": "A unique physical-count request key is required."})
