@@ -75,8 +75,10 @@ class Part17CustomerEstimateTests(TestCase):
         )
         self.quote = JobEstimate.objects.create(
             company=self.company, branch=branch, job=self.job,
-            version=1, status="Draft", total=Decimal("1200.00"),
-            items=[{"description": "Brake repair", "quantity": "1", "unitPrice": "1200"}],
+            version=1, status="Draft", subtotal=Decimal("1200.00"),
+            total=Decimal("1200.00"),
+            items=[{"description": "Brake repair", "type": "Labour",
+                    "quantity": "1", "unitPrice": "1200", "total": "1200"}],
         )
         self.other_quote = JobEstimate.objects.create(
             company=self.company, branch=branch, job=self.other_job,
@@ -120,10 +122,17 @@ class Part17CustomerEstimateTests(TestCase):
         extras = ({
             "HTTP_X_CG_CSRF": self.browser.cookies["cg_portal_csrf"].value,
         } if csrf else {})
+        dashboard = self.browser.get(
+            "/api/v1/customer-website/session", **self.headers(),
+        )
+        quotes = dashboard.data.get("estimates", []) if dashboard.status_code == 200 else []
+        review_hash = next(
+            (q["reviewHash"] for q in quotes if q["id"] == str(quote.pk)), None
+        )
         return self.browser.post(
             f"/api/v1/customer-website/estimates/{quote.pk}/decision",
-            {"decision": decision, "version": version}, format="json",
-            **extras, **self.headers(),
+            {"decision": decision, "version": version, "reviewHash": review_hash},
+            format="json", **extras, **self.headers(),
         )
 
     def test_only_staff_published_quotes_are_visible(self):
@@ -140,7 +149,11 @@ class Part17CustomerEstimateTests(TestCase):
         self.assertEqual(after.data["estimates"][0]["id"], str(self.quote.pk))
         self.assertEqual(after.data["estimates"][0]["total"], "1200.00")
         self.assertNotIn(str(self.other_quote.pk), str(after.data))
-        self.assertNotIn("Brake repair", str(after.data))  # no private raw items
+        self.assertEqual(after.data["estimates"][0]["lines"][0]["description"], "Brake repair")
+        self.assertTrue(after.data["estimates"][0]["reviewable"])
+        self.assertEqual(len(after.data["estimates"][0]["reviewHash"]), 64)
+        self.assertNotIn("_pricing", str(after.data))
+        self.assertNotIn("catalogId", str(after.data))
 
     def test_customer_acceptance_is_idempotent_audited_and_does_not_start_work(self):
         self.login()
