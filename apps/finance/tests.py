@@ -2,6 +2,7 @@
 from decimal import Decimal
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
@@ -192,7 +193,8 @@ class FinanceAccountingTests(TestCase):
         invoice = Invoice.objects.create(
             company=self.company, customer=customer, kind="invoice",
             number="INV-WORKFLOW-1500", date="2026-11-06",
-            status="Finalized", total=Decimal("1500.00"), balance=Decimal("1500.00"),
+            status="Finalized", finalized_at=timezone.now(),
+            total=Decimal("1500.00"), balance=Decimal("1500.00"),
         )
         payload = {
             "customer": str(customer.pk), "invoice": str(invoice.pk),
@@ -233,7 +235,7 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(account_balance(self.cash), Decimal("850.00"))
 
     def test_unlinked_legacy_receipt_disclosed_without_creating_bank_money(self):
-        legacy = Payment.objects.create(
+        Payment.objects.create(
             company=self.company, date="2026-11-06", direction="IN",
             amount=Decimal("100.00"), method="Cash", status="Completed",
             reference="OLD-CASH-RECEIPT", recorded_by=self.owner,
