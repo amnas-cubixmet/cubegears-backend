@@ -21,7 +21,7 @@ from apps.accounts.permissions import RolePermission
 from apps.companies.models import Company
 from apps.inventory.branch_stock import locked_branch_balance, move_balance
 from apps.inventory.models import (
-    StockItem, StockMovement, Supplier, SupplierBill, SupplierDebitApplication,
+    StockItem, StockMovement, SupplierBill, SupplierDebitApplication,
     SupplierDebitNote, SupplierPayment, SupplierPaymentAllocation, SupplierRefund,
     WorkshopAccountEntry,
 )
