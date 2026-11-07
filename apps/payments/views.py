@@ -2,7 +2,6 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
-from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import decorators, response, status
 from rest_framework.exceptions import PermissionDenied
@@ -58,16 +57,21 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 company_id=request.user.company_id, idempotency_key=key,
             ).first()
             if existing:
-                customer = str(request.data.get("customer") or "")
+                from apps.finance.views import valid_money
                 invoice = str(request.data.get("invoice") or "")
+                customer = str(request.data.get("customer") or "")
+                # An invoice-only receipt can derive its customer server-side.
+                if not customer and invoice == str(existing.invoice_id or ""):
+                    customer = str(existing.customer_id or "")
                 account = str(request.data.get("account") or "")
+                amount = valid_money(request.data.get("amount"))
                 if (
                     str(existing.customer_id or "") != customer
                     or str(existing.invoice_id or "") != invoice
                     or str(existing.account_id or "") != account
-                    or str(existing.amount) != str(request.data.get("amount") or "")
-                    and Decimal(str(existing.amount)) != Decimal(str(request.data.get("amount") or "0"))
+                    or existing.amount != amount
                     or existing.direction != str(request.data.get("direction") or "IN")
+                    or existing.method != str(request.data.get("method") or "Cash")
                 ):
                     raise ValidationError({"idempotency_key": "Request key belongs to a different payment."})
                 return response.Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
