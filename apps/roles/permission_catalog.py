@@ -19,6 +19,7 @@ TENANT_PERMISSIONS = sorted({f'{module}.{action}' for module in CRUD_MODULES
     'payroll.payments.record', 'payroll.payments.reverse',
     'payroll.payments.view',
     'payments.reverse',
+    'finance.accounts.balance.view',
 })
 PANEL_MODULES = ['companies', 'users', 'branches', 'roles', 'subscriptions',
                  'plans', 'features', 'requests', 'credits',
