@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import IsCompanyAdmin
 from .models import Company, CompanyDomain, CompanyWebsiteSettings
 from .subdomains import (
-    assign_subdomain, ensure_default_subdomain, subdomain_label,
+    assign_subdomain, ensure_default_subdomain,
 )
 from .vercel_domains import (
     VercelDomainError, VercelDomains, record_domain_event, refresh_domain,
