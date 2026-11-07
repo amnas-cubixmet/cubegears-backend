@@ -11,6 +11,9 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsCompanyAdmin
 from .models import Company, CompanyDomain, CompanyWebsiteSettings
+from .subdomains import (
+    assign_subdomain, ensure_default_subdomain, subdomain_label,
+)
 from .vercel_domains import (
     VercelDomainError, VercelDomains, record_domain_event, refresh_domain,
 )
@@ -51,7 +54,14 @@ class CompanyWebsiteSettingsView(APIView):
     def get(self, request):
         company = request.user.company
         settings_data = SettingsSerializer(self._settings(request)).data
-        settings_data["subdomain"] = company.slug + "." + _root_domain()
+        # A website hostname has its own global reservation and is never the
+        # mutable company name nor the staff-login slug.
+        label = ensure_default_subdomain(company).label
+        settings_data["subdomain"] = label + "." + _root_domain()
+        settings_data["subdomainLabel"] = label
+        settings_data["wildcardReady"] = os.environ.get(
+            "CUSTOMER_WEBSITE_LINKS_ENABLED", ""
+        ).lower() == "true"
         settings_data["hasLogo"] = bool(company.logo_image)
         return Response(settings_data)
 
@@ -62,6 +72,31 @@ class CompanyWebsiteSettingsView(APIView):
         serializer.save()
         return Response(SettingsSerializer(current).data)
 
+
+
+class CompanyWebsiteSubdomainView(APIView):
+    """Workshop owner edits only their public address, not the auth slug."""
+    permission_classes = [IsCompanyAdmin]
+
+    def patch(self, request):
+        requested = request.data.get("label")
+        try:
+            previous = ensure_default_subdomain(request.user.company).label
+            entry = assign_subdomain(request.user.company, requested)
+        except ValueError as exc:
+            return Response({"label": str(exc)}, status=400)
+        return Response({
+            "subdomainLabel": entry.label,
+            "subdomain": entry.label + "." + _root_domain(),
+            "changed": previous != entry.label,
+            "wildcardReady": os.environ.get(
+                "CUSTOMER_WEBSITE_LINKS_ENABLED", ""
+            ).lower() == "true",
+            "message": (
+                "Address changed. Reissue existing customer links that used the previous hostname."
+                if previous != entry.label else "Address is unchanged."
+            ),
+        })
 
 def _domain_payload(domain):
     return {
