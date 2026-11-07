@@ -7,7 +7,6 @@ workshop template, an official connected WABA and a configured Redis worker.
 from celery import shared_task
 from django.conf import settings
 from django.db import transaction
-from django.utils import timezone
 
 from apps.accounts.models import StaffPasswordInvitation
 from apps.accounts.staff_setup import invitation_url, resolve_invitation
