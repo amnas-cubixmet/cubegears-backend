@@ -6,15 +6,14 @@ of truth; internal panel controls and system prerequisites cannot be sold.
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
 from apps.saas.access import FREE_TENANT_MODULES
-from apps.saas.module_groups import (
-    ATTENDANCE_PAYROLL_FEATURE, ATTENDANCE_PAYROLL_MODULES,
-)
+from apps.saas.module_groups import WORKFLOW_PACKAGES
 
 SYSTEM_MODULES = frozenset({"company", "roles"}) | FREE_TENANT_MODULES
 
 DISPLAY_NAMES = {
     "attendance": "Attendance & Punches",
-    ATTENDANCE_PAYROLL_FEATURE: "Attendance & Payroll",
+    "finance": "Accounts",
+    "gstr": "GST Returns",
     "customers": "Customer Management",
     "expenses": "Expense Tracking",
     "invoices": "Invoices & Estimates",
@@ -36,17 +35,19 @@ def module_inventory():
         if not module or not action or module == "panel":
             continue
         by_module.setdefault(module, []).append(permission)
-    # Charge once for Attendance & Payroll. Both retain their existing
-    # independent RBAC permissions and APIs, but one product unlocks both.
-    combined = set()
-    for module in ATTENDANCE_PAYROLL_MODULES:
-        combined.update(by_module.pop(module, []))
-    if combined:
-        by_module[ATTENDANCE_PAYROLL_FEATURE] = sorted(combined)
+    # Discover real permission-backed modules, then sell only related,
+    # non-overlapping workflow packages. Keep each module's original RBAC.
+    for group_key, details in WORKFLOW_PACKAGES.items():
+        combined = set()
+        for member in details["modules"]:
+            combined.update(by_module.pop(member, []))
+        if combined:
+            by_module[group_key] = sorted(combined)
     return [
         {
             "key": module,
-            "label": DISPLAY_NAMES.get(module, module.replace("_", " ").title()),
+            "label": (WORKFLOW_PACKAGES[module]["label"] if module in WORKFLOW_PACKAGES
+                      else DISPLAY_NAMES.get(module, module.replace("_", " ").title())),
             "actions": sorted(actions),
             "billable": module not in SYSTEM_MODULES,
         }
