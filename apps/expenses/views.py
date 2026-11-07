@@ -123,6 +123,17 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
 
     @transaction.atomic
     def perform_create(self, serializer):
+        # A successful POST might be retried after the client loses its
+        # response. Do not create a new Expense before detecting an existing
+        # posted settlement with this request key.
+        key = str(self.request.data.get("idempotencyKey") or "").strip()
+        if key and ExpenseSettlement.objects.filter(
+            company=self.request.user.company, idempotency_key=key,
+        ).exists():
+            raise ValidationError({
+                "idempotencyKey": "This expense payment request was already posted. "
+                                  "Refresh expense history instead of submitting it again."
+            })
         self._validate_purchase_not_duplicate(serializer.validated_data.get("category"))
         desired_status = str(serializer.validated_data.get("status", "Unpaid")).strip().lower()
         account = serializer.validated_data.get("account")
