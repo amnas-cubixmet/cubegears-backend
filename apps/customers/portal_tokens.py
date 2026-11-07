@@ -39,6 +39,7 @@ def issue_link(access):
     import os
     import re
     from apps.companies.models import CompanyDomain
+    from apps.companies.subdomains import subdomain_label
     preferred = CompanyDomain.objects.filter(
         company=access.company, status=CompanyDomain.ACTIVE,
         is_primary=True, is_approved=True,
@@ -51,8 +52,9 @@ def issue_link(access):
     # A workshop subdomain is used only after wildcard DNS and HTTPS are live.
     if os.environ.get("CUSTOMER_WEBSITE_LINKS_ENABLED", "").lower() == "true":
         root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
-        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", access.company.slug):
-            return f"https://{access.company.slug}.{root}/access/{token}"
+        label = subdomain_label(access.company)
+        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
+            return f"https://{label}.{root}/access/{token}"
 
     # Transitional/local fallback is a Next.js /access URL, NEVER the old /c URL.
     base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
