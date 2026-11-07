@@ -75,7 +75,10 @@ class JobSerializer(serializers.ModelSerializer):
     class Meta:
         model=Job
         exclude=("company","branch")
-        read_only_fields=("id","created_at","updated_at","workflow_progress","parts_workflow")
+        # Money is derived from finalized estimates, posted labour and stock
+        # movements, never trusted from a generic browser PATCH.
+        read_only_fields=("id","created_at","updated_at","workflow_progress","parts_workflow",
+                          "estimate_total", "labour_total", "parts_total")
         extra_kwargs={"job_number": {"required": False}}
     def validate(self, attrs):
         """Reject forged cross-tenant assignments and historical owner changes.
