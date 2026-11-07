@@ -15,6 +15,8 @@ class ProductionEnvironmentTests(unittest.TestCase):
         for key in (
             "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_DB",
             "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_SSLMODE",
+            "DB_ENGINE", "DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST",
+            "DB_PORT", "DB_CONN_MAX_AGE",
             "ALLOW_LEGACY_PRODUCTION_SQLITE", "VERCEL", "CELERY_BROKER_URL",
             "SERVICE_ROLE", "DJANGO_DEBUG", "SQLITE_DATABASE_PATH",
         ):
@@ -55,6 +57,47 @@ class ProductionEnvironmentTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("django.db.backends.postgresql", result.stdout)
+
+    def test_db_prefixed_fields_select_postgresql_with_zero_connection_age(self):
+        result = self.probe(
+            DB_ENGINE="django.db.backends.postgresql",
+            DB_NAME="cubixgear_db", DB_USER="cubixgear_user",
+            DB_PASSWORD="unit-test-not-a-real-password",
+            DB_HOST="localhost", DB_PORT="5432", DB_CONN_MAX_AGE="0",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("django.db.backends.postgresql", result.stdout)
+
+    def test_db_prefix_missing_credentials_fail_closed(self):
+        result = self.probe(DB_ENGINE="django.db.backends.postgresql", DB_HOST="localhost")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DB_NAME", result.stderr)
+        self.assertIn("DB_USER", result.stderr)
+        self.assertIn("DB_PASSWORD", result.stderr)
+
+    def test_db_prefix_rejects_non_postgres_engine(self):
+        result = self.probe(
+            DB_ENGINE="django.db.backends.sqlite3",
+            DB_HOST="localhost", DB_NAME="test", DB_USER="test", DB_PASSWORD="test",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("DB_ENGINE must be", result.stderr)
+
+    def test_db_prefix_rejects_mixed_connection_credentials(self):
+        result = self.probe(
+            DB_HOST="localhost", DB_NAME="test", DB_USER="test", DB_PASSWORD="test",
+            POSTGRES_HOST="postgres",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Configure only one PostgreSQL connection format", result.stderr)
+
+    def test_db_prefix_rejects_mixed_database_url(self):
+        result = self.probe(
+            DATABASE_URL="postgresql://test:test@localhost:5432/testdb",
+            DB_HOST="localhost",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Configure only one PostgreSQL connection format", result.stderr)
 
     def test_production_database_url_selected_without_connection(self):
         result = self.probe(
