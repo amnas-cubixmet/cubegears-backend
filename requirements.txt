@@ -16,3 +16,6 @@ cryptography>=44,<48  # encrypted workshop-specific Meta WhatsApp Cloud API toke
 # psycopg uses one driver for Django web, Celery worker and scheduler.
 psycopg[binary]>=3.2,<4
 dj-database-url>=2.3,<4
+
+# Serve collected Django static files behind Gunicorn in production.
+whitenoise>=6.9,<7
