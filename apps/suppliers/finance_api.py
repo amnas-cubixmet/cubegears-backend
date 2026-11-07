@@ -105,9 +105,11 @@ def bill_info(bill):
         "relatedJobId": str(bill.related_job_id) if bill.related_job_id else None,
         "status": status, "postingStatus": bill.status, "items": items,
         "subtotal": str(bill.subtotal), "tax": str(bill.tax),
-        "total": str(bill.total), "paid": str(paid), "outstanding": str(due),
+        "total": str(bill.total.quantize(CENT)), "paid": str(paid.quantize(CENT)),
+        "outstanding": str(due.quantize(CENT)),
         "receiveIntoStock": bill.receive_into_stock,
         "postedAt": bill.posted_at.isoformat() if bill.posted_at else None,
+        "createdAt": bill.created_at.isoformat(),
     }
 
 
@@ -153,7 +155,13 @@ def prepare_items(request, rows, receive_into_stock, tax_context=None):
         gst = money(row.get("gstRate", "0"), "gstRate")
         if gst > 100:
             raise ValidationError({"gstRate": "GST cannot exceed 100%."})
+        update_price = row.get("updateItemPrices") is True
+        selling_price = None
+        if update_price:
+            selling_price = money(row.get("sellingPrice"), "sellingPrice")
         item_id = row.get("itemId")
+        if update_price and not item_id:
+            raise ValidationError({"itemId": "Updating catalog prices requires a stock item."})
         item = None
         if item_id:
             item = get_object_or_404(StockItem, pk=item_id, company_id=request.user.company_id)
@@ -187,6 +195,8 @@ def prepare_items(request, rows, receive_into_stock, tax_context=None):
             "description": description, "partNumber": item.part_number if item else "",
             "sku": item.sku if item else "", "quantity": str(count),
             "purchaseRate": str(cost), "gstRate": str(gst),
+            "updateItemPrices": update_price,
+            **({"sellingPrice": str(selling_price)} if update_price else {}),
             "taxMode": context["taxMode"], "placeOfSupply": context["placeOfSupply"],
             "supplierStateCode": context["supplierStateCode"],
             "gstTreatment": components["gstTreatment"],
@@ -314,7 +324,7 @@ def record_supplier_payment(request, data):
 
 
 
-def finalize_supplier_bill(request, bill, payment_data=None):
+def finalize_supplier_bill(request, bill, payment_data=None, payments_data=None):
     """Post a bill, optional cash settlement and receipt in one DB transaction."""
     if bill.status != "Draft":
         raise ValidationError({"bill": "Supplier bill was already posted; inventory and liability were not posted again."})
@@ -329,7 +339,26 @@ def finalize_supplier_bill(request, bill, payment_data=None):
             count = Decimal(row["quantity"])
             cost = Decimal(row["purchaseRate"])
             item.on_hand += count
-            item.save(update_fields=["on_hand", "updated_at"])
+            update_fields = ["on_hand", "updated_at"]
+            if item.supplier_id is None:
+                # Associate previously unassigned catalog products with the
+                # supplier when a real stock purchase is posted.
+                item.supplier_id = bill.supplier_id
+                update_fields.append("supplier")
+            if row.get("updateItemPrices") is True:
+                item.cost_price = cost
+                item.selling_price = Decimal(row["sellingPrice"])
+                item.tax = Decimal(row["gstRate"])
+                if item.tax == 0 and row.get("gstTreatment") in {
+                    "exempt", "nil_rated", "zero_rated", "non_gst",
+                }:
+                    item.gst_zero_classification = row["gstTreatment"]
+                elif item.tax > 0:
+                    item.gst_zero_classification = ""
+                update_fields.extend([
+                    "cost_price", "selling_price", "tax", "gst_zero_classification",
+                ])
+            item.save(update_fields=update_fields)
             StockMovement.objects.create(
                 company_id=request.user.company_id, branch=bill.branch,
                 item=item, movement_type="purchase", quantity=count,
@@ -342,6 +371,30 @@ def finalize_supplier_bill(request, bill, payment_data=None):
     bill.posted_at = timezone.now()
     bill.save(update_fields=["status", "posted_at", "updated_at"])
     result = bill_info(bill)
+    if payment_data is not None and payments_data is not None:
+        raise ValidationError({"payments": "Use payment or payments, not both."})
+    if payments_data is not None:
+        if not isinstance(payments_data, list) or not (1 <= len(payments_data) <= 5):
+            raise ValidationError({"payments": "Provide 1–5 cash/bank payment splits."})
+        if any(not isinstance(row, dict) for row in payments_data):
+            raise ValidationError({"payments": "Every split must be an object."})
+        total_split = sum(
+            (money(row.get("amount"), "amount", positive=True) for row in payments_data),
+            Decimal("0"),
+        )
+        if total_split > bill.total:
+            raise ValidationError({"payments": "Paid amounts exceed supplier bill total."})
+        posted = []
+        for row in payments_data:
+            if row.get("kind", "Payment") != "Payment" or "allocations" in row:
+                raise ValidationError({"payments": "Split payments must settle this bill, not advances or other bills."})
+            amount = money(row.get("amount"), "amount", positive=True)
+            payload = {
+                **row, "kind": "Payment", "supplierId": str(bill.supplier_id),
+                "allocations": [{"billId": str(bill.pk), "amount": str(amount)}],
+            }
+            posted.append(record_supplier_payment(request, payload))
+        return {**bill_info(bill), "payments": posted}
     if payment_data is not None:
         if not isinstance(payment_data, dict):
             raise ValidationError({"payment": "Payment must be a valid object."})
@@ -500,8 +553,9 @@ class SupplierBillCollection(APIView):
         if request.data.get("postNow") is True:
             return Response(finalize_supplier_bill(
                 request, bill, request.data.get("payment"),
+                request.data.get("payments"),
             ), status=201)
-        if request.data.get("payment") is not None:
+        if request.data.get("payment") is not None or request.data.get("payments") is not None:
             raise ValidationError({"payment": "Immediate payments require postNow=true."})
         return Response(bill_info(bill), status=201)
 
@@ -513,7 +567,7 @@ class SupplierBillPost(APIView):
     @transaction.atomic
     def post(self, request, pk):
         bill = bill_for(request, pk, lock=True)
-        return Response(finalize_supplier_bill(request, bill, request.data.get("payment")))
+        return Response(finalize_supplier_bill(request, bill, request.data.get("payment"), request.data.get("payments")))
 
 
 class SupplierPaymentCollection(APIView):
@@ -521,7 +575,7 @@ class SupplierPaymentCollection(APIView):
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.view", "payments.create"]}
 
     def get(self, request):
-        qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account")
+        qs = SupplierPayment.objects.filter(company_id=request.user.company_id).select_related("supplier", "account", "created_by").prefetch_related("allocations__bill")
         if request.query_params.get("supplier"):
             qs = qs.filter(supplier=supplier_for(request, request.query_params["supplier"]))
         result = []
@@ -529,6 +583,10 @@ class SupplierPaymentCollection(APIView):
             applied = payment.allocations.aggregate(total=Sum("amount"))["total"] or Decimal("0")
             result.append({
                 "id": str(payment.pk), "supplierId": str(payment.supplier_id),
+                "supplierName": payment.supplier.name,
+                "createdAt": payment.created_at.isoformat(),
+                "recordedBy": payment.created_by.name if payment.created_by_id else "",
+                "billReferences": [allocation.bill.invoice_number for allocation in payment.allocations.all()],
                 "accountId": str(payment.account_id), "amount": str(payment.amount),
                 "kind": payment.kind, "method": payment.method,
                 "reference": payment.reference, "paidOn": payment.paid_on.isoformat(),

@@ -269,7 +269,7 @@ class SupplierFinanceTests(TestCase):
         }, format="json")
         self.assertEqual(posted.status_code, 201, getattr(posted, "data", None))
         self.assertEqual(posted.data["postingStatus"], "Posted")
-        self.assertEqual(posted.data["outstanding"], "0")
+        self.assertEqual(posted.data["outstanding"], "0.00")
         self.assertEqual(self.summary()["outstanding"], "0.00")
         self.assertEqual(self.account_balance(), "18000.00")
         self.stock.refresh_from_db()
@@ -476,3 +476,77 @@ class SupplierFinanceTests(TestCase):
         }, format="json")
         self.assertEqual(duplicate_expense.status_code, 400)
         self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+
+    def test_supplier_purchase_split_cash_bank_credit_and_stock_once(self):
+        cash = self.client.post(f"{self.base}/accounts", {
+            "name": "Counter Cash", "kind": "Cash", "openingBalance": "150.00",
+        }, format="json")
+        self.assertEqual(cash.status_code, 201, getattr(cash, "data", None))
+        body = {
+            "supplierId": str(self.supplier.pk),
+            "invoiceNumber": "SPLIT-300-PURCHASE",
+            "invoiceDate": "2026-11-06",
+            "receiveIntoStock": True, "postNow": True,
+            "items": [{
+                "itemId": str(self.stock.pk),
+                "description": "Paint",
+                "quantity": "1", "purchaseRate": "300.00", "gstRate": "0",
+                "sellingPrice": "450.00", "updateItemPrices": True,
+            }],
+            "payments": [
+                {"accountId": cash.data["id"], "amount": "100.00",
+                 "method": "Cash", "kind": "Payment", "paidOn": "2026-11-06",
+                 "idempotencyKey": "split-cash-100-test"},
+                {"accountId": self.account_id, "amount": "100.00",
+                 "method": "Bank Transfer", "kind": "Payment", "paidOn": "2026-11-06",
+                 "idempotencyKey": "split-bank-100-test"},
+            ],
+        }
+        resp = self.client.post(f"{self.base}/bills", body, format="json")
+        self.assertEqual(resp.status_code, 201, getattr(resp, "data", None))
+        self.assertEqual(resp.data["paid"], "200.00")
+        self.assertEqual(resp.data["outstanding"], "100.00")
+        self.assertEqual(len(resp.data["payments"]), 2)
+        self.assertTrue(resp.data["createdAt"])
+        self.assertTrue(resp.data["postedAt"])
+        self.stock.refresh_from_db()
+        self.assertEqual(str(self.stock.on_hand), "3.00")
+        self.assertEqual(str(self.stock.cost_price), "300.00")
+        self.assertEqual(str(self.stock.selling_price), "450.00")
+        self.assertEqual(float(self.stock.tax), 0.0)
+        self.assertEqual(SupplierBill.objects.count(), 1)
+        self.assertEqual(SupplierPayment.objects.count(), 2)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 2)
+        self.assertEqual(self.summary()["outstanding"], "100.00")
+        accounts = self.client.get(f"{self.base}/accounts")
+        self.assertEqual(accounts.status_code, 200)
+        current = {row["id"]: row["recordedBalance"] for row in accounts.data}
+        self.assertEqual(current[cash.data["id"]], "50.00")
+        self.assertEqual(current[self.account_id], "19900.00")
+        retry = self.client.post(f"{self.base}/bills", body, format="json")
+        self.assertEqual(retry.status_code, 400)
+        self.assertEqual(SupplierPayment.objects.count(), 2)
+
+    def test_split_exceeding_total_rolls_back_bill_and_stock_and_ledger(self):
+        start_stock = str(self.stock.on_hand)
+        start_count = WorkshopAccountEntry.objects.count()
+        resp = self.client.post(f"{self.base}/bills", {
+            "supplierId": str(self.supplier.pk),
+            "invoiceNumber": "SPLIT-ROLLBACK-1",
+            "invoiceDate": "2026-11-06",
+            "receiveIntoStock": True, "postNow": True,
+            "items": [{
+                "itemId": str(self.stock.pk), "description": "Paint",
+                "quantity": "1", "purchaseRate": "200.00", "gstRate": "0",
+            }],
+            "payments": [{
+                "accountId": self.account_id, "amount": "250.00",
+                "method": "Bank Transfer", "paidOn": "2026-11-06",
+                "idempotencyKey": "invalid-over-total",
+            }],
+        }, format="json")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(SupplierBill.objects.filter(invoice_number="SPLIT-ROLLBACK-1").exists())
+        self.stock.refresh_from_db()
+        self.assertEqual(str(self.stock.on_hand), start_stock)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), start_count)

@@ -54,11 +54,11 @@ class PaymentViewSet(CompanyScopedModelViewSet):
         if invoice and direction != "IN":
             raise ValidationError({"direction": "Invoice collections must be incoming payments."})
         account = serializer.validated_data.get("account")
-        if direction == "OUT" and not account:
-            raise ValidationError({"account": "Select an account for outgoing payments."})
+        if not account:
+            raise ValidationError({"account": "Select an authorized receiving or paying account."})
         key = serializer.validated_data.get("idempotency_key")
         if key and Payment.objects.filter(company=company, idempotency_key=key).exists():
-            raise ValidationError({"idempotency_key": "This payment has already been recorded."})
+            raise ValidationError({"idempotency_key": "This request was already processed; no duplicate payment was posted."})
         if account:
             from apps.inventory.models import WorkshopFinancialAccount
             from apps.finance.views import account_balance
@@ -86,8 +86,8 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             )
             if locked_invoice.kind != "invoice":
                 raise ValidationError({"invoice": "Payments require an invoice, not an estimate."})
-            if locked_invoice.status == "Cancelled":
-                raise ValidationError({"invoice": "Cannot pay a cancelled invoice."})
+            if locked_invoice.status not in {"Finalized", "Paid", "Partially Paid", "Overdue"} or not locked_invoice.finalized_at:
+                raise ValidationError({"invoice": "Only finalized, non-cancelled invoices can receive customer payments."})
             balance_due = max(Decimal("0"), locked_invoice.total - locked_invoice.paid)
             if amount > balance_due:
                 raise ValidationError({"amount": "Payment exceeds the outstanding invoice balance."})
