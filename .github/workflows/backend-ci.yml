@@ -26,7 +26,7 @@ jobs:
       - name: Verify live database readiness contract and safe 503 responses
         run: python manage.py test common.tests_readiness --noinput
       - name: Validate JWT session revocation for inactive staff and workshops
-        run: python manage.py test apps.accounts.tests_session_revocation --noinput
+        run: python manage.py test apps.accounts.tests_session_revocation apps.accounts.tests_logout --noinput
       - name: Run email, attendance, tenant, billing, and invoice regressions
         run: |
           python manage.py test \
@@ -53,6 +53,7 @@ jobs:
             apps.inventory.tests_supplier_finance \
             apps.inventory.tests_stock_identifiers \
             apps.inventory.tests_part12_stock_ledger \
+            apps.inventory.tests_part13_supplier_returns \
             apps.suppliers \
             apps.jobs.tests_inspection_skip \
             apps.whatsapp.tests_integration \
@@ -121,7 +122,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
+          python manage.py test apps.finance.tests apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.inventory.tests_part13_supplier_returns apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity --noinput
 
 
 

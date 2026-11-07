@@ -95,15 +95,22 @@ class SecureTokenRefreshView(TokenRefreshView):
 
 
 class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
+    # A client must be able to end a session after its access JWT expires,
+    # or after the workshop/role was deactivated. Bearer authentication would
+    # otherwise reject logout with HTTP 401 before the refresh is revoked.
+    # Possession of the refresh JWT is sufficient to blacklist that JWT.
+    authentication_classes = []
+    permission_classes = [AllowAny]
 
     def post(self, request):
         refresh_token = request.data.get("refresh")
-        if refresh_token:
+        if isinstance(refresh_token, str) and 0 < len(refresh_token) <= 8192:
             try:
                 RefreshToken(refresh_token).blacklist()
-            except Exception:
+            except (TokenError, ValueError, TypeError):
+                # Logout is idempotent even for expired/already-revoked tokens.
                 pass
+        # The caller must also remove its stored access/refresh tokens.
         return Response({"message": "Logged out successfully."})
 
 class MeView(APIView):

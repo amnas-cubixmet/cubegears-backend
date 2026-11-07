@@ -81,7 +81,7 @@ class StockBranchBalance(CompanyOwnedModel):
 
 
 class StockMovement(CompanyOwnedModel):
-    TYPES=[(x,x) for x in ["purchase","job_issue","sale","return","transfer_in","transfer_out","adjustment","opening"]]
+    TYPES=[(x,x) for x in ["purchase","job_issue","sale","return","transfer_in","transfer_out","adjustment","opening","purchase_return"]]
     item=models.ForeignKey(StockItem,on_delete=models.PROTECT,related_name="movements")
     request_key=models.CharField(max_length=120,null=True,blank=True,default=None)
     origin_movement=models.ForeignKey("self",on_delete=models.PROTECT,null=True,blank=True,related_name="return_movements")
@@ -223,6 +223,99 @@ class SupplierLinePaymentAllocation(CompanyOwnedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["allocation", "line_index"], name="unique_supplier_bill_line_application",
+            ),
+        ]
+
+
+
+class SupplierDebitNote(CompanyOwnedModel):
+    """Immutable purchase return: payable reduction and/or supplier credit claim."""
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="debit_notes")
+    bill = models.ForeignKey(SupplierBill, on_delete=models.PROTECT, related_name="debit_notes")
+    number = models.CharField(max_length=100)
+    date = models.DateField()
+    reason = models.TextField()
+    lines = models.JSONField(default=list)
+    subtotal = models.DecimalField(max_digits=14, decimal_places=2)
+    tax = models.DecimalField(max_digits=14, decimal_places=2)
+    total = models.DecimalField(max_digits=14, decimal_places=2)
+    payable_reduction = models.DecimalField(max_digits=14, decimal_places=2)
+    credit_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    request_key = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="supplier_debit_notes",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "supplier", "number"], name="unique_supplier_debit_number",
+            ),
+            models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_supplier_debit_request",
+            ),
+        ]
+
+
+class SupplierDebitApplication(CompanyOwnedModel):
+    """Use a debit-note refund claim against a different posted supplier bill."""
+    debit_note = models.ForeignKey(
+        SupplierDebitNote, on_delete=models.PROTECT, related_name="applications",
+    )
+    bill = models.ForeignKey(
+        SupplierBill, on_delete=models.PROTECT, related_name="debit_credit_applications",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    request_key = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_supplier_debit_application",
+            ),
+        ]
+
+
+class SupplierRefund(CompanyOwnedModel):
+    """Cash/bank/UPI refund against unused advance or debit-note credit claim."""
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name="refunds")
+    debit_note = models.ForeignKey(
+        SupplierDebitNote, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="refunds",
+    )
+    advance = models.ForeignKey(
+        SupplierPayment, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="refunds",
+    )
+    account = models.ForeignKey(
+        WorkshopFinancialAccount, on_delete=models.PROTECT, related_name="supplier_refunds",
+    )
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    method = models.CharField(max_length=30)
+    reference = models.CharField(max_length=120, blank=True)
+    refunded_on = models.DateField()
+    request_key = models.CharField(max_length=120)
+    created_by = models.ForeignKey(
+        "accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_supplier_refund_request",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(debit_note__isnull=False, advance__isnull=True)
+                    | models.Q(debit_note__isnull=True, advance__isnull=False)
+                ),
+                name="supplier_refund_exactly_one_source",
             ),
         ]
 

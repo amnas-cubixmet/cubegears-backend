@@ -1,4 +1,5 @@
 from django.urls import path
+from apps.suppliers.returns_api import SupplierDebitNotes, SupplierDebitApply, SupplierRefunds, SupplierPayables
 from .supplier_finance_api import (
     AccountCollection, AccountLedger, SupplierBillCollection, SupplierBillPost,
     SupplierPaymentCollection, SupplierAdvanceApply, SupplierSummary, SupplierLedger,
@@ -20,6 +21,10 @@ urlpatterns = [
     path("procurement/accounts", AccountCollection.as_view(), name="workshop-accounts"),
     path("procurement/accounts/<uuid:pk>/ledger", AccountLedger.as_view(), name="workshop-account-ledger"),
     path("procurement/bills", SupplierBillCollection.as_view(), name="supplier-bills"),
+    path("procurement/debit-notes", SupplierDebitNotes.as_view(), name="supplier-debit-notes"),
+    path("procurement/debit-notes/<uuid:pk>/apply", SupplierDebitApply.as_view(), name="supplier-debit-apply"),
+    path("procurement/refunds", SupplierRefunds.as_view(), name="supplier-refunds"),
+    path("procurement/payables", SupplierPayables.as_view(), name="supplier-payables"),
     path("procurement/bills/<uuid:pk>/post", SupplierBillPost.as_view(), name="supplier-bill-post"),
     path("procurement/payments", SupplierPaymentCollection.as_view(), name="supplier-payments"),
     path("procurement/payments/<uuid:pk>/allocate", SupplierAdvanceApply.as_view(), name="supplier-advance-apply"),
