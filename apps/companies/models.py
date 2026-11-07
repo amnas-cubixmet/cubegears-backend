@@ -75,6 +75,7 @@ class CompanyWebsiteSubdomain(models.Model):
     The unique label is a global namespace shared by all workshop customer
     websites under CUSTOMER_PORTAL_ROOT_DOMAIN. Backfilled for legacy tenants.
     """
+    id = models.BigAutoField(primary_key=True)
     company = models.OneToOneField(
         Company, on_delete=models.CASCADE, related_name="website_subdomain"
     )
