@@ -30,8 +30,8 @@ DEFAULT_OPERATIONS = {"workingStart": "09:00", "workingEnd": "18:30",
 DEFAULT_BILLING = {"invoicePrefix": "INV-", "paymentTermsDays": 0,
                    "defaultTaxRate": 18, "rounding": True}
 
-# Required for NEW signups only. GSTIN, email, GPS and logo remain optional:
-# some workshops are unregistered and some sign up by WhatsApp/mobile.
+# Required for NEW signups only. GSTIN requires an explicit opt-out if
+# unregistered; email, GPS and logo can be omitted for mobile-only workshops.
 REQUIRED_COMPANY_FIELDS = ("name", "legal_name", "phone", "address", "city", "state", "country", "pincode")
 REQUIRED_BRANCH_FIELDS = ("name", "phone", "address", "city", "state", "pincode")
 
@@ -58,6 +58,11 @@ def persisted_setup_errors(company):
     branch = head_branch(company)
     errors = {"company": required_field_errors("company", vars(company)),
               "branch": required_field_errors("branch", vars(branch) if branch else {})}
+    state = setting_data(company, "onboarding")
+    if not state.get("gstNotRegistered") and not company.gstin:
+        errors["company"]["gstin"] = ["Enter a GSTIN or confirm no GST registration."]
+    if state.get("gstNotRegistered") and company.gstin:
+        errors["company"]["gstin"] = ["The GST registration choice does not match saved GSTIN."]
     return {step: fields for step, fields in errors.items() if fields}
 
 
@@ -72,6 +77,7 @@ class CompanySetupForm(serializers.Serializer):
     country = serializers.CharField(required=False, allow_blank=True, max_length=100)
     pincode = serializers.CharField(required=False, allow_blank=True, max_length=12)
     gstin = serializers.CharField(required=False, allow_blank=True, max_length=15)
+    gstNotRegistered = serializers.BooleanField(required=False, default=False)
 
     def validate_gstin(self, value):
         value = value.upper().strip()
@@ -163,7 +169,10 @@ def snapshot(company):
         "completed": bool(state.get("completed") and len(done) == len(STEPS)),
         "completedSteps": done,
         "steps": [{"key": step, "completed": step in done} for step in STEPS],
-        "company": {key: getattr(company, key) for key in fields},
+        "company": {
+            **{key: getattr(company, key) for key in fields},
+            "gstNotRegistered": bool(state.get("gstNotRegistered", False)),
+        },
         "branch": {
             **({key: getattr(branch, key) for key in branch_fields} if branch else
                {"name": "Head Office", "phone": "", "address": "",
@@ -207,15 +216,28 @@ class WorkshopSetupView(APIView):
         values = form.validated_data
         company = Company.objects.select_for_update().get(pk=request.user.company_id)
         branch = head_branch(company)
-        if onboarding_pending(company):
+        pending = onboarding_pending(company)
+        if pending:
             errors = required_field_errors(step, values)
+            if step == "company":
+                if values.get("gstNotRegistered") and values.get("gstin"):
+                    errors["gstin"] = ["Clear GSTIN when confirming no GST registration."]
+                elif not values.get("gstNotRegistered") and not values.get("gstin"):
+                    errors["gstin"] = ["Provide GSTIN or tick No GST registration."]
             if errors:
                 return Response(errors, status=400)
 
         if step == "company":
+            gst_not_registered = values.pop("gstNotRegistered", False)
+            if pending and gst_not_registered:
+                values["gstin"] = ""
             for key, value in values.items():
                 setattr(company, key, value)
             company.save(update_fields=[*values, "updated_at"])
+            if pending:
+                update_setting(company, branch, "onboarding", {
+                    "gstNotRegistered": bool(gst_not_registered),
+                })
         elif step == "branch":
             if branch is None:
                 from apps.saas.access import enforce_branch_limit
