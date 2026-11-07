@@ -221,3 +221,48 @@ class Part14DoubleEntryTests(TestCase):
             "/api/v1/finance/statements/profit-loss",
         ).data["netProfit"], "0.00")
         self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+
+    def test_historical_ledger_backfill_is_explicit_and_idempotent(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from apps.finance.views import account_balance
+
+        # bulk_create intentionally models pre-Part-14 cash entries that
+        # have no automatic accounting journal projection.
+        cash_entry = WorkshopAccountEntry(
+            company=self.company, account=self.bank,
+            amount=Decimal("25.00"), entry_type="manual_adjustment",
+            source_key="historical-part14-opening",
+            posted_at=timezone.now(), created_by=self.owner,
+        )
+        WorkshopAccountEntry.objects.bulk_create([cash_entry])
+        journal_key = "cash:" + str(cash_entry.pk)
+        self.assertFalse(JournalEntry.objects.filter(
+            company=self.company, source_key=journal_key,
+        ).exists())
+        current = account_balance(self.bank)
+        count = JournalEntry.objects.filter(company=self.company).count()
+
+        dry = StringIO()
+        call_command("backfill_finance_journals", company=str(self.company.pk), stdout=dry)
+        self.assertIn('"mode": "dry-run"', dry.getvalue())
+        self.assertEqual(JournalEntry.objects.filter(company=self.company).count(), count)
+
+        first = StringIO()
+        call_command(
+            "backfill_finance_journals", company=str(self.company.pk),
+            apply=True, stdout=first,
+        )
+        self.assertIn('"createdJournals": 1', first.getvalue())
+        self.assertTrue(JournalEntry.objects.filter(
+            company=self.company, source_key=journal_key,
+        ).exists())
+        self.assertEqual(JournalEntry.objects.filter(company=self.company).count(), count + 1)
+        again = StringIO()
+        call_command(
+            "backfill_finance_journals", company=str(self.company.pk),
+            apply=True, stdout=again,
+        )
+        self.assertIn('"createdJournals": 0', again.getvalue())
+        self.assertEqual(account_balance(self.bank), current)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
