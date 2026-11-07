@@ -6,11 +6,15 @@ of truth; internal panel controls and system prerequisites cannot be sold.
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 from apps.saas.models import FeatureGroup, PlanFeature
 from apps.saas.access import FREE_TENANT_MODULES
+from apps.saas.module_groups import (
+    ATTENDANCE_PAYROLL_FEATURE, ATTENDANCE_PAYROLL_MODULES,
+)
 
 SYSTEM_MODULES = frozenset({"company", "roles"}) | FREE_TENANT_MODULES
 
 DISPLAY_NAMES = {
     "attendance": "Attendance & Punches",
+    ATTENDANCE_PAYROLL_FEATURE: "Attendance & Payroll",
     "customers": "Customer Management",
     "expenses": "Expense Tracking",
     "invoices": "Invoices & Estimates",
@@ -32,6 +36,13 @@ def module_inventory():
         if not module or not action or module == "panel":
             continue
         by_module.setdefault(module, []).append(permission)
+    # Charge once for Attendance & Payroll. Both retain their existing
+    # independent RBAC permissions and APIs, but one product unlocks both.
+    combined = set()
+    for module in ATTENDANCE_PAYROLL_MODULES:
+        combined.update(by_module.pop(module, []))
+    if combined:
+        by_module[ATTENDANCE_PAYROLL_FEATURE] = sorted(combined)
     return [
         {
             "key": module,
