@@ -162,3 +162,42 @@ class EstimateVersionWorkflowTests(TestCase):
         from apps.payroll.models import JobWorkSession
         self.assertEqual(StockMovement.objects.filter(job=self.job).count(), 0)
         self.assertEqual(JobWorkSession.objects.filter(job=self.job).count(), 0)
+
+    def test_generic_job_update_cannot_forge_approved_quote_total(self):
+        before = self.job.estimate_total
+        result = self.client.patch(self.path(""), {
+            "estimate_total": "999999.99",
+            "parts_total": "999999.99",
+            "labour_total": "999999.99",
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.estimate_total, before)
+        self.assertEqual(self.job.parts_total, Decimal("0.00"))
+        self.assertEqual(self.job.labour_total, Decimal("0.00"))
+
+    def test_posted_work_service_is_not_deleted_by_generic_job_patch(self):
+        from uuid import uuid4 as new_uuid
+        line = {
+            "id": str(new_uuid()), "requestId": str(new_uuid()),
+            "service": "Brake labour", "customerCharge": "500.00",
+            "workerChargePosted": False,
+        }
+        self.job.status = "In Progress"
+        self.job.work = [line]
+        self.job.workflow_progress = {
+            "completed": ["overview", "inspection", "estimate"],
+        }
+        self.job.save(update_fields=["status", "work", "workflow_progress"])
+        result = self.client.patch(self.path(""), {"work": []}, format="json")
+        self.assertEqual(result.status_code, 400, result.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.work, [line])
+
+    def test_work_cannot_be_posted_before_approval(self):
+        result = self.client.patch(self.path(""), {
+            "work": [{"service": "Unapproved repair", "customerCharge": "800"}],
+        }, format="json")
+        self.assertEqual(result.status_code, 400, result.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.work, [])
