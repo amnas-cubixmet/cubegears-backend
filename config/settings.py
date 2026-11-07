@@ -160,7 +160,7 @@ if USE_DB_PREFIX and (DATABASE_URL or any(
     )
 if USE_DB_PREFIX and (env("DB_ENGINE") or "django.db.backends.postgresql").strip() != "django.db.backends.postgresql":
     raise ImproperlyConfigured("DB_ENGINE must be django.db.backends.postgresql.")
-POSTGRES_HOST = (env("DB_HOST") if USE_DB_PREFIX else env("POSTGRES_HOST") or "").strip()
+POSTGRES_HOST = ((env("DB_HOST") if USE_DB_PREFIX else env("POSTGRES_HOST")) or "").strip()
 POSTGRES_SSLMODE_RAW = (env("POSTGRES_SSLMODE") or "").strip()
 POSTGRES_SSLMODE = POSTGRES_SSLMODE_RAW or ("require" if not DEBUG else "prefer")
 POSTGRES_CONNECT_TIMEOUT_SECONDS = int(env("POSTGRES_CONNECT_TIMEOUT_SECONDS", 10))
