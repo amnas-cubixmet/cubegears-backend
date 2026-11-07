@@ -2,12 +2,14 @@
 from decimal import Decimal
 
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.invoices.models import Invoice
+from apps.inventory.models import WorkshopFinancialAccount
 from apps.payments.models import Payment
 from apps.roles.models import Role
 
@@ -36,12 +38,17 @@ class CustomerPaymentReversalTests(TestCase):
         )
         self.company.owner = self.owner
         self.company.save(update_fields=["owner"])
+        self.cash = WorkshopFinancialAccount.objects.create(
+            company=self.company, name="Collection Cash", kind="Cash",
+            opening_balance=Decimal("0.00"), created_by=self.owner,
+        )
         self.customer = Customer.objects.create(
             company=self.company, name="Rahul", phone="+919876543210",
         )
         self.invoice = Invoice.objects.create(
             company=self.company, customer=self.customer, number="PAY-INV-1",
-            kind="invoice", status="Finalized", date="2026-11-05",
+            kind="invoice", status="Finalized", finalized_at=timezone.now(),
+            date="2026-11-05",
             total=Decimal("1000"), balance=Decimal("1000"),
         )
         self.client = APIClient()
@@ -51,7 +58,7 @@ class CustomerPaymentReversalTests(TestCase):
         result = self.client.post("/api/v1/payments", {
             "customer": str(self.customer.pk), "invoice": str(self.invoice.pk),
             "date": "2026-11-05", "amount": "1000.00",
-            "method": "Cash", "status": "Completed",
+            "method": "Cash", "account": str(self.cash.pk), "status": "Completed",
         }, format="json")
         self.assertEqual(result.status_code, 201, getattr(result, "data", None))
         self.invoice.refresh_from_db()
