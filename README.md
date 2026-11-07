@@ -150,20 +150,27 @@ VITE_USE_MOCK_API=false
 
 The frontend already sends `Authorization: Bearer <access-token>`.
 
-## Database — SQLite only
+## Database — SQLite locally; PostgreSQL for production
 
-CubixGear now uses a SQLite database file by default, at `db.sqlite3` in the backend folder. No Prisma or PostgreSQL connection variables are needed.
+Local development continues using the existing SQLite file (no data is deleted).
+For live production, use managed PostgreSQL or the supplied
+[separate-service deployment guide](docs/production-postgres-celery.md).
 
-```env
-# optional; leave unset for ./db.sqlite3 during local development
-SQLITE_DATABASE_PATH=/var/lib/cubixgear/db.sqlite3
-```
+- `.env.example`: safe local SQLite + Redis development values.
+- `.env.production.example` / `ENV.production.example.txt`: sanitized production credentials template.
+- `compose.production.yml`: PostgreSQL, Redis, Django Gunicorn, Celery worker and optional one Beat.
+- `scripts/check_production_config.py`: read-only security/database/Redis preflight.
 
-Use `python manage.py migrate` to create/update tables. Do not add `db.sqlite3` to Git; it is ignored.
+Production defaults to PostgreSQL; existing SQLite-only servers must **first**
+migrate data or explicitly set `ALLOW_LEGACY_PRODUCTION_SQLITE=True`
+temporarily to avoid an unsafe surprise database switch.
+**Changing the database URL never migrates historical workshop records.**
+Use staging backups and reconcile invoices, supplier credits, customer
+balances, payroll, stock and ledger before changing production.
 
-For a live business backend, use a **single Django application instance** on a server that has durable writable storage (for example, a VPS with a persistent disk). Mount the database path outside the deployment source tree and schedule safe SQLite backups, including restore tests. SQLite permits many readers but only one writer at a time; it is not a replacement for a distributed database with many concurrent workers.
-
-**Vercel Functions cannot persist a live SQLite database.** Keep the React/Vite frontend on Vercel, but host Django on a VPS or another service with a persistent volume. Deployment with `VERCEL=1` and `DJANGO_DEBUG=False` intentionally fails rather than risking data loss.
+The React/Vite frontend stays separate (for example on Vercel) and uses
+`VITE_API_URL=https://YOUR_BACKEND/api/v1`; no database credentials
+belong in the frontend environment.
 
 ## Security notes
 
