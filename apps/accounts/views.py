@@ -10,6 +10,8 @@ from rest_framework.throttling import AnonRateThrottle
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .models import MagicLink
 from .staff_setup import issue_invitation, invitation_url, resolve_invitation, consume_invitation
@@ -66,6 +68,32 @@ class LoginView(APIView):
         serializer.is_valid(raise_exception=True)
         return Response(issue_tokens(serializer.validated_data["user"]))
 
+class SecureTokenRefreshView(TokenRefreshView):
+    """Reject refreshes for disabled workshops, revoked roles or inactive staff.
+
+    A stored refresh JWT must never revive a staff login after access is
+    disabled. SimpleJWT still performs its usual revocation and rotation checks.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
+
+    def post(self, request, *args, **kwargs):
+        raw = request.data.get("refresh")
+        if not isinstance(raw, str) or not 0 < len(raw) <= 8192:
+            return Response({"detail": "Invalid or expired session."}, status=401)
+        try:
+            refresh = RefreshToken(raw)
+            user = User.objects.select_related("company", "role").filter(
+                pk=refresh.get("user_id")
+            ).first()
+        except (TokenError, ValueError, TypeError):
+            return Response({"detail": "Invalid or expired session."}, status=401)
+        if not user or not user.has_usable_password() or not user_can_sign_in(user):
+            return Response({"detail": "Account access is no longer active."}, status=401)
+        return super().post(request, *args, **kwargs)
+
+
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -83,6 +111,8 @@ class MeView(APIView):
 
     def get(self, request):
         user = request.user
+        if not user_can_sign_in(user):
+            return Response({"detail": "Account access is no longer active."}, status=403)
         return Response(UserSerializer(user).data)
 
 class ForgotPasswordView(APIView):
@@ -274,7 +304,7 @@ class PublicWorkshopSignupView(APIView):
 
         user = User.objects.create_user(
             email=data.get("email") or None,
-            password=None,
+            password=data.get("password"),
             name=data["owner_name"].strip(),
             phone=data["mobile"].strip(),
             company=company,
@@ -285,8 +315,9 @@ class PublicWorkshopSignupView(APIView):
             is_superuser=False,
             email_verified=False,
         )
-        user.set_unusable_password()
-        user.save(update_fields=["password"])
+        if not data.get("password"):
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
 
         company.owner = user
         company.save(update_fields=["owner", "updated_at"])
@@ -298,26 +329,33 @@ class PublicWorkshopSignupView(APIView):
             employee.whatsapp_consent_source = 'Explicit consent during workshop registration'
             employee.save(update_fields=['whatsapp_consent', 'whatsapp_consent_source', 'updated_at'])
 
-        invitation = issue_invitation(user)
-        setup_url = invitation_url(invitation)
-        # Email remains supported. Mobile-only registration needs an official,
-        # independently configured platform WhatsApp/SMS sender to deliver the
-        # invite: do not leak a bearer link back to an anonymous signup caller.
-        if user.email:
-            queue_email(
-                subject="Set up your CubeGears password",
-                message="Welcome to CubeGears. Complete your workshop account setup using the secure link.",
-                recipient_list=[user.email],
-                action_url=setup_url, action_label="Set up password",
-            )
+        if data.get("password"):
+            # Never create or expose a bearer setup link after a strong owner
+            # password is established. The owner signs in normally with mobile.
+            delivery = "password_created"
+            message = "Workshop created. Sign in with your mobile number and password."
         else:
-            from apps.whatsapp.staff_invites import queue_platform_owner_invitation
-            transaction.on_commit(lambda: queue_platform_owner_invitation(invitation.pk))
+            invitation = issue_invitation(user)
+            setup_url = invitation_url(invitation)
+            # Preserve existing one-use email / official platform WhatsApp
+            # delivery for older clients that do not submit a password.
+            if user.email:
+                queue_email(
+                    subject="Set up your CubeGears password",
+                    message="Welcome to CubeGears. Complete your workshop account setup using the secure link.",
+                    recipient_list=[user.email],
+                    action_url=setup_url, action_label="Set up password",
+                )
+            else:
+                from apps.whatsapp.staff_invites import queue_platform_owner_invitation
+                transaction.on_commit(lambda: queue_platform_owner_invitation(invitation.pk))
+            delivery = "email_queued" if user.email else "platform_whatsapp_pending"
+            message = "Workshop created. Your secure password invitation will be sent through the configured delivery channel."
 
         return Response(
             {
-                "message": "Workshop account created. Your password setup invitation will be delivered to the registered contact when a delivery channel is configured.",
-                "setupDelivery": "email_queued" if user.email else "platform_whatsapp_pending",
+                "message": message,
+                "setupDelivery": delivery,
                 "workshop": {
                     "id": str(company.id),
                     "name": company.name,

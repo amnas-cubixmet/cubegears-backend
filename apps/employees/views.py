@@ -186,14 +186,21 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         if not user.role_id or user.role.is_system or not user.role.is_active:
             raise ValidationError({"role": "A valid non-admin staff login role is required."})
         record = issue_invitation(user, issuer=self.request.user)
-        record.delivery_status = "manual"
-        record.save(update_fields=["delivery_status"])
+        from django.conf import settings
+        if getattr(settings, "STAFF_WHATSAPP_AUTO_SEND_ENABLED", False):
+            from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
+            delivery = queue_staff_whatsapp_invitation(record, employee)
+        else:
+            delivery = "manual"
+            record.delivery_status = "manual"
+            record.save(update_fields=["delivery_status"])
         employee._setup_link = invitation_url(record)
-        employee._whatsapp_invite_status = "manual"
+        employee._whatsapp_invite_status = delivery
         _record_activity(
             employee, "Staff Password Invitation Created",
-            "A one-use, 24-hour setup link is ready for authorized manual sharing.",
+            "A one-use, 24-hour secure setup link was issued for authorized delivery.",
             self.request.user,
+            {"delivery": delivery},
         )
         return record
 
@@ -493,7 +500,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 raise ValidationError({"replace": "Provide a boolean replace value."})
             recent = StaffPasswordInvitation.objects.select_for_update().filter(
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
-                expires_at__gt=timezone.now(), delivery_status="manual",
+                expires_at__gt=timezone.now(),
+                delivery_status__in=["manual", "queued", "sending", "sent", "failed"],
             ).order_by("-created_at").first()
             cooldown = timedelta(seconds=60)
             should_reuse = bool(recent and (
@@ -509,9 +517,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({"invite": "Too many replacement links. Try again later."})
                 invite = self._issue_staff_invitation(obj, user)
                 url = obj._setup_link
-            delivery = "manual"
+            delivery = invite.delivery_status
         return response.Response({
-            "message": "Manual setup link ready for sharing.",
+            "message": "Secure password setup link ready. WhatsApp status: " + delivery + ".",
             "setupLink": url, "expiresAt": invite.expires_at,
             "whatsappInviteStatus": delivery,
             "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
