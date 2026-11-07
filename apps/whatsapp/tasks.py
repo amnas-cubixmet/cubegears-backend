@@ -221,6 +221,10 @@ def remind_open_estimates():
                 "estimate_reminder", event_key, quote.job.customer, quote.job
             ):
                 continue
+            if WhatsAppNotificationLog.objects.filter(
+                company=conn.company, idempotency_key=event_key
+            ).exists():
+                continue
             log = queue_customer_notification(
                 quote.job.customer, "estimate_reminder", event_key, job=quote.job
             )
