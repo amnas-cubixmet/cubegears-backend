@@ -196,44 +196,134 @@ def hsn_summary(invoices):
 
 
 def prepare(company, period):
+    """Generate provisional GST snapshots, credit notes and approved tax review.
+
+    No official filing or portal electronic credit/cash ledger is inferred.
+    Output and inputs preserve original posted documents; returned documents
+    are separate signed components posted in the note's date period.
+    """
+    from .models import (
+        GSTR2BImport, GSTInputTaxClaim, GSTInputTaxReversal,
+        GSTFilingReview, GSTSalesCreditNote,
+    )
+    from .itc import credit_totals
+
     sales, sales_issues, invoices = outward_rows(company, period)
     purchases, purchase_issues = inward_rows(company, period)
     hsn, hsn_issues = hsn_summary(invoices)
-    totals = _totals(sales)
-    output_gst = sum((amount(totals[k]) for k in ("cgst", "sgst", "igst")), ZERO)
+    gross_totals = _totals(sales)
+    notes = list(GSTSalesCreditNote.objects.filter(
+        company=company,
+        date__gte=period["from"], date__lte=period["to"],
+    ).select_related("invoice").order_by("-date", "-created_at"))
+    note_rows = [{
+        "id": str(note.pk), "number": note.number, "date": note.date.isoformat(),
+        "invoiceId": str(note.invoice_id), "invoiceNumber": note.invoice.number,
+        "reason": note.reason,
+        "taxable": money(note.taxable), "cgst": money(note.cgst),
+        "sgst": money(note.sgst), "igst": money(note.igst),
+        "total": money(note.taxable + note.cgst + note.sgst + note.igst),
+    } for note in notes]
+    notes_totals = _totals(note_rows)
+    net_totals = {
+        key: money(amount(gross_totals[key]) - amount(notes_totals[key]))
+        for key in ("taxable", "cgst", "sgst", "igst", "total")
+    }
+    output_gst = sum((amount(net_totals[k]) for k in ("cgst", "sgst", "igst")), ZERO)
     purchase_gst = sum((amount(row["tax"]) for row in purchases), ZERO)
+    credits = credit_totals(company, period["period"])
+    approved = sum(credits["claimed"].values(), ZERO)
+    reversed_itc = sum(credits["reversed"].values(), ZERO)
+    import_batches = GSTR2BImport.objects.filter(company=company, period=period["period"])
+    review = GSTFilingReview.objects.filter(company=company, period=period["period"]).first()
+    approved_items = GSTInputTaxClaim.objects.filter(company=company, period=period["period"])
+    reversed_items = GSTInputTaxReversal.objects.filter(company=company, period=period["period"])
     issues = sales_issues + purchase_issues + hsn_issues
     if not str(company.gstin or "").strip():
-        issues.append({"type": "missing_registration", "record": "",
-                       "message": "Workshop GSTIN is missing. Select a valid registered entity."})
-    # Neither a saved ITC eligibility decision nor reverse-charge ledger exists
-    # in the audited source models. The net figure is therefore deliberately null.
+        issues.append({
+            "type": "missing_registration", "record": "",
+            "message": "Workshop is not GST registered. Return totals are preparation only.",
+        })
+    if any(row.get("classification") == "Review Required" for row in sales):
+        issues.append({
+            "type": "customer_gstin_review", "record": "",
+            "message": "B2B/B2C classification includes historical unverified customers.",
+        })
+    if not import_batches.exists() and purchases:
+        issues.append({
+            "type": "missing_2b_evidence", "record": "",
+            "message": "No official GSTR-2B evidence is saved for this period.",
+        })
     warnings = [
-        "GSTR-1 Table 13 document summary, notes and amendments require manual portal review.",
-        "HSN line-tax snapshots are unavailable; HSN taxable values are previews only.",
-        "Eligible ITC, reversals, reverse charge and cash ledger are not established from purchase tax totals.",
-        "This workspace does not submit GST returns or confirm filing.",
+        "GSTR-1 amendments, HSN item-wise tax heads and document sequence summary require statutory review.",
+        "Sales credit notes in this preparation record do not automatically refund customers or change invoices.",
+        "ITC is counted only after an authorized 2B-matched review; statutory ITC restrictions remain the reviewer's responsibility.",
+        "GSTR-3B utilization rules, reverse-charge tax, interest, prior-period adjustments and portal cash/credit balances require separate verification.",
+        "This workspace cannot submit to or verify status on the official GST Portal.",
     ]
+    # This is NOT an official or payable liability calculation.
+    provisional_gap = output_gst - approved + reversed_itc
+    filing = {
+        "status": review.status if review else "Not Reviewed",
+        "verified": False, "portalVerified": False,
+        "reference": review.reference if review else "",
+        "filedOn": review.filed_on.isoformat() if review and review.filed_on else None,
+    }
     return {
         "period": period["period"], "financialYear": period["financialYear"],
-        "company": {"name": company.legal_name or company.name, "gstin": company.gstin or ""},
+        "company": {
+            "name": company.legal_name or company.name,
+            "gstin": company.gstin or "", "registered": bool(company.gstin),
+        },
         "overview": {
-            **totals,
+            **net_totals,
+            "grossOutputGST": money(sum((
+                amount(gross_totals[k]) for k in ("cgst", "sgst", "igst")
+            ), ZERO)),
             "outputGST": money(output_gst),
+            "salesCreditTax": money(sum((
+                amount(notes_totals[k]) for k in ("cgst", "sgst", "igst")
+            ), ZERO)),
             "purchaseGST": money(purchase_gst),
-            "eligibleITC": None, "estimatedNetLiability": None,
-            "verifiedPurchaseTax": money(sum((amount(r["tax"]) for r in purchases if r["taxVerified"]), ZERO)),
+            "eligibleITC": money(approved),
+            "reversedITC": money(reversed_itc),
+            "indicativeGapBeforeUtilization": money(provisional_gap),
+            "estimatedNetLiability": None,
+            "verifiedPurchaseTax": money(sum((
+                amount(row["tax"]) for row in purchases if row["taxVerified"]
+            ), ZERO)),
             "invoiceCount": len(sales), "purchaseCount": len(purchases),
+            "salesCreditNotesCount": len(notes),
+            "itcClaimCount": approved_items.count(),
+            "itcReversalCount": reversed_items.count(),
+            "saved2BImports": import_batches.count(),
         },
-        "gstr1": {"rows": sales, "totals": totals},
+        "gstr1": {
+            "rows": sales, "totals": gross_totals,
+            "creditNotes": note_rows, "creditTotals": notes_totals,
+            "netTotals": net_totals,
+        },
         "gstr3b": {
-            "outwardTaxable": totals["taxable"], "outputCGST": totals["cgst"],
-            "outputSGST": totals["sgst"], "outputIGST": totals["igst"],
-            "eligibleITC": None, "reversedITC": None,
+            "outwardTaxable": net_totals["taxable"],
+            "outputCGST": net_totals["cgst"],
+            "outputSGST": net_totals["sgst"],
+            "outputIGST": net_totals["igst"],
+            "eligibleITC": money(approved), "reversedITC": money(reversed_itc),
+            "approvedITCByHead": {key: money(value) for key, value in credits["claimed"].items()},
+            "reversedITCByHead": {key: money(value) for key, value in credits["reversed"].items()},
             "reverseCharge": None, "estimatedNetLiability": None,
+            "indicativeGapBeforeUtilization": money(provisional_gap),
+            "provisional": True,
         },
-        "gstr2b": {"purchases": purchases, "imported": False},
+        "gstr2b": {
+            "purchases": purchases, "imported": import_batches.exists(),
+            "savedImportCount": import_batches.count(),
+        },
+        "itc": {
+            "claimed": [str(v) for v in credits["claimed"].values()],
+            "claimedByHead": {key: money(v) for key, v in credits["claimed"].items()},
+            "reversedByHead": {key: money(v) for key, v in credits["reversed"].items()},
+        },
         "hsn": {"rows": hsn, "provisional": True},
-        "issues": issues, "warnings": warnings,
-        "filing": {"status": "Not Prepared", "verified": False},
+        "issues": issues, "warnings": warnings, "filing": filing,
     }
