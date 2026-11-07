@@ -9,7 +9,6 @@ import re
 
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
 from apps.companies.models import Company
