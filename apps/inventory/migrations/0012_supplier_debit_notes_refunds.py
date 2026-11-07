@@ -12,6 +12,17 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.AlterField(
+            model_name="stockmovement",
+            name="movement_type",
+            field=models.CharField(
+                max_length=30,
+                choices=[(name, name) for name in [
+                    "purchase", "job_issue", "sale", "return", "transfer_in",
+                    "transfer_out", "adjustment", "opening", "purchase_return",
+                ]],
+            ),
+        ),
         migrations.CreateModel(
             name="SupplierDebitNote",
             fields=[
