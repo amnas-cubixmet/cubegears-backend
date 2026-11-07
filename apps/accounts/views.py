@@ -321,6 +321,13 @@ class PublicWorkshopSignupView(APIView):
 
         company.owner = user
         company.save(update_fields=["owner", "updated_at"])
+        # Newly registered owners resume setup after signing in; existing
+        # workshops without this record retain their current workspace.
+        from apps.saas.models import CompanySetting
+        CompanySetting.objects.create(
+            company=company, branch=branch, category="onboarding",
+            data={"required": True, "completed": False, "completedSteps": []},
+        )
 
         # Create the staff identity without granting a free attendance entitlement.
         employee = resolve_employee_for_user(user)
