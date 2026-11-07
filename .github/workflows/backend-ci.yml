@@ -64,6 +64,7 @@ jobs:
             apps.suppliers \
             apps.jobs.tests_inspection_skip \
             apps.whatsapp.tests_integration \
+            apps.whatsapp.tests_part19_estimate_notifications \
             apps.search.tests \
             apps.companies.tests_logo_upload \
             apps.companies.tests_onboarding \
