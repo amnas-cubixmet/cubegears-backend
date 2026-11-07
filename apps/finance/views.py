@@ -114,7 +114,8 @@ class FinanceDashboard(FinanceBalanceRedactionMixin, APIView):
     permission_map = {"GET": ["payments.view"]}
 
     def get(self, request):
-        from apps.inventory.models import SupplierBill, SupplierPaymentAllocation
+        from apps.inventory.models import SupplierBill
+        from apps.suppliers.returns_api import bill_due
         from apps.invoices.models import Invoice, InvoiceItem
         company = request.user.company
         period = request.query_params.get("period", "all")
@@ -163,10 +164,7 @@ class FinanceDashboard(FinanceBalanceRedactionMixin, APIView):
         posted_bills = SupplierBill.objects.filter(company=company, status="Posted")
         supplier_outstanding = Decimal("0")
         for bill in posted_bills:
-            paid = SupplierPaymentAllocation.objects.filter(
-                company_id=company.id, bill=bill
-            ).aggregate(v=Sum("amount"))["v"] or Decimal("0")
-            supplier_outstanding += max(Decimal("0"), bill.total - paid)
+            supplier_outstanding += bill_due(bill)
 
         # Partial settlements reduce outstanding expense liabilities without
         # losing the unpaid remainder from the dashboard.
