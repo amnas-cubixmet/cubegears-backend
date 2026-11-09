@@ -428,9 +428,23 @@ class SettingsView(APIView):
         payload = request.data
         if not isinstance(payload, dict):
             return response.Response({"message": "A settings object is required."}, status=400)
+        redundant_profile_keys = set()
         if category == "document_templates":
-            from apps.invoices.template_settings import validated_settings
+            from apps.invoices.template_settings import (
+                company_template_defaults, validated_settings,
+            )
             payload = validated_settings(payload)
+            # The GET response includes live workshop details. Do not freeze
+            # those inherited values as template overrides when saving styling.
+            inherited = company_template_defaults(request.user.company)
+            redundant_profile_keys = {
+                key for key, value in payload.items()
+                if key in inherited and value == inherited[key]
+            }
+            payload = {
+                key: value for key, value in payload.items()
+                if key not in redundant_profile_keys
+            }
         if category == "company":
             # Reject unknown keys rather than silently saving shadow company data.
             allowed = set(CompanyAccountSettingsSerializer().fields) | {"timezone", "dateFormat"}
@@ -474,7 +488,11 @@ class SettingsView(APIView):
         )
         # Account profile editor sends only five company fields; preserve other
         # previously saved company locale and document preferences.
-        setting.data = {**setting.data, **payload}
+        updated_data = dict(setting.data or {})
+        if category == "document_templates":
+            for key in redundant_profile_keys:
+                updated_data.pop(key, None)
+        setting.data = {**updated_data, **payload}
         setting.save(update_fields=["data", "updated_at"])
         return self.get(request, category)
 
