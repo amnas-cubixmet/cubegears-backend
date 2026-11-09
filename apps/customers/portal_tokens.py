@@ -34,12 +34,26 @@ def issue_link(access):
     token = _token(access)
     if not hmac.compare_digest(digest(token), access.token_hash or ""):
         raise ValueError("Tracking link cannot be recovered. Regenerate it.")
-    # Prefer a tenant's VERIFIED primary custom domain (the public website root).
-    # Never send customer links through the Company Panel's obsolete /c/:token route.
     import os
     import re
+    from urllib.parse import urlsplit
     from apps.companies.models import CompanyDomain
     from apps.companies.subdomains import subdomain_label
+
+    # Development links must stay on the exact local workshop website.
+    # Do this BEFORE production-domain checks: enabling the production wildcard
+    # feature flag in a local environment must not send customers to production.
+    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
+    if settings.DEBUG:
+        parsed = urlsplit(base)
+        label = subdomain_label(access.company)
+        if (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+                and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):
+            port = f":{parsed.port}" if parsed.port else ""
+            return f"http://{label}.localhost{port}/access/{token}"
+
+    # For deployed websites, prefer the workshop's verified primary domain.
+    # No links should go through the obsolete Company Panel /c/:token route.
     preferred = CompanyDomain.objects.filter(
         company=access.company, status=CompanyDomain.ACTIVE,
         is_primary=True, is_approved=True,
@@ -49,25 +63,13 @@ def issue_link(access):
     if preferred:
         return f"https://{preferred.hostname}/access/{token}"
 
-    # A workshop subdomain is used only after wildcard DNS and HTTPS are live.
+    # Use a tenant-specific production subdomain only after wildcard DNS/TLS
+    # have been explicitly enabled.
     if os.environ.get("CUSTOMER_WEBSITE_LINKS_ENABLED", "").lower() == "true":
         root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
         label = subdomain_label(access.company)
         if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
             return f"https://{label}.{root}/access/{token}"
-
-    # In development, keep customer links on their own workshop.localhost
-    # hostname. Plain localhost may resolve to a different workshop, and a
-    # production wildcard domain is not necessarily available locally.
-    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
-    if settings.DEBUG:
-        from urllib.parse import urlsplit
-        parsed = urlsplit(base)
-        label = subdomain_label(access.company)
-        if (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
-                and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):
-            port = f":{parsed.port}" if parsed.port else ""
-            return f"http://{label}.localhost{port}/access/{token}"
 
     # Transitional fallback stays on the configured Next.js /access route.
     if base.endswith("/c"):
