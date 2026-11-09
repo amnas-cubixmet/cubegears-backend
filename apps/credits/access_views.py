@@ -44,6 +44,7 @@ class TenantFeatureAccessView(APIView):
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core
+            and code != "attendance.self"
         })
         from .cycle_billing import cycle_status
         cycle = cycle_status(user.company)
