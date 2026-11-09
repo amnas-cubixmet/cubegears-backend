@@ -92,7 +92,7 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     workshopLocationName = serializers.CharField(source="workshop_location_name",required=False,allow_blank=True,max_length=255,trim_whitespace=True)
     workshopLatitude = serializers.FloatField(source="workshop_latitude",required=False,allow_null=True,min_value=-90,max_value=90)
     workshopLongitude = serializers.FloatField(source="workshop_longitude",required=False,allow_null=True,min_value=-180,max_value=180)
-    punchRadiusMeters = serializers.IntegerField(source="punch_radius_meters",required=False,min_value=50,max_value=5000)
+    punchRadiusMeters = serializers.IntegerField(source="punch_radius_meters",required=False,min_value=20,max_value=5000)
     missingPunchReminderEnabled = serializers.BooleanField(source="missing_punch_reminder_enabled", required=False)
     missingPunchReminderMinutes = serializers.IntegerField(source="missing_punch_reminder_minutes", required=False)
     leaveRequestNotifications = serializers.BooleanField(source="leave_request_notifications", required=False)
@@ -106,6 +106,19 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
     weekendEffectiveFrom = serializers.DateField(source="weekend_effective_from", required=False, allow_null=True)
 
     def validate(self, attrs):
+        # Onboarding is the sole source of the workshop geofence. Rules
+        # managers may still configure shifts/approvals, never override the
+        # owner's saved location via either legacy or modern rule endpoints.
+        from .services import onboarding_punch_policy
+        company = (
+            self.instance.company if self.instance else
+            getattr(getattr(self.context.get("request"), "user", None), "company", None)
+        )
+        if company is not None:
+            policy = onboarding_punch_policy(company)
+            if policy is not None:
+                attrs.update(policy)
+
         mode = attrs.get("attendance_mode", getattr(self.instance, "attendance_mode", AttendanceRule.MODE_SINGLE))
         missing_policy = attrs.get(
             "missing_punch_policy",
