@@ -59,7 +59,7 @@ def validate_punch_location(rule, location):
         if rule.workshop_latitude is None or rule.workshop_longitude is None:
             raise ValueError("Workshop punch location has not been configured by an administrator.")
         radius = int(rule.punch_radius_meters or 0)
-        if not 50 <= radius <= 5000:
+        if not 20 <= radius <= 5000:
             raise ValueError("Workshop punch radius is invalid. Contact your administrator.")
         # High uncertainty could otherwise allow false acceptance at the edge
         # of the configured boundary. Ask the employee for a stronger GPS fix.
