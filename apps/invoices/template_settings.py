@@ -7,9 +7,10 @@ import base64
 import binascii
 from io import BytesIO
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 from rest_framework import serializers
 from apps.saas.models import CompanySetting
+from apps.inventory.models import WorkshopFinancialAccount
 
 STYLE_DEFAULTS = {
     "invoiceTemplate": "modern", "estimateTemplate": "modern",
@@ -81,12 +82,100 @@ def validated_settings(payload):
     return result
 
 
+def company_logo_for_template(company):
+    """Small, verified preview of the private company logo for PDF/templates.
+
+    Never expose the media URL or read arbitrarily large uploaded files.
+    The raw original remains in Company.logo_image and is not copied into a
+    second storage record just because someone opens the Templates page.
+    """
+    field = getattr(company, "logo_image", None)
+    if not field:
+        return ""
+    try:
+        with field.open("rb") as source:
+            raw = source.read(5 * 1024 * 1024 + 1)
+        if len(raw) > 5 * 1024 * 1024 or not raw:
+            return ""
+        with Image.open(BytesIO(raw)) as original:
+            if original.width * original.height > 16_000_000:
+                return ""
+            if original.format not in {"PNG", "JPEG", "WEBP"}:
+                return ""
+            image = ImageOps.exif_transpose(original)
+            image.thumbnail((420, 420))
+            image = image.convert("RGB")
+            out = BytesIO()
+            image.save(out, format="JPEG", quality=75, optimize=True)
+        data = out.getvalue()
+        if len(data) > 250 * 1024:
+            return ""
+        return "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+    except (FileNotFoundError, OSError, ValueError, UnidentifiedImageError,
+            Image.DecompressionBombError):
+        # A missing/invalid logo cannot block invoice creation.
+        return ""
+
+
+def company_template_defaults(company):
+    """Live source data from the workshop master records, not a second form.
+
+    Values here are inherited only when no deliberate template override was
+    stored. Bank details come only from the bank selected in onboarding,
+    scoped to this company; never guess a bank belonging to another tenant.
+    """
+    fields = {
+        "businessName": company.name or "",
+        "businessLegalName": company.legal_name or "",
+        "businessGstin": company.gstin or "",
+        "businessPhone": company.phone or "",
+        "businessEmail": company.email or "",
+        "businessAddress": company.address or "",
+        "businessState": company.state or "",
+        "businessStateCode": (company.gstin or "")[:2]
+            if len(company.gstin or "") == 15 else "",
+        "businessPan": (company.gstin or "")[2:12]
+            if len(company.gstin or "") == 15 else "",
+        "businessLogo": company_logo_for_template(company),
+    }
+    state = CompanySetting.objects.filter(
+        company=company, category="onboarding",
+    ).values_list("data", flat=True).first() or {}
+    bank_id = state.get("bankAccountId")
+    if bank_id:
+        # Some legacy data may contain a stale/corrupt ID. Never use an
+        # unscoped account lookup or crash the invoice PDF for that.
+        from uuid import UUID
+        try:
+            bank_pk = UUID(str(bank_id))
+        except (ValueError, TypeError, AttributeError):
+            bank_pk = None
+        bank = WorkshopFinancialAccount.objects.filter(
+            company=company, kind="Bank", pk=bank_pk,
+        ).first() if bank_pk else None
+        if bank:
+            fields.update({
+                "bankName": bank.bank_name or bank.name,
+                "bankAccountName": company.legal_name or company.name or "",
+                "bankAccountNumber": bank.account_number or "",
+                "bankIfsc": bank.ifsc or "",
+            })
+    return fields
+
+
 def get_template_settings(company):
     item = CompanySetting.objects.filter(company=company, category="document_templates").first()
     saved = item.data if item and isinstance(item.data, dict) else {}
     # Historical unexpected DB fields must not leak into new PDFs.
     safe_saved = {k: v for k, v in saved.items() if k in STYLE_DEFAULTS}
-    return {**STYLE_DEFAULTS, **safe_saved}
+    # Saved custom branding wins, but blank or never-set fields follow updates
+    # to the canonical workshop profile, uploaded logo and selected bank.
+    inherited = company_template_defaults(company)
+    merged = {**STYLE_DEFAULTS, **inherited, **safe_saved}
+    for key, value in inherited.items():
+        if not merged.get(key):
+            merged[key] = value
+    return merged
 
 
 def template_for_document(company, kind, *, override=None):
