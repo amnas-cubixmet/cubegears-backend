@@ -5,6 +5,7 @@ client-supplied tenant IDs are never authorization inputs.
 """
 import hashlib
 import hmac
+import json
 import os
 import re
 import secrets
@@ -66,6 +67,19 @@ def _tenant(request):
         slug = os.environ.get("PORTAL_DEV_COMPANY_SLUG", "")
         if slug:
             return get_object_or_404(Company, slug=slug, is_active=True)
+    # Local custom-domain simulation. Explicit mapping is never used outside
+    # Django DEBUG, and .test names never require real DNS, Vercel or SSL.
+    # A signed BFF hostname alone does not grant access to an arbitrary tenant.
+    if settings.DEBUG and hostname.endswith(".test"):
+        try:
+            preview_map = json.loads(os.environ.get("PORTAL_DEV_CUSTOM_DOMAIN_MAP", "{}"))
+        except (TypeError, ValueError):
+            preview_map = {}
+        slug = preview_map.get(hostname) if isinstance(preview_map, dict) else None
+        if not isinstance(slug, str) or not slug or len(slug) > 180:
+            raise Http404("Website not found.")
+        return get_object_or_404(Company, slug=slug, is_active=True)
+
     root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
     if settings.DEBUG and hostname.endswith(".localhost"):
         root = "localhost"
