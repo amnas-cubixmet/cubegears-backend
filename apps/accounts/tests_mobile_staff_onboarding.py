@@ -1,5 +1,6 @@
 """Regression: OTP-free workshop/mobile login and one-use staff password invitations."""
 from datetime import timedelta
+from unittest.mock import patch
 from django.test import TestCase, override_settings
 from django.core.cache import cache
 from django.utils import timezone
@@ -162,8 +163,6 @@ class MobileStaffOnboardingTests(TestCase):
 
     @override_settings(STAFF_WHATSAPP_AUTO_SEND_ENABLED=True)
     def test_manual_whatsapp_reset_stays_manual_even_when_cloud_api_is_enabled(self):
-        from unittest.mock import patch
-
         created = self.create_staff(consent=True)
         employee = Employee.objects.select_related("user").get(pk=created.data["id"])
         employee.user.set_password("ExistingPassword33!")
