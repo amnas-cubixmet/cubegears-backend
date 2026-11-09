@@ -43,6 +43,25 @@ class InvoiceTemplateValidationTests(SimpleTestCase):
             validated_settings({"businessLogo": "data:image/png;base64," + too_big})
 
 
+
+    def test_identity_visibility_switches_allow_optional_pan_and_website(self):
+        for name in ("showGstin", "showPan", "showWebsite"):
+            self.assertIn(name, STYLE_DEFAULTS)
+            self.assertIs(STYLE_DEFAULTS[name], True)
+            self.assertEqual(validated_settings({name: False})[name], False)
+            with self.assertRaises(ValidationError):
+                validated_settings({name: "false"})
+
+    def test_logo_validation_allows_saved_onboarding_image_without_public_url(self):
+        from io import BytesIO
+        import base64
+        from PIL import Image
+        buffer = BytesIO()
+        Image.new("RGB", (240, 120), "white").save(buffer, "PNG")
+        value = "data:image/png;base64," + base64.b64encode(buffer.getvalue()).decode()
+        self.assertEqual(validated_settings({"businessLogo": value})["businessLogo"], value)
+
+
 class CompanyInvoiceTemplateTests(TestCase):
     def setUp(self):
         self.alpha = Company.objects.create(name="Alpha Workshop", slug="alpha-styles")

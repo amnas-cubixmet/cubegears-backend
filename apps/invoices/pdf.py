@@ -145,8 +145,16 @@ def create_invoice_pdf(invoice):
                                   str(seller.get("state") or ""),
                                   str(seller.get("pincode") or "")])), "small"),
         P(f"Phone: {_txt(seller.get('phone'))}  |  Email: {_txt(seller.get('email'))}", "small"),
-        P(f"GSTIN: {_txt(seller.get('gstin'))}", "small") if seller.get("gstin") else P("", "small"),
     ]
+    # Official GST tax invoices must retain their registered supplier GSTIN.
+    # Optional branding switches cannot change legal registration/tax treatment.
+    gstin = seller.get("gstin") or appearance.get("businessGstin")
+    if gstin and (is_gst or appearance.get("showGstin", True)):
+        seller_head.append(P(f"GSTIN: {gstin}", "small"))
+    if appearance.get("showPan", True) and appearance.get("businessPan"):
+        seller_head.append(P(f"PAN: {appearance['businessPan']}", "small"))
+    if appearance.get("showWebsite", True) and appearance.get("businessWebsite"):
+        seller_head.append(P(f"Website: {appearance['businessWebsite']}", "small"))
     if appearance.get("showBusinessLogo", True) and appearance.get("businessLogo"):
         try:
             from reportlab.platypus import Image

@@ -25,6 +25,7 @@ STYLE_DEFAULTS = {
     "bankName": "", "bankAccountName": "", "bankAccountNumber": "",
     "bankIfsc": "", "bankUpi": "", "authorizedSignatory": "",
     "termsText": "", "showBusinessLogo": True, "showBankDetails": True,
+    "showGstin": True, "showPan": True, "showWebsite": True,
     "showTerms": True, "showSignature": True,
 }
 CHOICES = ("modern", "classic", "minimal", "custom")
@@ -32,7 +33,7 @@ ACCENTS = ("teal", "blue", "graphite")
 BOOLEAN_KEYS = {
     "showOriginal", "showSellerMark", "compactTable", "customShowTransport",
     "customShowTaxTable", "showBusinessLogo", "showBankDetails", "showTerms",
-    "showSignature",
+    "showSignature", "showGstin", "showPan", "showWebsite",
 }
 TEXT_LENGTHS = {k: (2000 if k in {"termsText", "businessAddress", "customFooter"} else 255)
                 for k in STYLE_DEFAULTS if k not in BOOLEAN_KEYS}
@@ -94,8 +95,8 @@ def company_logo_for_template(company):
         return ""
     try:
         with field.open("rb") as source:
-            raw = source.read(5 * 1024 * 1024 + 1)
-        if len(raw) > 5 * 1024 * 1024 or not raw:
+            raw = source.read(10 * 1024 * 1024 + 1)
+        if len(raw) > 10 * 1024 * 1024 or not raw:
             return ""
         with Image.open(BytesIO(raw)) as original:
             if original.width * original.height > 16_000_000:
