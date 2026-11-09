@@ -328,6 +328,11 @@ class WorkshopSetupView(APIView):
                 location["punchRadiusMeters"] = values["punchRadiusMeters"]
             if location:
                 update_setting(company, branch, "attendance", location)
+                # Apply the authoritative workshop location immediately for
+                # new workshops. Existing workshops are also synchronized when
+                # any punch/status endpoint reads their attendance rule.
+                from apps.attendance.services import get_attendance_rule
+                get_attendance_rule(company, branch)
         elif step == "operations":
             update_setting(company, branch, "operations", {
                 **values, "workingStart": values["workingStart"].strftime("%H:%M"),
