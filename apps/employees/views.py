@@ -228,12 +228,11 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"role": "Choose a company-created staff role without owner or platform authority."})
         return role
 
-    def _issue_staff_invitation(self, employee, user):
-        """Generate an auditable manual-only staff setup capability.
+    def _issue_staff_invitation(self, employee, user, *, manual_only=False):
+        """Issue an auditable one-use setup/reset link for authorized staff.
 
-        No WABA/Celery/email sender may be invoked from this staff workflow.
-        The raw capability is returned only in the authorized create or invite
-        response, never via regular employee list/detail reads.
+        A manual-only request never queues automatic WhatsApp delivery.
+        The token is exposed only in the authorized create/invite response.
         """
         from apps.accounts.staff_setup import issue_invitation, invitation_url
 
@@ -243,7 +242,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"role": "A valid non-admin staff login role is required."})
         record = issue_invitation(user, issuer=self.request.user)
         from django.conf import settings
-        if getattr(settings, "STAFF_WHATSAPP_AUTO_SEND_ENABLED", False):
+        if not manual_only and getattr(settings, "STAFF_WHATSAPP_AUTO_SEND_ENABLED", False):
             from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
             delivery = queue_staff_whatsapp_invitation(record, employee)
         else:
@@ -587,6 +586,11 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             replace = request.data.get("replace", False)
             if not isinstance(replace, bool):
                 raise ValidationError({"replace": "Provide a boolean replace value."})
+            manual_only = request.data.get("manualOnly", False)
+            if not isinstance(manual_only, bool):
+                raise ValidationError({"manualOnly": "Provide a boolean manualOnly value."})
+            if manual_only and not obj.whatsapp_consent:
+                raise ValidationError({"whatsappConsent": "Record staff WhatsApp consent before sharing a password link."})
             recent = StaffPasswordInvitation.objects.select_for_update().filter(
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
                 expires_at__gt=timezone.now(),
@@ -596,21 +600,31 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             should_reuse = bool(recent and (
                 not replace or recent.created_at >= timezone.now() - cooldown
             ))
+            # A manually shared reset must not race an invitation already
+            # queued/sent by the Cloud API. Require rotation after cooldown,
+            # invalidating the older token and preventing double delivery.
+            if manual_only and recent and recent.delivery_status != "manual":
+                if recent.created_at >= timezone.now() - cooldown:
+                    raise ValidationError({
+                        "manualOnly": "A WhatsApp delivery is already processing. Try manual sharing after 60 seconds."
+                    })
+                should_reuse = False
             if should_reuse:
                 invite = recent
                 url = invitation_url(recent)
             else:
-                if replace and StaffPasswordInvitation.objects.filter(
+                if (replace or manual_only) and StaffPasswordInvitation.objects.filter(
                     user=user, created_at__gte=timezone.now() - timedelta(hours=1),
                 ).count() >= 5:
                     raise ValidationError({"invite": "Too many replacement links. Try again later."})
-                invite = self._issue_staff_invitation(obj, user)
+                invite = self._issue_staff_invitation(obj, user, manual_only=manual_only)
                 url = obj._setup_link
             delivery = invite.delivery_status
         return response.Response({
             "message": "Secure password setup link ready. WhatsApp status: " + delivery + ".",
             "setupLink": url, "expiresAt": invite.expires_at,
             "whatsappInviteStatus": delivery,
+            "purpose": invite.purpose,
             "loginStatus": "Active" if user.has_usable_password() else "Pending Password Setup",
         })
 
