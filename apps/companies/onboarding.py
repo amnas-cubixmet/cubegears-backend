@@ -23,8 +23,12 @@ class IsVerifiedWorkshopOwner(BasePermission):
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.saas.models import CompanySetting
+from apps.inventory.models import WorkshopFinancialAccount
 
-STEPS = ("company", "branch", "operations", "billing")
+STEPS = ("company", "branch", "operations", "bank", "billing")
+# Existing 4-step workshops must remain completed; bank is optional for new
+# signups, but owners explicitly confirm skipping before finalizing setup.
+LEGACY_STEPS = ("company", "branch", "operations", "billing")
 DEFAULT_OPERATIONS = {"workingStart": "09:00", "workingEnd": "18:30",
                       "bookingSlotMinutes": 30, "jobPrefix": "JOB-"}
 DEFAULT_BILLING = {"invoicePrefix": "INV-", "paymentTermsDays": 0,
@@ -124,8 +128,39 @@ class BillingSetupForm(serializers.Serializer):
     rounding = serializers.BooleanField()
 
 
+class BankSetupForm(serializers.Serializer):
+    mode = serializers.ChoiceField(choices=("new", "existing", "skip"))
+    accountId = serializers.UUIDField(required=False)
+    name = serializers.CharField(required=False, max_length=120, allow_blank=True)
+    bankName = serializers.CharField(required=False, max_length=120, allow_blank=True)
+    accountNumber = serializers.CharField(required=False, max_length=50, allow_blank=True)
+    ifsc = serializers.CharField(required=False, max_length=20, allow_blank=True)
+    branchName = serializers.CharField(required=False, max_length=120, allow_blank=True)
+    openingBalance = serializers.DecimalField(
+        max_digits=14, decimal_places=2, required=False,
+        min_value=Decimal("0.00"),
+    )
+    openingDate = serializers.DateField(required=False, allow_null=True)
+
+    def validate(self, values):
+        mode = values["mode"]
+        if mode == "existing":
+            if not values.get("accountId"):
+                raise serializers.ValidationError({"accountId": "Choose an existing bank account."})
+        elif mode == "new":
+            for field in ("name", "bankName"):
+                if not str(values.get(field) or "").strip():
+                    raise serializers.ValidationError({field: "This bank detail is required."})
+            if not values.get("accountNumber"):
+                # The full account number is optional; it must never appear in
+                # onboarding progress JSON or public account summaries.
+                values["accountNumber"] = ""
+        return values
+
+
 FORMS = {"company": CompanySetupForm, "branch": BranchSetupForm,
-         "operations": OperationsSetupForm, "billing": BillingSetupForm}
+         "operations": OperationsSetupForm, "bank": BankSetupForm,
+         "billing": BillingSetupForm}
 
 
 def setting_data(company, category, defaults=None):
@@ -153,7 +188,12 @@ def head_branch(company):
 def snapshot(company):
     branch = head_branch(company)
     state = setting_data(company, "onboarding")
-    done = [step for step in STEPS if step in state.get("completedSteps", [])]
+    completed_steps = state.get("completedSteps", [])
+    done = [step for step in STEPS if step in completed_steps or (
+        # Old fully completed workshops had only four setup steps.
+        step == "bank" and state.get("completed")
+        and all(old in completed_steps for old in LEGACY_STEPS)
+    )]
     location = setting_data(company, "attendance")
     operations = setting_data(company, "operations", DEFAULT_OPERATIONS)
     billing = setting_data(company, "billing", DEFAULT_BILLING)
@@ -161,9 +201,23 @@ def snapshot(company):
               "city", "state", "country", "pincode", "gstin")
     branch_fields = ("name", "phone", "address", "city", "state", "pincode")
     from apps.credits.models import CreditWallet
+    from apps.finance.views import mask_account_number
     wallet = CreditWallet.objects.filter(company=company).values_list(
         "balance", flat=True,
     ).first()
+
+    existing_banks = list(WorkshopFinancialAccount.objects.filter(
+        company=company, kind="Bank",
+    ).order_by("name", "pk"))
+    bank_by_id = {str(account.pk): account for account in existing_banks}
+    selected_bank = bank_by_id.get(str(state.get("bankAccountId") or ""))
+    bank_accounts = [{
+        "id": str(account.pk),
+        "name": account.name,
+        "bankName": account.bank_name,
+        "accountNumberMasked": mask_account_number(account.account_number),
+        "openingBalance": str(account.opening_balance),
+    } for account in existing_banks]
     return {
         "required": bool(state.get("required", False)),
         "completed": bool(state.get("completed") and len(done) == len(STEPS)),
@@ -183,6 +237,21 @@ def snapshot(company):
         },
         "operations": {key: operations[key] for key in DEFAULT_OPERATIONS},
         "billing": {key: billing[key] for key in DEFAULT_BILLING},
+        "bank": {
+            "configured": selected_bank is not None,
+            "skipped": bool(state.get("bankSkipped", False)) and selected_bank is None,
+            "accountId": str(selected_bank.pk) if selected_bank else "",
+            "name": selected_bank.name if selected_bank else "",
+            "bankName": selected_bank.bank_name if selected_bank else "",
+            "accountNumberMasked": mask_account_number(selected_bank.account_number)
+            if selected_bank else "",
+            "ifsc": selected_bank.ifsc if selected_bank else "",
+            "branchName": selected_bank.branch_name if selected_bank else "",
+            "openingBalance": str(selected_bank.opening_balance) if selected_bank else "0.00",
+            "openingDate": selected_bank.opening_date.isoformat()
+            if selected_bank and selected_bank.opening_date else "",
+            "availableAccounts": bank_accounts,
+        },
         "logoAvailable": bool(company.logo_image),
         "account": {
             "companyName": company.name,
@@ -268,6 +337,73 @@ class WorkshopSetupView(APIView):
             update_setting(company, branch, "billing", {
                 **values, "defaultTaxRate": float(values["defaultTaxRate"]),
             })
+        elif step == "bank":
+            mode = values["mode"]
+            setup_state = setting_data(company, "onboarding")
+            selected_id = setup_state.get("bankAccountId")
+            if mode == "skip":
+                # Never delete an existing account or its immutable ledger.
+                update_setting(company, branch, "onboarding", {
+                    "bankSkipped": not bool(selected_id),
+                })
+            elif mode == "existing":
+                selected = WorkshopFinancialAccount.objects.filter(
+                    company=company, kind="Bank", pk=values["accountId"],
+                ).first()
+                if not selected:
+                    return Response(
+                        {"accountId": ["Choose a bank account belonging to this workshop."]},
+                        status=400,
+                    )
+                if selected_id and str(selected.pk) != str(selected_id):
+                    return Response(
+                        {"accountId": ["A bank is already configured. Manage accounts in Finance."]},
+                        status=400,
+                    )
+                update_setting(company, branch, "onboarding", {
+                    "bankAccountId": str(selected.pk), "bankSkipped": False,
+                })
+            else:
+                name = values["name"].strip()
+                bank_name = values["bankName"].strip()
+                account_number = values.get("accountNumber", "").strip()
+                opening = values.get("openingBalance", Decimal("0.00"))
+                if selected_id:
+                    existing = WorkshopFinancialAccount.objects.filter(
+                        company=company, kind="Bank", pk=selected_id,
+                    ).first()
+                    # The unique onboarding account ID prevents duplicate
+                    # creation on retry. Do not revise a posted opening balance.
+                    if not existing or (
+                        existing.name != name or existing.bank_name != bank_name or
+                        existing.opening_balance != opening or
+                        (account_number and existing.account_number != account_number)
+                    ):
+                        return Response({
+                            "bank": ["Bank setup is already saved. Manage changes in Finance > Accounts."]
+                        }, status=400)
+                else:
+                    if WorkshopFinancialAccount.objects.filter(
+                        company=company, name__iexact=name,
+                    ).exists():
+                        return Response({
+                            "name": ["This account already exists. Select it from existing banks."]
+                        }, status=400)
+                    existing = WorkshopFinancialAccount.objects.create(
+                        company=company, branch=branch,
+                        name=name, kind="Bank", bank_name=bank_name,
+                        account_number=account_number,
+                        ifsc=values.get("ifsc", "").upper().strip(),
+                        branch_name=values.get("branchName", "").strip(),
+                        opening_balance=opening,
+                        opening_date=values.get("openingDate"),
+                        created_by=request.user, is_active=True,
+                    )
+                    # WorkshopFinancialAccount post_save posts the balanced
+                    # opening journal once using the account's immutable ID.
+                update_setting(company, branch, "onboarding", {
+                    "bankAccountId": str(existing.pk), "bankSkipped": False,
+                })
         state = setting_data(company, "onboarding")
         state["completedSteps"] = [
             key for key in STEPS if key == step or key in state.get("completedSteps", [])
@@ -283,7 +419,11 @@ class WorkshopSetupCompleteView(APIView):
     def post(self, request):
         company = Company.objects.select_for_update().get(pk=request.user.company_id)
         state = setting_data(company, "onboarding")
-        missing = [step for step in STEPS if step not in state.get("completedSteps", [])]
+        completed = state.get("completedSteps", [])
+        missing = [step for step in STEPS if step not in completed and not (
+            step == "bank" and state.get("completed")
+            and all(old in completed for old in LEGACY_STEPS)
+        )]
         if missing:
             return Response({"message": "Save all setup steps first.", "missingSteps": missing}, status=400)
         if state.get("required"):

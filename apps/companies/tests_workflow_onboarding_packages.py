@@ -131,7 +131,8 @@ class FirstLoginMandatorySetupTests(TestCase):
         }).status_code, 200)
         unfinished = self.client.post("/api/v1/company/onboarding/complete")
         self.assertEqual(unfinished.status_code, 400)
-        self.assertEqual(unfinished.data["missingSteps"], ["billing"])
+        self.assertEqual(unfinished.data["missingSteps"], ["bank", "billing"])
+        self.assertEqual(self.step("bank", {"mode": "skip"}).status_code, 200)
         self.assertFalse(user_has_permission(self.owner, "jobs.view"))
         self.assertEqual(self.step("billing", {
             "invoicePrefix": "INV-", "paymentTermsDays": 5,
