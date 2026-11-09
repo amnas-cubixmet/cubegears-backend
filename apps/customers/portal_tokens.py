@@ -56,8 +56,20 @@ def issue_link(access):
         if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
             return f"https://{label}.{root}/access/{token}"
 
-    # Transitional/local fallback is a Next.js /access URL, NEVER the old /c URL.
+    # In development, keep customer links on their own workshop.localhost
+    # hostname. Plain localhost may resolve to a different workshop, and a
+    # production wildcard domain is not necessarily available locally.
     base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
+    if settings.DEBUG:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(base)
+        label = subdomain_label(access.company)
+        if (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+                and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):
+            port = f":{parsed.port}" if parsed.port else ""
+            return f"http://{label}.localhost{port}/access/{token}"
+
+    # Transitional fallback stays on the configured Next.js /access route.
     if base.endswith("/c"):
         base = base[:-2] + "/access"
     elif not base.endswith("/access"):
