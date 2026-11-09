@@ -88,6 +88,22 @@ worker/Beat deployments, not this launcher, in production. Run migrations
 separately before first use: `python manage.py migrate`.
 
 
+### Full Windows workspace: Python, migrations and all npm sites
+
+From the backend folder:
+
+```powershell
+cd C:\Users\user\Desktop\cubegears\backend
+.\start-workspace.bat --setup  # First run / reinstall missing dependencies
+.\start-workspace.bat          # Every normal session
+```
+
+This launches **separate terminal windows**: Django at http://127.0.0.1:8000, Company Panel npm at http://localhost:5173, Public Website npm at http://localhost:3000 and Customer Website npm at http://localhost:5174. The existing backend `start-all.bat` handles local Redis, Celery Worker and Beat.
+
+Before launching, the script finds/creates the backend Python `venv`, checks Django, takes an integrity-checked backup of an existing configured SQLite database under ignored `db-backups/`, then runs `python manage.py migrate --noinput`. It installs missing Python requirements and front-end npm dependencies; `--setup` forces reinstall. `makemigrations` is intentionally **not** run automatically.
+
+Place Company Panel and Public Website in sibling folders `company-panel/` and `public-website/`. Customer Website can be `customers-website/`, `cubegears-customers-website/`, or `customer-website/`. Requirements: Windows, Python 3.12+, Node.js 22+, a private **local** backend `.env`, and Docker Desktop or an already running Redis. The launcher never overwrites `.env` or the database, does not change production DB credentials and does **not** auto-pay salaries. In each opened console press **Ctrl+C** to stop its process.
+
 ### Windows
 
 ```powershell
