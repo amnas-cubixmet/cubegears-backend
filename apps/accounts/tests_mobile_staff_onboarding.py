@@ -81,10 +81,25 @@ class MobileStaffOnboardingTests(TestCase):
             "token":token, "password":"StrongPass23!","confirmPassword":"StrongPass23!",
         },format="json")
         self.assertEqual(consumed.status_code,200,consumed.data)
+        # First-time setup creates the same verified JWT session as normal
+        # mobile/password login, including staff without an email address.
+        self.assertTrue(consumed.data.get("access"))
+        self.assertTrue(consumed.data.get("refresh"))
+        self.assertEqual(consumed.data["user"]["id"], str(employee.user_id))
+        self.assertEqual(consumed.data["user"]["phone"], "+919333333333")
+        self.assertNotIn("password", consumed.data)
+        signed_in_client = APIClient()
+        signed_in_client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {consumed.data['access']}"
+        )
+        me = signed_in_client.get("/api/v1/auth/me")
+        self.assertEqual(me.status_code, 200, me.data)
         again = self.public.post("/api/v1/auth/staff-invitation/consume", {
             "token":token, "password":"StrongPass23!","confirmPassword":"StrongPass23!",
         },format="json")
         self.assertEqual(again.status_code,400)
+        self.assertNotIn("access", again.data)
+        self.assertNotIn("refresh", again.data)
         signed_in = self.public.post("/api/v1/auth/login", {
             "identifier":"+919333333333","password":"StrongPass23!",
         },format="json")
@@ -92,6 +107,33 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(signed_in.data["user"]["id"],str(employee.user_id))
         self.assertFalse(signed_in.data["user"]["is_superuser"])
         self.assertIn("jobs.view",signed_in.data["user"]["effectivePermissions"])
+
+    def test_consume_does_not_issue_session_if_account_access_is_blocked(self):
+        from unittest.mock import patch
+
+        reply = self.create_staff()
+        token = reply.data["setupLink"].rsplit("/", 1)[-1]
+        # The invitation was authorized, but an account access check at the
+        # response boundary denies JWT issuance (e.g., role just revoked).
+        with patch("apps.accounts.views.user_can_sign_in", return_value=False):
+            consumed = self.public.post("/api/v1/auth/staff-invitation/consume", {
+                "token": token,
+                "password": "StrongPass23!",
+                "confirmPassword": "StrongPass23!",
+            }, format="json")
+        self.assertEqual(consumed.status_code, 200, consumed.data)
+        self.assertNotIn("access", consumed.data)
+        self.assertNotIn("refresh", consumed.data)
+        self.assertNotIn("user", consumed.data)
+        self.assertIn("cannot sign in", consumed.data["message"])
+        employee = Employee.objects.get(pk=reply.data["id"])
+        employee.user.refresh_from_db()
+        self.assertTrue(employee.user.check_password("StrongPass23!"))
+        self.assertEqual(self.public.post("/api/v1/auth/staff-invitation/consume", {
+            "token": token,
+            "password": "StrongPass23!",
+            "confirmPassword": "StrongPass23!",
+        }, format="json").status_code, 400)
 
     def test_resend_invalidates_old_link_and_expired_is_rejected(self):
         first = self.create_staff()
