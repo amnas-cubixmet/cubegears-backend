@@ -89,21 +89,13 @@ echo [check] Checking Django settings and your existing database...
 "%PYTHON%" manage.py check
 if errorlevel 1 goto failed
 
-rem Preserve the common local SQLite file once per day, BEFORE migrations.
-rem PostgreSQL data is never copied or reconfigured by this script.
-if exist "%BACKEND%db.sqlite3" (
-  if not exist "%BACKEND%db-backups" mkdir "%BACKEND%db-backups"
-  for /f %%D in ('powershell.exe -NoProfile -Command "Get-Date -Format yyyyMMdd"') do set "BACKUP_DAY=%%D"
-  if defined BACKUP_DAY (
-    if not exist "%BACKEND%db-backups\db.sqlite3.%BACKUP_DAY%.bak" (
-      copy /b "%BACKEND%db.sqlite3" "%BACKEND%db-backups\db.sqlite3.%BACKUP_DAY%.bak" >nul
-      if errorlevel 1 (
-        echo [ERROR] Could not back up the existing SQLite file.
-        goto failed
-      )
-      echo [ok] Backed up local db.sqlite3 before migrations.
-    )
-  )
+rem Snapshot the actual Django-configured SQLite file (including custom DB_NAME).
+rem PostgreSQL remains untouched and no database is deleted or replaced.
+echo [backup] Safeguarding the local database before migrations...
+"%PYTHON%" scripts\backup_local_sqlite.py
+if errorlevel 1 (
+  echo [ERROR] Database backup failed. Migration was NOT attempted.
+  goto failed
 )
 
 echo [migrate] Applying pending migrations (existing DB, no makemigrations)...
