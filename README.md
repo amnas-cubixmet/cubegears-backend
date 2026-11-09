@@ -65,12 +65,8 @@ DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 SECURE_SSL_REDIRECT=False
 SESSION_COOKIE_SECURE=False
 CSRF_COOKIE_SECURE=False
-DB_ENGINE=django.db.backends.postgresql
-DB_NAME=cubixgear_db
-DB_USER=cubixgear_user
-DB_PASSWORD=
-DB_HOST=localhost
-DB_PORT=5432
+DB_ENGINE=django.db.backends.sqlite3
+DB_NAME=db.sqlite3
 DB_CONN_MAX_AGE=0
 CELERY_BROKER_URL=redis://127.0.0.1:6379/0
 CELERY_RESULT_BACKEND=redis://127.0.0.1:6379/1
@@ -79,6 +75,12 @@ CELERY_TASK_ALWAYS_EAGER=False
 ATTENDANCE_AUTO_CHECKOUT_ENABLED=False
 CREDIT_BILLING_CELERY_ENABLED=False
 ```
+
+If upgrading from a local setup with `SQLITE_DATABASE_PATH`, the backend
+accepts that older path only for local SQLite so existing records are not lost.
+Set `DB_NAME` to the same path and remove `SQLITE_DATABASE_PATH` when convenient.
+Do not delete or overwrite `db.sqlite3`. On production, configure PostgreSQL
+via `.env.production.example`; SQLite is not allowed with `DJANGO_DEBUG=False`.
 
 The launcher never enables billing, attendance, or email automation flags.
 It rejects `DJANGO_DEBUG=False` or local HTTPS redirects; use dedicated
