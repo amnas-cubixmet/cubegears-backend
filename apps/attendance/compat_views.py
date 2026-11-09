@@ -1165,7 +1165,10 @@ class ManagerRulesView(APIView):
         else:
             ser=AttendanceRuleSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        obj=ser.save(company=request.user.company,branch=None,is_default=True)
+        ser.save(company=request.user.company,branch=None,is_default=True)
+        # The owner-only onboarding coordinates are canonical even if a legacy
+        # manager client submits stale geofence fields.
+        obj = get_attendance_rule(request.user.company, None)
         return response.Response(AttendanceRuleSerializer(obj).data)
 
 class StaffAttendanceDetailsView(APIView):

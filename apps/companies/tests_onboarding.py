@@ -53,6 +53,13 @@ class SetupFlowTests(TestCase):
         self.assertEqual(CompanySetting.objects.get(
             company=self.company, category="attendance",
         ).data["workshopLatitude"], "11.200000")
+        from apps.attendance.services import get_attendance_rule
+        attendance_rule = get_attendance_rule(self.company, self.branch)
+        self.assertEqual(attendance_rule.punch_location_mode, "workshop")
+        self.assertTrue(attendance_rule.location_required)
+        self.assertEqual(attendance_rule.workshop_latitude, 11.2)
+        self.assertEqual(attendance_rule.workshop_longitude, 75.5)
+        self.assertEqual(attendance_rule.punch_radius_meters, 120)
         self.assertEqual(CompanySetting.objects.get(
             company=self.company, category="billing",
         ).data["invoicePrefix"], "CG-")
@@ -169,3 +176,45 @@ class SetupFlowTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertTrue(response.data["completed"])
         self.assertIn("bank", response.data["completedSteps"])
+
+    def test_updating_onboarding_location_updates_punch_policy_immediately(self):
+        from apps.attendance.services import get_attendance_rule
+        from apps.attendance.punch_location import validate_punch_location
+
+        url = "/api/v1/company/onboarding"
+        first = self.client.patch(url, {"step": "branch", "data": {
+            "name": "Head Office", "state": "Kerala",
+            "latitude": "11.250000", "longitude": "75.800000",
+            "punchRadiusMeters": 50,
+        }}, format="json")
+        self.assertEqual(first.status_code, 200, first.data)
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.punch_location_mode, "workshop")
+        self.assertEqual(rule.punch_radius_meters, 50)
+        self.assertEqual(validate_punch_location(rule, {
+            "latitude": 11.2501, "longitude": 75.8001, "accuracy": 10,
+        })["accuracy"], 10)
+        with self.assertRaisesRegex(ValueError, "Outside the permitted"):
+            validate_punch_location(rule, {
+                "latitude": 11.29, "longitude": 75.8, "accuracy": 10,
+            })
+
+        changed = self.client.patch(url, {"step": "branch", "data": {
+            "name": "Head Office", "state": "Kerala",
+            "latitude": "12.000000", "longitude": "76.000000",
+            "punchRadiusMeters": 200,
+        }}, format="json")
+        self.assertEqual(changed.status_code, 200, changed.data)
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.workshop_latitude, 12.0)
+        self.assertEqual(rule.workshop_longitude, 76.0)
+        self.assertEqual(rule.punch_radius_meters, 200)
+
+        cleared = self.client.patch(url, {"step": "branch", "data": {
+            "name": "Head Office", "state": "Kerala",
+            "latitude": None, "longitude": None,
+        }}, format="json")
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.punch_location_mode, "anywhere")
+        self.assertFalse(rule.location_required)

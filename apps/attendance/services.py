@@ -6,27 +6,102 @@ from django.utils import timezone
 from .models import AttendanceRecord, AttendanceRule, AttendanceSession
 
 
+def onboarding_punch_policy(company):
+    """Authoritative GPS policy from owner-only workshop onboarding.
+
+    None means a legacy workshop without a saved onboarding location, whose
+    existing manager rule is preserved. An explicitly cleared location means
+    punch-anywhere; do not keep applying a stale workshop geofence.
+    """
+    from math import isfinite
+    from apps.saas.models import CompanySetting
+
+    saved = CompanySetting.objects.filter(
+        company=company, category="attendance",
+    ).values_list("data", flat=True).first()
+    if not isinstance(saved, dict) or not (
+        "workshopLatitude" in saved and "workshopLongitude" in saved
+    ):
+        return None
+
+    latitude = saved["workshopLatitude"]
+    longitude = saved["workshopLongitude"]
+    if latitude in (None, "") and longitude in (None, ""):
+        return {
+            "workshop_latitude": None,
+            "workshop_longitude": None,
+            "punch_location_mode": "anywhere",
+            "location_required": False,
+            "location_tracking_enabled": False,
+        }
+
+    try:
+        # Invalid/corrupt stored data must never silently disable a saved
+        # workshop-only restriction.
+        lat, lon = float(latitude), float(longitude)
+        radius = int(saved.get("punchRadiusMeters", 100))
+        valid = (
+            isfinite(lat) and isfinite(lon)
+            and -90 <= lat <= 90 and -180 <= lon <= 180
+            and 20 <= radius <= 5000
+        )
+    except (TypeError, ValueError, OverflowError):
+        valid = False
+
+    if not valid:
+        return {
+            "workshop_latitude": None,
+            "workshop_longitude": None,
+            "punch_location_mode": "workshop",
+            "location_required": True,
+            "location_tracking_enabled": True,
+        }
+
+    return {
+        "workshop_latitude": lat,
+        "workshop_longitude": lon,
+        "punch_radius_meters": radius,
+        "punch_location_mode": "workshop",
+        "location_required": True,
+        "location_tracking_enabled": True,
+    }
+
+
+def sync_onboarding_punch_rule(rule):
+    """Keep the existing attendance rule in sync with onboarding GPS only."""
+    policy = onboarding_punch_policy(rule.company)
+    if policy is None:
+        return rule
+    changed = []
+    for key, value in policy.items():
+        if getattr(rule, key) != value:
+            setattr(rule, key, value)
+            changed.append(key)
+    if changed:
+        rule.save(update_fields=[*changed, "updated_at"])
+    return rule
+
+
 def get_attendance_rule(company, branch=None):
     qs = AttendanceRule.objects.filter(company=company, is_default=True)
 
     rule = qs.filter(branch__isnull=True).first()
-    if rule:
-        return rule
+    if not rule:
+        # Normalize legacy branch-scoped defaults into the company-wide rule.
+        rule = qs.first()
+        if rule:
+            rule.branch = None
+            rule.save(update_fields=["branch", "updated_at"])
+        else:
+            rule = AttendanceRule.objects.create(
+                company=company,
+                branch=None,
+                name="Default",
+                weekend_days=["Sunday"],
+                is_default=True,
+            )
 
-    # Normalize legacy branch-scoped defaults into the company-wide rule.
-    legacy = qs.first()
-    if legacy:
-        legacy.branch = None
-        legacy.save(update_fields=["branch", "updated_at"])
-        return legacy
-
-    return AttendanceRule.objects.create(
-        company=company,
-        branch=None,
-        name="Default",
-        weekend_days=["Sunday"],
-        is_default=True,
-    )
+    return sync_onboarding_punch_rule(rule)
 
 
 def get_shift_times(employee, rule):

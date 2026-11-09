@@ -88,3 +88,79 @@ class PunchLocationPolicyTests(SimpleTestCase):
         rule = AttendanceRule()
         self.assertEqual(rule.workshop_location_name,'')
         self.assertEqual(AttendanceRuleSerializer(rule).data['workshopLocationName'],'')
+
+
+from django.test import TestCase
+from apps.companies.models import Company
+from apps.saas.models import CompanySetting
+from apps.attendance.services import get_attendance_rule, onboarding_punch_policy
+
+
+class OnboardingPunchRuleSyncTests(TestCase):
+    def setUp(self):
+        self.company = Company.objects.create(
+            name="Geofence Workshop", slug="geofence-workshop",
+        )
+
+    def test_existing_saved_onboarding_gps_is_used_even_without_new_setup(self):
+        CompanySetting.objects.create(
+            company=self.company, category="attendance",
+            data={
+                "workshopLatitude": "11.250000",
+                "workshopLongitude": "75.800000",
+                "punchRadiusMeters": 100,
+            },
+        )
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.punch_location_mode, "workshop")
+        self.assertEqual(rule.punch_radius_meters, 100)
+        self.assertTrue(rule.location_required)
+        self.assertTrue(rule.location_tracking_enabled)
+        with self.assertRaisesRegex(ValueError, "Outside the permitted workshop"):
+            validate_punch_location(rule, {
+                "latitude": 12.0, "longitude": 75.8, "accuracy": 10,
+            })
+
+    def test_existing_manager_policy_is_preserved_without_onboarding_location(self):
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.punch_location_mode, "anywhere")
+        self.assertIsNone(onboarding_punch_policy(self.company))
+
+    def test_corrupt_onboarding_gps_fails_closed_and_never_allows_anywhere(self):
+        CompanySetting.objects.create(
+            company=self.company, category="attendance",
+            data={"workshopLatitude": "wrong", "workshopLongitude": "75.8"},
+        )
+        rule = get_attendance_rule(self.company)
+        self.assertEqual(rule.punch_location_mode, "workshop")
+        with self.assertRaises(ValueError):
+            validate_punch_location(rule, {"latitude": 11.25, "longitude": 75.8})
+
+    def test_manager_serializer_cannot_replace_saved_owner_geofence(self):
+        CompanySetting.objects.create(
+            company=self.company, category="attendance",
+            data={
+                "workshopLatitude": "11.250000",
+                "workshopLongitude": "75.800000",
+                "punchRadiusMeters": 90,
+            },
+        )
+        rule = get_attendance_rule(self.company)
+        serializer = AttendanceRuleSerializer(
+            rule,
+            data={
+                "punchLocationMode": "anywhere",
+                "locationRequired": False,
+                "workshopLatitude": 19.0,
+                "workshopLongitude": 80.0,
+                "punchRadiusMeters": 500,
+            },
+            partial=True,
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        changed = serializer.save()
+        self.assertEqual(changed.punch_location_mode, "workshop")
+        self.assertEqual(changed.workshop_latitude, 11.25)
+        self.assertEqual(changed.workshop_longitude, 75.8)
+        self.assertEqual(changed.punch_radius_meters, 90)
+        self.assertTrue(changed.location_required)
