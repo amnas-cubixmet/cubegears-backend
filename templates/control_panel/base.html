@@ -5,6 +5,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>{{ page_title|default:"Control Panel" }} · cubixgear</title>
+  <link rel="icon" type="image/png" href="{% static 'logo/logo.png' %}">
+  <link rel="apple-touch-icon" href="{% static 'logo/logo.png' %}">
   <link rel="stylesheet" href="{% static 'control_panel/panel.css' %}">
   <link rel="stylesheet" href="{% static 'control_panel/company-theme.css' %}">
   <link rel="stylesheet" href="{% static 'control_panel/management-ui.css' %}">
@@ -35,7 +37,7 @@
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Control panel navigation">
       <div class="brand-row">
-        <div class="brand-mark">CG</div>
+        <div class="brand-mark" aria-hidden="true"><img src="{% static 'logo/logo.png' %}" alt="" onerror="this.style.display='none'"></div>
         <div>
           <strong>cubixgear</strong>
           <span>Platform Administration</span>

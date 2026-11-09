@@ -71,6 +71,7 @@ jobs:
             apps.companies.tests_vercel_domains \
             apps.companies.tests_default_subdomains \
             apps.control_panel.tests_feature_pricing_routes \
+            apps.control_panel.tests_branding \
             apps.attendance.tests_auto_checkout_scheduler \
             apps.attendance.tests_punch_location \
             apps.attendance.tests_free_self_attendance_salary \
