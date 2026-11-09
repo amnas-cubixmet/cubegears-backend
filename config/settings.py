@@ -40,8 +40,8 @@ if not isinstance(ESTIMATE_ZERO_GST_CLASSIFICATIONS, dict) or any(
 ):
     raise ImproperlyConfigured("ESTIMATE_ZERO_GST_CLASSIFICATIONS must map HSN/SAC codes to permitted treatment arrays.")
 
-# Keep strong security settings for production; SQLite is supported on
-# a server with persistent local storage, never an ephemeral Vercel function.
+# Keep strong security settings for production; SQLite is for local/CI only.
+# Production must use PostgreSQL with persistent managed storage.
 if not DEBUG:
     if not env("DJANGO_SECRET_KEY") or len(SECRET_KEY.encode("utf-8")) < 32:
         raise ImproperlyConfigured(
@@ -138,16 +138,23 @@ TEMPLATES = [{
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-# One database environment contract for local, CI and production:
-# DB_ENGINE, DB_NAME, DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_CONN_MAX_AGE.
-# Do not accept competing URL/POSTGRES_* formats or silently switch databases.
+# DB_* is the canonical contract. During local SQLite migration only,
+# preserve the former SQLITE_DATABASE_PATH so existing data stays in use.
+# Production still rejects all deprecated database environment variables.
 LEGACY_DB_VARIABLES = (
     "DATABASE_URL", "POSTGRES_HOST", "POSTGRES_DB", "POSTGRES_USER",
     "POSTGRES_PASSWORD", "POSTGRES_PORT", "POSTGRES_SSLMODE",
-    "POSTGRES_CONNECT_TIMEOUT_SECONDS", "SQLITE_DATABASE_PATH",
-    "ALLOW_LEGACY_PRODUCTION_SQLITE",
+    "POSTGRES_CONNECT_TIMEOUT_SECONDS", "ALLOW_LEGACY_PRODUCTION_SQLITE",
 )
+legacy_sqlite_path = (env("SQLITE_DATABASE_PATH") or "").strip()
+DB_ENGINE = (env("DB_ENGINE") or "").strip()
+if not DB_ENGINE and DEBUG and legacy_sqlite_path:
+    # The old local path is an explicit SQLite selection, not a silent fallback.
+    DB_ENGINE = "django.db.backends.sqlite3"
+
 legacy_variables = [name for name in LEGACY_DB_VARIABLES if env(name)]
+if legacy_sqlite_path and not (DEBUG and DB_ENGINE == "django.db.backends.sqlite3"):
+    legacy_variables.append("SQLITE_DATABASE_PATH")
 if legacy_variables:
     raise ImproperlyConfigured(
         "Remove old database environment variables (" + ", ".join(legacy_variables)
@@ -155,8 +162,16 @@ if legacy_variables:
         "DB_HOST, DB_PORT, DB_CONN_MAX_AGE."
     )
 
-DB_ENGINE = (env("DB_ENGINE") or "").strip()
 DB_NAME = (env("DB_NAME") or "").strip()
+if legacy_sqlite_path and DEBUG and DB_ENGINE == "django.db.backends.sqlite3":
+    if DB_NAME and (BASE_DIR / Path(DB_NAME).expanduser()).resolve() != (
+        BASE_DIR / Path(legacy_sqlite_path).expanduser()
+    ).resolve():
+        raise ImproperlyConfigured(
+            "DB_NAME and SQLITE_DATABASE_PATH point to different SQLite databases. "
+            "Set DB_NAME to your existing file, then remove SQLITE_DATABASE_PATH."
+        )
+    DB_NAME = DB_NAME or legacy_sqlite_path
 if not DB_ENGINE:
     raise ImproperlyConfigured("DB_ENGINE must be set in your private .env.")
 if DB_ENGINE not in {"django.db.backends.postgresql", "django.db.backends.sqlite3"}:

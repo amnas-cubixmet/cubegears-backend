@@ -57,6 +57,23 @@ class ProductionEnvironmentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("django.db.backends.sqlite3", result.stdout)
 
+    def test_existing_local_sqlite_path_is_preserved(self):
+        result = self.probe(
+            expression="settings.DATABASES['default']['NAME'].name",
+            DJANGO_DEBUG="True",
+            SQLITE_DATABASE_PATH="workshop-existing.sqlite3",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("workshop-existing.sqlite3", result.stdout)
+
+    def test_conflicting_local_sqlite_paths_fail_closed(self):
+        result = self.probe(
+            DJANGO_DEBUG="True", DB_ENGINE="django.db.backends.sqlite3",
+            DB_NAME="new.sqlite3", SQLITE_DATABASE_PATH="existing.sqlite3",
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("point to different SQLite databases", result.stderr)
+
     def test_missing_db_engine_fails_closed(self):
         result = self.probe(DJANGO_DEBUG="True")
         self.assertNotEqual(result.returncode, 0)
@@ -127,13 +144,16 @@ class ProductionEnvironmentTests(unittest.TestCase):
     def test_committed_templates_contain_no_secrets(self):
         local = dotenv_values(ROOT / ".env.example")
         prod = dotenv_values(ROOT / ".env.production.example")
-        for values in (local, prod):
+        for values, expected_engine in (
+            (local, "django.db.backends.sqlite3"),
+            (prod, "django.db.backends.postgresql"),
+        ):
             for key in (
                 "DB_PASSWORD", "EMAIL_HOST_PASSWORD", "RAZORPAY_KEY_SECRET",
                 "RAZORPAY_WEBHOOK_SECRET", "WHATSAPP_PLATFORM_ACCESS_TOKEN",
             ):
                 self.assertFalse(values.get(key), key)
-            self.assertEqual(values.get("DB_ENGINE"), "django.db.backends.postgresql")
+            self.assertEqual(values.get("DB_ENGINE"), expected_engine)
             self.assertEqual(values.get("DB_CONN_MAX_AGE"), "0")
         self.assertFalse(prod.get("DJANGO_SECRET_KEY"))
         self.assertFalse(prod.get("JWT_SIGNING_KEY"))
