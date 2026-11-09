@@ -343,3 +343,15 @@ html[data-theme="dark"] .company-status-tag.is-disabled{color:#fcd34d;background
   .cg-company-profile .cg-company-detail-table th,
   .cg-company-profile .cg-company-detail-table td { padding: 11px 10px; }
 }
+
+/* Product branding: the PNG in static/logo/logo.png replaces the old CG tile. */
+.brand-row .brand-mark {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: hidden;
+}
+.brand-row .brand-mark img {
+  display: block; width: 100%; height: 100%;
+  object-fit: contain;
+}
