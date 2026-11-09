@@ -5,12 +5,14 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
 <title>{{ title }} · CubixGear Control Panel</title>
+<link rel="icon" type="image/png" href="{% static 'logo/logo.png' %}">
+<link rel="apple-touch-icon" href="{% static 'logo/logo.png' %}">
 <link rel="stylesheet" href="{% static 'control_panel/login.css' %}">
 </head>
 <body class="auth-page">
 <main class="auth-shell">
 <section class="auth-panel" style="width:min(440px,100%);padding:clamp(24px,5vw,40px);border-radius:18px;background:#fff;box-shadow:0 20px 60px #13284b16">
-<div class="auth-brand" style="margin-bottom:28px"><span class="auth-brand-mark">C</span><span class="auth-brand-type"><strong>CubixGear</strong><small>SaaS Control Panel</small></span></div>
+<div class="auth-brand" style="margin-bottom:28px"><span class="auth-brand-mark"><img src="{% static 'logo/logo.png' %}" alt="" onerror="this.style.display='none'"></span><span class="auth-brand-type"><strong>CubixGear</strong><small>SaaS Control Panel</small></span></div>
 <h1 style="font-size:26px;line-height:1.25;margin:0 0 9px">{{ title }}</h1>
 <p style="line-height:1.65;color:#63738a;margin:0 0 24px">{{ description }}</p>
 {% if form %}
