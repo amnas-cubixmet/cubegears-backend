@@ -163,14 +163,17 @@ def company_template_defaults(company):
     return fields
 
 
-def get_template_settings(company):
+def get_template_settings(company, *, sync_profile=False):
     item = CompanySetting.objects.filter(company=company, category="document_templates").first()
     saved = item.data if item and isinstance(item.data, dict) else {}
     # Historical unexpected DB fields must not leak into new PDFs.
-    safe_saved = {k: v for k, v in saved.items() if k in STYLE_DEFAULTS}
+    inherited = company_template_defaults(company)
+    safe_saved = {
+        k: v for k, v in saved.items()
+        if k in STYLE_DEFAULTS and not (sync_profile and k in inherited)
+    }
     # Saved custom branding wins, but blank or never-set fields follow updates
     # to the canonical workshop profile, uploaded logo and selected bank.
-    inherited = company_template_defaults(company)
     merged = {**STYLE_DEFAULTS, **inherited, **safe_saved}
     for key, value in inherited.items():
         if not merged.get(key):
