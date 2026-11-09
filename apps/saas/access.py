@@ -87,6 +87,11 @@ def feature_allowed(user, permission):
     from apps.credits.calendar_billing import overdue_statements
     if module not in {"billing", "company"} and overdue_statements(user.company):
         return False
+    # Self punch/history/leave and the employee's own paid-salary history are
+    # free. This is a permission-specific carve-out, NOT a free 'attendance'
+    # module: manager attendance and payroll remain purchased/role-gated.
+    if permission == "attendance.self":
+        return True
     if module not in FREE_TENANT_MODULES | {"company"}:
         from apps.credits.calendar_billing import active_policy
         policy = active_policy()
