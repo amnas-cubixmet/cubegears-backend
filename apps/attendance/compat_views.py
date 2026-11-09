@@ -92,6 +92,57 @@ def _parse_attendance_datetime(day,value):
         parsed=timezone.make_aware(parsed,timezone.get_current_timezone())
     return parsed
 
+class MySalaryPaymentsView(APIView):
+    """Read-only paid salary/wage history for the authenticated employee only.
+
+    Never expose another worker's salary, unreleased payslips, payroll setup,
+    bank account balance, payment editing, or manager approval actions.
+    """
+    permission_classes = [RolePermission]
+    permission_code = "attendance.self"
+
+    def get(self, request):
+        from apps.payroll.models import SalaryPayment, WagePayment
+        employee = _employee_for_user(request.user)
+        if not employee or employee.status.lower() != "active":
+            return response.Response([])
+
+        monthly = SalaryPayment.objects.filter(
+            company=request.user.company, employee=employee,
+            status__iexact="Successful",
+            payslip__payroll_run__approval_status="Approved",
+        ).select_related("payslip__payroll_run").order_by(
+            "-payment_date", "-created_at"
+        )[:50]
+        wages = WagePayment.objects.filter(
+            company=request.user.company, employee=employee,
+            reversal__isnull=True,
+        ).order_by("-payment_date", "-created_at")[:50]
+
+        rows = [{
+            "id": str(payment.pk),
+            "type": "Salary",
+            "date": payment.payment_date.isoformat(),
+            "amount": str(payment.amount),
+            "method": payment.method,
+            "reference": payment.reference,
+            "period": f"{payment.payslip.payroll_run.year}-{payment.payslip.payroll_run.month:02d}",
+            "status": "Paid",
+        } for payment in monthly]
+        rows.extend({
+            "id": str(payment.pk),
+            "type": "Daily wage",
+            "date": payment.payment_date.isoformat(),
+            "amount": str(payment.amount),
+            "method": payment.method,
+            "reference": payment.reference,
+            "period": "",
+            "status": "Paid",
+        } for payment in wages)
+        rows.sort(key=lambda row: (row["date"], row["id"]), reverse=True)
+        return response.Response(rows[:50])
+
+
 class MyAttendanceLogsView(APIView):
     permission_classes=[RolePermission]
     permission_code="attendance.self"
