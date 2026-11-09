@@ -34,6 +34,10 @@ def module_inventory():
         module, _, action = permission.partition(".")
         if not module or not action or module == "panel":
             continue
+        # Personal attendance is always-free staff self-service, not part of
+        # what the owner buys when activating Attendance & Payroll managers.
+        if permission == "attendance.self":
+            continue
         by_module.setdefault(module, []).append(permission)
     # Discover real permission-backed modules, then sell only related,
     # non-overlapping workflow packages. Keep each module's original RBAC.
