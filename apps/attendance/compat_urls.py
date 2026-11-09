@@ -3,6 +3,7 @@ from .compat_views import *
 urlpatterns=[
  path("my-attendance/logs",MyAttendanceLogsView.as_view()),
  path("my-attendance/calendar",MyAttendanceCalendarView.as_view()),
+ path("my-attendance/salary",MySalaryPaymentsView.as_view()),
  path("my-attendance/corrections",PunchCorrectionCreateView.as_view()),
  path("leave/balances",LeaveBalancesView.as_view()),
  path("leave/requests",MyLeaveRequestsView.as_view()),

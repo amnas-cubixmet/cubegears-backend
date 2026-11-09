@@ -123,6 +123,18 @@ def user_has_permission(user, permission_code):
         return False
 
     verified_owner = is_company_owner(user)
+    # Self-service attendance is free for active, login-enabled staff even if
+    # their role lacks the paid Attendance & Payroll permissions. Inactive or
+    # unlinked staff must never receive this access.
+    active_self_attendance = False
+    if permission_code == "attendance.self":
+        from apps.employees.models import Employee
+        active_self_attendance = Employee.objects.filter(
+            company_id=user.company_id, user_id=user.pk,
+            status__iexact="Active",
+        ).exists()
+        if not active_self_attendance and not verified_owner:
+            return False
     permissions = role.permissions or []
     # A verified owner does not lose company RBAC just because an old role
     # catalog contains invalid grants. Staff still fail closed. This never
@@ -136,7 +148,7 @@ def user_has_permission(user, permission_code):
     # restrictive role edit must not lock the owner out of their own company.
     # This bypasses only role grants, NEVER feature entitlements, overdue
     # restrictions, tenant boundaries, or ownership-only billing checks.
-    role_allows = verified_owner or (
+    role_allows = verified_owner or active_self_attendance or (
         isinstance(permissions, list)
         and ("*" in permissions or permission_code in permissions)
     )
