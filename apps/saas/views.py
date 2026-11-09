@@ -407,7 +407,10 @@ class SettingsView(APIView):
         qs=CompanySetting.objects.filter(company=request.user.company)
         if category == "document_templates":
             from apps.invoices.template_settings import get_template_settings
-            return response.Response(get_template_settings(request.user.company))
+            return response.Response(get_template_settings(
+                request.user.company,
+                sync_profile=request.query_params.get("workshop_defaults") == "1",
+            ))
         if category:
             obj=qs.filter(category=category).first()
             result={**DEFAULTS.get(category,{}),**(obj.data if obj else {})}
