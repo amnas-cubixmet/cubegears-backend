@@ -132,6 +132,7 @@ class WorkshopSubdomainTests(TestCase):
             **self.headers("unknown.localhost:3000"),
         ).status_code, 404)
 
+    @override_settings(DEBUG=False)
     def test_customer_link_uses_custom_default_label_when_wildcard_enabled(self):
         ensure_default_subdomain(self.company)
         assign_subdomain(self.company, "fresh-wheels")
@@ -162,6 +163,14 @@ class WorkshopSubdomainTests(TestCase):
             link = issue_link(ensure_portal_access(customer))
         self.assertTrue(
             link.startswith("http://myworkshop.localhost:5174/access/"), link
+        )
+        # Even if the production wildcard flag is enabled by mistake locally,
+        # a local workshop must not receive an unusable production tracking URL.
+        with patch.dict(os.environ, {"CUSTOMER_WEBSITE_LINKS_ENABLED": "true"}):
+            local_link = issue_link(ensure_portal_access(customer))
+        self.assertTrue(
+            local_link.startswith("http://myworkshop.localhost:5174/access/"),
+            local_link,
         )
         # The hostname is tenant-bound. A different workshop has no access.
         response = self.client.get(
