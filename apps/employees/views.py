@@ -597,7 +597,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 delivery_status__in=["manual", "queued", "sending", "sent", "failed"],
             ).order_by("-created_at").first()
             cooldown = timedelta(seconds=60)
-            should_reuse = bool(recent and (
+            purpose = "reset" if user.has_usable_password() else "setup"
+            should_reuse = bool(recent and recent.purpose == purpose and (
                 not replace or recent.created_at >= timezone.now() - cooldown
             ))
             # A manually shared reset must not race an invitation already
