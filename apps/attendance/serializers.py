@@ -111,7 +111,7 @@ class AttendanceRuleSerializer(serializers.ModelSerializer):
         # owner's saved location via either legacy or modern rule endpoints.
         from .services import onboarding_punch_policy
         company = (
-            self.instance.company if self.instance else
+            self.instance.company if self.instance and self.instance.company_id else
             getattr(getattr(self.context.get("request"), "user", None), "company", None)
         )
         if company is not None:
