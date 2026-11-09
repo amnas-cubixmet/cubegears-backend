@@ -85,6 +85,10 @@ if "%SETUP%"=="1" (
 )
 
 echo.
+echo [check] Verifying local-only development configuration BEFORE any migration...
+"%PYTHON%" scripts\workspace_preflight.py
+if errorlevel 1 goto failed
+
 echo [check] Checking Django settings and your existing database...
 "%PYTHON%" manage.py check
 if errorlevel 1 goto failed
