@@ -160,6 +160,74 @@ class MobileStaffOnboardingTests(TestCase):
             "token":new.data["setupLink"].rsplit("/",1)[-1],
         },format="json").status_code,400)
 
+    @override_settings(STAFF_WHATSAPP_AUTO_SEND_ENABLED=True)
+    def test_manual_whatsapp_reset_stays_manual_even_when_cloud_api_is_enabled(self):
+        from unittest.mock import patch
+
+        created = self.create_staff(consent=True)
+        employee = Employee.objects.select_related("user").get(pk=created.data["id"])
+        employee.user.set_password("ExistingPassword33!")
+        employee.user.save(update_fields=["password"])
+        with patch("apps.whatsapp.staff_invites.queue_staff_whatsapp_invitation") as queue:
+            result = self.admin.post(
+                f"/api/v1/employees/{employee.pk}/invite",
+                {"manualOnly": True, "replace": True}, format="json",
+            )
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data["purpose"], "reset")
+        self.assertEqual(result.data["whatsappInviteStatus"], "manual")
+        self.assertIn("/set-password/", result.data["setupLink"])
+        queue.assert_not_called()
+        self.assertEqual(
+            StaffPasswordInvitation.objects.filter(user=employee.user, invalidated_at__isnull=True).count(), 1
+        )
+        repeat = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True, "replace": True}, format="json",
+        )
+        self.assertEqual(repeat.status_code, 200, repeat.data)
+        self.assertEqual(repeat.data["setupLink"], result.data["setupLink"])
+
+    def test_manual_whatsapp_reset_requires_consent_and_boolean_mode(self):
+        created = self.create_staff(consent=False)
+        employee = Employee.objects.get(pk=created.data["id"])
+        for payload in ({"manualOnly": True}, {"manualOnly": "true"}):
+            result = self.admin.post(
+                f"/api/v1/employees/{employee.pk}/invite", payload, format="json",
+            )
+            self.assertEqual(result.status_code, 400, result.data)
+        self.assertEqual(
+            StaffPasswordInvitation.objects.filter(user=employee.user).count(), 1
+        )
+
+    @override_settings(STAFF_WHATSAPP_AUTO_SEND_ENABLED=True)
+    def test_manual_share_does_not_reuse_queued_auto_link(self):
+        created = self.create_staff(consent=True)
+        employee = Employee.objects.select_related("user").get(pk=created.data["id"])
+        recent = StaffPasswordInvitation.objects.filter(user=employee.user).latest("created_at")
+        recent.delivery_status = "queued"
+        recent.save(update_fields=["delivery_status"])
+        blocked = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True, "replace": True}, format="json",
+        )
+        self.assertEqual(blocked.status_code, 400, blocked.data)
+        self.assertIn("manualOnly", blocked.data)
+        # After the 60-second cooldown the server can rotate and invalidate
+        # the old queued link, instead of sharing one token through both modes.
+        StaffPasswordInvitation.objects.filter(pk=recent.pk).update(
+            created_at=timezone.now() - timedelta(seconds=70),
+        )
+        with patch("apps.whatsapp.staff_invites.queue_staff_whatsapp_invitation") as queue:
+            renewed = self.admin.post(
+                f"/api/v1/employees/{employee.pk}/invite",
+                {"manualOnly": True, "replace": True}, format="json",
+            )
+        self.assertEqual(renewed.status_code, 200, renewed.data)
+        self.assertEqual(renewed.data["whatsappInviteStatus"], "manual")
+        self.assertNotEqual(renewed.data["setupLink"], created.data["setupLink"])
+        queue.assert_not_called()
+
     def test_disable_login_does_not_disable_employment_or_payroll(self):
         reply = self.create_staff()
         employee = Employee.objects.get(pk=reply.data["id"])
