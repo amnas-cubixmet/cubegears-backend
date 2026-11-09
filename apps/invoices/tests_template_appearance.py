@@ -94,3 +94,105 @@ class CompanyInvoiceTemplateTests(TestCase):
         )
         self.assertEqual(template_for_document(self.alpha, "invoice")["selectedTemplate"], "classic")
         self.assertEqual(template_for_document(self.alpha, "estimate")["selectedTemplate"], "minimal")
+
+    def test_onboarding_company_details_and_selected_bank_fill_template_and_pdf_snapshot(self):
+        from decimal import Decimal
+        from apps.inventory.models import WorkshopFinancialAccount
+        from apps.invoices.template_settings import company_template_defaults
+
+        self.alpha.name = "Registered Workshop"
+        self.alpha.legal_name = "Registered Workshop Private Limited"
+        self.alpha.gstin = "32ABCDE1234F1Z5"
+        self.alpha.phone = "+919900000000"
+        self.alpha.email = "workshop@example.test"
+        self.alpha.address = "Main Road, Workshop District"
+        self.alpha.state = "Kerala"
+        self.alpha.save()
+        bank = WorkshopFinancialAccount.objects.create(
+            company=self.alpha, name="Business Account", kind="Bank",
+            bank_name="State Bank of India", account_number="000123456789",
+            ifsc="SBIN0001234", opening_balance=Decimal("1250.00"),
+        )
+        CompanySetting.objects.create(
+            company=self.alpha, category="onboarding",
+            data={"bankAccountId": str(bank.pk), "completedSteps": ["company", "bank"]},
+        )
+        inherited = company_template_defaults(self.alpha)
+        self.assertEqual(inherited["businessName"], "Registered Workshop")
+        self.assertEqual(inherited["businessLegalName"], "Registered Workshop Private Limited")
+        self.assertEqual(inherited["businessGstin"], "32ABCDE1234F1Z5")
+        self.assertEqual(inherited["businessPan"], "ABCDE1234F")
+        self.assertEqual(inherited["businessState"], "Kerala")
+        self.assertEqual(inherited["bankAccountNumber"], "000123456789")
+        self.assertEqual(inherited["bankIfsc"], "SBIN0001234")
+        self.assertEqual(template_for_document(self.alpha, "invoice")["bankName"], "State Bank of India")
+
+        # Another tenant never gets the linked bank or seller information.
+        other = get_template_settings(self.beta)
+        self.assertEqual(other["businessName"], self.beta.name)
+        self.assertEqual(other["bankAccountNumber"], "")
+        self.assertEqual(other["bankIfsc"], "")
+
+        # Explicit template overrides remain, but owners can request a clean
+        # refresh from the current workshop profile without losing styling.
+        CompanySetting.objects.create(
+            company=self.alpha, category="document_templates",
+            data={"businessName": "Custom Print Name", "invoiceTemplate": "classic"},
+        )
+        self.assertEqual(get_template_settings(self.alpha)["businessName"], "Custom Print Name")
+        refreshed = get_template_settings(self.alpha, sync_profile=True)
+        self.assertEqual(refreshed["businessName"], "Registered Workshop")
+        self.assertEqual(refreshed["invoiceTemplate"], "classic")
+
+    def test_uploaded_workshop_logo_is_available_to_templates_without_public_url(self):
+        import base64
+        from io import BytesIO
+        from tempfile import TemporaryDirectory
+        from django.core.files.base import ContentFile
+        from django.test import override_settings
+        from PIL import Image
+        from apps.invoices.template_settings import company_logo_for_template
+
+        buffer = BytesIO()
+        Image.new("RGB", (120, 80), (32, 83, 151)).save(buffer, "PNG")
+        with TemporaryDirectory() as media_dir, override_settings(MEDIA_ROOT=media_dir):
+            self.alpha.logo_image.save("workshop.png", ContentFile(buffer.getvalue()), save=True)
+            logo = company_logo_for_template(self.alpha)
+            self.assertTrue(logo.startswith("data:image/jpeg;base64,"))
+            self.assertTrue(base64.b64decode(logo.split(",", 1)[1]))
+            self.assertEqual(get_template_settings(self.alpha)["businessLogo"], logo)
+            self.assertFalse(CompanySetting.objects.filter(
+                company=self.alpha, category="document_templates",
+            ).exists())
+            self.alpha.logo_image.delete(save=False)
+
+    def test_inherited_branding_is_not_frozen_by_template_settings_put(self):
+        from apps.accounts.models import User
+        from apps.roles.models import Role
+        from rest_framework.test import APIClient
+
+        role = Role.objects.create(company=self.alpha, name="Owner", code="SYNC_OWNER", permissions=["*"])
+        owner = User.objects.create_user(
+            email="sync-owner@example.test", password="ExamplePassword123!",
+            company=self.alpha, role=role, name="Template Owner",
+        )
+        self.alpha.owner = owner
+        self.alpha.save(update_fields=["owner"])
+        client = APIClient()
+        client.force_authenticate(user=owner)
+        url = "/api/v1/settings/document_templates"
+        initial = client.get(url)
+        self.assertEqual(initial.status_code, 200, initial.data)
+        payload = {**initial.data, "accent": "blue", "invoiceTemplate": "classic"}
+        saved = client.put(url, payload, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+        row = CompanySetting.objects.get(company=self.alpha, category="document_templates")
+        self.assertEqual(row.data["invoiceTemplate"], "classic")
+        self.assertEqual(row.data["accent"], "blue")
+        self.assertNotIn("businessName", row.data)
+
+        self.alpha.name = "Renamed After Onboarding"
+        self.alpha.save(update_fields=["name"])
+        fetched = client.get(url)
+        self.assertEqual(fetched.data["businessName"], "Renamed After Onboarding")
+        self.assertEqual(fetched.data["invoiceTemplate"], "classic")
