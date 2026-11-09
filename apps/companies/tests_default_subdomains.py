@@ -141,6 +141,35 @@ class WorkshopSubdomainTests(TestCase):
         url = issue_link(ensure_portal_access(customer))
         self.assertTrue(url.startswith("https://fresh-wheels.cubegears.com/access/"))
 
+    @override_settings(
+        DEBUG=True,
+        CUSTOMER_PORTAL_BASE_URL="http://localhost:5174/access",
+    )
+    def test_myworkshop_localhost_resolves_and_links_to_same_tenant(self):
+        """The public localhost site and private tracking link share a tenant."""
+        ensure_default_subdomain(self.company)
+        assign_subdomain(self.company, "myworkshop")
+        response = self.client.get(
+            "/api/v1/customer-website/branding",
+            **self.headers("myworkshop.localhost:5174"),
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["name"], "First Garage")
+        with patch.dict(os.environ, {"CUSTOMER_WEBSITE_LINKS_ENABLED": "false"}):
+            customer = Customer.objects.create(
+                company=self.company, name="Local Customer", phone="+919999900033",
+            )
+            link = issue_link(ensure_portal_access(customer))
+        self.assertTrue(
+            link.startswith("http://myworkshop.localhost:5174/access/"), link
+        )
+        # The hostname is tenant-bound. A different workshop has no access.
+        response = self.client.get(
+            "/api/v1/customer-website/branding",
+            **self.headers("unregistered.localhost:5174"),
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_signup_respects_reserved_website_labels_and_creates_one_registry(self):
         ensure_default_subdomain(self.company)
         assign_subdomain(self.company, "popular-garage")
