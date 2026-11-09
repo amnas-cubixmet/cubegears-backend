@@ -461,7 +461,21 @@ class StaffInvitationConsumeView(APIView):
             return Response({"password":list(exc.messages)}, status=400)
         if user is None:
             return Response({"message":"Invalid or expired setup link."}, status=400)
-        return Response({"message":"Password saved. Sign in with your registered mobile number and password."})
+
+        # A valid one-time link authorizes a password change, not unrestricted
+        # workshop access. Recheck login eligibility after the password is saved.
+        # No JWT is issued for a suspended staff member, disabled role/company,
+        # or revoked account even if the invitation was valid moments earlier.
+        if not user_can_sign_in(user):
+            return Response({
+                "message": (
+                    "Password saved, but this account cannot sign in. "
+                    "Contact your workshop administrator."
+                ),
+            })
+        tokens = issue_tokens(user)
+        tokens["message"] = "Password saved. Signed in securely."
+        return Response(tokens)
 
 
 class SetupPasswordView(APIView):
