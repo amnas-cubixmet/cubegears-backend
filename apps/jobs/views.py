@@ -917,6 +917,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         from apps.payroll.models import JobWorkSession
         from apps.inventory.models import StockMovement
         from .models import OutsideLabourCharge
+        from apps.invoices.models import Invoice
 
         scoped = self.get_object()
         job = Job.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
@@ -931,6 +932,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             or JobWorkSession.objects.filter(company=job.company, job=job).exists()
             or OutsideLabourCharge.objects.filter(company=job.company, job=job).exists()
             or job.parts.filter(issued=True).exists()
+            or Invoice.objects.filter(company=job.company, job=job).exclude(status="Cancelled").exists()
             or job.photos.filter(photo_type="work_update").exists()
             or StockMovement.objects.filter(
                 company=job.company, job=job,
@@ -1291,8 +1293,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         if data.get("status") != "Skipped":
             raise ValidationError({"inspection": "Only a skipped inspection can be reopened."})
         state = workflow_state(job)
-        if state["current"] != "estimate" or (job.workflow_progress or {}).get(
-            "estimateDecision", {}
+        if state["current"] != "estimate" or (
+            (job.workflow_progress or {}).get("estimateDecision") or {}
         ).get("status") == "Skipped":
             raise ValidationError({
                 "inspection": "Reopen the skipped Estimate first, or finish the current stage before requesting changes."
