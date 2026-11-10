@@ -179,7 +179,7 @@ def unverified_expense_gst(company, period):
     rows = [{
         "id": str(exp.pk), "date": exp.date.isoformat(),
         "category": exp.category, "vendor": exp.vendor,
-        "description": exp.description.split("\\n", 1)[0][:120],
+        "description": exp.description.split("\n", 1)[0][:120],
         "reference": exp.reference, "amount": money(exp.amount),
         "tax": money(exp.tax), "status": exp.status,
         "itcEligibility": "Unverified - excluded from ITC",
