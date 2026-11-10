@@ -4,7 +4,6 @@ Always aggregate ALL posted bills; the purchase listing endpoint is intentionall
 limited and must not be used to calculate financial liabilities. Draft orders
 and advance payments are never counted as extra purchases.
 """
-from collections import defaultdict
 from decimal import Decimal
 
 from django.db.models import Sum
