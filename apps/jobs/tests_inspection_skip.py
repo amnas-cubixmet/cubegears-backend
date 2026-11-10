@@ -61,6 +61,86 @@ class InspectionSkipTests(TestCase):
     def skip(self, reason="Quick Service"):
         return self.client.post(self.url("inspection/skip"), {"reason": reason}, format="json")
 
+    def test_skipped_inspection_can_be_reopened_and_edited_without_erasing_audit(self):
+        self.open_inspection()
+        self.assertEqual(self.skip().status_code, 200)
+        reply = self.client.post(self.url("inspection/reopen"), {}, format="json")
+        self.assertEqual(reply.status_code, 200, getattr(reply, "data", None))
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_INSPECTION)
+        self.assertEqual(self.job.inspection["status"], "In Progress")
+        self.assertNotIn("inspection", reply.data["workflow"]["skipped"])
+        self.assertEqual(reply.data["workflow"]["current"], "inspection")
+        self.assertEqual(self.job.inspection["skipHistory"][0]["skipReason"], "Quick Service")
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Inspection Skipped").count(), 1)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Inspection Reopened").count(), 1)
+        edit = self.client.patch(self.url("inspection/checklist"), {
+            "itemName": "Engine oil", "status": "Good",
+        }, format="json")
+        self.assertEqual(edit.status_code, 200, getattr(edit, "data", None))
+        self.assertEqual(edit.data["checklist"]["Engine oil"], "Good")
+        self.assertEqual(self.client.post(self.url("inspection/reopen"), {}, format="json").status_code, 400)
+
+    def test_both_skipped_stages_must_be_reopened_in_reverse_order(self):
+        self.open_inspection()
+        self.assertEqual(self.skip().status_code, 200)
+        skipped = self.client.post(self.url("estimate/skip"), {
+            "reason": "Quick Service", "details": "",
+        }, format="json")
+        self.assertEqual(skipped.status_code, 200, getattr(skipped, "data", None))
+        self.assertEqual(skipped.data["current"], "work")
+        self.assertEqual(self.client.post(self.url("inspection/reopen"), {}, format="json").status_code, 400)
+        reopened_estimate = self.client.post(self.url("estimate/reopen"), {}, format="json")
+        self.assertEqual(reopened_estimate.status_code, 200, getattr(reopened_estimate, "data", None))
+        self.assertEqual(reopened_estimate.data["current"], "estimate")
+        self.assertNotIn("estimate", reopened_estimate.data["skipped"])
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, Job.STATUS_ESTIMATE_PENDING)
+        self.assertEqual(self.job.workflow_progress["estimateSkipHistory"][0]["reason"], "Quick Service")
+        self.assertEqual(self.job.workflow_progress["estimateDecision"]["status"], "Pending")
+        quote = self.client.post(self.url("estimates/quick"), {
+            "lines": [{"type": "Labour", "description": "Reopened diagnosis",
+                       "quantity": "1", "unitPrice": "250"}],
+            "taxPercent": "0", "discount": "0",
+        }, format="json")
+        self.assertEqual(quote.status_code, 201, getattr(quote, "data", None))
+        self.assertEqual(self.client.post(self.url("inspection/reopen"), {}, format="json").status_code, 200)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Estimate Skipped").count(), 1)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Estimate Reopened").count(), 1)
+
+    def test_estimate_reopen_is_blocked_once_work_is_recorded_or_qc_started(self):
+        self.open_inspection()
+        self.assertEqual(self.skip().status_code, 200)
+        self.assertEqual(self.client.post(self.url("estimate/skip"), {
+            "reason": "Estimate Not Required",
+        }, format="json").status_code, 200)
+        self.job.refresh_from_db()
+        self.job.work = [{"description": "Labour started"}]
+        self.job.save(update_fields=["work"])
+        response = self.client.post(self.url("estimate/reopen"), {}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.workflow_progress["estimateDecision"]["status"], "Skipped")
+        self.assertFalse(JobActivity.objects.filter(job=self.job, event="Estimate Reopened").exists())
+        self.job.work = []
+        self.job.status = Job.STATUS_QC
+        self.job.save(update_fields=["work", "status"])
+        self.assertEqual(self.client.post(self.url("estimate/reopen"), {}, format="json").status_code, 400)
+
+    def test_read_only_staff_cannot_reopen_skipped_stages(self):
+        self.open_inspection()
+        self.assertEqual(self.skip().status_code, 200)
+        role = Role.objects.create(
+            company=self.company, name="Read only", code="VIEW_SKIP_REOPEN",
+            permissions=["jobs.view"], is_active=True,
+        )
+        viewer = User.objects.create_user(
+            email="skip-reopen-viewer@example.test", password="safe-password",
+            name="Viewer", company=self.company, branch=self.branch, role=role,
+        )
+        self.client.force_authenticate(user=viewer)
+        self.assertEqual(self.client.post(self.url("inspection/reopen"), {}, format="json").status_code, 403)
+
     def test_skip_before_start_with_zero_checks_is_distinct_and_audited(self):
         self.open_inspection()
         before = self.client.get(self.url("inspection"))
