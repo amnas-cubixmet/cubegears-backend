@@ -91,14 +91,17 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
             Q(status__iexact="Cancelled") | Q(status__iexact="Pending Approval")
         ).values("budget_item_id").annotate(spent=Sum("amount"))
         spent_by_id = {entry["budget_item_id"]: entry["spent"] for entry in actuals}
+        def money(value):
+            return format(Decimal(value).quantize(Decimal("0.01")), ".2f")
+
         return [{
             "id": str(budget.pk),
             "name": budget.name,
             "category": budget.category,
             "month": budget.month.strftime("%Y-%m"),
-            "plannedAmount": str(budget.planned_amount),
-            "spentAmount": str(spent_by_id.get(budget.pk, Decimal("0.00"))),
-            "remainingAmount": str(
+            "plannedAmount": money(budget.planned_amount),
+            "spentAmount": money(spent_by_id.get(budget.pk, Decimal("0.00"))),
+            "remainingAmount": money(
                 budget.planned_amount - spent_by_id.get(budget.pk, Decimal("0.00"))
             ),
             "isActive": budget.is_active,
