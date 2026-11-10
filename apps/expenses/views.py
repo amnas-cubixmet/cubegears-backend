@@ -202,6 +202,8 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
         if account_balance(account) < amount:
             raise ValidationError({"amount": "Insufficient funds in the selected account."})
         method = str(data.get("method") or expense.payment_method or "Cash").strip()
+        from apps.finance.channels import validate_payment_channel
+        validate_payment_channel(method, account)
         if not method or len(method) > 50:
             raise ValidationError({"method": "Invalid payment method."})
         reference = str(data.get("reference") or expense.reference or "").strip()[:120]
