@@ -1,5 +1,6 @@
 """Reports workspace must never disclose another workshop's finance data."""
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -58,9 +59,9 @@ class ReportsWorkspaceTests(TestCase):
     def test_live_lists_have_correct_company_and_financial_shapes(self):
         data = self.report({"from": "2026-11-01", "to": "2026-11-30"})
         self.assertEqual(data["company"]["name"], "Workshop Alpha")
-        self.assertEqual(data["invoices"][0]["total"], self.invoice.total)
-        self.assertEqual(data["payments"][0]["amount"], self.payment.amount)
-        self.assertEqual(data["expenses"][0]["amount"], self.expense.amount)
+        self.assertEqual(data["invoices"][0]["total"], Decimal("500.00"))
+        self.assertEqual(data["payments"][0]["amount"], Decimal("200.00"))
+        self.assertEqual(data["expenses"][0]["amount"], Decimal("80.00"))
         self.assertEqual(data["expenses"][0]["paidAmount"], 0)
         self.assertEqual(data["stock"][0]["onHand"], 5)
         for source in ("invoices", "payments", "expenses", "stock"):
