@@ -139,9 +139,9 @@ class WorkspaceSearchTests(TestCase):
             self.assertEqual(self.found(query), [])
         # The supplier record remains searchable for staff with stock view
         # without exposing the financial documents associated with it.
-        self.role.permissions = ["stock.view"]
-        self.role.save(update_fields=["permissions"])
-        self.client.force_authenticate(user=self.owner)
+        self.limited_role.permissions = ["stock.view"]
+        self.limited_role.save(update_fields=["permissions"])
+        self.client.force_authenticate(user=self.limited)
         self.assertTrue(any(r["group"] == "Suppliers" for r in self.found("Kerala Auto Supplier")))
         self.assertFalse(any(r["group"] in {"Supplier Bills", "Purchases"} for r in self.found("SEARCH")))
 
