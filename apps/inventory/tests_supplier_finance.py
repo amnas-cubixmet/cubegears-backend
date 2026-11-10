@@ -88,6 +88,88 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(r.status_code, 200)
         return r.data[0]["recordedBalance"]
 
+    def test_supplier_directory_balances_include_more_than_first_hundred_posted_bills(self):
+        from datetime import date
+        from decimal import Decimal
+        from django.utils import timezone
+
+        SupplierBill.objects.bulk_create([
+            SupplierBill(
+                company=self.company, branch=self.branch, supplier=self.supplier,
+                invoice_number=f"LIST-{idx:04d}", invoice_date=date(2026, 11, 1),
+                due_date=date(2026, 11, 2),
+                items=[], subtotal=Decimal("10.00"), tax=Decimal("0.00"),
+                total=Decimal("10.00"), status="Posted", posted_at=timezone.now(),
+            )
+            for idx in range(105)
+        ])
+        SupplierBill.objects.create(
+            company=self.company, branch=self.branch, supplier=self.supplier,
+            invoice_number="DRAFT-LIST", invoice_date=date(2026, 11, 1),
+            total=Decimal("4000.00"), status="Draft",
+        )
+        directory = self.client.get(f"{self.base}/suppliers/balances")
+        self.assertEqual(directory.status_code, 200, getattr(directory, "data", None))
+        found = next(row for row in directory.data
+                     if row["supplierId"] == str(self.supplier.pk))
+        self.assertEqual(found["postedBillCount"], 105)
+        self.assertEqual(found["outstanding"], "1050.00")
+        self.assertEqual(found["overdue"], "1050.00")
+        self.assertEqual(found["totalPurchases"], "1050.00")
+        self.assertEqual(found["availableAdvance"], "0.00")
+        self.assertEqual(found["netExposureAfterAvailableCredits"], "1050.00")
+        self.assertEqual(found["outstanding"], self.summary()["outstanding"])
+
+    def test_supplier_ledger_shows_real_cash_and_credit_movements_once(self):
+        from decimal import Decimal
+        bill = self.create_bill("600.00")
+        self.assertEqual(self.post_bill(bill).status_code, 200)
+        payment = self.pay(
+            [{"billId": bill, "amount": "200.00"}],
+            amount="200.00", key="cash-flow-direct",
+        )
+        self.assertEqual(payment.status_code, 201)
+        advance = self.pay(amount="100.00", kind="Advance", key="cash-flow-advance")
+        self.assertEqual(advance.status_code, 201)
+        before = self.account_balance()
+        applied = self.client.post(
+            f"{self.base}/payments/{advance.data['id']}/allocate",
+            {"billId": bill, "amount": "100.00"}, format="json",
+        )
+        self.assertEqual(applied.status_code, 201, getattr(applied, "data", None))
+        self.assertEqual(self.account_balance(), before)
+
+        ledger = self.client.get(f"{self.base}/suppliers/{self.supplier.pk}/ledger")
+        self.assertEqual(ledger.status_code, 200, getattr(ledger, "data", None))
+        entries = ledger.data["entries"]
+        self.assertTrue(any(item["type"] == "Supplier Advance"
+                            and item["cashOut"] == "100.00" for item in entries))
+        self.assertTrue(any(item["type"] == "Advance Application"
+                            and item["cashOut"] == "0.00" for item in entries))
+        self.assertTrue(any(item["type"] == "Supplier Payment"
+                            and item["cashOut"] == "200.00" for item in entries))
+        self.assertEqual(
+            sum((Decimal(item["cashOut"]) for item in entries), Decimal("0.00")),
+            Decimal("300.00"),
+        )
+        self.assertEqual(ledger.data["outstanding"], "300.00")
+        self.assertEqual(Decimal(entries[-1]["runningPayable"]), Decimal("300.00"))
+
+    def test_directory_supplier_balance_requires_finance_permission(self):
+        role = Role.objects.create(
+            company=self.company, name="Stock Viewer", code="SUP_STOCK_ONLY",
+            permissions=["stock.view"], is_active=True,
+        )
+        staff = User.objects.create_user(
+            email="stock-only@example.test", name="Stock Viewer",
+            password="safe-password", company=self.company,
+            branch=self.branch, role=role,
+        )
+        self.client.force_authenticate(user=staff)
+        self.assertEqual(self.client.get(
+            f"{self.base}/suppliers/balances",
+        ).status_code, 403)
+
     def test_draft_creates_neither_payable_stock_movement_nor_bank_entry(self):
         bill = self.create_bill(total="2100.00", receive=True, sku_item=True)
         self.assertEqual(SupplierBill.objects.get(pk=bill).status, "Draft")
