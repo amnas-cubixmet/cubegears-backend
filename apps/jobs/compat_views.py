@@ -329,12 +329,14 @@ class OutsidePartCompleteView(APIView):
             qty = Decimal(str(record["quantity"]))
         except (InvalidOperation, ValueError, TypeError):
             raise ValidationError({"unitCost": "Enter a valid actual purchase rate."})
-        if not actual.is_finite() or actual < 0 or actual > Decimal("999999999.99"):
+        if not actual.is_finite() or actual <= 0 or actual > Decimal("999999999.99"):
             raise ValidationError({"unitCost": "Invalid purchase rate."})
         quoted_total = Decimal(str(record.get("quotedTotal") or qty * Decimal(str(record["unitCost"]))))
         actual_total = (actual * qty).quantize(Decimal("0.01"))
         if actual_total > quoted_total:
             raise ValidationError({"unitCost": "Actual cost exceeds the approved quote. Request approval again."})
+        if actual_total <= 0:
+            raise ValidationError({"unitCost": "Actual purchase total must be positive."})
 
         # A direct outside purchase is consumed by this Job Card, NOT added
         # to inventory; its actual cost is an operating expense exactly once.
