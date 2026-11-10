@@ -23,6 +23,7 @@ from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_stat
 from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
 from .india_gst import gst_context, calculate_tax, gst_rate
 from apps.invoices.gst_rate_options import find_gst_choice
+from apps.notifications.job_events import notify_job_event
 
 def _same_quick_create_phone(stored, supplied):
     """Allow verified +91 normalization of legacy 10-digit Indian contacts only."""
@@ -278,8 +279,11 @@ class JobViewSet(CompanyScopedModelViewSet):
             if sync_complaint_status(updated):
                 updated.save(update_fields=["complaints", "updated_at"])
         if previous_status != updated.status:
-            record_job_event(updated, self.request.user, "Status Changed",
-                             f"{previous_status} → {updated.status}")
+            activity = record_job_event(updated, self.request.user, "Status Changed",
+                                        f"{previous_status} → {updated.status}")
+            notify_job_event(updated,
+                             "job_ready" if updated.status == Job.STATUS_READY else "job_status_changed",
+                             activity)
         tracked_events = {
             "complaints": "Customer Complaints Updated",
             "work_updates": "Technician Updates Saved",
@@ -295,8 +299,10 @@ class JobViewSet(CompanyScopedModelViewSet):
                 metadata = {"section": key}
                 if isinstance(after, list):
                     metadata["count"] = len(after)
-                record_job_event(updated, self.request.user, label,
-                                 f"{label} for {updated.job_number}", metadata)
+                activity = record_job_event(updated, self.request.user, label,
+                                            f"{label} for {updated.job_number}", metadata)
+                if key == "technician_id" and updated.technician_id:
+                    notify_job_event(updated, "job_assigned", activity)
 
 
     @transaction.atomic
@@ -546,11 +552,14 @@ class JobViewSet(CompanyScopedModelViewSet):
             company=company, branch=selected_branch, job_number=number,
             advisor=advisor, workflow_progress=progress,
         )
-        JobActivity.objects.create(
+        activity = JobActivity.objects.create(
             company=company, branch=job.branch, job=job,
             event="Job Created", description=f"{number} created",
             actor=self.request.user, to_status=job.status,
         )
+        notify_job_event(job, "job_created", activity)
+        if job.technician_id:
+            notify_job_event(job, "job_assigned", activity)
 
     @decorators.action(detail=True, methods=["patch"])
     @transaction.atomic
@@ -579,11 +588,14 @@ class JobViewSet(CompanyScopedModelViewSet):
         if sync_complaint_status(job):
             fields.append("complaints")
         job.save(update_fields=fields)
-        JobActivity.objects.create(
+        activity = JobActivity.objects.create(
             company=job.company, branch=job.branch, job=job,
             event="Status Changed", description=f"{old_status} → {new_status}",
             actor=request.user, from_status=old_status, to_status=new_status,
         )
+        notify_job_event(job,
+                         "job_ready" if new_status == Job.STATUS_READY else "job_status_changed",
+                         activity)
         return response.Response(self.get_serializer(job).data)
 
     @decorators.action(
@@ -797,12 +809,16 @@ class JobViewSet(CompanyScopedModelViewSet):
         if sync_complaint_status(job):
             fields.append("complaints")
         job.save(update_fields=fields)
-        JobActivity.objects.create(
+        activity = JobActivity.objects.create(
             company=job.company,branch=job.branch,job=job,actor=request.user,
             event="Workflow Stage Completed",description=f"{stage} completed",
             from_status=old_status,to_status=job.status,
             metadata={"stage": stage, **({"estimateApproval": estimate_approval} if stage == "estimate" else {})},
         )
+        if old_status != job.status:
+            notify_job_event(job,
+                             "job_ready" if job.status == Job.STATUS_READY else "job_status_changed",
+                             activity)
         return response.Response({
             **workflow_state(job),
             "job": JobSerializer(job).data,
