@@ -110,6 +110,15 @@ class JobWorkServiceQuickTests(TestCase):
         self.assertIsNone(result.data["item"]["mechanicId"])
 
 
+    def test_billable_customer_charge_does_not_increase_direct_cost(self):
+        result = self.client.post(self.url, self.payload(), format="json")
+        self.assertEqual(result.status_code, 201, result.data)
+        direct_cost = self.client.get(f"/api/v1/jobs/{self.job.pk}/cost-summary")
+        self.assertEqual(direct_cost.status_code, 200, direct_cost.data)
+        self.assertEqual(direct_cost.data["totalCost"], "0.00")
+        self.assertEqual(direct_cost.data["mechanicCost"], "0.00")
+        self.assertEqual(result.data["item"]["customerCharge"], "1600.00")
+
     def test_remove_service_updates_job_and_invoice_suggestions_but_not_direct_cost(self):
         from apps.invoices.job_draft import suggested_job_invoice
         posted = self.client.post(self.url, self.payload(), format="json")
