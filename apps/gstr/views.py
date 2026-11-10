@@ -267,6 +267,17 @@ class GSTRCSVExportView(APIView):
             fields = ["hsnSac", "description", "unit", "rate", "classification",
                       "quantity", "taxablePreview", "cgst", "sgst", "igst"]
             rows = data["hsn"]["rows"]
+        elif report == "purchases":
+            # Book purchase data only: this is NOT an official GSTR-2B export.
+            fields = ["number", "date", "supplier", "supplierGSTIN",
+                      "taxable", "tax", "cgst", "sgst", "igst",
+                      "taxVerified", "itcEligibility"]
+            rows = data["gstr2b"]["purchases"]
+        elif report == "expense-gst":
+            # Expense tax amounts have no validated GST-head split.
+            fields = ["date", "description", "category", "vendor",
+                      "reference", "amount", "tax", "status", "itcEligibility"]
+            rows = data["gstr2b"]["expenseGSTReview"]
         elif report == "credits":
             fields = ["number", "date", "invoiceNumber", "reason",
                       "taxable", "cgst", "sgst", "igst", "total"]
@@ -296,7 +307,7 @@ class GSTRCSVExportView(APIView):
             } for row in claims]
         else:
             raise ValidationError({
-                "report": "Select gstr1, gstr3b, credits, itc or hsn preparation CSV.",
+                "report": "Select gstr1, gstr3b, credits, itc, hsn, purchases or expense-gst preparation CSV.",
             })
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = (
