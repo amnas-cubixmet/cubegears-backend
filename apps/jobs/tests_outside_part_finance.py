@@ -197,6 +197,12 @@ class OutsidePartFinanceTests(TestCase):
         expense.refresh_from_db()
         self.assertEqual(expense.status, "Paid")
         self.assertEqual(ExpenseSettlement.objects.count(), 2)
+        live = self.client.get(self.list_url)
+        self.assertEqual(live.status_code, 200)
+        live_part = live.data["items"][0]
+        self.assertEqual(live_part["paidAmount"], "199.50")
+        self.assertEqual(live_part["balanceDue"], "0.00")
+        self.assertEqual(live_part["paymentStatus"], "Paid")
         self.assertEqual(
             sum((entry.amount for entry in WorkshopAccountEntry.objects.all()), Decimal("0")),
             Decimal("-199.50"),
