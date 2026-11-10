@@ -3,6 +3,8 @@
 No mock data, cache of customer records or unbounded database scans in the UI.
 Each resource executes a separately permission-checked, bounded ORM query.
 """
+from urllib.parse import urlencode
+
 from django.db.models import Q, TextField
 from django.db.models.functions import Cast
 from rest_framework.permissions import IsAuthenticated
