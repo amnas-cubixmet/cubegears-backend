@@ -217,6 +217,7 @@ class OutsidePartsView(APIView):
         if not user_has_permission(request.user, "expenses.view"):
             return Response({"items": records})
         from uuid import UUID
+        from decimal import Decimal
         from django.db.models import Sum
         from apps.expenses.models import Expense, ExpenseSettlement
         valid_ids = []
