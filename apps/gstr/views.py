@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from django.http import HttpResponse
 from rest_framework.exceptions import ValidationError
@@ -175,8 +176,12 @@ class GSTR2BReconcileView(APIView):
         import_id = request.query_params.get("importId")
         if not import_id:
             raise ValidationError({"importId": "Select a saved GSTR-2B import."})
+        try:
+            import_uuid = UUID(str(import_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"importId": "Invalid GSTR-2B import reference."})
         batch = get_object_or_404(
-            GSTR2BImport, pk=import_id, company=request.user.company,
+            GSTR2BImport, pk=import_uuid, company=request.user.company,
             period=selected["period"],
         )
         rows = batch.rows if isinstance(batch.rows, list) else []
