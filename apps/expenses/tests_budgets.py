@@ -89,6 +89,11 @@ class ExpenseBudgetIntegrationTests(TestCase):
         )
         self.assertEqual(debits.count(), 1)
         self.assertEqual(debits.first().amount, Decimal("-2000.00"))
+        reassigned = self.client.patch(
+            f"/api/v1/expenses/{expense_id}", {"budget_item": None}, format="json",
+        )
+        self.assertEqual(reassigned.status_code, 400, getattr(reassigned, "data", None))
+
 
     def test_wrong_month_category_and_foreign_budget_are_rejected(self):
         budget_id = self.budget().data["id"]
