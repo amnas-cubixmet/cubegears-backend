@@ -51,6 +51,7 @@ jobs:
             apps.customers.tests_local_custom_domains \
             apps.customers.tests_part17_estimate_decision \
             apps.notifications.tests \
+            apps.reports.tests_workspace \
             apps.vehicles.tests_inspection_photo \
             apps.vehicles.tests_customer_vehicle_workflow \
             apps.jobs.tests_create_vehicle_complaints \
