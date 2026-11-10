@@ -295,6 +295,35 @@ class GSTPart15IntegrationTests(TestCase):
         self.assertFalse(any(row["sourceId"] == str(self.invoice.pk)
                              for row in ledger.data["entries"]))
 
+    def test_operational_expense_gst_is_visible_but_not_eligible_itc(self):
+        from apps.expenses.models import Expense
+        expense = Expense.objects.create(
+            company=self.company, branch=self.branch,
+            date=date(2026, 10, 17), category="Utilities",
+            vendor="Electric Company",
+            description="Workshop electricity bill",
+            amount=Decimal("118.00"), tax=Decimal("18.00"),
+            status="approved",
+        )
+        result = self.client.get(f"{self.root}/overview?period={self.period}")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.data["overview"]["expenseGSTReviewCount"], 1)
+        self.assertEqual(result.data["overview"]["unverifiedExpenseGST"], "18.00")
+        self.assertEqual(result.data["overview"]["eligibleITC"], "0.00")
+        self.assertEqual(result.data["overview"]["purchaseGST"], "36.00")
+        self.assertEqual(
+            result.data["gstr2b"]["expenseGSTReview"][0]["id"], str(expense.pk),
+        )
+        self.assertEqual(
+            result.data["gstr3b"]["eligibleITC"], "0.00",
+        )
+        result_other_month = self.client.get(
+            f"{self.root}/overview?period=2026-09",
+        )
+        self.assertEqual(
+            result_other_month.data["overview"]["unverifiedExpenseGST"], "0.00",
+        )
+
     def test_other_workshop_cannot_reuse_purchase_or_import(self):
         import_id = self.store_import()
         other_company = Company.objects.create(
