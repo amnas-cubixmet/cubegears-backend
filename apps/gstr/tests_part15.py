@@ -324,6 +324,38 @@ class GSTPart15IntegrationTests(TestCase):
             result_other_month.data["overview"]["unverifiedExpenseGST"], "0.00",
         )
 
+    def test_gstr_only_staff_does_not_see_operating_expense_data(self):
+        from apps.expenses.models import Expense
+        Expense.objects.create(
+            company=self.company, branch=self.branch,
+            date=date(2026, 10, 17), category="Private Cost",
+            vendor="Confidential Vendor", amount=Decimal("118.00"),
+            tax=Decimal("18.00"), status="approved",
+        )
+        limited_role = Role.objects.create(
+            company=self.company, name="GST Reader", code="PART15_GST_READER",
+            permissions=["gstr.view", "gstr.export"], is_active=True,
+        )
+        staff = User.objects.create_user(
+            email="gstr-reader@example.test", name="GST Reader",
+            password="StrongPassword123", company=self.company,
+            branch=self.branch, role=limited_role,
+        )
+        reader = APIClient()
+        reader.force_authenticate(staff)
+        result = reader.get(f"{self.root}/overview?period={self.period}")
+        self.assertEqual(result.status_code, 200, getattr(result, "data", None))
+        self.assertIsNone(result.data["overview"]["unverifiedExpenseGST"])
+        self.assertEqual(result.data["gstr2b"]["expenseGSTReview"], [])
+        denied = reader.get(
+            f"{self.root}/exports?period={self.period}&report=expense-gst",
+        )
+        self.assertEqual(denied.status_code, 403)
+        report = reader.get(
+            f"{self.root}/exports?period={self.period}&report=gstr1",
+        )
+        self.assertEqual(report.status_code, 200)
+
     def test_other_workshop_cannot_reuse_purchase_or_import(self):
         import_id = self.store_import()
         other_company = Company.objects.create(
