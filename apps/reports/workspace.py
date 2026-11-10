@@ -8,6 +8,8 @@ from datetime import date
 from decimal import Decimal
 
 from django.db.models import Q, Sum
+from django.utils import timezone
+from .fiscal_comparison import fiscal_year, get_fiscal_comparison
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -55,6 +57,16 @@ class ReportsWorkspaceView(APIView):
         end = _date_parameter(request, "to")
         if start and end and start > end:
             raise ValidationError({"to": "End date must be on or after start date."})
+
+        # FY follows Indian April–March accounting. 2000–2100 is the
+        # supported date range used in the frontend report filters.
+        raw_fy = request.query_params.get("fiscalYear")
+        if raw_fy is None or raw_fy == "":
+            selected_fy = fiscal_year(start or timezone.localdate())
+        elif raw_fy.isdecimal() and 2000 <= int(raw_fy) <= 2098:
+            selected_fy = int(raw_fy)
+        else:
+            raise ValidationError({"fiscalYear": "Enter a valid fiscal start year (2000–2098)."})
 
         payload = {
             "company": {
@@ -180,4 +192,7 @@ class ReportsWorkspaceView(APIView):
             },
         )
 
+        # Aggregate separately from the selected month: full-year comparisons
+        # must not incorrectly show one month's figures as yearly totals.
+        payload["fiscalComparison"] = get_fiscal_comparison(request.user, selected_fy)
         return Response(payload)
