@@ -157,6 +157,36 @@ def inward_rows(company, period=None):
     return rows, issues
 
 
+def unverified_expense_gst(company, period):
+    """Surface Finance Expenses that contain GST without inventing a tax credit.
+
+    Expense stores only a gross value and an undifferentiated tax amount. It
+    lacks immutable supplier GSTIN, invoice lines and IGST/CGST/SGST heads,
+    so these amounts must NEVER enter the eligible ITC or GSTR-3B totals.
+    """
+    from apps.expenses.models import Expense
+
+    expenses = Expense.objects.filter(
+        company=company, date__gte=period["from"], date__lte=period["to"],
+        tax__gt=ZERO,
+    ).exclude(
+        status__iexact="Draft",
+    ).exclude(
+        status__iexact="Rejected",
+    ).exclude(
+        status__iexact="Cancelled",
+    ).order_by("-date", "-created_at")
+    rows = [{
+        "id": str(exp.pk), "date": exp.date.isoformat(),
+        "category": exp.category, "vendor": exp.vendor,
+        "description": exp.description.split("\\n", 1)[0][:120],
+        "reference": exp.reference, "amount": money(exp.amount),
+        "tax": money(exp.tax), "status": exp.status,
+        "itcEligibility": "Unverified - excluded from ITC",
+    } for exp in expenses]
+    return rows
+
+
 def hsn_summary(invoices):
     # Item taxable amounts are derived previews, not immutable line-tax snapshots.
     # The existing InvoiceItem model stores no tax-head amounts per line.
@@ -210,6 +240,7 @@ def prepare(company, period):
 
     sales, sales_issues, invoices = outward_rows(company, period)
     purchases, purchase_issues = inward_rows(company, period)
+    expense_gst_review = unverified_expense_gst(company, period)
     hsn, hsn_issues = hsn_summary(invoices)
     gross_totals = _totals(sales)
     cancelled_credits = GSTSalesCreditNote.objects.filter(
@@ -244,6 +275,14 @@ def prepare(company, period):
     approved_items = GSTInputTaxClaim.objects.filter(company=company, period=period["period"])
     reversed_items = GSTInputTaxReversal.objects.filter(company=company, period=period["period"])
     issues = sales_issues + purchase_issues + hsn_issues
+    if expense_gst_review:
+        issues.append({
+            "type": "expense_gst_unverified", "record": "",
+            "message": (
+                f"{len(expense_gst_review)} operational expenses contain recorded GST "
+                "but lack verified supplier tax-head documentation. Excluded from ITC."
+            ),
+        })
     for note in cancelled_credits:
         issues.append({
             "type": "cancelled_original_credit_note", "record": str(note.invoice_id),
@@ -296,6 +335,10 @@ def prepare(company, period):
                 amount(notes_totals[k]) for k in ("cgst", "sgst", "igst")
             ), ZERO)),
             "purchaseGST": money(purchase_gst),
+            "unverifiedExpenseGST": money(sum((
+                amount(row["tax"]) for row in expense_gst_review
+            ), ZERO)),
+            "expenseGSTReviewCount": len(expense_gst_review),
             "eligibleITC": money(approved),
             "reversedITC": money(reversed_itc),
             "indicativeGapBeforeUtilization": money(provisional_gap),
@@ -327,7 +370,8 @@ def prepare(company, period):
             "provisional": True,
         },
         "gstr2b": {
-            "purchases": purchases, "imported": import_batches.exists(),
+            "purchases": purchases, "expenseGSTReview": expense_gst_review,
+            "imported": import_batches.exists(),
             "savedImportCount": import_batches.count(),
         },
         "itc": {
