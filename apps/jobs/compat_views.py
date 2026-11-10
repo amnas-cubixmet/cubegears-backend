@@ -296,7 +296,7 @@ class OutsidePartCompleteView(APIView):
     from apps.accounts.permissions import RolePermission
     from rest_framework.parsers import MultiPartParser, FormParser
     permission_classes = [RolePermission]
-    permission_map = {"POST": ["jobs.edit", "expenses.view"]}
+    permission_map = {"POST": ["jobs.edit", "expenses.edit"]}
     parser_classes = [MultiPartParser, FormParser]
 
     @transaction.atomic
