@@ -8,7 +8,9 @@ from apps.customers.models import Customer
 from apps.vehicles.models import Vehicle
 from apps.jobs.models import Job
 from apps.employees.models import Employee
-from apps.inventory.models import StockItem, Supplier
+from apps.inventory.models import StockItem, Supplier, SupplierBill, PurchaseOrder, WorkshopFinancialAccount
+from apps.services.models import Service
+from apps.expenses.models import Expense
 from apps.invoices.models import Invoice
 from apps.payments.models import Payment
 from apps.roles.models import Role
@@ -24,7 +26,7 @@ class WorkspaceSearchTests(TestCase):
         self.other = Company.objects.create(name="Other Workshop", slug="search-other-ws")
         perms = [
             "customers.view", "vehicles.view", "jobs.view", "staff.view",
-            "stock.view", "invoices.view", "payments.view",
+            "stock.view", "invoices.view", "payments.view", "services.view", "expenses.view",
         ]
         self.role = Role.objects.create(
             company=self.company, name="Owner", code="SEARCH_OWNER",
@@ -92,7 +94,7 @@ class WorkspaceSearchTests(TestCase):
             ("JOB-SEARCH-222", "Job Cards", f"/jobs/{self.job.pk}"),
             ("special query", "Complaints", f"/jobs/{self.job.pk}/complaints"),
             ("Manu Mechanic", "Staff", f"/staff-management/staff/{self.employee.pk}"),
-            ("Kerala Auto Supplier", "Suppliers", "/stock?supplier="),
+            ("Kerala Auto Supplier", "Suppliers", f"/suppliers/{self.supplier.pk}"),
             ("STOCK-SEARCH-888", "Inventory", "/stock?search="),
             ("INV-SEARCH-555", "Invoices", f"/invoices/{self.invoice.pk}"),
             ("UPI-SEARCH-999", "Payments", f"/payments/{self.payment.pk}"),
@@ -101,6 +103,47 @@ class WorkspaceSearchTests(TestCase):
             with self.subTest(group=group):
                 found = self.found(query)
                 self.assertTrue(any(r["group"] == group and r["route"].startswith(path) for r in found), found)
+
+    def test_additional_workshop_modules_and_direct_supplier_navigation(self):
+        service = Service.objects.create(
+            company=self.company, name="Wheel Alignment", code="SERV-SEARCH-444",
+        )
+        expense = Expense.objects.create(
+            company=self.company, date=date(2026, 11, 8), category="Utilities",
+            vendor="Electricity Vendor Search", reference="EXP-SEARCH-11",
+        )
+        account = WorkshopFinancialAccount.objects.create(
+            company=self.company, name="Bank Search Account", kind="Bank",
+        )
+        bill = SupplierBill.objects.create(
+            company=self.company, supplier=self.supplier,
+            invoice_number="BILL-SEARCH-777", invoice_date=date(2026, 11, 8),
+        )
+        purchase = PurchaseOrder.objects.create(
+            company=self.company, supplier=self.supplier, number="PO-SEARCH-333",
+        )
+        examples = (
+            ("SERV-SEARCH-444", "Services", f"/services/{service.pk}"),
+            ("EXP-SEARCH-11", "Expenses", f"/expenses/{expense.pk}"),
+            ("Bank Search Account", "Accounts", f"/finance/accounts/{account.pk}"),
+            ("BILL-SEARCH-777", "Supplier Bills", f"/suppliers/{bill.supplier_id}"),
+            ("PO-SEARCH-333", "Purchases", f"/suppliers/{purchase.supplier_id}"),
+        )
+        for query, group, route in examples:
+            with self.subTest(group=group):
+                found = self.found(query)
+                self.assertTrue(any(row["group"] == group and row["route"] == route for row in found), found)
+
+        self.client.force_authenticate(user=self.limited)
+        for query, _, _ in examples:
+            self.assertEqual(self.found(query), [])
+        # The supplier record remains searchable for staff with stock view
+        # without exposing the financial documents associated with it.
+        self.limited_role.permissions = ["stock.view"]
+        self.limited_role.save(update_fields=["permissions"])
+        self.client.force_authenticate(user=self.limited)
+        self.assertTrue(any(r["group"] == "Suppliers" for r in self.found("Kerala Auto Supplier")))
+        self.assertFalse(any(r["group"] in {"Supplier Bills", "Purchases"} for r in self.found("SEARCH")))
 
     def test_live_tenant_isolation(self):
         outsider = Customer.objects.create(

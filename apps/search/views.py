@@ -16,7 +16,9 @@ from apps.customers.models import Customer
 from apps.vehicles.models import Vehicle
 from apps.jobs.models import Job
 from apps.employees.models import Employee
-from apps.inventory.models import Supplier, StockItem
+from apps.inventory.models import Supplier, StockItem, SupplierBill, PurchaseOrder, WorkshopFinancialAccount
+from apps.services.models import Service
+from apps.expenses.models import Expense
 from apps.invoices.models import Invoice
 from apps.payments.models import Payment
 
@@ -108,19 +110,69 @@ class WorkspaceSearchView(APIView):
         if allows("stock.view"):
             suppliers = Supplier.objects.filter(company_id=company_id).filter(
                 Q(name__icontains=q) | Q(contact_person__icontains=q) |
-                Q(phone__icontains=q) | Q(gstin__icontains=q)
+                Q(phone__icontains=q) | Q(gstin__icontains=q) |
+                Q(email__icontains=q) | Q(address__icontains=q)
             ).order_by("name", "pk")[:limit]
             result.extend(_result("Suppliers", supplier, supplier.name,
                                   supplier.contact_person or "Supplier",
-                                  "/stock?" + urlencode({"supplier": str(supplier.pk)}))
+                                  f"/suppliers/{supplier.pk}")
                           for supplier in suppliers)
             parts = StockItem.objects.filter(company_id=company_id).filter(
                 Q(name__icontains=q) | Q(sku__icontains=q) |
-                Q(barcode__icontains=q) | Q(brand__icontains=q)
+                Q(barcode__icontains=q) | Q(brand__icontains=q) |
+                Q(part_number__icontains=q) | Q(hsn_code__icontains=q)
             ).order_by("name", "pk")[:limit]
             result.extend(_result("Inventory", part, part.name, part.sku,
                                   "/stock?" + urlencode({"search": part.sku or part.name}),
                                   part.status) for part in parts)
+
+        if allows("services.view"):
+            services = Service.objects.filter(company_id=company_id).filter(
+                Q(name__icontains=q) | Q(code__icontains=q) |
+                Q(hsn_sac__icontains=q)
+            ).order_by("name", "pk")[:limit]
+            result.extend(_result("Services", service, service.name,
+                                  service.code or "Workshop service",
+                                  f"/services/{service.pk}")
+                          for service in services)
+
+        if allows("expenses.view"):
+            expenses = Expense.objects.filter(company_id=company_id).filter(
+                Q(category__icontains=q) | Q(vendor__icontains=q) |
+                Q(reference__icontains=q) | Q(description__icontains=q)
+            ).order_by("-date", "pk")[:limit]
+            result.extend(_result("Expenses", expense,
+                                  expense.vendor or expense.category,
+                                  expense.category, f"/expenses/{expense.pk}",
+                                  expense.status) for expense in expenses)
+
+        if allows("payments.view"):
+            accounts = WorkshopFinancialAccount.objects.filter(company_id=company_id).filter(
+                Q(name__icontains=q) | Q(bank_name__icontains=q)
+            ).order_by("name", "pk")[:limit]
+            result.extend(_result("Accounts", account, account.name,
+                                  account.kind, f"/finance/accounts/{account.pk}")
+                          for account in accounts)
+
+        # Purchase records are finance-sensitive; stock access alone must not
+        # disclose supplier bills, purchase amounts, or payment references.
+        if allows("stock.view") and allows("payments.view"):
+            bills = SupplierBill.objects.filter(company_id=company_id).select_related(
+                "supplier"
+            ).filter(
+                Q(invoice_number__icontains=q) | Q(supplier__name__icontains=q)
+            ).order_by("-invoice_date", "pk")[:limit]
+            result.extend(_result("Supplier Bills", bill, bill.invoice_number,
+                                  bill.supplier.name, f"/suppliers/{bill.supplier_id}",
+                                  bill.status) for bill in bills)
+            orders = PurchaseOrder.objects.filter(company_id=company_id).select_related(
+                "supplier"
+            ).filter(
+                Q(number__icontains=q) | Q(supplier__name__icontains=q)
+            ).order_by("-created_at", "pk")[:limit]
+            result.extend(_result("Purchases", order, order.number,
+                                  order.supplier.name, f"/suppliers/{order.supplier_id}",
+                                  order.status) for order in orders)
 
         if allows("invoices.view"):
             rows = Invoice.objects.filter(company_id=company_id).filter(
