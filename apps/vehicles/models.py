@@ -67,6 +67,7 @@ class VehicleInspectionPhoto(CompanyOwnedModel):
     caption = models.CharField(max_length=255, blank=True)
     notes = models.TextField(blank=True)
     published = models.BooleanField(default=False)
+    submitted_by_customer = models.BooleanField(default=False, db_index=True)
     captured_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True, related_name="vehicle_photos_captured")
     captured_at = models.DateTimeField(auto_now_add=True)
 
