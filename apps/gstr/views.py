@@ -161,8 +161,36 @@ def _reconcile(books, statement):
 
 class GSTR2BReconcileView(APIView):
     permission_classes = [RolePermission]
-    permission_code = "gstr.reconcile"
+    # Reading previously saved matching evidence is read-only; uploading
+    # or saving new evidence requires the separate reconciliation permission.
+    permission_map = {"GET": ["gstr.view"], "POST": ["gstr.reconcile"]}
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        """Reopen an audited, previously saved 2B reconciliation after refresh."""
+        from django.shortcuts import get_object_or_404
+        from .models import GSTR2BImport
+
+        selected = _period(request)
+        import_id = request.query_params.get("importId")
+        if not import_id:
+            raise ValidationError({"importId": "Select a saved GSTR-2B import."})
+        batch = get_object_or_404(
+            GSTR2BImport, pk=import_id, company=request.user.company,
+            period=selected["period"],
+        )
+        rows = batch.rows if isinstance(batch.rows, list) else []
+        return Response({
+            "period": selected["period"], "importId": str(batch.pk),
+            "saved": True, "rows": rows,
+            "counts": dict(Counter(row.get("status", "Requires Review") for row in rows)),
+            "unsupportedSections": batch.unsupported_sections,
+            "importedAt": batch.created_at.isoformat(),
+            "notice": (
+                "Persisted matching evidence only. Supplier bills and cash "
+                "balances are unchanged; ITC needs separate review."
+            ),
+        })
 
     def post(self, request):
         period = _period(request)
