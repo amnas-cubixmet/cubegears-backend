@@ -246,6 +246,8 @@ class OutsidePartsView(APIView):
         quote_base = (qty * cost).quantize(Decimal("0.01"))
         quote_gst = (quote_base * gst_rate / Decimal("100")).quantize(Decimal("0.01"))
         quote = quote_base + quote_gst
+        if quote > Decimal("9999999999.99"):
+            raise ValidationError({"amount": "Purchase total is too large."})
         record = {
             "id": str(uuid4()), "requestId": key, "status": "Pending Approval",
             "partName": name, "sku": str(request.data.get("sku") or "")[:80],
@@ -349,6 +351,8 @@ class OutsidePartCompleteView(APIView):
         actual_base = (actual * qty).quantize(Decimal("0.01"))
         gst_amount = (actual_base * purchase_gst_rate / Decimal("100")).quantize(Decimal("0.01"))
         actual_total = actual_base + gst_amount
+        if actual_total > Decimal("9999999999.99"):
+            raise ValidationError({"unitCost": "Purchase amount exceeds the supported expense limit."})
         if actual_total > quoted_total:
             raise ValidationError({"unitCost": "Actual cost exceeds the approved quote. Request approval again."})
 
