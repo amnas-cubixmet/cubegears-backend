@@ -112,6 +112,15 @@ class VehiclePhotoCollectionView(APIView):
             return Response({"message":"Invalid service phase."}, status=400)
         if len(caption) > 255 or len(notes) > 2000:
             return Response({"message":"Photo caption or notes are too long."}, status=400)
+        # Only an explicit workshop-staff choice makes a new photo visible.
+        # Older clients and vehicle-creation uploads remain private by default.
+        raw_published = request.data.get("published", "false")
+        if isinstance(raw_published, bool):
+            published = raw_published
+        elif raw_published in ("true", "false"):
+            published = raw_published == "true"
+        else:
+            return Response({"message": "Published must be true or false."}, status=400)
         try:
             contents = _image_bytes(request.FILES.get("image"))
         except ValueError as err:
@@ -120,7 +129,7 @@ class VehiclePhotoCollectionView(APIView):
             company=request.user.company, branch=request.user.branch,
             vehicle=vehicle, job=job,
             category=category, phase=phase, caption=caption,
-            notes=notes, published=False, captured_by=request.user,
+            notes=notes, published=published, captured_by=request.user,
         )
         photo.file.save("inspection.jpg", ContentFile(contents), save=False)
         try:
