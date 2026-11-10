@@ -343,7 +343,7 @@ class OutsidePartCompleteView(APIView):
             qty = Decimal(str(record["quantity"]))
         except (InvalidOperation, ValueError, TypeError):
             raise ValidationError({"unitCost": "Enter a valid actual purchase rate."})
-        if not actual.is_finite() or actual < 0 or actual > Decimal("999999999.99"):
+        if not actual.is_finite() or actual <= 0 or actual > Decimal("999999999.99"):
             raise ValidationError({"unitCost": "Invalid purchase rate."})
         purchase_gst_rate = Decimal(str(record.get("purchaseGstRate") or 0))
         quote_base = (qty * Decimal(str(record["unitCost"]))).quantize(Decimal("0.01"))
@@ -355,6 +355,37 @@ class OutsidePartCompleteView(APIView):
             raise ValidationError({"unitCost": "Purchase amount exceeds the supported expense limit."})
         if actual_total > quoted_total:
             raise ValidationError({"unitCost": "Actual cost exceeds the approved quote. Request approval again."})
+        if actual_total <= 0:
+            raise ValidationError({"unitCost": "Actual purchase total must be positive."})
+
+        # A direct outside purchase is consumed by this Job Card, NOT added
+        # to inventory; its actual cost is an operating expense exactly once.
+        # Selling value goes to the customer invoice separately. No GST is
+        # assumed or fabricated for the outside purchase.
+        from apps.expenses.models import Expense
+        from apps.expenses.views import ExpenseViewSet
+        from apps.finance.views import account_balance
+        from apps.inventory.models import WorkshopFinancialAccount
+        from django.shortcuts import get_object_or_404
+        payment_type = str(request.data.get("paymentType") or "").strip()
+        if payment_type not in {"Cash", "Bank", "Credit"}:
+            raise ValidationError({"paymentType": "Choose Cash, Bank or Credit."})
+        payment_account = None
+        if payment_type != "Credit":
+            account_id = request.data.get("accountId")
+            if not account_id:
+                raise ValidationError({"accountId": "Select the Cash or Bank account used."})
+            payment_account = get_object_or_404(
+                WorkshopFinancialAccount.objects.select_for_update(),
+                company=job.company, pk=account_id, is_active=True,
+            )
+            kinds = {"Cash"} if payment_type == "Cash" else {"Bank", "UPI"}
+            if payment_account.kind not in kinds:
+                raise ValidationError({"accountId": "Selected account does not match payment type."})
+            if account_balance(payment_account) < actual_total:
+                raise ValidationError({"accountId": "Insufficient account balance."})
+        elif request.data.get("accountId"):
+            raise ValidationError({"accountId": "Credit purchases cannot select a paid account."})
 
         payment_type = str(request.data.get("paymentType") or "Credit").strip()
         if payment_type not in {"Cash", "Bank", "Credit"}:
@@ -386,17 +417,23 @@ class OutsidePartCompleteView(APIView):
         try:
             attached.save()
             expense = Expense.objects.create(
-                company=job.company, branch=job.branch, date=timezone.localdate(),
-                category="Outside Job Purchase", vendor=record["vendor"][:180],
-                description=f"Job {job.job_number}: {record['partName']} x {qty}",
-                amount=actual_total, tax=gst_amount, reference=invoice,
-                payment_method=payment_type, status="Unpaid", created_by=request.user,
+                company=job.company, branch=job.branch,
+                date=timezone.localdate(), category="Outside Job Parts",
+                vendor=record["vendor"],
+                description=f"Direct job part: {record['partName']} × {qty} | Job {job.pk}",
+                amount=actual_total, tax=Decimal("0.00"), status="Unpaid",
+                reference=invoice, payment_method=payment_type,
+                created_by=request.user,
             )
-            if account is not None:
+            if payment_account:
+                # Reuse the existing finance settlement service. It records
+                # one atomic cash/bank debit and audited expense settlement.
                 ExpenseViewSet()._post_settlement(request, expense, {
-                    "amount": str(actual_total), "account": str(account.pk),
-                    "method": payment_type, "reference": invoice,
-                    "idempotencyKey": f"outside_part_{purchase_id}",
+                    "account": str(payment_account.pk),
+                    "amount": str(actual_total),
+                    "method": payment_type,
+                    "reference": invoice,
+                    "idempotencyKey": f"outside-job-part-{purchase_id}",
                 })
             record.update({
                 "status": "Purchased", "invoiceNo": invoice,
@@ -406,6 +443,9 @@ class OutsidePartCompleteView(APIView):
                 "expenseId": str(expense.pk), "paymentStatus": "Paid" if account else "Unpaid",
                 "totalSelling": str((qty * Decimal(str(record["sellingPrice"]))).quantize(Decimal("0.01"))),
                 "billId": str(attached.id),
+                "expenseId": str(expense.pk), "paymentType": payment_type,
+                "accountId": str(payment_account.pk) if payment_account else "",
+                "paidAmount": str(actual_total if payment_account else Decimal("0.00")),
                 "usedAt": timezone.now().isoformat(), "purchasedBy": request.user.name,
             })
             _save(job, state)
