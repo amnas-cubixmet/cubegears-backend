@@ -1,5 +1,6 @@
 from django.urls import path
 from apps.suppliers.returns_api import SupplierDebitNotes, SupplierDebitApply, SupplierRefunds, SupplierPayables
+from apps.suppliers.balances_api import SupplierBalanceCollection
 from .supplier_finance_api import (
     AccountCollection, AccountLedger, SupplierBillCollection, SupplierBillPost,
     SupplierPaymentCollection, SupplierAdvanceApply, SupplierSummary, SupplierLedger,
@@ -17,6 +18,7 @@ router.register("audit",StockAuditViewSet,basename="stock-audit")
 router.register("items",StockItemViewSet,basename="stock-items")
 router.register("",StockItemViewSet,basename="stock")
 urlpatterns = [
+    path("procurement/suppliers/balances", SupplierBalanceCollection.as_view(), name="inventory-supplier-balances"),
     path("procurement/gst-options", SupplierPurchaseGSTOptions.as_view(), name="inventory-gst-options"),
     path("procurement/accounts", AccountCollection.as_view(), name="workshop-accounts"),
     path("procurement/accounts/<uuid:pk>/ledger", AccountLedger.as_view(), name="workshop-account-ledger"),
