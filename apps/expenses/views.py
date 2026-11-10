@@ -1,9 +1,11 @@
 """Workshop expenses are liabilities; only a settlement moves account money."""
 from decimal import Decimal, InvalidOperation
+from datetime import date
+import re
 from uuid import uuid4
 
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import action
@@ -13,7 +15,7 @@ from rest_framework.response import Response
 from common.viewsets import CompanyScopedModelViewSet
 from apps.inventory.models import WorkshopFinancialAccount, WorkshopAccountEntry
 from apps.finance.views import account_balance
-from .models import Expense, ExpenseSettlement
+from .models import Expense, ExpenseSettlement, ExpenseBudgetItem
 from .serializers import ExpenseSerializer
 
 
@@ -48,6 +50,8 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
     action_permission_map = {
         "settle": "expenses.edit",
         "reverse_settlement": "expenses.edit",
+        "budgets": {"GET": "expenses.view", "POST": "expenses.edit"},
+        "budget_detail": "expenses.edit",
     }
 
     def _validate_purchase_not_duplicate(self, category):
@@ -55,11 +59,111 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
         if normalized in {
             "supplier payments", "supplier payment", "stock purchase",
             "spare parts", "spare part purchase", "inventory purchase",
+            "supplier bill", "supplier credit",
         }:
             raise ValidationError({
                 "category": "Supplier purchases and their payments must be linked to a posted Supplier Bill. "
                             "Use Inventory → Supplier Purchase / Supplier Payments, not a separate Expense debit."
             })
+        if normalized in {"staff salary", "daily wages", "overtime", "salary", "payroll"}:
+            raise ValidationError({
+                "category": "Staff wages and salary must use Payroll Payments, not a duplicate Expense."
+            })
+
+    @staticmethod
+    def _budget_month(raw):
+        value = str(raw or "").strip()
+        if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", value):
+            raise ValidationError({"month": "Use a valid budget month (YYYY-MM)."})
+        return date.fromisoformat(value + "-01")
+
+    @staticmethod
+    def _budget_rows(request, month):
+        budgets = list(ExpenseBudgetItem.objects.filter(
+            company=request.user.company, month=month,
+        ).order_by("category", "name"))
+        # Budget consumption is recognized once on the expense date, not
+        # again when an expense's bank settlement is posted.
+        actuals = Expense.objects.filter(
+            company=request.user.company, budget_item__in=budgets,
+        ).exclude(
+            Q(status__iexact="Draft") | Q(status__iexact="Rejected") |
+            Q(status__iexact="Cancelled") | Q(status__iexact="Pending Approval")
+        ).values("budget_item_id").annotate(spent=Sum("amount"))
+        spent_by_id = {entry["budget_item_id"]: entry["spent"] for entry in actuals}
+        def money(value):
+            return format(Decimal(value).quantize(Decimal("0.01")), ".2f")
+
+        return [{
+            "id": str(budget.pk),
+            "name": budget.name,
+            "category": budget.category,
+            "month": budget.month.strftime("%Y-%m"),
+            "plannedAmount": money(budget.planned_amount),
+            "spentAmount": money(spent_by_id.get(budget.pk, Decimal("0.00"))),
+            "remainingAmount": money(
+                budget.planned_amount - spent_by_id.get(budget.pk, Decimal("0.00"))
+            ),
+            "isActive": budget.is_active,
+        } for budget in budgets]
+
+    @action(detail=False, methods=["get", "post"], url_path="budgets")
+    @transaction.atomic
+    def budgets(self, request):
+        if request.method == "GET":
+            month = self._budget_month(
+                request.query_params.get("month") or timezone.localdate().strftime("%Y-%m")
+            )
+            return Response(self._budget_rows(request, month))
+        raw = request.data
+        month = self._budget_month(raw.get("month"))
+        name = str(raw.get("name") or "").strip()
+        category = str(raw.get("category") or "").strip()
+        if not (2 <= len(name) <= 120):
+            raise ValidationError({"name": "Budget item name must be 2-120 characters."})
+        if not (2 <= len(category) <= 100):
+            raise ValidationError({"category": "Choose a valid operating-expense category."})
+        self._validate_purchase_not_duplicate(category)
+        amount = positive_money(raw.get("plannedAmount"), "plannedAmount")
+        budget, created = ExpenseBudgetItem.objects.get_or_create(
+            company=request.user.company, month=month, name=name,
+            defaults={
+                "branch": request.user.branch, "category": category,
+                "planned_amount": amount,
+            },
+        )
+        if not created:
+            raise ValidationError({"name": "A budget item with this name already exists for that month."})
+        return Response({
+            "id": str(budget.pk), "name": budget.name, "category": budget.category,
+            "month": month.strftime("%Y-%m"), "plannedAmount": str(amount),
+            "spentAmount": "0.00", "remainingAmount": str(amount),
+            "isActive": True,
+        }, status=201)
+
+    @action(detail=False, methods=["patch"], url_path=r"budgets/(?P<budget_id>[^/.]+)")
+    @transaction.atomic
+    def budget_detail(self, request, budget_id=None):
+        budget = get_object_or_404(
+            ExpenseBudgetItem.objects.select_for_update(),
+            pk=budget_id, company=request.user.company,
+        )
+        changed = []
+        if "plannedAmount" in request.data:
+            budget.planned_amount = positive_money(
+                request.data["plannedAmount"], "plannedAmount",
+            )
+            changed.append("planned_amount")
+        if "isActive" in request.data:
+            if not isinstance(request.data["isActive"], bool):
+                raise ValidationError({"isActive": "Choose true or false."})
+            budget.is_active = request.data["isActive"]
+            changed.append("is_active")
+        if not changed:
+            raise ValidationError({"budget": "Provide plannedAmount or isActive."})
+        budget.save(update_fields=changed + ["updated_at"])
+        rows = self._budget_rows(request, budget.month)
+        return Response(next(row for row in rows if row["id"] == str(budget.pk)))
 
     def _post_settlement(self, request, expense, data):
         """Call inside transaction.atomic with expense locked."""
@@ -161,7 +265,7 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
         if hasattr(expense, "supplier_credit_allocation"):
             raise ValidationError({"message": "Supplier settlements are immutable. Reverse through supplier finance."})
         if expense.settlements.exists():
-            immutable = {"amount", "tax", "date", "account", "payment_method", "status", "category"}
+            immutable = {"amount", "tax", "date", "account", "payment_method", "status", "category", "budget_item"}
             changed = immutable.intersection(serializer.validated_data)
             if changed:
                 raise ValidationError({"message": "Posted expense amounts/status cannot be edited. Use settlement reversal."})
