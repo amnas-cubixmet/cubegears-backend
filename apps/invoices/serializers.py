@@ -39,6 +39,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
     termsAndConditions = serializers.CharField(source="terms_conditions", required=False, allow_blank=True)
     staff = serializers.CharField(source="staff_name", required=False, allow_blank=True)
     sourceJobId = serializers.CharField(source="source_job_id", required=False, allow_blank=True)
+    # Read-only stable database relation. Older issued invoices may have a
+    # job FK but no source_job_id snapshot or job-card-number string.
+    jobId = serializers.UUIDField(source="job_id", read_only=True, allow_null=True)
     customerId = serializers.UUIDField(source="customer_id", read_only=True)
     customerName = serializers.CharField(source="customer.name", read_only=True)
     vehicleId = serializers.UUIDField(source="vehicle_id", read_only=True)
