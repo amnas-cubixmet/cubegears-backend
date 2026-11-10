@@ -102,9 +102,11 @@ def accounts_summary(company_id):
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
             "isActive": acc.is_active,
         })
-        if acc.kind == "Bank":
+        # Preserve legacy account IDs; all digital money is shown under Bank
+        # in the new two-channel Finance UI, and only physical notes are Cash.
+        if acc.kind in ("Bank", "Wallet", "UPI"):
             bank_total += bal
-        elif acc.kind in ("Cash", "Wallet", "UPI"):
+        elif acc.kind == "Cash":
             cash_total += bal
     return result, bank_total, cash_total
 

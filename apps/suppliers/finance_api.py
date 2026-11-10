@@ -240,9 +240,12 @@ def record_supplier_payment(request, data):
     if kind not in {"Payment", "Advance"}:
         raise ValidationError({"kind": "Choose Payment or Advance."})
     method = str(data.get("method") or "").strip()
-    if method not in {"Cash", "Bank Transfer", "UPI"}:
-        raise ValidationError({"method": "Select Cash, Bank Transfer, or UPI."})
-    if {"Cash": "Cash", "Bank Transfer": "Bank", "UPI": "UPI"}[method] != account.kind:
+    if method not in {"Cash", "Bank", "Bank Transfer", "UPI"}:
+        raise ValidationError({"method": "Select Cash or Bank (legacy UPI/Bank Transfer accepted)."})
+    if method == "Bank":
+        from apps.finance.channels import validate_payment_channel
+        validate_payment_channel(method, account)
+    elif {"Cash": "Cash", "Bank Transfer": "Bank", "UPI": "UPI"}[method] != account.kind:
         raise ValidationError({"accountId": "Payment method does not match the account type."})
     key = str(data.get("idempotencyKey") or "").strip()
     if len(key) < 8 or len(key) > 120:

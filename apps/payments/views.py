@@ -126,6 +126,8 @@ class PaymentViewSet(CompanyScopedModelViewSet):
             ).first()
             if not account:
                 raise ValidationError({"account": "Select an active account owned by your company."})
+            from apps.finance.channels import validate_payment_channel
+            validate_payment_channel(serializer.validated_data.get("method", "Cash"), account)
             if direction == "OUT" and account_balance(account) < amount:
                 raise ValidationError({"amount": "Insufficient funds in the selected account."})
 
