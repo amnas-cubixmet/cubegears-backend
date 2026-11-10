@@ -362,16 +362,16 @@ class OutsidePartCompleteView(APIView):
         # to inventory; its actual cost is an operating expense exactly once.
         # Selling value goes to the customer invoice separately. No GST is
         # assumed or fabricated for the outside purchase.
-        from apps.expenses.models import Expense
-        from apps.expenses.views import ExpenseViewSet
         from apps.finance.views import account_balance
-        from apps.inventory.models import WorkshopFinancialAccount
         from django.shortcuts import get_object_or_404
         payment_type = str(request.data.get("paymentType") or "").strip()
         if payment_type not in {"Cash", "Bank", "Credit"}:
             raise ValidationError({"paymentType": "Choose Cash, Bank or Credit."})
         payment_account = None
         if payment_type != "Credit":
+            if not (user_has_permission(request.user, "expenses.edit")
+                    and user_has_permission(request.user, "payments.edit")):
+                raise ValidationError({"paymentType": "Expenses Edit and Payments Edit permissions are required to pay now."})
             account_id = request.data.get("accountId")
             if not account_id:
                 raise ValidationError({"accountId": "Select the Cash or Bank account used."})
@@ -387,27 +387,6 @@ class OutsidePartCompleteView(APIView):
         elif request.data.get("accountId"):
             raise ValidationError({"accountId": "Credit purchases cannot select a paid account."})
 
-        payment_type = str(request.data.get("paymentType") or "Credit").strip()
-        if payment_type not in {"Cash", "Bank", "Credit"}:
-            raise ValidationError({"paymentType": "Choose Cash, Bank or Credit."})
-        account = None
-        if payment_type != "Credit":
-            if not (user_has_permission(request.user, "expenses.edit")
-                    and user_has_permission(request.user, "payments.edit")):
-                raise ValidationError({"paymentType": "Expenses Edit and Payments Edit permissions are required to pay now."})
-            account_id = str(request.data.get("accountId") or "").strip()
-            if not account_id:
-                raise ValidationError({"accountId": "Select a cash or bank account to pay from."})
-            from django.shortcuts import get_object_or_404
-            account = get_object_or_404(
-                WorkshopFinancialAccount.objects.select_for_update(),
-                pk=account_id, company=job.company, is_active=True,
-            )
-            if account.kind != payment_type:
-                raise ValidationError({"accountId": f"Select a {payment_type.lower()} account."})
-            from apps.finance.views import account_balance
-            if account_balance(account) < actual_total:
-                raise ValidationError({"accountId": "Selected account has insufficient funds."})
         attached = OutsidePartBill(
             company=job.company, branch=job.branch, job=job,
             purchase_id=purchase_id, uploaded_by=request.user,
@@ -439,12 +418,12 @@ class OutsidePartCompleteView(APIView):
                 "status": "Purchased", "invoiceNo": invoice,
                 "unitCost": str(actual), "totalCost": str(actual_total),
                 "purchaseBase": str(actual_base), "purchaseGstAmount": str(gst_amount),
-                "paymentType": payment_type, "accountId": str(account.pk) if account else "",
-                "expenseId": str(expense.pk), "paymentStatus": "Paid" if account else "Unpaid",
+                "paymentType": payment_type,
+                "accountId": str(payment_account.pk) if payment_account else "",
+                "expenseId": str(expense.pk),
+                "paymentStatus": "Paid" if payment_account else "Unpaid",
                 "totalSelling": str((qty * Decimal(str(record["sellingPrice"]))).quantize(Decimal("0.01"))),
                 "billId": str(attached.id),
-                "expenseId": str(expense.pk), "paymentType": payment_type,
-                "accountId": str(payment_account.pk) if payment_account else "",
                 "paidAmount": str(actual_total if payment_account else Decimal("0.00")),
                 "usedAt": timezone.now().isoformat(), "purchasedBy": request.user.name,
             })
