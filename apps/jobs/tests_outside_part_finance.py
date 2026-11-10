@@ -71,11 +71,12 @@ class OutsidePartFinanceTests(TestCase):
         self.client.force_authenticate(self.owner)
         self.list_url = f"/api/v1/job-cards/{self.job.pk}/outside-parts"
 
-    def approved_request(self, *, key="direct-part-request-1", quote="100.00"):
+    def approved_request(self, *, key="direct-part-request-1", quote="100.00", gst_rate="0"):
         request = self.client.post(self.list_url, {
             "requestId": key, "partName": "Outside brake pad",
             "vendor": "Neighbourhood Parts Store", "quantity": "2",
             "unitCost": quote, "sellingPrice": "180.00",
+            "purchaseGstRate": gst_rate,
         }, format="json")
         self.assertEqual(request.status_code, 201, getattr(request, "data", None))
         part_id = request.data["id"]
@@ -85,7 +86,7 @@ class OutsidePartFinanceTests(TestCase):
         self.assertEqual(approve.status_code, 200, getattr(approve, "data", None))
         return part_id
 
-    def complete(self, part_id, *, method="Cash", account_id=None, rate="95.00"):
+    def complete(self, part_id, *, method="Cash", account_id=None, rate="95.00", paid_amount=None):
         if account_id is None and method == "Cash":
             account_id = str(self.cash.pk)
         if account_id is None and method == "Bank":
@@ -99,6 +100,8 @@ class OutsidePartFinanceTests(TestCase):
         }
         if account_id is not None:
             payload["accountId"] = account_id
+        if paid_amount is not None:
+            payload["paidAmount"] = paid_amount
         return self.client.post(
             f"{self.list_url}/{part_id}/complete", payload, format="multipart",
         )
@@ -164,6 +167,61 @@ class OutsidePartFinanceTests(TestCase):
         self.assertEqual(payment.status_code, 201, getattr(payment, "data", None))
         self.assertEqual(WorkshopAccountEntry.objects.count(), 1)
         self.assertEqual(self.client.get(self.list_url).data["items"][0]["status"], "Purchased")
+
+    def test_partial_bank_purchase_posts_exact_cash_only_and_leaves_credit(self):
+        part_id = self.approved_request(gst_rate="5")
+        result = self.complete(part_id, method="Bank", rate="95.00", paid_amount="100.00")
+        self.assertEqual(result.status_code, 200, getattr(result, "data", None))
+        self.assertEqual(result.data["purchaseBase"], "190.00")
+        self.assertEqual(result.data["purchaseGstAmount"], "9.50")
+        self.assertEqual(result.data["totalCost"], "199.50")
+        self.assertEqual(result.data["paidAmount"], "100.00")
+        self.assertEqual(result.data["balanceDue"], "99.50")
+        self.assertEqual(result.data["paymentStatus"], "Partially Paid")
+        expense = Expense.objects.get(pk=result.data["expenseId"])
+        self.assertEqual(expense.amount, Decimal("199.50"))
+        self.assertEqual(expense.tax, Decimal("0.00"))  # No unverified input tax credit.
+        self.assertEqual(expense.status, "Partially Paid")
+        self.assertEqual(ExpenseSettlement.objects.count(), 1)
+        ledger = WorkshopAccountEntry.objects.get(entry_type="expense_payment")
+        self.assertEqual(ledger.account_id, self.bank.pk)
+        self.assertEqual(ledger.amount, Decimal("-100.00"))
+        self.assertEqual(StockMovement.objects.count(), 0)
+        payment = self.client.post(
+            f"/api/v1/expenses/{expense.pk}/settle",
+            {"account": str(self.cash.pk), "amount": "99.50",
+             "method": "Cash", "idempotencyKey": "part-credit-settlement-2026"},
+            format="json",
+        )
+        self.assertEqual(payment.status_code, 201, getattr(payment, "data", None))
+        expense.refresh_from_db()
+        self.assertEqual(expense.status, "Paid")
+        self.assertEqual(ExpenseSettlement.objects.count(), 2)
+        self.assertEqual(
+            sum((entry.amount for entry in WorkshopAccountEntry.objects.all()), Decimal("0")),
+            Decimal("-199.50"),
+        )
+        retried = self.complete(part_id, method="Bank", paid_amount="100.00")
+        self.assertEqual(retried.status_code, 200)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 2)
+        self.assertEqual(Expense.objects.count(), 1)
+
+    def test_invalid_partial_payment_rejects_without_cash_stock_or_expense(self):
+        for index, amount in enumerate(("200.00", "-1.00", "0.00", "1.001", "NaN", "abc")):
+            with self.subTest(amount=amount):
+                part_id = self.approved_request(key=f"invalid-part-payment-{index}")
+                response = self.complete(part_id, paid_amount=amount)
+                self.assertEqual(response.status_code, 400, getattr(response, "data", None))
+        self.assertEqual(Expense.objects.count(), 0)
+        self.assertEqual(OutsidePartBill.objects.count(), 0)
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+        self.assertEqual(StockMovement.objects.count(), 0)
+
+    def test_credit_cannot_send_nonzero_paid_amount(self):
+        part_id = self.approved_request()
+        failed = self.complete(part_id, method="Credit", paid_amount="20.00")
+        self.assertEqual(failed.status_code, 400)
+        self.assertEqual(Expense.objects.count(), 0)
 
     def test_invalid_account_method_and_insufficient_balance_fail_atomically(self):
         part_id = self.approved_request()
