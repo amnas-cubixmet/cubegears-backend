@@ -13,12 +13,14 @@ import time
 from mimetypes import guess_type
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import never_cache
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -36,8 +38,8 @@ from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobActivity, JobEstimate
 from apps.jobs.workflow import workflow_state
 from apps.notifications.estimate_responses import notify_customer_estimate_response
-from apps.vehicles.models import VehicleInspectionPhoto
-from apps.vehicles.photo_views import _file_response
+from apps.vehicles.models import Vehicle, VehicleInspectionPhoto
+from apps.vehicles.photo_views import _file_response, _image_bytes
 
 
 def _secret():
@@ -249,6 +251,10 @@ def _dashboard(access):
     photos = VehicleInspectionPhoto.objects.filter(
         company=company, vehicle__customer=customer, published=True
     ).order_by("-captured_at")[:150]
+    pending_photos = VehicleInspectionPhoto.objects.filter(
+        company=company, vehicle__customer=customer,
+        published=False, submitted_by_customer=True,
+    ).order_by("-captured_at")[:20]
     return {
         "customer": {"name": customer.name},
         "vehicles": [
@@ -269,6 +275,11 @@ def _dashboard(access):
              "jobId": str(p.job_id) if p.job_id else None,
              "category": p.category, "phase": p.phase, "caption": p.caption,
              "capturedAt": p.captured_at} for p in photos
+        ],
+        "pendingPhotos": [
+            {"id": str(p.pk), "vehicleId": str(p.vehicle_id),
+             "caption": p.caption, "capturedAt": p.captured_at}
+            for p in pending_photos
         ],
     }
 
