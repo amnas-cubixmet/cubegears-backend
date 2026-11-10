@@ -262,7 +262,7 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
         if hasattr(expense, "supplier_credit_allocation"):
             raise ValidationError({"message": "Supplier settlements are immutable. Reverse through supplier finance."})
         if expense.settlements.exists():
-            immutable = {"amount", "tax", "date", "account", "payment_method", "status", "category"}
+            immutable = {"amount", "tax", "date", "account", "payment_method", "status", "category", "budget_item"}
             changed = immutable.intersection(serializer.validated_data)
             if changed:
                 raise ValidationError({"message": "Posted expense amounts/status cannot be edited. Use settlement reversal."})
