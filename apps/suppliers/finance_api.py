@@ -683,20 +683,44 @@ class SupplierLedger(APIView):
         events = []
         for bill in SupplierBill.objects.filter(company_id=request.user.company_id, supplier=supplier, status="Posted"):
             events.append({
-                "date": bill.posted_at.isoformat(),
+                "date": (bill.posted_at or bill.created_at).isoformat(),
                 "type": "Supplier Bill", "reference": bill.invoice_number,
                 "payableIncrease": bill.total, "payableDecrease": Decimal("0"),
                 "sourceId": str(bill.pk),
             })
+        # Advances move money when first paid, not again when later allocated.
+        # Those initial transactions otherwise disappear from the payable ledger.
+        for payment in SupplierPayment.objects.filter(
+            company_id=request.user.company_id, supplier=supplier, kind="Advance",
+        ).select_related("account"):
+            events.append({
+                "date": payment.created_at.isoformat(),
+                "type": "Supplier Advance",
+                "reference": payment.reference or f"Advance {str(payment.pk)[:8]}",
+                "payableIncrease": Decimal("0"), "payableDecrease": Decimal("0"),
+                "cashOut": str(payment.amount), "cashIn": "0.00",
+                "accountName": payment.account.name,
+                "method": payment.method, "paidOn": payment.paid_on.isoformat(),
+                "sourceId": str(payment.pk),
+            })
         allocations = SupplierPaymentAllocation.objects.filter(
             company_id=request.user.company_id, payment__supplier=supplier,
-        ).select_related("payment", "bill")
+        ).select_related("payment__account", "bill")
         for alloc in allocations:
+            is_advance = alloc.payment.kind == "Advance"
             events.append({
                 "date": alloc.created_at.isoformat(),
-                "type": "Advance Application" if alloc.payment.kind == "Advance" else "Supplier Payment",
+                "type": "Advance Application" if is_advance else "Supplier Payment",
                 "reference": alloc.bill.invoice_number,
+                "paymentReference": alloc.payment.reference,
                 "payableIncrease": Decimal("0"), "payableDecrease": alloc.amount,
+                # The original advance has its own cash event; allocation is
+                # an accounting transfer and must never debit the account twice.
+                "cashOut": "0.00" if is_advance else str(alloc.amount),
+                "cashIn": "0.00",
+                "accountName": alloc.payment.account.name,
+                "method": alloc.payment.method,
+                "paidOn": alloc.payment.paid_on.isoformat(),
                 "sourceId": str(alloc.payment_id),
             })
         from apps.inventory.models import (
@@ -726,7 +750,7 @@ class SupplierLedger(APIView):
             })
         for refund in SupplierRefund.objects.filter(
             company_id=request.user.company_id, supplier=supplier,
-        ):
+        ).select_related("account"):
             events.append({
                 "date": refund.created_at.isoformat(),
                 "type": "Supplier Refund",
@@ -734,6 +758,9 @@ class SupplierLedger(APIView):
                 "payableIncrease": Decimal("0"),
                 "payableDecrease": Decimal("0"),
                 "cashIn": str(refund.amount),
+                "cashOut": "0.00",
+                "accountName": refund.account.name,
+                "method": refund.method,
                 "sourceId": str(refund.pk),
             })
         events.sort(key=lambda row: (row["date"], row["type"], row["sourceId"]))
@@ -743,7 +770,10 @@ class SupplierLedger(APIView):
             event["payableIncrease"] = str(event["payableIncrease"])
             event["payableDecrease"] = str(event["payableDecrease"])
             event["runningPayable"] = str(running)
+            event.setdefault("cashIn", "0.00")
+            event.setdefault("cashOut", "0.00")
         result = supplier_summary(request, supplier)
         result["entries"] = events
+        result["transactionCount"] = len(events)
         result["signConvention"] = "Positive = supplier payable; debit-note and advance credits remain separate until applied or refunded."
         return Response(result)
