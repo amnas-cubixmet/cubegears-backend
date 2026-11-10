@@ -121,6 +121,10 @@ class VehiclePhotoCollectionView(APIView):
             published = raw_published == "true"
         else:
             return Response({"message": "Published must be true or false."}, status=400)
+        # Publishing is a visibility/approval action, not merely photo creation.
+        # A create-only staff member may upload privately but not publish.
+        if published:
+            _check_permission(request, "vehicles.edit", "jobs.edit")
         try:
             contents = _image_bytes(request.FILES.get("image"))
         except ValueError as err:
