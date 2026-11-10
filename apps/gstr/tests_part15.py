@@ -259,6 +259,103 @@ class GSTPart15IntegrationTests(TestCase):
         filing = self.client.get(uri)
         self.assertFalse(filing.data["portalVerified"])
 
+    def test_saved_2b_reconciliation_is_readable_after_refresh(self):
+        import_id = self.store_import()
+        endpoint = f"{self.root}/reconcile?period={self.period}"
+        result = self.client.get(f"{endpoint}&importId={import_id}")
+        self.assertEqual(result.status_code, 200, getattr(result, "data", None))
+        self.assertEqual(result.data["importId"], import_id)
+        self.assertTrue(result.data["saved"])
+        self.assertEqual(result.data["counts"]["Matched"], 1)
+        self.assertEqual(result.data["rows"][0]["bookId"], str(self.bill.pk))
+        self.assertEqual(self.client.get(endpoint).status_code, 400)
+        self.assertEqual(self.client.get(f"{endpoint}&importId=invalid").status_code, 400)
+        from uuid import uuid4
+        self.assertEqual(self.client.get(
+            f"{endpoint}&importId={uuid4()}",
+        ).status_code, 404)
+        self.assertEqual(self.client.get(
+            f"{self.root}/reconcile?period=2026-09&importId={import_id}",
+        ).status_code, 404)
+
+    def test_tax_ledger_excludes_unverified_seller_snapshot(self):
+        first = self.client.get(f"{self.root}/tax-ledger?period={self.period}")
+        self.assertEqual(first.status_code, 200)
+        self.assertTrue(any(row["sourceId"] == str(self.invoice.pk)
+                            for row in first.data["entries"]))
+        self.invoice.seller_snapshot = {
+            "gstin": "33ABCDE1234F1Z5", "name": self.company.name,
+        }
+        self.invoice.save(update_fields=["seller_snapshot"])
+        prepared = self.client.get(f"{self.root}/overview?period={self.period}")
+        self.assertEqual(prepared.status_code, 200)
+        self.assertEqual(prepared.data["gstr1"]["rows"], [])
+        ledger = self.client.get(f"{self.root}/tax-ledger?period={self.period}")
+        self.assertEqual(ledger.status_code, 200)
+        self.assertFalse(any(row["sourceId"] == str(self.invoice.pk)
+                             for row in ledger.data["entries"]))
+
+    def test_operational_expense_gst_is_visible_but_not_eligible_itc(self):
+        from apps.expenses.models import Expense
+        expense = Expense.objects.create(
+            company=self.company, branch=self.branch,
+            date=date(2026, 10, 17), category="Utilities",
+            vendor="Electric Company",
+            description="Workshop electricity bill",
+            amount=Decimal("118.00"), tax=Decimal("18.00"),
+            status="approved",
+        )
+        result = self.client.get(f"{self.root}/overview?period={self.period}")
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.data["overview"]["expenseGSTReviewCount"], 1)
+        self.assertEqual(result.data["overview"]["unverifiedExpenseGST"], "18.00")
+        self.assertEqual(result.data["overview"]["eligibleITC"], "0.00")
+        self.assertEqual(result.data["overview"]["purchaseGST"], "36.00")
+        self.assertEqual(
+            result.data["gstr2b"]["expenseGSTReview"][0]["id"], str(expense.pk),
+        )
+        self.assertEqual(
+            result.data["gstr3b"]["eligibleITC"], "0.00",
+        )
+        result_other_month = self.client.get(
+            f"{self.root}/overview?period=2026-09",
+        )
+        self.assertEqual(
+            result_other_month.data["overview"]["unverifiedExpenseGST"], "0.00",
+        )
+
+    def test_gstr_only_staff_does_not_see_operating_expense_data(self):
+        from apps.expenses.models import Expense
+        Expense.objects.create(
+            company=self.company, branch=self.branch,
+            date=date(2026, 10, 17), category="Private Cost",
+            vendor="Confidential Vendor", amount=Decimal("118.00"),
+            tax=Decimal("18.00"), status="approved",
+        )
+        limited_role = Role.objects.create(
+            company=self.company, name="GST Reader", code="PART15_GST_READER",
+            permissions=["gstr.view", "gstr.export"], is_active=True,
+        )
+        staff = User.objects.create_user(
+            email="gstr-reader@example.test", name="GST Reader",
+            password="StrongPassword123", company=self.company,
+            branch=self.branch, role=limited_role,
+        )
+        reader = APIClient()
+        reader.force_authenticate(staff)
+        result = reader.get(f"{self.root}/overview?period={self.period}")
+        self.assertEqual(result.status_code, 200, getattr(result, "data", None))
+        self.assertIsNone(result.data["overview"]["unverifiedExpenseGST"])
+        self.assertEqual(result.data["gstr2b"]["expenseGSTReview"], [])
+        denied = reader.get(
+            f"{self.root}/exports?period={self.period}&report=expense-gst",
+        )
+        self.assertEqual(denied.status_code, 403)
+        report = reader.get(
+            f"{self.root}/exports?period={self.period}&report=gstr1",
+        )
+        self.assertEqual(report.status_code, 200)
+
     def test_other_workshop_cannot_reuse_purchase_or_import(self):
         import_id = self.store_import()
         other_company = Company.objects.create(

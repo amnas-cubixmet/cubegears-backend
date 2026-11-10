@@ -180,12 +180,16 @@ class GSTTaxLedger(APIView):
     permission_code = "gstr.view"
 
     def get(self, request):
-        from .services import invoice_queryset
+        from .services import outward_rows
 
         selected = parse_period(request.query_params.get("period"))
         company = request.user.company
         entries = []
-        for invoice in invoice_queryset(company, selected):
+        # Reuse precisely the invoices accepted by GSTR-1 preparation.
+        # A mismatched seller-GSTIN snapshot must not silently appear in the
+        # tax ledger while being excluded from the return summary.
+        _, _, verified_invoices = outward_rows(company, selected)
+        for invoice in verified_invoices:
             entries.append({
                 "date": invoice.date.isoformat(), "type": "Output GST Invoice",
                 "sourceId": str(invoice.pk), "number": invoice.number,
@@ -194,7 +198,7 @@ class GSTTaxLedger(APIView):
             })
         for note in GSTSalesCreditNote.objects.filter(
             company=company, date__gte=selected["from"], date__lte=selected["to"],
-        ):
+        ).exclude(invoice__status="Cancelled"):
             entries.append({
                 "date": note.date.isoformat(), "type": "Sales GST Credit Note",
                 "sourceId": str(note.pk), "number": note.number,

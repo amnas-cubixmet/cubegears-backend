@@ -6,14 +6,15 @@ import re
 from collections import Counter
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from django.http import HttpResponse
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from .services import amount, money, parse_period, prepare
 
 
@@ -26,7 +27,10 @@ class GSTRReportView(APIView):
     permission_code = "gstr.view"
 
     def get(self, request, section="overview"):
-        data = prepare(request.user.company, _period(request))
+        data = prepare(
+            request.user.company, _period(request),
+            include_expense_review=user_has_permission(request.user, "expenses.view"),
+        )
         if section == "overview":
             return Response(data)
         if section == "gstr-1":
@@ -161,8 +165,40 @@ def _reconcile(books, statement):
 
 class GSTR2BReconcileView(APIView):
     permission_classes = [RolePermission]
-    permission_code = "gstr.reconcile"
+    # Reading previously saved matching evidence is read-only; uploading
+    # or saving new evidence requires the separate reconciliation permission.
+    permission_map = {"GET": ["gstr.view"], "POST": ["gstr.reconcile"]}
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request):
+        """Reopen an audited, previously saved 2B reconciliation after refresh."""
+        from django.shortcuts import get_object_or_404
+        from .models import GSTR2BImport
+
+        selected = _period(request)
+        import_id = request.query_params.get("importId")
+        if not import_id:
+            raise ValidationError({"importId": "Select a saved GSTR-2B import."})
+        try:
+            import_uuid = UUID(str(import_id))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"importId": "Invalid GSTR-2B import reference."})
+        batch = get_object_or_404(
+            GSTR2BImport, pk=import_uuid, company=request.user.company,
+            period=selected["period"],
+        )
+        rows = batch.rows if isinstance(batch.rows, list) else []
+        return Response({
+            "period": selected["period"], "importId": str(batch.pk),
+            "saved": True, "rows": rows,
+            "counts": dict(Counter(row.get("status", "Requires Review") for row in rows)),
+            "unsupportedSections": batch.unsupported_sections,
+            "importedAt": batch.created_at.isoformat(),
+            "notice": (
+                "Persisted matching evidence only. Supplier bills and cash "
+                "balances are unchanged; ITC needs separate review."
+            ),
+        })
 
     def post(self, request):
         period = _period(request)
@@ -224,7 +260,10 @@ class GSTRCSVExportView(APIView):
     permission_code = "gstr.export"
 
     def get(self, request):
-        data = prepare(request.user.company, _period(request))
+        data = prepare(
+            request.user.company, _period(request),
+            include_expense_review=user_has_permission(request.user, "expenses.view"),
+        )
         report = request.query_params.get("report", "gstr1")
         if report == "gstr1":
             fields = ["number", "date", "customer", "customerGSTIN", "placeOfSupply",
@@ -234,6 +273,19 @@ class GSTRCSVExportView(APIView):
             fields = ["hsnSac", "description", "unit", "rate", "classification",
                       "quantity", "taxablePreview", "cgst", "sgst", "igst"]
             rows = data["hsn"]["rows"]
+        elif report == "purchases":
+            # Book purchase data only: this is NOT an official GSTR-2B export.
+            fields = ["number", "date", "supplier", "supplierGSTIN",
+                      "taxable", "tax", "cgst", "sgst", "igst",
+                      "taxVerified", "itcEligibility"]
+            rows = data["gstr2b"]["purchases"]
+        elif report == "expense-gst":
+            if not user_has_permission(request.user, "expenses.view"):
+                raise PermissionDenied("Expense access is required for this GST export.")
+            # Expense tax amounts have no validated GST-head split.
+            fields = ["date", "description", "category", "vendor",
+                      "reference", "amount", "tax", "status", "itcEligibility"]
+            rows = data["gstr2b"]["expenseGSTReview"]
         elif report == "credits":
             fields = ["number", "date", "invoiceNumber", "reason",
                       "taxable", "cgst", "sgst", "igst", "total"]
@@ -263,7 +315,7 @@ class GSTRCSVExportView(APIView):
             } for row in claims]
         else:
             raise ValidationError({
-                "report": "Select gstr1, gstr3b, credits, itc or hsn preparation CSV.",
+                "report": "Select gstr1, gstr3b, credits, itc, hsn, purchases or expense-gst preparation CSV.",
             })
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = (
