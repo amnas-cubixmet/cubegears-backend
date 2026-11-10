@@ -49,7 +49,7 @@ class PrivateVehiclePhotoTests(TestCase):
         with TemporaryDirectory() as root, override_settings(PRIVATE_JOB_MEDIA_ROOT=root):
             reply = self.client.post(f"/api/v1/vehicles/{self.vehicle.pk}/photos", {
                 "image": sample_photo(), "category": "front", "phase": "before",
-                "caption": "Front bumper", "published": "true",
+                "caption": "Front bumper",
             }, format="multipart")
             self.assertEqual(reply.status_code, 201, getattr(reply,"data",None))
             photo = VehicleInspectionPhoto.objects.get(pk=reply.data["id"])
@@ -76,6 +76,37 @@ class PrivateVehiclePhotoTests(TestCase):
             self.assertEqual(len(snapshot.data["photos"]), 1)
             other_token = issue_link(ensure_portal_access(self.other_customer)).rsplit("/", 1)[-1]
             self.assertEqual(self.public.get(f"/api/v1/c/{other_token}/photos/{photo.pk}").status_code, 404)
+
+    def test_workshop_may_explicitly_publish_new_photo_on_upload(self):
+        with TemporaryDirectory() as root, override_settings(PRIVATE_JOB_MEDIA_ROOT=root):
+            reply = self.client.post(f"/api/v1/vehicles/{self.vehicle.pk}/photos", {
+                "image": sample_photo(), "category": "damage", "phase": "before",
+                "caption": "Published during inspection", "published": "true",
+            }, format="multipart")
+            self.assertEqual(reply.status_code, 201, getattr(reply, "data", None))
+            self.assertTrue(reply.data["published"])
+            photo = VehicleInspectionPhoto.objects.get(pk=reply.data["id"])
+            self.assertTrue(photo.published)
+            token = issue_link(ensure_portal_access(self.customer)).rsplit("/", 1)[-1]
+            image = self.public.get(f"/api/v1/c/{token}/photos/{photo.pk}")
+            self.assertEqual(image.status_code, 200)
+            self.assertEqual(image["Content-Type"], "image/jpeg")
+            other_token = issue_link(ensure_portal_access(self.other_customer)).rsplit("/", 1)[-1]
+            self.assertEqual(
+                self.public.get(f"/api/v1/c/{other_token}/photos/{photo.pk}").status_code,
+                404,
+            )
+            self.assertEqual(
+                len(self.public.get(f"/api/v1/c/{token}").data["photos"]), 1,
+            )
+
+    def test_upload_rejects_non_boolean_visibility(self):
+        with TemporaryDirectory() as root, override_settings(PRIVATE_JOB_MEDIA_ROOT=root):
+            reply = self.client.post(f"/api/v1/vehicles/{self.vehicle.pk}/photos", {
+                "image": sample_photo(), "published": "yes",
+            }, format="multipart")
+            self.assertEqual(reply.status_code, 400)
+            self.assertFalse(VehicleInspectionPhoto.objects.exists())
 
     def test_upload_validation_and_public_metadata_are_restricted(self):
         bad = SimpleUploadedFile("text.png", b"this is not an image", content_type="image/png")
