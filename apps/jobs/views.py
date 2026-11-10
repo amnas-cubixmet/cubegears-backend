@@ -55,6 +55,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "inspection_reopen": "jobs.edit",
         "work_skip": "jobs.edit",
         "work_service_add": "jobs.edit",
+        "work_service_remove": "jobs.edit",
         "complaint_status": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
@@ -905,6 +906,66 @@ class JobViewSet(CompanyScopedModelViewSet):
             {"item": line, "job": JobSerializer(job).data},
             status=status.HTTP_201_CREATED,
         )
+
+    @decorators.action(
+        detail=True, methods=["delete"],
+        url_path=r"work/services/(?P<work_id>[^/.]+)",
+    )
+    @transaction.atomic
+    def work_service_remove(self, request, pk=None, work_id=None):
+        """Remove only a billable service entry in the active Work stage.
+
+        The customer selling charge disappears from the draft invoice suggestions,
+        but approved staff wages, issued parts and historical audit entries are
+        never deleted or modified by this operation.
+        """
+        from uuid import UUID
+        from apps.invoices.models import Invoice
+
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(
+            pk=scoped.pk, company_id=request.user.company_id,
+        )
+        if workflow_state(job)["current"] != "work":
+            raise ValidationError({"stage": "Services can only be removed during the Work stage."})
+        try:
+            normalized_id = str(UUID(str(work_id)))
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"workId": "Select a valid service entry."})
+        line = next(
+            (row for row in (job.work or []) if isinstance(row, dict)
+             and row.get("id") == normalized_id), None,
+        )
+        if not line or line.get("billable") is not True or not line.get("serviceId"):
+            raise ValidationError({"workId": "This saved service cannot be removed."})
+        if line.get("workerChargePosted") is True:
+            raise ValidationError({
+                "workId": "Worker charges are already posted; reverse them through the payroll workflow first."
+            })
+        if Invoice.objects.filter(company=job.company, job=job).exclude(
+            status="Cancelled"
+        ).exists():
+            raise ValidationError({
+                "workId": "An invoice already exists for this job; correct its billing before removing services."
+            })
+
+        job.work = [
+            row for row in (job.work or [])
+            if not (isinstance(row, dict) and row.get("id") == normalized_id)
+        ]
+        job.save(update_fields=["work", "updated_at"])
+        record_job_event(
+            job, request.user, "Job Service Removed",
+            f"Removed {line.get('service') or 'service'} from Work",
+            {
+                "workId": normalized_id,
+                "serviceId": line["serviceId"],
+                "quantity": line.get("quantity"),
+                "customerCharge": line.get("customerCharge"),
+                "agreedWorkerCharge": line.get("agreedWorkerCharge"),
+            },
+        )
+        return response.Response({"removedId": normalized_id, "job": JobSerializer(job).data})
 
     @decorators.action(detail=True, methods=["post"], url_path="work/skip")
     @transaction.atomic
