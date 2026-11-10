@@ -210,7 +210,54 @@ class OutsidePartsView(APIView):
 
     def get(self, request, job_id):
         job = _job(request, job_id)
-        return Response({"items": _state(job).get("outsideParts", [])})
+        records = _state(job).get("outsideParts", [])
+        # Settlement balances are live Finance facts, not the snapshot from the
+        # original purchase. The same expense can be paid later or reversed.
+        from apps.accounts.permissions import user_has_permission
+        if not user_has_permission(request.user, "expenses.view"):
+            return Response({"items": records})
+        from uuid import UUID
+        from django.db.models import Sum
+        from apps.expenses.models import Expense, ExpenseSettlement
+        valid_ids = []
+        for row in records:
+            try:
+                if row.get("expenseId"):
+                    valid_ids.append(UUID(str(row["expenseId"])))
+            except (ValueError, TypeError, AttributeError):
+                pass
+        if not valid_ids:
+            return Response({"items": records})
+        expenses = {
+            str(row["id"]): row["amount"]
+            for row in Expense.objects.filter(
+                company=job.company, pk__in=valid_ids
+            ).values("id", "amount")
+        }
+        paid_totals = {
+            str(row["expense_id"]): row["total"] or Decimal("0.00")
+            for row in ExpenseSettlement.objects.filter(
+                company=job.company, expense_id__in=valid_ids,
+                reversed_at__isnull=True,
+            ).values("expense_id").annotate(total=Sum("amount"))
+        }
+        updated = []
+        for original in records:
+            row = dict(original)
+            expense_id = str(row.get("expenseId") or "")
+            if expense_id in expenses:
+                total = expenses[expense_id]
+                paid = min(total, paid_totals.get(expense_id, Decimal("0.00")))
+                balance = max(Decimal("0.00"), total - paid)
+                row.update({
+                    "paidAmount": str(paid),
+                    "balanceDue": str(balance),
+                    "paymentStatus": "Paid" if balance == 0 else (
+                        "Partially Paid" if paid > 0 else "Unpaid"
+                    ),
+                })
+            updated.append(row)
+        return Response({"items": updated})
 
     @transaction.atomic
     def post(self, request, job_id):
