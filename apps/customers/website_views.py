@@ -485,6 +485,78 @@ class WebsiteLogoView(PortalBaseView):
         return _no_store(response)
 
 
+
+class WebsitePhotoUploadView(PortalBaseView):
+    """Secure customer uploads are private until a workshop explicitly publishes them."""
+
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        company = _tenant(request)
+        access = _session_access(request, company)
+        if not access:
+            return _no_store(Response({"message": "Secure service link required."}, status=401))
+        if not _verify_csrf(request):
+            return _no_store(Response({"message": "Invalid request token."}, status=403))
+        vehicle = get_object_or_404(
+            Vehicle, pk=request.data.get("vehicleId"),
+            company=company, customer=access.customer,
+        )
+        pending_count = VehicleInspectionPhoto.objects.filter(
+            company=company, vehicle__customer=access.customer,
+            submitted_by_customer=True, published=False,
+        ).count()
+        if pending_count >= 20:
+            return _no_store(Response(
+                {"message": "Photo review queue is full. Contact the workshop."},
+                status=429,
+            ))
+        caption = str(request.data.get("caption") or "").strip()
+        if len(caption) > 160:
+            return _no_store(Response({"message": "Caption is too long."}, status=400))
+        try:
+            contents = _image_bytes(request.FILES.get("image"))
+        except ValueError as exc:
+            return _no_store(Response({"message": str(exc)}, status=400))
+
+        # A customer cannot select an arbitrary job or publish their own photo.
+        job = Job.objects.filter(
+            company=company, customer=access.customer, vehicle=vehicle,
+        ).order_by("-created_at").first()
+        photo = VehicleInspectionPhoto(
+            company=company, branch=job.branch if job else None,
+            vehicle=vehicle, job=job, category="additional",
+            phase="before", caption=caption or "Vehicle photo",
+            published=False, submitted_by_customer=True,
+            captured_by=None,
+        )
+        photo.file.save("customer-photo.jpg", ContentFile(contents), save=False)
+        try:
+            photo.save()
+        except Exception:
+            photo.file.delete(save=False)
+            raise
+        return _no_store(Response(
+            {"id": str(photo.pk), "pendingReview": True}, status=201
+        ))
+
+
+class WebsitePendingPhotoView(PortalBaseView):
+    """Only the same signed-in customer can preview their unpublished upload."""
+
+    def get(self, request, photo_id):
+        company = _tenant(request)
+        access = _session_access(request, company)
+        if not access:
+            raise Http404("Photo unavailable.")
+        photo = get_object_or_404(
+            VehicleInspectionPhoto,
+            pk=photo_id, company=company, vehicle__customer=access.customer,
+            published=False, submitted_by_customer=True,
+        )
+        return _no_store(_file_response(photo))
+
+
 class WebsitePhotoView(PortalBaseView):
     def get(self, request, photo_id):
         company = _tenant(request)
