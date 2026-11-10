@@ -210,7 +210,55 @@ class OutsidePartsView(APIView):
 
     def get(self, request, job_id):
         job = _job(request, job_id)
-        return Response({"items": _state(job).get("outsideParts", [])})
+        records = _state(job).get("outsideParts", [])
+        # Settlement balances are live Finance facts, not the snapshot from the
+        # original purchase. The same expense can be paid later or reversed.
+        from apps.accounts.permissions import user_has_permission
+        if not user_has_permission(request.user, "expenses.view"):
+            return Response({"items": records})
+        from uuid import UUID
+        from decimal import Decimal
+        from django.db.models import Sum
+        from apps.expenses.models import Expense, ExpenseSettlement
+        valid_ids = []
+        for row in records:
+            try:
+                if row.get("expenseId"):
+                    valid_ids.append(UUID(str(row["expenseId"])))
+            except (ValueError, TypeError, AttributeError):
+                pass
+        if not valid_ids:
+            return Response({"items": records})
+        expenses = {
+            str(row["id"]): row["amount"]
+            for row in Expense.objects.filter(
+                company=job.company, pk__in=valid_ids
+            ).values("id", "amount")
+        }
+        paid_totals = {
+            str(row["expense_id"]): row["total"] or Decimal("0.00")
+            for row in ExpenseSettlement.objects.filter(
+                company=job.company, expense_id__in=valid_ids,
+                reversed_at__isnull=True,
+            ).values("expense_id").annotate(total=Sum("amount"))
+        }
+        updated = []
+        for original in records:
+            row = dict(original)
+            expense_id = str(row.get("expenseId") or "")
+            if expense_id in expenses:
+                total = expenses[expense_id]
+                paid = min(total, paid_totals.get(expense_id, Decimal("0.00")))
+                balance = max(Decimal("0.00"), total - paid)
+                row.update({
+                    "paidAmount": str(paid),
+                    "balanceDue": str(balance),
+                    "paymentStatus": "Paid" if balance == 0 else (
+                        "Partially Paid" if paid > 0 else "Unpaid"
+                    ),
+                })
+            updated.append(row)
+        return Response({"items": updated})
 
     @transaction.atomic
     def post(self, request, job_id):
@@ -367,6 +415,29 @@ class OutsidePartCompleteView(APIView):
         payment_type = str(request.data.get("paymentType") or "").strip()
         if payment_type not in {"Cash", "Bank", "Credit"}:
             raise ValidationError({"paymentType": "Choose Cash, Bank or Credit."})
+        # Credit is zero paid. Cash and Bank can settle the bill in full or
+        # partially; the unpaid remainder stays as an Expense payable.
+        # Never make a second inventory movement or duplicate Supplier Bill.
+        raw_paid = request.data.get("paidAmount")
+        if payment_type == "Credit":
+            if raw_paid not in (None, "", "0", "0.0", "0.00"):
+                raise ValidationError({"paidAmount": "Credit purchases cannot pay money now."})
+            paid_now = Decimal("0.00")
+        else:
+            if raw_paid in (None, ""):
+                # Keep older Cash/Bank clients backwards-compatible.
+                paid_now = actual_total
+            else:
+                try:
+                    paid_now = Decimal(str(raw_paid))
+                except (InvalidOperation, ValueError, TypeError):
+                    raise ValidationError({"paidAmount": "Enter a valid amount to pay."})
+                if (not paid_now.is_finite() or paid_now.as_tuple().exponent < -2
+                        or paid_now <= 0 or paid_now > actual_total):
+                    raise ValidationError({
+                        "paidAmount": "Pay a positive amount, up to the full purchase total, with at most two decimals."
+                    })
+        balance_due = actual_total - paid_now
         payment_account = None
         if payment_type != "Credit":
             if not (user_has_permission(request.user, "expenses.edit")
@@ -382,7 +453,7 @@ class OutsidePartCompleteView(APIView):
             kinds = {"Cash"} if payment_type == "Cash" else {"Bank", "UPI"}
             if payment_account.kind not in kinds:
                 raise ValidationError({"accountId": "Selected account does not match payment type."})
-            if account_balance(payment_account) < actual_total:
+            if account_balance(payment_account) < paid_now:
                 raise ValidationError({"accountId": "Insufficient account balance."})
         elif request.data.get("accountId"):
             raise ValidationError({"accountId": "Credit purchases cannot select a paid account."})
@@ -409,7 +480,7 @@ class OutsidePartCompleteView(APIView):
                 # one atomic cash/bank debit and audited expense settlement.
                 ExpenseViewSet()._post_settlement(request, expense, {
                     "account": str(payment_account.pk),
-                    "amount": str(actual_total),
+                    "amount": str(paid_now),
                     "method": payment_type,
                     "reference": invoice,
                     "idempotencyKey": f"outside-job-part-{purchase_id}",
@@ -421,10 +492,12 @@ class OutsidePartCompleteView(APIView):
                 "paymentType": payment_type,
                 "accountId": str(payment_account.pk) if payment_account else "",
                 "expenseId": str(expense.pk),
-                "paymentStatus": "Paid" if payment_account else "Unpaid",
+                "paymentStatus": "Paid" if balance_due == 0 else
+                    ("Partially Paid" if paid_now > 0 else "Unpaid"),
                 "totalSelling": str((qty * Decimal(str(record["sellingPrice"]))).quantize(Decimal("0.01"))),
                 "billId": str(attached.id),
-                "paidAmount": str(actual_total if payment_account else Decimal("0.00")),
+                "paidAmount": str(paid_now),
+                "balanceDue": str(balance_due),
                 "usedAt": timezone.now().isoformat(), "purchasedBy": request.user.name,
             })
             _save(job, state)
