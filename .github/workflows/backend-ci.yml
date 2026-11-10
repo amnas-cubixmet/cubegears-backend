@@ -43,12 +43,14 @@ jobs:
             apps.payments.tests_customer_credits \
             apps.finance.tests \
             apps.finance.tests_part14 \
+            apps.expenses.tests_budgets \
             apps.accounts.tests_mobile_staff_onboarding \
             apps.customers.tests_portal_access \
             apps.customers.tests_branch_assignment \
             apps.customers.tests_website \
             apps.customers.tests_local_custom_domains \
             apps.customers.tests_part17_estimate_decision \
+            apps.notifications.tests \
             apps.vehicles.tests_inspection_photo \
             apps.vehicles.tests_customer_vehicle_workflow \
             apps.jobs.tests_create_vehicle_complaints \
@@ -136,7 +138,7 @@ jobs:
           python manage.py migrate --noinput
       - name: PostgreSQL finance, supplier and payments regressions
         run: |
-          python manage.py test apps.finance.tests apps.finance.tests_part14 apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.inventory.tests_part13_supplier_returns apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity apps.gstr.tests apps.gstr.tests_part15 --noinput
+          python manage.py test apps.finance.tests apps.finance.tests_part14 apps.expenses.tests_budgets apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.inventory.tests_part13_supplier_returns apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity apps.gstr.tests apps.gstr.tests_part15 --noinput
 
 
 

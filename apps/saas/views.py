@@ -28,7 +28,7 @@ DEFAULTS={
 "inventory":{"defaultMinimumStock":5,"defaultReorderQty":10,"lowStockAlerts":True,"negativeStock":False},
 "attendance":{"graceMinutes":15,"overtimeAfterMinutes":540,"locationRequired":False,"correctionApproval":True},
 "payroll":{"payrollDay":30,"overtimeMultiplier":1.5,"managerApproval":True},
-"notifications":{"lowStock":True,"overdueInvoice":True,"jobReady":True,"leaveDecision":True,"email":False,"whatsapp":False,"browserPush":True},
+"notifications":{"jobCreated":True,"jobAssigned":True,"jobStatus":True,"jobReady":True,"lowStock":True,"overdueInvoice":True,"leaveDecision":True,"email":False,"whatsapp":False,"browserPush":True},
 "security":{"sessionHours":12,"requireStrongPassword":True,"auditExports":True,"twoFactor":False},
 "integrations":{"razorpayEnabled":False,"whatsappEnabled":False,"emailEnabled":False,"webhookUrl":""},
 "storage":{"autoCompress":True,"keepOriginals":False,"allowStaffUpload":True,"allowStaffDelete":False,"retentionDays":0,"maxFileMb":20,"allowedTypes":["image/jpeg","image/png","image/webp"]},
@@ -431,6 +431,20 @@ class SettingsView(APIView):
         payload = request.data
         if not isinstance(payload, dict):
             return response.Response({"message": "A settings object is required."}, status=400)
+        if category == "notifications":
+            allowed = set(DEFAULTS["notifications"])
+            unknown = set(payload) - allowed
+            if unknown:
+                return response.Response(
+                    {"message": "Unsupported notification settings: " + ", ".join(sorted(unknown))},
+                    status=400,
+                )
+            invalid = [key for key, value in payload.items() if not isinstance(value, bool)]
+            if invalid:
+                return response.Response(
+                    {"message": "Notification settings must be true or false: " + ", ".join(sorted(invalid))},
+                    status=400,
+                )
         redundant_profile_keys = set()
         if category == "document_templates":
             from apps.invoices.template_settings import (

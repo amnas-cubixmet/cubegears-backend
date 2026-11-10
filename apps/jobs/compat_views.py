@@ -232,19 +232,29 @@ class OutsidePartsView(APIView):
             qty = Decimal(str(request.data.get("quantity", 0)))
             cost = Decimal(str(request.data.get("unitCost", 0)))
             selling = Decimal(str(request.data.get("sellingPrice", 0)))
+            gst_rate = Decimal(str(request.data.get("purchaseGstRate", 0)))
         except (InvalidOperation, TypeError, ValueError):
             raise ValidationError({"amount": "Invalid quantity or amount."})
-        if (not all(v.is_finite() for v in (qty, cost, selling))
-                or qty <= 0 or cost < 0 or selling < 0):
+        if (not all(v.is_finite() for v in (qty, cost, selling, gst_rate))
+                or qty <= 0 or cost < 0 or selling < 0 or gst_rate < 0 or gst_rate > 100
+                or gst_rate.as_tuple().exponent < -2):
+            raise ValidationError({"amount": "Quantity, price or GST rate is invalid."})
+        if qty <= 0:
             raise ValidationError({"amount": "Quantity must be positive; amounts cannot be negative."})
         if qty > Decimal("999999.99") or cost > Decimal("999999999.99") or selling > Decimal("999999999.99"):
             raise ValidationError({"amount": "Quantity or price is too large."})
-        quote = (qty * cost).quantize(Decimal("0.01"))
+        quote_base = (qty * cost).quantize(Decimal("0.01"))
+        quote_gst = (quote_base * gst_rate / Decimal("100")).quantize(Decimal("0.01"))
+        quote = quote_base + quote_gst
+        if quote > Decimal("9999999999.99"):
+            raise ValidationError({"amount": "Purchase total is too large."})
         record = {
             "id": str(uuid4()), "requestId": key, "status": "Pending Approval",
             "partName": name, "sku": str(request.data.get("sku") or "")[:80],
             "vendor": vendor, "invoiceNo": "",
             "quantity": str(qty), "unitCost": str(cost), "sellingPrice": str(selling),
+            "purchaseGstRate": str(gst_rate), "quotedBase": str(quote_base),
+            "quotedGstAmount": str(quote_gst),
             "quotedTotal": str(quote), "totalCost": "0.00",
             "totalSelling": "0.00",
             "createdAt": timezone.now().isoformat(), "createdBy": request.user.name,
@@ -296,6 +306,10 @@ class OutsidePartCompleteView(APIView):
         from pathlib import Path
         from decimal import Decimal, InvalidOperation
         from .models import OutsidePartBill
+        from apps.expenses.models import Expense
+        from apps.expenses.views import ExpenseViewSet
+        from apps.accounts.permissions import user_has_permission
+        from apps.inventory.models import WorkshopFinancialAccount
         job = _outside_job_locked(request, job_id)
         state = _state(job)
         record = next((item for item in state.get("outsideParts", [])
@@ -331,8 +345,14 @@ class OutsidePartCompleteView(APIView):
             raise ValidationError({"unitCost": "Enter a valid actual purchase rate."})
         if not actual.is_finite() or actual <= 0 or actual > Decimal("999999999.99"):
             raise ValidationError({"unitCost": "Invalid purchase rate."})
-        quoted_total = Decimal(str(record.get("quotedTotal") or qty * Decimal(str(record["unitCost"]))))
-        actual_total = (actual * qty).quantize(Decimal("0.01"))
+        purchase_gst_rate = Decimal(str(record.get("purchaseGstRate") or 0))
+        quote_base = (qty * Decimal(str(record["unitCost"]))).quantize(Decimal("0.01"))
+        quoted_total = Decimal(str(record.get("quotedTotal") or quote_base))
+        actual_base = (actual * qty).quantize(Decimal("0.01"))
+        gst_amount = (actual_base * purchase_gst_rate / Decimal("100")).quantize(Decimal("0.01"))
+        actual_total = actual_base + gst_amount
+        if actual_total > Decimal("9999999999.99"):
+            raise ValidationError({"unitCost": "Purchase amount exceeds the supported expense limit."})
         if actual_total > quoted_total:
             raise ValidationError({"unitCost": "Actual cost exceeds the approved quote. Request approval again."})
         if actual_total <= 0:
@@ -367,6 +387,27 @@ class OutsidePartCompleteView(APIView):
         elif request.data.get("accountId"):
             raise ValidationError({"accountId": "Credit purchases cannot select a paid account."})
 
+        payment_type = str(request.data.get("paymentType") or "Credit").strip()
+        if payment_type not in {"Cash", "Bank", "Credit"}:
+            raise ValidationError({"paymentType": "Choose Cash, Bank or Credit."})
+        account = None
+        if payment_type != "Credit":
+            if not (user_has_permission(request.user, "expenses.edit")
+                    and user_has_permission(request.user, "payments.edit")):
+                raise ValidationError({"paymentType": "Expenses Edit and Payments Edit permissions are required to pay now."})
+            account_id = str(request.data.get("accountId") or "").strip()
+            if not account_id:
+                raise ValidationError({"accountId": "Select a cash or bank account to pay from."})
+            from django.shortcuts import get_object_or_404
+            account = get_object_or_404(
+                WorkshopFinancialAccount.objects.select_for_update(),
+                pk=account_id, company=job.company, is_active=True,
+            )
+            if account.kind != payment_type:
+                raise ValidationError({"accountId": f"Select a {payment_type.lower()} account."})
+            from apps.finance.views import account_balance
+            if account_balance(account) < actual_total:
+                raise ValidationError({"accountId": "Selected account has insufficient funds."})
         attached = OutsidePartBill(
             company=job.company, branch=job.branch, job=job,
             purchase_id=purchase_id, uploaded_by=request.user,
@@ -397,6 +438,9 @@ class OutsidePartCompleteView(APIView):
             record.update({
                 "status": "Purchased", "invoiceNo": invoice,
                 "unitCost": str(actual), "totalCost": str(actual_total),
+                "purchaseBase": str(actual_base), "purchaseGstAmount": str(gst_amount),
+                "paymentType": payment_type, "accountId": str(account.pk) if account else "",
+                "expenseId": str(expense.pk), "paymentStatus": "Paid" if account else "Unpaid",
                 "totalSelling": str((qty * Decimal(str(record["sellingPrice"]))).quantize(Decimal("0.01"))),
                 "billId": str(attached.id),
                 "expenseId": str(expense.pk), "paymentType": payment_type,

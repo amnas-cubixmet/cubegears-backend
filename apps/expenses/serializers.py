@@ -16,6 +16,43 @@ class ExpenseSerializer(serializers.ModelSerializer):
         exclude = ("company", "branch")
         read_only_fields = ("created_by",)
 
+    def validate_amount(self, amount):
+        if not amount.is_finite() or amount <= 0:
+            raise serializers.ValidationError("Expense amount must be positive.")
+        return amount
+
+    def validate_tax(self, amount):
+        if not amount.is_finite() or amount < 0:
+            raise serializers.ValidationError("Tax cannot be negative.")
+        return amount
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        budget = attrs.get(
+            "budget_item", self.instance.budget_item if self.instance else None,
+        )
+        if budget is None:
+            return attrs
+        user = self.context["request"].user
+        if budget.company_id != user.company_id:
+            raise serializers.ValidationError({
+                "budget_item": "Select a budget from your own workshop.",
+            })
+        if not budget.is_active and (not self.instance or self.instance.budget_item_id != budget.id):
+            raise serializers.ValidationError({"budget_item": "This budget item is inactive."})
+        expense_date = attrs.get("date", self.instance.date if self.instance else None)
+        category = attrs.get("category", self.instance.category if self.instance else "")
+        if (not expense_date or expense_date.year != budget.month.year or
+                expense_date.month != budget.month.month):
+            raise serializers.ValidationError({
+                "budget_item": "The budget month must match the expense date.",
+            })
+        if category.casefold().strip() != budget.category.casefold().strip():
+            raise serializers.ValidationError({
+                "budget_item": "Budget category must match the expense category.",
+            })
+        return attrs
+
     def _paid(self, obj):
         if hasattr(obj, "_finance_paid"):
             return obj._finance_paid
