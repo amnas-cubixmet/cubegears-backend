@@ -9,12 +9,12 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.http import HttpResponse
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import JSONParser, MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import RolePermission
+from apps.accounts.permissions import RolePermission, user_has_permission
 from .services import amount, money, parse_period, prepare
 
 
@@ -27,7 +27,10 @@ class GSTRReportView(APIView):
     permission_code = "gstr.view"
 
     def get(self, request, section="overview"):
-        data = prepare(request.user.company, _period(request))
+        data = prepare(
+            request.user.company, _period(request),
+            include_expense_review=user_has_permission(request.user, "expenses.view"),
+        )
         if section == "overview":
             return Response(data)
         if section == "gstr-1":
@@ -257,7 +260,10 @@ class GSTRCSVExportView(APIView):
     permission_code = "gstr.export"
 
     def get(self, request):
-        data = prepare(request.user.company, _period(request))
+        data = prepare(
+            request.user.company, _period(request),
+            include_expense_review=user_has_permission(request.user, "expenses.view"),
+        )
         report = request.query_params.get("report", "gstr1")
         if report == "gstr1":
             fields = ["number", "date", "customer", "customerGSTIN", "placeOfSupply",
@@ -274,6 +280,8 @@ class GSTRCSVExportView(APIView):
                       "taxVerified", "itcEligibility"]
             rows = data["gstr2b"]["purchases"]
         elif report == "expense-gst":
+            if not user_has_permission(request.user, "expenses.view"):
+                raise PermissionDenied("Expense access is required for this GST export.")
             # Expense tax amounts have no validated GST-head split.
             fields = ["date", "description", "category", "vendor",
                       "reference", "amount", "tax", "status", "itcEligibility"]
