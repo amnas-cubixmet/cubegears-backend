@@ -225,7 +225,7 @@ def hsn_summary(invoices):
     return rows, issues
 
 
-def prepare(company, period):
+def prepare(company, period, *, include_expense_review=False):
     """Generate provisional GST snapshots, credit notes and approved tax review.
 
     No official filing or portal electronic credit/cash ledger is inferred.
@@ -240,7 +240,9 @@ def prepare(company, period):
 
     sales, sales_issues, invoices = outward_rows(company, period)
     purchases, purchase_issues = inward_rows(company, period)
-    expense_gst_review = unverified_expense_gst(company, period)
+    expense_gst_review = (
+        unverified_expense_gst(company, period) if include_expense_review else []
+    )
     hsn, hsn_issues = hsn_summary(invoices)
     gross_totals = _totals(sales)
     cancelled_credits = GSTSalesCreditNote.objects.filter(
@@ -337,8 +339,8 @@ def prepare(company, period):
             "purchaseGST": money(purchase_gst),
             "unverifiedExpenseGST": money(sum((
                 amount(row["tax"]) for row in expense_gst_review
-            ), ZERO)),
-            "expenseGSTReviewCount": len(expense_gst_review),
+            ), ZERO)) if include_expense_review else None,
+            "expenseGSTReviewCount": len(expense_gst_review) if include_expense_review else None,
             "eligibleITC": money(approved),
             "reversedITC": money(reversed_itc),
             "indicativeGapBeforeUtilization": money(provisional_gap),
