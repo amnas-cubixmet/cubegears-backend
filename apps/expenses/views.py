@@ -73,7 +73,7 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
     @staticmethod
     def _budget_month(raw):
         value = str(raw or "").strip()
-        if not re.fullmatch(r"20\\d{2}-(0[1-9]|1[0-2])", value):
+        if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", value):
             raise ValidationError({"month": "Use a valid budget month (YYYY-MM)."})
         return date.fromisoformat(value + "-01")
 
