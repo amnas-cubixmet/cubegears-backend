@@ -16,6 +16,7 @@ from apps.inventory.models import StockItem
 from apps.payments.models import Payment
 from apps.roles.models import Role
 from apps.reports.workspace import ReportsWorkspaceView
+from apps.reports.fiscal_comparison import fiscal_year, get_fiscal_comparison
 
 
 class ReportsWorkspaceTests(TestCase):
@@ -95,6 +96,56 @@ class ReportsWorkspaceTests(TestCase):
         request = SimpleNamespace(
             user=self.owner,
             query_params={"from": "2026-11-30", "to": "2026-11-01"},
+        )
+        with self.assertRaises(ValidationError):
+            ReportsWorkspaceView().get(request)
+
+    def test_quarters_follow_indian_april_march_financial_year(self):
+        self.assertEqual(fiscal_year(date(2026, 3, 31)), 2025)
+        self.assertEqual(fiscal_year(date(2026, 4, 1)), 2026)
+        data = self.report({"from": "2026-11-01", "to": "2026-11-30", "fiscalYear": "2026"})
+        comparison = data["fiscalComparison"]
+        self.assertEqual(comparison["currentLabel"], "FY 2026–27")
+        self.assertEqual(comparison["previousLabel"], "FY 2025–26")
+        self.assertEqual([q["quarter"] for q in comparison["quarters"]], ["Q1", "Q2", "Q3", "Q4"])
+        self.assertEqual(comparison["quarters"][2]["current"], Decimal("500.00"))
+        self.assertEqual(comparison["quarters"][2]["previous"], Decimal("0.00"))
+        self.assertIsNone(comparison["quarters"][2]["changePct"])
+
+    def test_previous_year_and_payment_channels_never_invent_figures(self):
+        Invoice.objects.create(
+            company=self.company, customer=self.customer,
+            kind="invoice", status="Finalized", number="PREV-1",
+            date=date(2025, 11, 8), total="400.00",
+        )
+        Payment.objects.create(
+            company=self.company, customer=self.customer,
+            date=date(2026, 11, 10), amount="50.00",
+            method="UPI", direction="OUT", status="Completed",
+        )
+        comparison = get_fiscal_comparison(self.owner, 2026)
+        self.assertEqual(comparison["totals"]["invoices"]["previous"], Decimal("400.00"))
+        self.assertEqual(comparison["totals"]["invoices"]["current"], Decimal("500.00"))
+        self.assertEqual(comparison["totals"]["invoices"]["changePct"], Decimal("25.00"))
+        self.assertEqual(comparison["totals"]["payments"]["current"], Decimal("150.00"))
+        channels = {row["channel"]: row for row in comparison["channels"]}
+        self.assertEqual(channels["Cash"]["current"], Decimal("200.00"))
+        self.assertEqual(channels["UPI"]["current"], Decimal("-50.00"))
+
+    def test_annual_sales_permission_is_checked_separately(self):
+        with patch(
+            "apps.reports.fiscal_comparison.user_has_permission",
+            side_effect=lambda user, code: code != "invoices.view",
+        ):
+            comparison = get_fiscal_comparison(self.owner, 2026)
+        self.assertFalse(comparison["available"]["invoices"])
+        self.assertEqual(comparison["quarters"], [])
+        self.assertNotIn("invoices", comparison["totals"])
+
+    def test_fiscal_year_query_rejects_invalid_values(self):
+        request = SimpleNamespace(
+            user=self.owner,
+            query_params={"fiscalYear": "2026/27"},
         )
         with self.assertRaises(ValidationError):
             ReportsWorkspaceView().get(request)
