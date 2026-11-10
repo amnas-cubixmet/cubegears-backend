@@ -1,5 +1,6 @@
 """Job invoice draft is read-only and never bills costs or re-issues stock."""
 from datetime import date
+from django.utils import timezone
 from decimal import Decimal
 
 from django.test import TestCase, override_settings
@@ -71,6 +72,34 @@ class JobInvoiceDraftTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.owner)
         self.url = "/api/v1/billing/documents/job-draft?jobId=" + str(self.job.pk)
+
+    def test_historical_linked_job_invoice_exposes_read_only_job_id(self):
+        """An older finalized invoice with no text source link is still shown."""
+        old_invoice = Invoice.objects.create(
+            company=self.company, branch=self.branch,
+            number="JOB-LEGACY-GST-01", kind="invoice",
+            invoice_type="regular", status="Finalized",
+            finalized_at=timezone.now(), date=date(2026, 11, 10),
+            job=self.job, source_job_id="",
+            customer=self.job.customer, vehicle=self.job.vehicle,
+            total=Decimal("118.00"), balance=Decimal("118.00"),
+        )
+        detail = self.client.get(f"/api/v1/billing/documents/{old_invoice.pk}")
+        self.assertEqual(detail.status_code, 200, getattr(detail, "data", None))
+        self.assertEqual(detail.data["jobId"], str(self.job.pk))
+        self.assertEqual(detail.data["sourceJobId"], "")
+        matching = self.client.get(
+            f"/api/v1/billing/documents?jobId={self.job.pk}",
+        )
+        self.assertEqual(matching.status_code, 200, getattr(matching, "data", None))
+        rows = matching.data if isinstance(matching.data, list) else matching.data["results"]
+        self.assertTrue(any(row["id"] == str(old_invoice.pk) and
+                            row["jobId"] == str(self.job.pk) for row in rows))
+        unrelated = self.client.get(
+            "/api/v1/billing/documents?jobId=invalid",
+        )
+        self.assertEqual(unrelated.status_code, 200)
+        self.assertEqual(unrelated.data, [])
 
     def test_only_recorded_billable_revenue_is_suggested_and_endpoint_never_posts(self):
         before = (Invoice.objects.count(), StockMovement.objects.count(), Decimal(str(self.stock.on_hand)))
