@@ -29,7 +29,18 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         qs = super().get_queryset()
         q = self.request.query_params.get("search")
         if q:
-            qs = qs.filter(Q(name__icontains=q)|Q(phone__icontains=q)|Q(whatsapp__icontains=q)|Q(email__icontains=q)|Q(company_name__icontains=q))
+            # Search registration/job numbers only for roles authorized to view
+            # those records, without fetching every customer's jobs or vehicles.
+            from apps.accounts.permissions import user_has_permission
+            predicate = (Q(name__icontains=q) | Q(phone__icontains=q) |
+                         Q(whatsapp__icontains=q) | Q(email__icontains=q) |
+                         Q(company_name__icontains=q))
+            if user_has_permission(self.request.user, "vehicles.view"):
+                predicate |= (Q(vehicles__registration__icontains=q) |
+                              Q(vehicles__vin__icontains=q))
+            if user_has_permission(self.request.user, "jobs.view"):
+                predicate |= Q(jobs__job_number__icontains=q)
+            qs = qs.filter(predicate).distinct()
         st = self.request.query_params.get("status")
         if st and st.lower() != "all": qs = qs.filter(status__iexact=st)
         ctype = self.request.query_params.get("customerType")
