@@ -1,6 +1,6 @@
 import uuid
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Q, Sum, Count
 from rest_framework import decorators, response, status
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Customer, CustomerActivity, CustomerReminder
@@ -21,6 +21,7 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         "outstanding": "invoices.view",
         "ledger": ["payments.view", "invoices.view"],
         "branch_options": "customers.view",
+        "directory_summary": "customers.view",
         "restore": "customers.edit",
     }
 
@@ -51,6 +52,71 @@ class CustomerViewSet(CompanyScopedModelViewSet):
             from rest_framework.exceptions import ValidationError
             raise ValidationError({"branch": "Select an active workshop branch."})
         serializer.save(company=self.request.user.company, branch=branch)
+
+    @decorators.action(detail=False, methods=["get"], url_path="directory-summary")
+    def directory_summary(self, request):
+        """One tenant-scoped, permission-aware summary for the customer directory.
+
+        Contacts access never grants invoice balances or job/vehicle details.
+        Use grouped DB aggregates instead of three requests per customer.
+        Payments already applied to invoices are included in Invoice.paid;
+        do not add Payment amounts a second time.
+        """
+        from apps.accounts.permissions import user_has_permission
+        from apps.vehicles.models import Vehicle
+        from apps.jobs.models import Job
+        from apps.invoices.models import Invoice
+
+        customers = list(self.get_queryset().values_list("pk", flat=True))
+        can_vehicles = user_has_permission(request.user, "vehicles.view")
+        can_jobs = user_has_permission(request.user, "jobs.view")
+        can_invoices = user_has_permission(request.user, "invoices.view")
+        records = {str(pk): {
+            "customerId": str(pk),
+            "vehicleCount": None, "jobsCount": None,
+            "totalSpent": None, "outstanding": None,
+            "vehiclesAvailable": can_vehicles,
+            "jobsAvailable": can_jobs,
+            "moneyAvailable": can_invoices,
+        } for pk in customers}
+        if not customers:
+            return response.Response({"results": [], "count": 0})
+        company = request.user.company
+
+        if can_vehicles:
+            for row in (Vehicle.objects.filter(company=company, customer_id__in=customers)
+                    .values("customer_id").annotate(value=Count("pk"))):
+                records[str(row["customer_id"])]["vehicleCount"] = row["value"]
+            for item in records.values():
+                if item["vehicleCount"] is None:
+                    item["vehicleCount"] = 0
+
+        if can_jobs:
+            for row in (Job.objects.filter(company=company, customer_id__in=customers)
+                    .values("customer_id").annotate(value=Count("pk"))):
+                records[str(row["customer_id"])]["jobsCount"] = row["value"]
+            for item in records.values():
+                if item["jobsCount"] is None:
+                    item["jobsCount"] = 0
+
+        if can_invoices:
+            invoices = (Invoice.objects.filter(
+                company=company, customer_id__in=customers,
+                kind="invoice", finalized_at__isnull=False,
+            ).exclude(status__in=["Draft", "Cancelled"])
+                .values("customer_id").annotate(
+                    invoiced=Sum("total"), outstanding=Sum("balance"),
+                ))
+            for row in invoices:
+                item = records[str(row["customer_id"])]
+                item["totalSpent"] = str(row["invoiced"] or 0)
+                item["outstanding"] = str(row["outstanding"] or 0)
+            for item in records.values():
+                if item["totalSpent"] is None:
+                    item["totalSpent"] = "0.00"
+                    item["outstanding"] = "0.00"
+
+        return response.Response({"results": list(records.values()), "count": len(records)})
 
     @decorators.action(detail=False, methods=["get"], url_path="branch-options")
     def branch_options(self, request):
