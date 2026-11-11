@@ -2,6 +2,7 @@ from django.urls import path
 from .website_views import (
     WebsiteBrandingView, WebsiteSessionView, WebsiteLogoutView,
     WebsiteLogoView, WebsitePhotoView, WebsiteEstimateDecisionView,
+    WebsiteInvoicePdfView,
 )
 
 urlpatterns = [
@@ -10,6 +11,8 @@ urlpatterns = [
     path("logout", WebsiteLogoutView.as_view(), name="customer-website-logout"),
     path("estimates/<uuid:estimate_id>/decision", WebsiteEstimateDecisionView.as_view(),
          name="customer-website-estimate-decision"),
+    path("invoices/<uuid:invoice_id>/pdf", WebsiteInvoicePdfView.as_view(),
+         name="customer-website-invoice-pdf"),
     path("logo", WebsiteLogoView.as_view(), name="customer-website-logo"),
     path("photos/<uuid:photo_id>", WebsitePhotoView.as_view(), name="customer-website-photo"),
 ]

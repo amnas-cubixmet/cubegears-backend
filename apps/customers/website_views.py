@@ -33,6 +33,7 @@ from apps.customers.estimate_feedback import (
 )
 from apps.customers.portal_views import _job_public
 from apps.invoices.models import Invoice
+from apps.invoices.pdf import pdf_response
 from apps.jobs.models import Job, JobActivity, JobEstimate
 from apps.jobs.workflow import workflow_state
 from apps.notifications.estimate_responses import notify_customer_estimate_response
@@ -208,6 +209,12 @@ def _customer_quote(estimate, history=None):
     return result
 
 
+def _published_invoices(company, customer):
+    return Invoice.objects.filter(
+        company=company, customer=customer, finalized_at__isnull=False,
+    ).exclude(status__in=["Draft", "Cancelled"])
+
+
 def _dashboard(access):
     company, customer = access.company, access.customer
     vehicles = list(customer.vehicles.filter(company=company).order_by("registration")[:100])
@@ -243,9 +250,7 @@ def _dashboard(access):
             if declined:
                 receipt["declineFeedback"] = public_decline_feedback(detail)
             receipts[estimate_key] = receipt
-    invoices = Invoice.objects.filter(
-        company=company, customer=customer, finalized_at__isnull=False
-    ).exclude(status__in=["Draft", "Cancelled"]).order_by("-date")[:100]
+    invoices = _published_invoices(company, customer).order_by("-date")[:100]
     photos = VehicleInspectionPhoto.objects.filter(
         company=company, vehicle__customer=customer, published=True
     ).order_by("-captured_at")[:150]
@@ -259,7 +264,8 @@ def _dashboard(access):
         "jobs": [_job_public(j) for j in jobs],
         "estimates": [_customer_quote(e, receipts) for e in estimates],
         "invoices": [
-            {"jobId": str(inv.job_id) if inv.job_id else None,
+            {"id": str(inv.pk), "jobId": str(inv.job_id) if inv.job_id else None,
+             "vehicleId": str(inv.vehicle_id) if inv.vehicle_id else None,
              "number": inv.number, "date": inv.date, "status": inv.status,
              "total": str(inv.total), "paid": str(inv.paid), "balance": str(inv.balance),
              "kind": inv.kind} for inv in invoices
@@ -485,3 +491,18 @@ class WebsitePhotoView(PortalBaseView):
             vehicle__customer=access.customer, published=True
         )
         return _no_store(_file_response(photo))
+
+
+class WebsiteInvoicePdfView(PortalBaseView):
+    def get(self, request, invoice_id):
+        company = _tenant(request)
+        access = _session_access(request, company)
+        if not access:
+            raise Http404("Invoice unavailable.")
+        invoice = get_object_or_404(
+            _published_invoices(company, access.customer).select_related(
+                "company", "customer", "vehicle", "job",
+            ),
+            pk=invoice_id,
+        )
+        return _no_store(pdf_response(invoice))
