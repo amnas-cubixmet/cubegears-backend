@@ -116,11 +116,13 @@ class CustomerViewSet(CompanyScopedModelViewSet):
                 kind="invoice", finalized_at__isnull=False,
             ).exclude(status__in=["Draft", "Cancelled"])
                 .values("customer_id").annotate(
-                    invoiced=Sum("total"), outstanding=Sum("balance"),
+                    invoiced=Sum("total"), paid=Sum("paid"),
+                    outstanding=Sum("balance"),
                 ))
             for row in invoices:
                 item = records[str(row["customer_id"])]
-                item["totalSpent"] = str(row["invoiced"] or 0)
+                item["totalSpent"] = str(row["paid"] or 0)
+                item["totalInvoiced"] = str(row["invoiced"] or 0)
                 item["outstanding"] = str(row["outstanding"] or 0)
             for item in records.values():
                 if item["totalSpent"] is None:
