@@ -98,9 +98,9 @@ class CustomerDirectorySummaryTests(TestCase):
         alpha = records[str(self.customer.pk)]
         self.assertEqual(alpha["vehicleCount"], 1)
         self.assertEqual(alpha["jobsCount"], 1)
-        self.assertEqual(alpha["totalSpent"], "20")
-        self.assertEqual(alpha["outstanding"], "98")
-        self.assertEqual(alpha["totalInvoiced"], "118")
+        self.assertEqual(alpha["totalSpent"], "20.00")
+        self.assertEqual(alpha["outstanding"], "98.00")
+        self.assertEqual(alpha["totalInvoiced"], "118.00")
         self.assertTrue(alpha["moneyAvailable"])
         self.assertEqual(records[str(self.other.pk)]["outstanding"], "0.00")
         self.assertEqual(records[str(self.other.pk)]["vehicleCount"], 0)
