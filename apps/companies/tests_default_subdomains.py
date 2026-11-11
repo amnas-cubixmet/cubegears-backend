@@ -1,4 +1,4 @@
-"""Backend-owned unique wildcard subdomains and optional verified own-domain flow."""
+"""Backend-owned unique wildcard workshop subdomains."""
 import hashlib
 import hmac
 import os
@@ -58,23 +58,34 @@ class WorkshopSubdomainTests(TestCase):
                 "HTTP_X_CG_PORTAL_SIG": digest}
 
     def test_owner_default_created_without_vercel_and_rename_does_not_change_login_slug(self):
-        with patch("apps.companies.vercel_domains.VercelDomains") as vercel:
-            result = self.client.get("/api/v1/company/customer-website")
-            self.assertEqual(result.status_code, 200, result.data)
-            self.assertEqual(result.data["subdomain"], "first-garage.cubegears.com")
-            self.assertEqual(result.data["subdomainLabel"], "first-garage")
-            self.assertTrue(result.data["wildcardReady"])
-            changed = self.client.patch(
-                "/api/v1/company/customer-website/subdomain",
-                {"label": "new-first-garage"}, format="json",
-            )
-            self.assertEqual(changed.status_code, 200, changed.data)
-            self.assertTrue(changed.data["changed"])
-            self.assertEqual(changed.data["subdomain"], "new-first-garage.cubegears.com")
-            self.assertEqual(subdomain_label(self.company), "new-first-garage")
-            self.company.refresh_from_db()
-            self.assertEqual(self.company.slug, "first-garage")
-            vercel.assert_not_called()
+        result = self.client.get("/api/v1/company/customer-website")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data["subdomain"], "first-garage.cubegears.com")
+        self.assertEqual(result.data["subdomainLabel"], "first-garage")
+        self.assertTrue(result.data["wildcardReady"])
+        changed = self.client.patch(
+            "/api/v1/company/customer-website/subdomain",
+            {"label": "new-first-garage"}, format="json",
+        )
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.assertTrue(changed.data["changed"])
+        self.assertEqual(changed.data["subdomain"], "new-first-garage.cubegears.com")
+        self.assertEqual(subdomain_label(self.company), "new-first-garage")
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.slug, "first-garage")
+
+    def test_custom_domain_endpoints_are_retired(self):
+        for path in (
+            "/api/v1/company/customer-website/domains",
+            "/api/v1/company/customer-website/domains/1",
+            "/api/v1/company/customer-website/domains/1/verify",
+            "/api/v1/company/customer-website/domains/1/refresh",
+            "/api/v1/company/customer-website/domains/1/primary",
+            "/api/v1/company/platform/customer-domains",
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404, path)
 
     def test_existing_and_custom_labels_are_reserved_and_unauthorized_updates_denied(self):
         ensure_default_subdomain(self.other)

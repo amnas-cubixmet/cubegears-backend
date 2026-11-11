@@ -7,7 +7,7 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.companies.models import Company, CompanyDomain
+from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.customers.portal_tokens import ensure_portal_access, issue_link, rotate_link
 from apps.jobs.models import Job
@@ -82,30 +82,17 @@ class CustomerWebsiteTests(TestCase):
             self.client.get(path, **self.headers("not-a-workshop.cubegears.com")).status_code, 404
         )
 
-    def test_approved_https_custom_domain_routes_only_its_workshop(self):
-        from django.utils import timezone
-        assigned = CompanyDomain.objects.create(
-            company=self.first, hostname="service.example.org",
-            status=CompanyDomain.ACTIVE, is_approved=True,
-            dns_configured=True, ownership_verified=True,
-            ssl_status="ready", verified_at=timezone.now(),
-        )
+    def test_arbitrary_signed_custom_hostname_cannot_resolve_a_workshop(self):
+        # Removing custom domains must fail closed, even for correctly signed
+        # host headers supplied through the trusted customer BFF.
         path = "/api/v1/customer-website/branding"
-        own = self.client.get(path, **self.headers("service.example.org"))
-        self.assertEqual(own.status_code, 200)
-        self.assertEqual(own.data["name"], "Alpha Workshop")
         self.assertEqual(
-            self.client.get(path, **self.headers("alpha.cubegears.com")).status_code, 200
-        )
-        assigned.status = CompanyDomain.DISABLED
-        assigned.is_primary = False
-        assigned.verified_at = None
-        assigned.save()
-        self.assertEqual(
-            self.client.get(path, **self.headers("service.example.org")).status_code, 404
+            self.client.get(path, **self.headers("service.example.org")).status_code,
+            404,
         )
         self.assertEqual(
-            self.client.get(path, **self.headers("alpha.cubegears.com")).status_code, 200
+            self.client.get(path, **self.headers("alpha.cubegears.com")).status_code,
+            200,
         )
 
     def test_redeem_link_and_read_existing_customer_data(self):

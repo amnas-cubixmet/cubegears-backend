@@ -37,13 +37,12 @@ def issue_link(access):
     import os
     import re
     from urllib.parse import urlsplit
-    from apps.companies.models import CompanyDomain
     from apps.companies.subdomains import subdomain_label
 
     # Development links must stay on the exact local workshop website.
     # Do this BEFORE production-domain checks: enabling the production wildcard
     # feature flag in a local environment must not send customers to production.
-    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
+    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost/access").rstrip("/")
     if settings.DEBUG:
         parsed = urlsplit(base)
         label = subdomain_label(access.company)
@@ -51,17 +50,6 @@ def issue_link(access):
                 and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):
             port = f":{parsed.port}" if parsed.port else ""
             return f"http://{label}.localhost{port}/access/{token}"
-
-    # For deployed websites, prefer the workshop's verified primary domain.
-    # No links should go through the obsolete Company Panel /c/:token route.
-    preferred = CompanyDomain.objects.filter(
-        company=access.company, status=CompanyDomain.ACTIVE,
-        is_primary=True, is_approved=True,
-        dns_configured=True, ownership_verified=True, ssl_status="ready",
-        verified_at__isnull=False,
-    ).first()
-    if preferred:
-        return f"https://{preferred.hostname}/access/{token}"
 
     # Use a tenant-specific production subdomain only after wildcard DNS/TLS
     # have been explicitly enabled.

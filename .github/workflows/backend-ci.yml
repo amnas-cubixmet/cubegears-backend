@@ -49,7 +49,6 @@ jobs:
             apps.customers.tests_branch_assignment \
             apps.customers.tests_directory_summary \
             apps.customers.tests_website \
-            apps.customers.tests_local_custom_domains \
             apps.customers.tests_part17_estimate_decision \
             apps.notifications.tests \
             apps.reports.tests_workspace \
@@ -73,7 +72,6 @@ jobs:
             apps.search.tests \
             apps.companies.tests_logo_upload \
             apps.companies.tests_onboarding \
-            apps.companies.tests_vercel_domains \
             apps.companies.tests_default_subdomains \
             apps.control_panel.tests_feature_pricing_routes \
             apps.control_panel.tests_branding \
