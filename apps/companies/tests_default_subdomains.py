@@ -58,7 +58,7 @@ class WorkshopSubdomainTests(TestCase):
                 "HTTP_X_CG_PORTAL_SIG": digest}
 
     def test_owner_default_created_without_vercel_and_rename_does_not_change_login_slug(self):
-            result = self.client.get("/api/v1/company/customer-website")
+        result = self.client.get("/api/v1/company/customer-website")
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data["subdomain"], "first-garage.cubegears.com")
         self.assertEqual(result.data["subdomainLabel"], "first-garage")
@@ -73,6 +73,19 @@ class WorkshopSubdomainTests(TestCase):
         self.assertEqual(subdomain_label(self.company), "new-first-garage")
         self.company.refresh_from_db()
         self.assertEqual(self.company.slug, "first-garage")
+
+    def test_custom_domain_endpoints_are_retired(self):
+        for path in (
+            "/api/v1/company/customer-website/domains",
+            "/api/v1/company/customer-website/domains/1",
+            "/api/v1/company/customer-website/domains/1/verify",
+            "/api/v1/company/customer-website/domains/1/refresh",
+            "/api/v1/company/customer-website/domains/1/primary",
+            "/api/v1/company/platform/customer-domains",
+        ):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404, path)
 
     def test_existing_and_custom_labels_are_reserved_and_unauthorized_updates_denied(self):
         ensure_default_subdomain(self.other)
