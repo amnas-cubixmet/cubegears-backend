@@ -111,7 +111,9 @@ class GSTRPurchaseSettlementsTests(TestCase):
         self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
         self.assertEqual(StockMovement.objects.count(), 0)
         self.assertEqual(SupplierBill.objects.count(), 1)
-        self.assertEqual(self.client.post(self.endpoint, {}, format="json").status_code, 405)
+        # RolePermission rejects an unsupported write before Django dispatches
+        # the view method (403), guaranteeing this GST readback cannot mutate.
+        self.assertEqual(self.client.post(self.endpoint, {}, format="json").status_code, 403)
         self.assertEqual(SupplierBill.objects.count(), 1)
 
     def test_advance_application_classifies_account_without_moving_money_again(self):
