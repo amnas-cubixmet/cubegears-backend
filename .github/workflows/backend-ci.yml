@@ -87,6 +87,7 @@ jobs:
             apps.invoices.tests_calculations \
             apps.gstr.tests \
             apps.gstr.tests_part15 \
+            apps.gstr.tests_purchase_settlements \
             apps.invoices.tests_job_draft \
             apps.invoices.tests_part10_integrity \
             apps.invoices.tests_part10_document_integrity \
