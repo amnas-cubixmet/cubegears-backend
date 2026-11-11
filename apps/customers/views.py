@@ -119,11 +119,13 @@ class CustomerViewSet(CompanyScopedModelViewSet):
                     invoiced=Sum("total"), paid=Sum("paid"),
                     outstanding=Sum("balance"),
                 ))
+            from decimal import Decimal
+            cents = Decimal("0.01")
             for row in invoices:
                 item = records[str(row["customer_id"])]
-                item["totalSpent"] = str(row["paid"] or 0)
-                item["totalInvoiced"] = str(row["invoiced"] or 0)
-                item["outstanding"] = str(row["outstanding"] or 0)
+                item["totalSpent"] = str((row["paid"] or Decimal("0")).quantize(cents))
+                item["totalInvoiced"] = str((row["invoiced"] or Decimal("0")).quantize(cents))
+                item["outstanding"] = str((row["outstanding"] or Decimal("0")).quantize(cents))
             for item in records.values():
                 if item["totalSpent"] is None:
                     item["totalSpent"] = "0.00"
