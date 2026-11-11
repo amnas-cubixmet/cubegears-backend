@@ -1,6 +1,5 @@
-from django.contrib import admin, messages
-from .models import Company, CompanyDomain, CompanyDomainAudit, CompanyWebsiteSettings, CompanyWebsiteSubdomain
-from .vercel_domains import VercelDomainError, record_domain_event, refresh_domain
+from django.contrib import admin
+from .models import Company, CompanyWebsiteSettings, CompanyWebsiteSubdomain
 
 
 @admin.register(Company)
