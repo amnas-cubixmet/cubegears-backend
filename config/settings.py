@@ -309,7 +309,7 @@ WHATSAPP_ESTIMATE_REMINDERS_ENABLED = env_bool("WHATSAPP_ESTIMATE_REMINDERS_ENAB
 STAFF_WHATSAPP_AUTO_SEND_ENABLED = env_bool("STAFF_WHATSAPP_AUTO_SEND_ENABLED", False)
 
 CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
-CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access" if DEBUG else "https://customer.cubegears.com/access")
+CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost/access" if DEBUG else "https://customer.cubegears.com/access")
 if not DEBUG and not CUSTOMER_PORTAL_BASE_URL.startswith("https://"):
     raise ImproperlyConfigured("CUSTOMER_PORTAL_BASE_URL must use HTTPS in production.")
 
