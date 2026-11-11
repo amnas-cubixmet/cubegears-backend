@@ -42,7 +42,7 @@ def issue_link(access):
     # Development links must stay on the exact local workshop website.
     # Do this BEFORE production-domain checks: enabling the production wildcard
     # feature flag in a local environment must not send customers to production.
-    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost:5174/access").rstrip("/")
+    base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost/access").rstrip("/")
     if settings.DEBUG:
         parsed = urlsplit(base)
         label = subdomain_label(access.company)
