@@ -91,6 +91,32 @@ class WhatsAppManualOnlyTests(TestCase):
         }, format="json")
         self.assertEqual(forbidden.status_code, 404)
 
+    def test_payment_reminder_only_for_outstanding_finalized_invoice(self):
+        from datetime import date
+        from decimal import Decimal
+        from django.utils import timezone
+        from apps.invoices.models import Invoice
+
+        invoice = Invoice.objects.create(
+            company=self.company, customer=self.customer,
+            date=date.today(), number="INV-MANUAL-001",
+            status="Finalized", finalized_at=timezone.now(),
+            total=Decimal("1500"), paid=Decimal("500"), balance=Decimal("1000"),
+        )
+        result = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "payment_reminder", "targetId": str(invoice.pk)
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertIn("INV-MANUAL-001", result.data["preview"])
+        self.assertIn("1000", result.data["preview"])
+        self.assertEqual(result.data["status"], "manual_prepared")
+        invoice.balance = Decimal("0")
+        invoice.save(update_fields=["balance"])
+        declined = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "payment_reminder", "targetId": str(invoice.pk)
+        }, format="json")
+        self.assertEqual(declined.status_code, 409)
+
     def test_phone_normalization_covers_supported_countries(self):
         self.assertEqual(normalize_recipient("+91 (98765) 43210"), "919876543210")
         self.assertEqual(normalize_recipient("+971 501234567"), "971501234567")
