@@ -1,31 +1,48 @@
-# CubixGear WhatsApp Manual-Only Migration — Test Report
+# CubixGear — Manual WhatsApp Preservation & Meta Cloud API Removal
 
-Updated: 2026-11-12
+Verified on 2026-11-12. This report distinguishes **GitHub CI evidence** from **deployed-browser findings**. Do not close a reported production bug without reproducing and retesting it on the affected deployment.
 
-## Changes
-- Staff creation saves employee once and recovers safely when invitation preparation fails; independent manual invite generation via existing one-use HMAC token.
-- Password setup links expire after 24 hours, are hash-checked and single-use. Production requires HTTPS FRONTEND_URL.
-- WhatsApp manual draft endpoints for customers, jobs, job status, ready vehicles, estimates, issued invoices, and invoice payment reminders.
-- Removed live provider connect/disconnect, template, test-send and webhook endpoints.
-- Removed Meta code, automatic message triggers, and WhatsApp-specific Celery tasks; historical database models and migrations intentionally preserved.
-- Inert compatibility hook for legacy estimate/job imports, never auto-send.
-- Owner signup without email/password returns manual setup link once in initial signup response.
+## Scope and compatibility
 
-## Regression coverage
-- `apps/whatsapp/tests_integration.py`: manual settings, removed provider endpoints, no queueing, phone validation, secure portal draft, tenant isolation and legacy logs.
-- `apps/whatsapp/tests_part19_estimate_notifications.py`: manual estimate sharing, no automatic reminders.
-- `apps/accounts/tests_mobile_staff_onboarding.py`: staff creation error resilience, no-duplicate retry, invalid production HTTPS configuration, token security, access control, retired webhook.
+- Automatic Meta Graph API calls, provider connect/disconnect, template management, webhooks, auto sends, WhatsApp Celery tasks, event-triggered notifications, and estimate reminder scheduler have been retired.
+- Historical WhatsApp tables and migrations are preserved; shared Redis/Celery for unrelated accounting and notifications remains unchanged.
+- The independent `apps/accounts/staff_setup.py` token service issues one-use, 24-hour HMAC-validated setup links; production requires HTTPS company-panel `FRONTEND_URL`.
+- `apps/customers/portal_tokens.py` provides tenant-scoped revocable/rotatable customer portal links, independent of Meta.
+- `apps/whatsapp/manual.py` validates permission, company, record, country-coded number, publication state, and customer access, then returns a percent-encoded `https://wa.me/{phone}?text=...` draft. A human must press Send.
+- Manual targets: customer, job, job_status, ready_delivery, estimate, invoice, payment_reminder, legacy failed/skipped log. No draft is marked as delivered/read.
+- Staff: Create → secure invitation → Share / Copy → regenerate existing staff ID. Company Panel error handling keeps loaded profile visible on optional-data failures, shields raw HTML and offers Retry.
 
-## Verification
-- GitHub backend CI initially failed Ruff unused imports, which have since been fixed (commit bfa8ab2); subsequent CI pending.
-- Browser/live WhatsApp sending, full Django suite, production traceback are not verified here.
-- No production business records or old migrations deleted.
+## Bug register
 
-## Staff HTTP 500 diagnosis
-Before migration, staff creation and invitation URL generation were coupled inside a DB transaction and manual sharing made a second invitation API call. Misconfigured link generation or provider-dependent behavior could surface an HTTP 500. Original production traceback unavailable; exact exception not confirmed. Invitation failure is now isolated at creation, and HTTP 400 explains invalid URL config during regeneration without recreating staff records.
+| ID | Endpoint and reported status | Root-cause evidence / file | Fix | Automated retest | Final status |
+|---|---|---|---|---|---|
+| CG-STAFF-001 | POST `/api/v1/employees/{uuid}/invite`, reported 500 after POST `/api/v1/employees` succeeded | Exact deployed 500 traceback absent. CI demonstrated an unhandled `ValueError` for unsafe `FRONTEND_URL` from `apps/accounts/staff_setup.py:32`, via `apps/employees/views.py` invitation. | Staff creation transaction savepoint/failure recovery; retry without duplicate; HTTPS validation with local HTTP exception; manual-only generation | `apps.accounts.tests_mobile_staff_onboarding` included in successful backend CI | CI verified; production/browser retest pending |
+| CG-STAFF-002 | Staff Profile initial GET `/api/v1/employees/{uuid}` or `/api/v1/employees/me`, reported 500 with raw HTML; **which precise browser request failed has not been captured** | No original browser Network export or Django traceback. Optional secondary requests: teams, shifts, skills, documents, activities. | Backend staff detail/activities regression; frontend `safeApiErrorMessage` and `Promise.allSettled` support requests, retry and 401/403/404/500 handling | `test_staff_profile_detail_and_activity_support_endpoints_are_json_not_500` and Company Panel build/regressions passed | Production failure source and live retest pending; do not mark fixed |
+| CG-CUSTOMER-001 | GET/POST `/api/v1/customer-portal/links/{uuid}`, POST `/api/v1/whatsapp/manual-share`; user reported error, **exact failing URL/status unknown** | Reproducible stale digest -> 409 with regeneration path; invalid ID -> 400; tests cover tenant isolation. Original deployed error not traced. | Customer portal stale link regeneration and frontend retry; strictly validated phone and tenant-scoped manually prepared drafts | `apps.customers.tests_portal_access`, `apps.whatsapp.tests_integration`, Customer Website node tests passed | CI verified; original browser request and live retest pending |
 
-## Delivery
-Branch: `feature/manual-whatsapp-only-20261112`
-PR: https://github.com/amnas-cubixmet/cubegears-backend/pull/80
-Company Panel PR: https://github.com/amnas-cubixmet/company-panel/pull/131
-Merge status: pending CI and integration validation.
+Issues: [CG-STAFF-001 #82](https://github.com/amnas-cubixmet/cubegears-backend/issues/82), [CG-STAFF-002 #83](https://github.com/amnas-cubixmet/cubegears-backend/issues/83), [CG-CUSTOMER-001 #84](https://github.com/amnas-cubixmet/cubegears-backend/issues/84).
+
+## Verified GitHub Actions evidence
+
+- Backend CI [run 43170167792](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43170167792), commit `2b8d8772211b8f39221ecd57d5b8458abb453fcb`: **success**. Includes Ruff, compileall, Django checks, migrations, large test suite (staff/customer/WhatsApp/finance), PostgreSQL 16 finance/migrations tests and Docker build.
+- Backend prior [run 43169219378](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43169219378), commit `743669464629b2b6ef841cf39573ea17d13f6e9c`: **success**.
+- Company Panel [run 43170335413](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170335413), commit `b8ce3f27db0b6f0f1ad759bf84f88619222e5842`: **success**. PR #131 was merged to main; subsequent change commit `1c3e9358fcf38f693330d0695f631569863632f8` also needs final CI visibility.
+- Customer Website [run 43169740480](https://github.com/amnas-cubixmet/cubegears-customers-website/actions/runs/43169740480), commit `aca13b6b40781ea70dca36cf0adecfd76c2c11e0`: **success** (Node tests and build).
+
+## Explicitly not verified
+
+- No access to the user's localhost browser Network panel or original Django server traceback; exact failing deployed endpoint and 500 stack for CG-STAFF-002 are still unknown.
+- No real WhatsApp mobile/desktop Send interaction or permissioned end-to-end browser session was executed from GitHub connector. CI tests validate draft construction but **not delivery**.
+- All 15 requested workflows were not exercised end-to-end in a live workshop; production acceptance is not declared.
+- No automatic WhatsApp provider traffic is expected from application code; production infrastructure/provider logs have not been inspected.
+
+## Delivery references
+
+- Backend PR [#80](https://github.com/amnas-cubixmet/cubegears-backend/pull/80), branch `feature/manual-whatsapp-only-20261112`, latest verified functional commit `2b8d8772`.
+- Company Panel PR [#131](https://github.com/amnas-cubixmet/company-panel/pull/131), merged.
+- Customer Website PR [#33](https://github.com/amnas-cubixmet/cubegears-customers-website/pull/33), verified CI.
+- Public Website: reviewed; no automatic Meta sender found, no code change necessary for manual sharing.
+
+## Release gates
+
+Capture redacted browser Network request IDs + Django traceback on affected deployment for CG-STAFF-001/002/CG-CUSTOMER-001. Verify 401/403/404/500 behaviors; manually test iPhone/Android and desktop, expired token, no duplicate creation, copy, invoice/estimate/reminder/ready, cross-tenant rejection, and absence of outbound Meta provider HTTP requests. Close issues only after these gates pass.
