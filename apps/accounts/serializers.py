@@ -135,18 +135,31 @@ class LoginSerializer(serializers.Serializer):
         if not ident:
             raise serializers.ValidationError({"identifier":"Enter your email or mobile number."})
         if "@" in ident:
-            # Legacy email identifiers can contain mixed-case local parts.
-            # Authenticate using the stored identifier, but never guess
-            # between different users whose emails differ only by case.
-            email_matches = list(
-                User.objects.filter(email__iexact=ident)
-                .values_list("email", flat=True)[:2]
-            )
+            # Preserve stored email casing when calling Django's auth
+            # backend. Legacy records may have the same email in different
+            # case across workshops; never silently select one account.
+            candidates = User.objects.filter(email__iexact=ident).select_related(
+                "company", "role"
+            ).order_by("id")
+            company_slug = str(attrs.get("workshop") or "").strip().lower()
+            if company_slug:
+                candidates = candidates.filter(company__slug=company_slug)
+            email_matches = list(candidates[:6])
+            if not company_slug and len(email_matches) > 1:
+                # Reveal the workshop requirement only after a valid
+                # password, as with ambiguous mobile identities.
+                if any(row.check_password(password) and user_can_sign_in(row)
+                       for row in email_matches):
+                    raise serializers.ValidationError({
+                        "workshop": "Enter your workshop code for this email address."
+                    })
+                check_password(password, "!" + ("invalid" * 14))
+                raise serializers.ValidationError(generic)
             if len(email_matches) != 1:
                 raise serializers.ValidationError(generic)
             user = authenticate(
                 request=self.context.get("request"),
-                email=email_matches[0], password=password,
+                email=email_matches[0].email, password=password,
             )
             if not user or not user_can_sign_in(user):
                 raise serializers.ValidationError(generic)
