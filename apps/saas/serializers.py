@@ -16,11 +16,12 @@ class MediaFileSerializer(serializers.ModelSerializer):
     uploadedBy=serializers.CharField(source="uploaded_by.name",read_only=True)
     uploadedAt=serializers.DateTimeField(source="created_at",read_only=True)
     sizeMb=serializers.SerializerMethodField()
+    sizeBytes=serializers.IntegerField(source='size_bytes',read_only=True)
     type=serializers.CharField(source="mime_type",read_only=True)
     url=serializers.SerializerMethodField()
     class Meta:
         model=MediaFile
-        fields=("id","name","category","sizeMb","uploadedBy","uploadedAt","type","url")
+        fields=("id","name","category","sizeMb","sizeBytes","uploadedBy","uploadedAt","type","url")
     def get_sizeMb(self,obj): return round(obj.size_bytes/(1024*1024),2)
     def get_url(self,obj):
         request=self.context.get("request")
