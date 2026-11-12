@@ -1,6 +1,6 @@
 # CubixGear — Manual WhatsApp Preservation & Meta Cloud API Removal
 
-Verified on 2026-11-12. This report distinguishes **GitHub CI evidence** from **deployed-browser findings**. Do not close a reported production bug without reproducing and retesting it on the affected deployment.
+Updated after all three implementation PR merges on 2026-11-12. This report distinguishes **GitHub CI evidence** from **deployed-browser findings**. Do not close a reported production bug without reproducing and retesting it on the affected deployment.
 
 ## Scope and compatibility
 
@@ -24,9 +24,13 @@ Issues: [CG-STAFF-001 #82](https://github.com/amnas-cubixmet/cubegears-backend/i
 
 ## Verified GitHub Actions evidence
 
+- Backend latest PR-head CI [run 43171262646](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43171262646), commit `3cf7e6516abd26f3fb37981e7c4b07670264bb93`: **success** — check (including Django checks/migrations/regressions), PostgreSQL 16 migrations and finance tests, production Docker image build. Backend PR #80 subsequently merged into main in commit [`9e2f1a9830ea1b36ac0699b929d3c6db52f2943a`](https://github.com/amnas-cubixmet/cubegears-backend/commit/9e2f1a9830ea1b36ac0699b929d3c6db52f2943a).
+- Company Panel merged-main CI [run 43170662851](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170662851), merge commit `11bc866b7979157e4683c81845bcca6d0fdd2c38`: **success**.
+- Customer Website merged-main CI [run 43171281680](https://github.com/amnas-cubixmet/cubegears-customers-website/actions/runs/43171281680), merge commit `b514d68949a82bb05220951d6cdad3b62cdf016b`: **success**.
+
 - Backend CI [run 43170167792](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43170167792), commit `2b8d8772211b8f39221ecd57d5b8458abb453fcb`: **success**. Includes Ruff, compileall, Django checks, migrations, large test suite (staff/customer/WhatsApp/finance), PostgreSQL 16 finance/migrations tests and Docker build.
 - Backend prior [run 43169219378](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43169219378), commit `743669464629b2b6ef841cf39573ea17d13f6e9c`: **success**.
-- Company Panel [run 43170335413](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170335413), commit `b8ce3f27db0b6f0f1ad759bf84f88619222e5842`: **success**. PR #131 was merged to main; subsequent change commit `1c3e9358fcf38f693330d0695f631569863632f8` also needs final CI visibility.
+- Company Panel earlier [run 43170335413](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170335413), commit `b8ce3f27db0b6f0f1ad759bf84f88619222e5842`: **success**. PR #131 was merged to main and the merged-main check above subsequently passed.
 - Customer Website [run 43169740480](https://github.com/amnas-cubixmet/cubegears-customers-website/actions/runs/43169740480), commit `aca13b6b40781ea70dca36cf0adecfd76c2c11e0`: **success** (Node tests and build).
 
 ## Owner signup safety and verification
