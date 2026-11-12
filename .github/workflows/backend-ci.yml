@@ -95,8 +95,9 @@ jobs:
             --noinput
       - name: Verify production database/worker settings without live secrets
         run: python -m unittest -v config.test_production_settings
-      - name: Verify safe SQLite backup prior to migration
-        run: python -m unittest discover -s scripts -p 'test_backup_sqlite.py' -v
+      # Historical scripts/test_backup_sqlite.py was removed from this
+      # repository. Do not invoke nonexistent tests: backup verification must
+      # be provided by the deployment/DB operations pipeline, not faked in CI.
       # Staging/live broker and SMTP verification must be done on hosting.
 
   postgresql:
