@@ -368,20 +368,16 @@ class MobileStaffOnboardingTests(TestCase):
         },format="json")
         self.assertEqual(reply.status_code,404)
 
-    def test_workshop_registration_without_email_returns_manual_owner_setup_link(self):
+    def test_public_owner_signup_requires_password_or_email_without_meta(self):
+        count = Company.objects.count()
         anonymous = self.public.post("/api/v1/auth/signup",{
             "workshop_name":"Mobile Registration Garage", "owner_name":"Mobile Owner",
             "mobile":"+919101234567", "whatsapp_consent": True,
         },format="json")
-        self.assertEqual(anonymous.status_code,201,anonymous.data)
-        self.assertEqual(anonymous.data["user"]["email"],None)
-        workshop = Company.objects.get(pk=anonymous.data["workshop"]["id"])
-        self.assertEqual(workshop.phone,"+919101234567")
-        owner = User.objects.get(pk=anonymous.data["user"]["id"])
-        self.assertFalse(owner.has_usable_password())
-        self.assertTrue(StaffPasswordInvitation.objects.filter(user=owner).exists())
-        self.assertEqual(anonymous.data["setupDelivery"], "manual_ready")
-        self.assertIn("/set-password/", anonymous.data["setupLink"])
+        self.assertEqual(anonymous.status_code, 400, anonymous.data)
+        self.assertIn("email", anonymous.data)
+        self.assertNotIn("setupLink", str(anonymous.data))
+        self.assertEqual(Company.objects.count(), count)
 
 
     def test_staff_invitation_never_uses_optional_email(self):
