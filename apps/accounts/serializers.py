@@ -290,7 +290,17 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
         return attrs
 
     def validate_mobile(self, value):
-        return normalize_phone(value)
+        mobile = normalize_phone(value)
+        # New workshop owners must not register an already-used contact number.
+        # Scope this policy to public signup: existing multi-workshop staff
+        # mobile logins and their workshop-code selection remain unchanged.
+        from apps.companies.models import Company
+        if (User.objects.filter(normalized_phone=mobile).exists()
+                or Company.objects.filter(phone=mobile).exists()):
+            raise serializers.ValidationError(
+                "This mobile number is already registered. Please sign in or use another number."
+            )
+        return mobile
 
     def validate_email(self, value):
         value = value.lower().strip()
