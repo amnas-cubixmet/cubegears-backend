@@ -328,7 +328,7 @@ CORS_ALLOWED_ORIGINS = env_list(
 )
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
 # Expose only the opaque request reference to cross-origin browser clients.
-CORS_EXPOSE_HEADERS = ["X-Request-ID"]
+CORS_EXPOSE_HEADERS = ["X-Request-ID", "Retry-After"]
 
 # Use console mail locally, direct Django SMTP by default in production.
 # Override EMAIL_BACKEND in .env when a different provider is required.
