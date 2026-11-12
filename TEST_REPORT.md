@@ -29,6 +29,12 @@ Issues: [CG-STAFF-001 #82](https://github.com/amnas-cubixmet/cubegears-backend/i
 - Company Panel [run 43170335413](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170335413), commit `b8ce3f27db0b6f0f1ad759bf84f88619222e5842`: **success**. PR #131 was merged to main; subsequent change commit `1c3e9358fcf38f693330d0695f631569863632f8` also needs final CI visibility.
 - Customer Website [run 43169740480](https://github.com/amnas-cubixmet/cubegears-customers-website/actions/runs/43169740480), commit `aca13b6b40781ea70dca36cf0adecfd76c2c11e0`: **success** (Node tests and build).
 
+## Owner signup safety and verification
+
+Without the retired automatic platform WhatsApp sender, public signup cannot deliver an invitation to a phone-only, passwordless owner securely. The API now requires **an email address or a password** before creating that workshop; it does not return an owner password bearer token to anonymous callers. The Public Website already asks for email and was not changed.
+
+`apps.accounts.tests_part03_owner_signup` was added to Backend CI; the full PR head check [43171262646](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43171262646) passed. No live email transport or owner inbox receipt was verified.
+
 ## Explicitly not verified
 
 - No access to the user's localhost browser Network panel or original Django server traceback; exact failing deployed endpoint and 500 stack for CG-STAFF-002 are still unknown.
@@ -38,9 +44,9 @@ Issues: [CG-STAFF-001 #82](https://github.com/amnas-cubixmet/cubegears-backend/i
 
 ## Delivery references
 
-- Backend PR [#80](https://github.com/amnas-cubixmet/cubegears-backend/pull/80), branch `feature/manual-whatsapp-only-20261112`, latest verified functional commit `2b8d8772`.
-- Company Panel PR [#131](https://github.com/amnas-cubixmet/company-panel/pull/131), merged.
-- Customer Website PR [#33](https://github.com/amnas-cubixmet/cubegears-customers-website/pull/33), verified CI.
+- Backend PR [#80](https://github.com/amnas-cubixmet/cubegears-backend/pull/80): **merged to main** at `9e2f1a9830ea1b36ac0699b929d3c6db52f2943a`. PR head `3cf7e6516abd26f3fb37981e7c4b07670264bb93` passed [Backend CI run 43171262646](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43171262646), including owner signup security regressions.
+- Company Panel PR [#131](https://github.com/amnas-cubixmet/company-panel/pull/131): **merged to main** at `11bc866b7979157e4683c81845bcca6d0fdd2c38`. Main CI [43170897499](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170897499) and Supplier Validation [43170897507](https://github.com/amnas-cubixmet/company-panel/actions/runs/43170897507) passed; updated frontend manual-share, error-handling and UI tests included.
+- Customer Website PR [#33](https://github.com/amnas-cubixmet/cubegears-customers-website/pull/33): **merged to main** at `b514d68949a82bb05220951d6cdad3b62cdf016b`. Main CI [43171281680](https://github.com/amnas-cubixmet/cubegears-customers-website/actions/runs/43171281680) passed.
 - Public Website: reviewed; no automatic Meta sender found, no code change necessary for manual sharing.
 
 ## Release gates
