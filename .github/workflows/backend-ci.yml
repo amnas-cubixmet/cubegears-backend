@@ -35,6 +35,7 @@ jobs:
       - name: Run email, attendance, tenant, billing, and invoice regressions
         run: |
           python manage.py test \
+            apps.accounts.tests_auth_lifecycle \
             apps.accounts.tests_email_delivery \
             apps.accounts.tests_owner_permissions \
             apps.roles.tests_granular_permissions \
