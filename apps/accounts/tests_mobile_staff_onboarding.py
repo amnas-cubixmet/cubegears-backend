@@ -646,3 +646,55 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(result.status_code, 404)
         employee.refresh_from_db()
         self.assertTrue(employee.whatsapp_consent)
+
+    def test_public_signup_and_invitation_rate_limits_do_not_share_anonymous_bucket(self):
+        # Invalid HMAC links cannot grant access; however opening the setup UI
+        # repeatedly should not consume the separate registration quota.
+        validation = "/api/v1/auth/staff-invitation/validate"
+        signup = "/api/v1/auth/signup"
+        for _ in range(7):
+            result = self.public.post(
+                validation, {"token": "invalid-link"}, format="json"
+            )
+            self.assertEqual(result.status_code, 400, result.data)
+
+        self.assertEqual(
+            self.public.post(signup, {}, format="json").status_code, 400
+        )
+        for _ in range(4):
+            self.assertEqual(
+                self.public.post(signup, {}, format="json").status_code, 400
+            )
+        self.assertEqual(
+            self.public.post(signup, {}, format="json").status_code, 429
+        )
+        # Exhausting signup must not block verification or password saving.
+        self.assertEqual(
+            self.public.post(validation, {"token": "invalid-link"}, format="json").status_code,
+            400,
+        )
+        self.assertEqual(
+            self.public.post("/api/v1/auth/staff-invitation/consume", {
+                "token": "invalid-link",
+                "password": "ValidTestPassword123!",
+                "confirmPassword": "ValidTestPassword123!",
+            }, format="json").status_code,
+            400,
+        )
+
+    @override_settings(FRONTEND_URL="https://app.cubixgear.tech")
+    def test_password_invitation_identifies_workshop_owner_without_disclosing_identity(self):
+        from apps.accounts.staff_setup import issue_invitation, invitation_url
+
+        self.owner.set_unusable_password()
+        self.owner.save(update_fields=["password"])
+        record = issue_invitation(self.owner)
+        token = invitation_url(record).rsplit("/", 1)[-1]
+        response = self.public.post(
+            "/api/v1/auth/staff-invitation/validate", {"token": token}, format="json"
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["valid"])
+        self.assertEqual(response.data["accountType"], "owner")
+        self.assertNotIn("email", response.data)
+        self.assertNotIn("phone", response.data)
