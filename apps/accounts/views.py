@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils.text import slugify
+from django.utils.crypto import constant_time_compare
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -12,6 +13,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenRefreshView
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.utils import get_md5_hash_password
 
 from .models import MagicLink
 from .staff_setup import issue_invitation, invitation_url, resolve_invitation, consume_invitation
@@ -109,6 +112,14 @@ class SecureTokenRefreshView(TokenRefreshView):
             return Response({"detail": "Invalid or expired session."}, status=401)
         if not user or not user.has_usable_password() or not user_can_sign_in(user):
             return Response({"detail": "Account access is no longer active."}, status=401)
+        # TokenRefreshSerializer does not authenticate the user through
+        # JWTAuthentication.get_user(), so enforce password-change revocation
+        # here, before minting an access token from a previously issued refresh.
+        if api_settings.CHECK_REVOKE_TOKEN and not constant_time_compare(
+            str(refresh.get(api_settings.REVOKE_TOKEN_CLAIM, "")),
+            get_md5_hash_password(user.password),
+        ):
+            return Response({"code": "SESSION_REVOKED", "detail": "Invalid or expired session."}, status=401)
         return super().post(request, *args, **kwargs)
 
 
