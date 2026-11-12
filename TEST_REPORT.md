@@ -126,3 +126,32 @@ until real hosting and delivery checks are completed.
 
 **Completion status:** Code fixes committed; staging and production SMTP / E2E checks are still
 required before claiming full production authentication acceptance.
+
+
+## Verified Vercel production deployment blockers (inspection only)
+
+Connected Vercel team `cubixmet-s-projects` deploys from the **different** `cubixmet/*`
+repositories, not the `amnas-cubixmet/*` repositories repaired above. Merging
+the authentication PRs therefore does **not** automatically deploy these fixes to
+the currently linked Vercel projects. Coordinate the correct production Git source
+or reviewed cherry-picks before announcing production resolution.
+
+- **CG-PROD-001, High:** Company Panel's latest inspected production
+  [deployment](https://vercel.com/cubixmet-s-projects/cubegears-company-panel/ASSYqvcwNZSmo2NBLB4s6JGZTkip)
+  is `ERROR`. Build logs show `MODULE_NOT_FOUND` for
+  `/vercel/path0/scripts/verify-production-env.mjs` when executing
+  `npm run build:production`. Repair the build script/file contract **in the
+  connected deployment repository**, then deploy and verify real login.
+- **CG-PROD-002, High:** Backend's latest inspected production
+  [deployment](https://vercel.com/cubixmet-s-projects/cubegears-backend/HtMZJf3av69hu7jnu4WVVXRPaKrm)
+  is `ERROR`; build logs show `ImproperlyConfigured: DB_ENGINE must be set
+  in your private .env.` from `config/settings.py`. Configure approved
+  production DB_* credentials **privately in hosting** and confirm Vercel is
+  a supported runtime for the Django deployment before retesting.
+- The inspected Public and Customer Website production deployments were `READY`,
+  but this does **not** imply they include these latest `amnas-cubixmet`
+  commits or establish any live authentication acceptance.
+
+Do not treat failed deployment builds as a test of whether corrected login or
+password reset endpoints behave properly. Verify the deployed commit SHA and
+actual service HTTP responses separately.
