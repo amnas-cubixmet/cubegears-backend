@@ -66,6 +66,58 @@ class AuthenticationLifecycleTests(TestCase):
             self.assertTrue(response.data["access"])
             self.assertTrue(response.data["refresh"])
 
+    def test_duplicate_legacy_emails_require_workshop_code_and_do_not_bypass_password(self):
+        second = Company.objects.create(
+            name="Second Email Workshop",
+            slug="second-email-workshop",
+            require_paid_features=False,
+        )
+        role = Role.objects.create(
+            company=second, name="Owner", code="SUPER_ADMIN",
+            permissions=["*"], is_active=True,
+        )
+        other = User.objects.create_user(
+            email="OWNER@lifecycle.test", phone="+919855552235",
+            password="SecondWorkshopPass123!", name="Second Owner",
+            company=second, role=role,
+        )
+        second.owner = other
+        second.save(update_fields=["owner"])
+
+        ambiguous = self.login("owner@lifecycle.test")
+        self.assertEqual(ambiguous.status_code, 400, ambiguous.data)
+        self.assertIn("workshop", ambiguous.data)
+
+        scoped = self.client.post("/api/v1/auth/login", {
+            "identifier": "owner@lifecycle.test",
+            "password": "OriginalStrongPass123!",
+            "workshop": "lifecycle-garage",
+        }, format="json")
+        self.assertEqual(scoped.status_code, 200, scoped.data)
+        self.assertEqual(scoped.data["user"]["id"], str(self.owner.pk))
+
+        scoped_other = self.client.post("/api/v1/auth/login", {
+            "identifier": "Owner@LIFECYCLE.test",
+            "password": "SecondWorkshopPass123!",
+            "workshop": "second-email-workshop",
+        }, format="json")
+        self.assertEqual(scoped_other.status_code, 200, scoped_other.data)
+        self.assertEqual(scoped_other.data["user"]["id"], str(other.pk))
+
+        wrong_password = self.client.post("/api/v1/auth/login", {
+            "identifier": "owner@lifecycle.test",
+            "password": "WrongPassword123!",
+        }, format="json")
+        self.assertEqual(wrong_password.status_code, 400, wrong_password.data)
+        self.assertNotIn("workshop", wrong_password.data)
+
+        wrong_workshop = self.client.post("/api/v1/auth/login", {
+            "identifier": "owner@lifecycle.test",
+            "password": "OriginalStrongPass123!",
+            "workshop": "second-email-workshop",
+        }, format="json")
+        self.assertEqual(wrong_workshop.status_code, 400, wrong_workshop.data)
+
     def test_invalid_unknown_and_pending_password_fail_closed(self):
         wrong = self.login(self.owner.email, "WrongPassword123!")
         unknown = self.login("absent@lifecycle.test", "WrongPassword123!")
