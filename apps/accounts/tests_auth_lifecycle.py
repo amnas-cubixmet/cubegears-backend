@@ -228,6 +228,55 @@ class AuthenticationLifecycleTests(TestCase):
         self.assertEqual(signup.status_code, 503, signup.data)
         self.assertEqual(Company.objects.count(), initial)
 
+    @override_settings(
+        ACCOUNT_EMAIL_DELIVERY_MODE="smtp",
+        FRONTEND_URL="http://localhost:5173",
+        STAFF_SETUP_ALLOW_LOCAL_HTTP=True,
+    )
+    def test_owner_signup_email_link_uses_one_time_invitation_flow(self):
+        """Owner email setup uses the same real validation API as the React page."""
+        with patch("apps.accounts.views.queue_email") as send:
+            created = self.client.post("/api/v1/auth/signup", {
+                "workshop_name": "Fresh Password Garage",
+                "owner_name": "New Workshop Owner",
+                "mobile": "+919855552238",
+                "email": "new-owner@lifecycle.test",
+            }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertNotIn("setupLink", created.data)
+        send.assert_called_once()
+        url = send.call_args.kwargs["action_url"]
+        self.assertTrue(url.startswith("http://localhost:5173/set-password/"))
+        token = url.rsplit("/", 1)[-1]
+
+        verified = self.client.post(
+            "/api/v1/auth/staff-invitation/validate",
+            {"token": token}, format="json",
+        )
+        self.assertEqual(verified.status_code, 200, verified.data)
+        self.assertEqual(verified.data["accountType"], "owner")
+        self.assertEqual(verified.data["purpose"], "setup")
+        completed = self.client.post(
+            "/api/v1/auth/staff-invitation/consume",
+            {
+                "token": token,
+                "password": "SafeOwnerPassword123!",
+                "confirmPassword": "SafeOwnerPassword123!",
+            },
+            format="json",
+        )
+        self.assertEqual(completed.status_code, 200, completed.data)
+        self.assertTrue(completed.data.get("access"))
+        self.assertEqual(
+            self.login("new-owner@lifecycle.test", "SafeOwnerPassword123!").status_code,
+            200,
+        )
+        invalidated = self.client.post(
+            "/api/v1/auth/staff-invitation/validate",
+            {"token": token}, format="json",
+        )
+        self.assertEqual(invalidated.status_code, 400, invalidated.data)
+
     def test_setup_password_without_uid_is_clean_400_not_500(self):
         response = self.client.post("/api/v1/auth/setup-password", {
             "email": self.owner.email, "token": "bad-token",
