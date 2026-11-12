@@ -261,9 +261,23 @@ class StorageFileDownloadView(APIView):
         return result
 
 
+class StorageSettingsManagePermission(BasePermission):
+    """Verified workshop owner can pause uploads even without a paid storage label.
+
+    Staff still require storage.manage; no file upload or download entitlement
+    is granted by this control.
+    """
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated and user.company_id and (
+                is_company_owner(user) or user_has_permission(user, "storage.manage")
+            )
+        )
+
+
 class StorageSettingsView(APIView):
-    permission_classes=[RolePermission]
-    permission_code="storage.manage"
+    permission_classes=[StorageSettingsManagePermission]
     def put(self,request):
         if "enabled" in request.data and not isinstance(request.data["enabled"], bool):
             return response.Response({"enabled": ["Use true or false."]}, status=400)
