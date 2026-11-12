@@ -9,6 +9,7 @@ from .views import (
     MagicLinkVerifyView,
     MeView,
     ResetPasswordView,
+    ResetPasswordLinkValidationView,
     PublicWorkshopSignupView,
     SetupPasswordView,
     StaffInvitationValidationView,
@@ -33,6 +34,7 @@ urlpatterns = [
     path("change-password", ChangePasswordView.as_view(), name="change-password"),
     path("forgot-password", ForgotPasswordView.as_view(), name="forgot-password"),
     path("reset-password", ResetPasswordView.as_view(), name="reset-password"),
+    path("reset-password/validate", ResetPasswordLinkValidationView.as_view(), name="reset-password-validate"),
     path("magic-link", MagicLinkRequestView.as_view(), name="magic-link-request"),
     path("magic-link/verify", MagicLinkVerifyView.as_view(), name="magic-link-verify"),
 ]

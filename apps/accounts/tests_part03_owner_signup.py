@@ -1,6 +1,7 @@
 """Part 03: owner password signup and refresh-token tenant access guards."""
 
 from django.test import TestCase, override_settings
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User, StaffPasswordInvitation
@@ -15,6 +16,9 @@ from apps.roles.models import Role
 )
 class OwnerPasswordSignupTests(TestCase):
     def setUp(self):
+        # Anonymous request throttles use a shared cache across TestCase methods.
+        # Isolate tests without weakening production signup rate limits.
+        cache.clear()
         self.client = APIClient()
 
     def test_owner_creates_workshop_with_mobile_and_password_without_otp(self):
