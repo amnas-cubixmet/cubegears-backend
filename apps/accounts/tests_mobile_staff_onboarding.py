@@ -54,6 +54,49 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(result.status_code, 201, getattr(result,"data",None))
         return result
 
+    def test_unknown_email_cannot_issue_password_reset_or_magic_login_link(self):
+        # Anonymous requests must not create credentials, queue mail or
+        # disclose whether this email is registered to any workshop.
+        from apps.accounts.models import MagicLink
+
+        before_users = User.objects.count()
+        before_magic_links = MagicLink.objects.count()
+        with (
+            patch("apps.accounts.views.queue_email") as enqueue,
+            patch("apps.accounts.views.MagicLink.issue") as issue,
+        ):
+            reset = self.public.post(
+                "/api/v1/auth/forgot-password",
+                {"email": "nobody@example.invalid"}, format="json",
+            )
+            magic = self.public.post(
+                "/api/v1/auth/magic-link",
+                {"email": "nobody@example.invalid"}, format="json",
+            )
+        self.assertEqual(reset.status_code, 200, reset.data)
+        self.assertEqual(magic.status_code, 200, magic.data)
+        self.assertNotIn("token", reset.data)
+        self.assertNotIn("token", magic.data)
+        enqueue.assert_not_called()
+        issue.assert_not_called()
+        self.assertEqual(User.objects.count(), before_users)
+        self.assertEqual(MagicLink.objects.count(), before_magic_links)
+
+    def test_missing_email_and_wrong_password_have_indistinguishable_login_errors(self):
+        unknown = self.public.post(
+            "/api/v1/auth/login",
+            {"identifier": "nobody@example.invalid", "password": "NotThePassword!"}, format="json",
+        )
+        incorrect = self.public.post(
+            "/api/v1/auth/login",
+            {"identifier": self.owner.email, "password": "NotThePassword!"}, format="json",
+        )
+        self.assertEqual(unknown.status_code, 400, unknown.data)
+        self.assertEqual(incorrect.status_code, 400, incorrect.data)
+        self.assertEqual(unknown.data, incorrect.data)
+        self.assertNotIn("access", unknown.data)
+        self.assertNotIn("refresh", incorrect.data)
+
     def test_phone_format_is_international_and_does_not_infer_country(self):
         self.assertEqual(normalize_phone(" +91 (93333) 33333 "),"+919333333333")
         from django.core.exceptions import ValidationError
