@@ -72,6 +72,27 @@ class WorkshopSessionRevocationTests(TestCase):
             401,
         )
 
+    def test_change_password_immediately_revokes_old_refresh(self):
+        refresh = self.sign_in()
+        changed = self.client.post("/api/v1/auth/change-password", {
+            "current_password": "StrongStaffPass123!",
+            "new_password": "MoreSecureStaffPassword2026!",
+        }, format="json")
+        self.assertEqual(changed.status_code, 200, changed.data)
+        self.assertEqual(
+            self.client.post("/api/v1/auth/refresh", {
+                "refresh": refresh,
+            }, format="json").status_code,
+            401,
+        )
+        # A fresh password login is still permitted by the same active role.
+        self.client.credentials()
+        login = self.client.post("/api/v1/auth/login", {
+            "identifier": "+919855550001",
+            "password": "MoreSecureStaffPassword2026!",
+        }, format="json")
+        self.assertEqual(login.status_code, 200, login.data)
+
     def test_valid_staff_can_refresh_to_continue_session(self):
         refresh = self.sign_in()
         result = self.client.post("/api/v1/auth/refresh", {"refresh": refresh}, format="json")

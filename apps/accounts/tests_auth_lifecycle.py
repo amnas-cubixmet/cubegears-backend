@@ -121,22 +121,27 @@ class AuthenticationLifecycleTests(TestCase):
 
     @override_settings(PASSWORD_RESET_TIMEOUT=1)
     def test_expired_reset_token_is_rejected(self):
+        # Create a genuinely old signed token; patching the clock on the
+        # lazy default_token_generator can leave its wrapped instance unchanged.
         from django.contrib.auth.tokens import default_token_generator
-        with patch("apps.accounts.views.queue_email") as send:
-            self.client.post(
-                "/api/v1/auth/forgot-password",
-                {"email": self.owner.email}, format="json",
-            )
-        params = self.extract_query(send.call_args)
-        with patch.object(default_token_generator, "_now",
-                          return_value=timezone.now().replace(tzinfo=None) + timedelta(hours=2)):
-            expired = self.client.post("/api/v1/auth/reset-password/validate", {
-                "uid": params["uid"], "token": params["token"],
-            }, format="json")
-            rejected = self.client.post("/api/v1/auth/reset-password", {
-                "uid": params["uid"], "token": params["token"],
-                "password": "NewStrongPassword123!",
-            }, format="json")
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+
+        uid = urlsafe_base64_encode(force_bytes(self.owner.pk))
+        old_timestamp = (
+            default_token_generator._num_seconds(default_token_generator._now())
+            - 7200
+        )
+        stale_token = default_token_generator._make_token_with_timestamp(
+            self.owner, old_timestamp, default_token_generator.secret,
+        )
+        expired = self.client.post("/api/v1/auth/reset-password/validate", {
+            "uid": uid, "token": stale_token,
+        }, format="json")
+        rejected = self.client.post("/api/v1/auth/reset-password", {
+            "uid": uid, "token": stale_token,
+            "password": "NewStrongPassword123!",
+        }, format="json")
         self.assertEqual(expired.status_code, 400, expired.data)
         self.assertEqual(rejected.status_code, 400, rejected.data)
         self.assertTrue(self.owner.check_password("OriginalStrongPass123!"))
