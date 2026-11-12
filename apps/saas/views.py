@@ -371,6 +371,7 @@ class StorageHistoryListView(APIView):
             {
                 "date": item["date"],
                 "usedGb": round(item["bytes"] / (1024 ** 3), 3),
+                "usedBytes": int(item["bytes"]),
                 "fileCount": item["fileCount"],
                 "rate": None,
                 "charge": None,
