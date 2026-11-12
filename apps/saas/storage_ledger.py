@@ -59,6 +59,7 @@ def history_days(company, start=None, end=None):
         days[day] = {
             "date": day,
             "usedGb": round(event.storage_after_bytes / (1024 ** 3), 3),
+            "usedBytes": int(event.storage_after_bytes),
             "fileCount": event.file_count_after,
             "rate": None,
             "charge": None,
@@ -86,6 +87,7 @@ def history_day(company, day):
                 "name": event.name_snapshot,
                 "category": event.category_snapshot,
                 "sizeMb": round(event.file_size_bytes / (1024 ** 2), 2),
+                "sizeBytes": int(event.file_size_bytes),
                 "uploadedBy": event.actor.name if event.actor_id and event.actor else None,
                 "uploadedAt": event.occurred_at.isoformat(),
                 "type": event.mime_type_snapshot,
@@ -97,6 +99,7 @@ def history_day(company, day):
     return {
         "date": day.isoformat(),
         "usedGb": round(last.storage_after_bytes / (1024 ** 3), 3),
+        "usedBytes": int(last.storage_after_bytes),
         "fileCount": last.file_count_after,
         "rate": None,
         "charge": None,
