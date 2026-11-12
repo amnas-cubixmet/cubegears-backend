@@ -392,24 +392,17 @@ class PublicWorkshopSignupView(APIView):
         else:
             invitation = issue_invitation(user)
             setup_url = invitation_url(invitation)
-            # Preserve existing one-use email / official platform WhatsApp
-            # delivery for older clients that do not submit a password.
-            if user.email:
-                queue_email(
-                    subject="Set up your cubixgear password",
-                    message="Welcome to cubixgear. Complete your workshop account setup using the secure link.",
-                    recipient_list=[user.email],
-                    action_url=setup_url, action_label="Set up password",
-                    # In direct SMTP mode, cap each network wait below the
-                    # public website's HTTP deadline. Prefer Celery for reliable
-                    # delivery; a slow SMTP provider must not hold signup 15s.
-                    smtp_timeout_seconds=5,
-                )
-            else:
-                from apps.whatsapp.staff_invites import queue_platform_owner_invitation
-                transaction.on_commit(lambda: queue_platform_owner_invitation(invitation.pk))
-            delivery = "email_queued" if user.email else "platform_whatsapp_pending"
-            message = "Workshop created. Your secure password invitation will be sent through the configured delivery channel."
+            # Signup without a password requires a verified email delivery
+            # channel. Never hand an unauthenticated caller an owner reset URL.
+            queue_email(
+                subject="Set up your cubixgear password",
+                message="Welcome to cubixgear. Complete your workshop account setup using the secure link.",
+                recipient_list=[user.email],
+                action_url=setup_url, action_label="Set up password",
+                smtp_timeout_seconds=5,
+            )
+            delivery = "email_queued"
+            message = "Workshop created. Your secure password invitation will be emailed."
 
         return Response(
             {

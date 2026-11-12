@@ -38,6 +38,10 @@ class WhatsAppManualShareView(APIView):
     def post(self, request):
         kind = str(request.data.get("targetType") or "").lower().strip()
         ident = request.data.get("targetId")
+        try:
+            ident = uuid.UUID(str(ident))
+        except (ValueError, TypeError, AttributeError):
+            return Response({"message": "Choose a valid record to share."}, status=400)
         company = request.user.company
         estimate = None
 
@@ -45,13 +49,15 @@ class WhatsAppManualShareView(APIView):
             _require(request, "customers.view")
             customer = get_object_or_404(Customer, company=company, pk=ident)
             job, invoice = None, None
-        elif kind == "job":
+        elif kind in {"job", "job_status", "ready_delivery"}:
             _require(request, "jobs.view")
             job = get_object_or_404(
                 Job.objects.select_related("customer", "vehicle"),
                 company=company, pk=ident, customer__company=company,
             )
             customer, invoice = job.customer, None
+            if kind == "ready_delivery" and job.status != "Ready for Delivery":
+                return Response({"message": "This vehicle is not marked ready for delivery."}, status=409)
         elif kind == "estimate":
             _require(request, "jobs.view")
             estimate = get_object_or_404(
@@ -73,7 +79,7 @@ class WhatsAppManualShareView(APIView):
                     "message": "Only the latest published, itemized estimate can be shared."
                 }, status=409)
             customer, invoice = job.customer, None
-        elif kind == "invoice":
+        elif kind in {"invoice", "payment_reminder"}:
             _require(request, "invoices.view")
             invoice = get_object_or_404(
                 Invoice.objects.select_related("customer", "job"),
@@ -81,6 +87,8 @@ class WhatsAppManualShareView(APIView):
             )
             if not invoice.finalized_at or invoice.status in {"Draft", "Cancelled"}:
                 return Response({"message": "Only finalized, published invoices can be shared."}, status=409)
+            if kind == "payment_reminder" and invoice.balance <= 0:
+                return Response({"message": "This invoice has no outstanding balance."}, status=409)
             customer, job = invoice.customer, invoice.job
         elif kind == "log":
             if not (user_has_permission(request.user, "settings.manage") or
@@ -101,12 +109,14 @@ class WhatsAppManualShareView(APIView):
                         "message": "This estimate is no longer awaiting customer review."
                     }, status=409)
         else:
-            return Response({"message": "Select customer, job, estimate, invoice, or failed log."}, status=400)
+            return Response({"message": "Select customer, job, job_status, ready_delivery, estimate, invoice, payment_reminder, or failed log."}, status=400)
 
         if not customer or customer.company_id != company.pk:
             return Response({"message": "Customer is unavailable for this workshop."}, status=404)
 
-        number = normalize_recipient(customer.whatsapp or customer.phone)
+        # Prefer a valid explicit WhatsApp contact; fall back to the registered
+        # customer phone when that legacy optional field is incomplete.
+        number = normalize_recipient(customer.whatsapp) or normalize_recipient(customer.phone)
         if not number:
             return Response({
                 "message": "Customer WhatsApp number must include country code, e.g. +919876543210."
@@ -128,10 +138,21 @@ class WhatsAppManualShareView(APIView):
                 f"(total INR {estimate.total}). Review the itemized quote and "
                 f"accept or decline in your secure customer portal: {secure_url}"
             )
+        elif kind == "payment_reminder":
+            message = (
+                f"Hello {customer.name}, this is a payment reminder from {workshop} "
+                f"for invoice {invoice.number}. The outstanding amount is INR {invoice.balance}. "
+                f"Please review the invoice securely through your customer portal: {secure_url}"
+            )
         elif invoice:
             message = (
                 f"Hello {customer.name}, your invoice {invoice.number} from {workshop} is ready. "
                 f"View your workshop service updates securely: {secure_url}"
+            )
+        elif kind == "ready_delivery":
+            message = (
+                f"Hello {customer.name}, your vehicle is ready for delivery from {workshop}. "
+                f"Review job card {job.job_number} and your service updates securely: {secure_url}"
             )
         elif job:
             message = (

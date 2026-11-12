@@ -150,7 +150,7 @@ class ProductionEnvironmentTests(unittest.TestCase):
         ):
             for key in (
                 "DB_PASSWORD", "EMAIL_HOST_PASSWORD", "RAZORPAY_KEY_SECRET",
-                "RAZORPAY_WEBHOOK_SECRET", "WHATSAPP_PLATFORM_ACCESS_TOKEN",
+                "RAZORPAY_WEBHOOK_SECRET",
             ):
                 self.assertFalse(values.get(key), key)
             self.assertEqual(values.get("DB_ENGINE"), expected_engine)

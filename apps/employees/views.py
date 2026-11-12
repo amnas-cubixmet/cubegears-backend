@@ -240,15 +240,11 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"account": "Active, company-specific staff login required."})
         if not user.role_id or user.role.is_system or not user.role.is_active:
             raise ValidationError({"role": "A valid non-admin staff login role is required."})
+        # Invitation creation is completely independent of messaging providers.
         record = issue_invitation(user, issuer=self.request.user)
-        from django.conf import settings
-        if not manual_only and getattr(settings, "STAFF_WHATSAPP_AUTO_SEND_ENABLED", False):
-            from apps.whatsapp.staff_invites import queue_staff_whatsapp_invitation
-            delivery = queue_staff_whatsapp_invitation(record, employee)
-        else:
-            delivery = "manual"
-            record.delivery_status = "manual"
-            record.save(update_fields=["delivery_status"])
+        record.delivery_status = "manual"
+        record.save(update_fields=["delivery_status"])
+        delivery = "manual"
         employee._setup_link = invitation_url(record)
         employee._whatsapp_invite_status = delivery
         _record_activity(
@@ -344,7 +340,16 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 {"source": obj.whatsapp_consent_source},
             )
         if user and user.is_active:
-            self._issue_staff_invitation(obj, user)
+            # A failed invitation must not roll back an already-valid staff
+            # identity. The nested savepoint protects the parent transaction.
+            try:
+                with transaction.atomic():
+                    self._issue_staff_invitation(obj, user, manual_only=True)
+            except Exception:
+                obj._invitation_error = (
+                    "Staff created, but the setup link could not be generated. "
+                    "Check the public frontend URL and retry from Staff Profile."
+                )
 
     @transaction.atomic
     def perform_update(self,serializer):
@@ -586,11 +591,9 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             replace = request.data.get("replace", False)
             if not isinstance(replace, bool):
                 raise ValidationError({"replace": "Provide a boolean replace value."})
-            manual_only = request.data.get("manualOnly", False)
+            manual_only = request.data.get("manualOnly", True)
             if not isinstance(manual_only, bool):
                 raise ValidationError({"manualOnly": "Provide a boolean manualOnly value."})
-            if manual_only and not obj.whatsapp_consent:
-                raise ValidationError({"whatsappConsent": "Record staff WhatsApp consent before sharing a password link."})
             recent = StaffPasswordInvitation.objects.select_for_update().filter(
                 user=user, used_at__isnull=True, invalidated_at__isnull=True,
                 expires_at__gt=timezone.now(),
@@ -601,25 +604,31 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             should_reuse = bool(recent and recent.purpose == purpose and (
                 not replace or recent.created_at >= timezone.now() - cooldown
             ))
-            # A manually shared reset must not race an invitation already
-            # queued/sent by the Cloud API. Require rotation after cooldown,
-            # invalidating the older token and preventing double delivery.
+            # Legacy queued/sent links are never shared as manual invitations.
+            # An authorized reissue invalidates these historical capabilities.
             if manual_only and recent and recent.delivery_status != "manual":
                 if recent.created_at >= timezone.now() - cooldown:
                     raise ValidationError({
                         "manualOnly": "A WhatsApp delivery is already processing. Try manual sharing after 60 seconds."
                     })
                 should_reuse = False
-            if should_reuse:
-                invite = recent
-                url = invitation_url(recent)
-            else:
-                if (replace or manual_only) and StaffPasswordInvitation.objects.filter(
-                    user=user, created_at__gte=timezone.now() - timedelta(hours=1),
-                ).count() >= 5:
-                    raise ValidationError({"invite": "Too many replacement links. Try again later."})
-                invite = self._issue_staff_invitation(obj, user, manual_only=manual_only)
-                url = obj._setup_link
+            try:
+                if should_reuse:
+                    invite = recent
+                    url = invitation_url(recent)
+                else:
+                    if (replace or manual_only) and StaffPasswordInvitation.objects.filter(
+                        user=user, created_at__gte=timezone.now() - timedelta(hours=1),
+                    ).count() >= 5:
+                        raise ValidationError({"invite": "Too many replacement links. Try again later."})
+                    invite = self._issue_staff_invitation(obj, user, manual_only=True)
+                    url = obj._setup_link
+            except ValueError:
+                # Fail predictably without exposing signing internals or
+                # rolling back previously-created staff records.
+                raise ValidationError({
+                    "invite": "Secure setup link unavailable. Configure a valid HTTPS FRONTEND_URL and retry."
+                })
             delivery = invite.delivery_status
         return response.Response({
             "message": "Secure password setup link ready. WhatsApp status: " + delivery + ".",
