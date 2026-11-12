@@ -28,6 +28,8 @@ def _digest(token):
 
 def invitation_url(record):
     url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    if not settings.DEBUG and not url.startswith("https://"):
+        raise ValueError("A public HTTPS FRONTEND_URL is required for password setup.")
     raw = _token(record)
     if not hmac.compare_digest(_digest(raw), record.token_hash):
         raise ValueError("Invitation signing key changed; issue a new invitation.")

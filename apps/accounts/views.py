@@ -392,8 +392,7 @@ class PublicWorkshopSignupView(APIView):
         else:
             invitation = issue_invitation(user)
             setup_url = invitation_url(invitation)
-            # Preserve existing one-use email / official platform WhatsApp
-            # delivery for older clients that do not submit a password.
+            # Preserve email recovery, without automatic WhatsApp delivery.
             if user.email:
                 queue_email(
                     subject="Set up your cubixgear password",
@@ -406,15 +405,22 @@ class PublicWorkshopSignupView(APIView):
                     smtp_timeout_seconds=5,
                 )
             else:
-                from apps.whatsapp.staff_invites import queue_platform_owner_invitation
-                transaction.on_commit(lambda: queue_platform_owner_invitation(invitation.pk))
-            delivery = "email_queued" if user.email else "platform_whatsapp_pending"
-            message = "Workshop created. Your secure password invitation will be sent through the configured delivery channel."
+                invitation.delivery_status = "manual"
+                invitation.save(update_fields=["delivery_status"])
+            delivery = "email_queued" if user.email else "manual_ready"
+            message = (
+                "Workshop created. Your password invitation is available for manual setup."
+                if not user.email else
+                "Workshop created. Your secure password invitation will be emailed."
+            )
 
         return Response(
             {
                 "message": message,
                 "setupDelivery": delivery,
+                # Returned once only to the creator; never included in later
+                # account lookups or logged by the application.
+                "setupLink": setup_url if delivery == "manual_ready" else None,
                 "workshop": {
                     "id": str(company.id),
                     "name": company.name,

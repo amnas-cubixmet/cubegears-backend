@@ -1,13 +1,21 @@
-"""E.164 recipient validation for Cloud API and Click-to-Chat.
-
-Do not guess a country prefix for legacy local numbers.
-"""
+"""Strict international phone normalization for click-to-chat only."""
 import re
+
+# Existing company-panel country selector: India and GCC destinations.
+_COUNTRY_LENGTHS = {"91": 10, "971": 9, "966": 9, "974": 8,
+                    "968": 8, "965": 8, "973": 8}
 
 
 def normalize_recipient(value):
     raw = str(value or "").strip()
-    digits = re.sub(r"\D", "", raw)
-    if not raw or (not raw.startswith("+") and len(digits) < 11):
+    if not raw:
         return ""
-    return digits if re.fullmatch(r"[1-9][0-9]{7,14}", digits) else ""
+    digits = re.sub(r"\\D", "", raw)
+    if not raw.startswith("+") and not any(
+        digits.startswith(code) for code in _COUNTRY_LENGTHS
+    ):
+        return ""
+    for country_code, length in _COUNTRY_LENGTHS.items():
+        if digits.startswith(country_code) and len(digits) == len(country_code) + length:
+            return digits
+    return ""
