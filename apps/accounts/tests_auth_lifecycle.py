@@ -92,6 +92,11 @@ class AuthenticationLifecycleTests(TestCase):
         self.assertNotIn("token", requested.data)
         send.assert_called_once()
         params = self.extract_query(send.call_args)
+        valid = self.client.post("/api/v1/auth/reset-password/validate", {
+            "uid": params["uid"], "token": params["token"],
+        }, format="json")
+        self.assertEqual(valid.status_code, 200, valid.data)
+        self.assertTrue(valid.data["valid"])
         updated = self.client.post("/api/v1/auth/reset-password", {
             "uid": params["uid"], "token": params["token"],
             "password": "ReplacementStrongPass123!",
@@ -109,6 +114,32 @@ class AuthenticationLifecycleTests(TestCase):
             "password": "AnotherStrongPass123!",
         }, format="json")
         self.assertEqual(repeated.status_code, 400, repeated.data)
+        expired = self.client.post("/api/v1/auth/reset-password/validate", {
+            "uid": params["uid"], "token": params["token"],
+        }, format="json")
+        self.assertEqual(expired.status_code, 400, expired.data)
+
+    @override_settings(PASSWORD_RESET_TIMEOUT=1)
+    def test_expired_reset_token_is_rejected(self):
+        from django.contrib.auth.tokens import default_token_generator
+        with patch("apps.accounts.views.queue_email") as send:
+            self.client.post(
+                "/api/v1/auth/forgot-password",
+                {"email": self.owner.email}, format="json",
+            )
+        params = self.extract_query(send.call_args)
+        with patch.object(default_token_generator, "_now",
+                          return_value=timezone.now().replace(tzinfo=None) + timedelta(hours=2)):
+            expired = self.client.post("/api/v1/auth/reset-password/validate", {
+                "uid": params["uid"], "token": params["token"],
+            }, format="json")
+            rejected = self.client.post("/api/v1/auth/reset-password", {
+                "uid": params["uid"], "token": params["token"],
+                "password": "NewStrongPassword123!",
+            }, format="json")
+        self.assertEqual(expired.status_code, 400, expired.data)
+        self.assertEqual(rejected.status_code, 400, rejected.data)
+        self.assertTrue(self.owner.check_password("OriginalStrongPass123!"))
 
     def test_unknown_email_recovery_does_not_dispatch(self):
         with patch("apps.accounts.views.queue_email") as send:
