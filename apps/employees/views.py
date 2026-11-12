@@ -612,16 +612,23 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                         "manualOnly": "A WhatsApp delivery is already processing. Try manual sharing after 60 seconds."
                     })
                 should_reuse = False
-            if should_reuse:
-                invite = recent
-                url = invitation_url(recent)
-            else:
-                if (replace or manual_only) and StaffPasswordInvitation.objects.filter(
-                    user=user, created_at__gte=timezone.now() - timedelta(hours=1),
-                ).count() >= 5:
-                    raise ValidationError({"invite": "Too many replacement links. Try again later."})
-                invite = self._issue_staff_invitation(obj, user, manual_only=manual_only)
-                url = obj._setup_link
+            try:
+                if should_reuse:
+                    invite = recent
+                    url = invitation_url(recent)
+                else:
+                    if (replace or manual_only) and StaffPasswordInvitation.objects.filter(
+                        user=user, created_at__gte=timezone.now() - timedelta(hours=1),
+                    ).count() >= 5:
+                        raise ValidationError({"invite": "Too many replacement links. Try again later."})
+                    invite = self._issue_staff_invitation(obj, user, manual_only=True)
+                    url = obj._setup_link
+            except ValueError:
+                # Fail predictably without exposing signing internals or
+                # rolling back previously-created staff records.
+                raise ValidationError({
+                    "invite": "Secure setup link unavailable. Configure a valid HTTPS FRONTEND_URL and retry."
+                })
             delivery = invite.delivery_status
         return response.Response({
             "message": "Secure password setup link ready. WhatsApp status: " + delivery + ".",

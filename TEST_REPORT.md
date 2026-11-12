@@ -3,27 +3,29 @@
 Updated: 2026-11-12
 
 ## Changes
-- Staff creation saves an independent user and employee, and recovers safely if invitation setup fails.
-- Password invitations stay expiring, one-use and hash-checked.
-- WhatsApp click-to-chat URLs remain manual and workshop-scoped.
-- Removed provider connect, disconnect, template, test-send and webhook API routes.
-- Removed Meta code, automatic messaging signals and WhatsApp-specific Celery tasks; historical database models and migrations are intentionally preserved.
-- Automatic event enqueueing is an inert compatibility hook to avoid breaking existing job/estimate imports.
-- Owner signup without an email/password now returns a one-time manual setup link in its creation response.
+- Staff creation saves employee once and recovers safely when invitation preparation fails; independent manual invite generation via existing one-use HMAC token.
+- Password setup links expire after 24 hours, are hash-checked and single-use. Production requires HTTPS FRONTEND_URL.
+- WhatsApp manual draft endpoints for customers, jobs, job status, ready vehicles, estimates, issued invoices, and invoice payment reminders.
+- Removed live provider connect/disconnect, template, test-send and webhook endpoints.
+- Removed Meta code, automatic message triggers, and WhatsApp-specific Celery tasks; historical database models and migrations intentionally preserved.
+- Inert compatibility hook for legacy estimate/job imports, never auto-send.
+- Owner signup without email/password returns manual setup link once in initial signup response.
 
-## Regression tests
-- `apps/whatsapp/tests_integration.py`: manual-only settings, removed endpoints, no queueing, phone validation, private portal draft, tenant isolation and legacy logs.
-- `apps/whatsapp/tests_part19_estimate_notifications.py`: manual estimate sharing and suppression of automatic reminders.
-- `apps/accounts/tests_mobile_staff_onboarding.py`: no-consent manual invitation, staff creation resilience, unauthorized/expired/used tokens and webhook removal.
+## Regression coverage
+- `apps/whatsapp/tests_integration.py`: manual settings, removed provider endpoints, no queueing, phone validation, secure portal draft, tenant isolation and legacy logs.
+- `apps/whatsapp/tests_part19_estimate_notifications.py`: manual estimate sharing, no automatic reminders.
+- `apps/accounts/tests_mobile_staff_onboarding.py`: staff creation error resilience, no-duplicate retry, invalid production HTTPS configuration, token security, access control, retired webhook.
 
 ## Verification
-Not yet run in this environment. GitHub Actions checks will be consulted before any merge.
-Local Django checks, database migrations and full integration/browser tests remain to be executed.
-No production data or migrations have been deleted.
+- GitHub backend CI initially failed Ruff unused imports, which have since been fixed (commit bfa8ab2); subsequent CI pending.
+- Browser/live WhatsApp sending, full Django suite, production traceback are not verified here.
+- No production business records or old migrations deleted.
 
-## Root-cause investigation
-The existing creation flow issued an invitation inside the transaction and the frontend triggered a second invite request during manual share. Previously, server-side automatic delivery configuration could participate in that call. A production traceback is not available, so the exact original HTTP 500 exception remains unverified. The revised code eliminates the provider dependency and contains invitation failures without recreating a staff member.
+## Staff HTTP 500 diagnosis
+Before migration, staff creation and invitation URL generation were coupled inside a DB transaction and manual sharing made a second invitation API call. Misconfigured link generation or provider-dependent behavior could surface an HTTP 500. Original production traceback unavailable; exact exception not confirmed. Invitation failure is now isolated at creation, and HTTP 400 explains invalid URL config during regeneration without recreating staff records.
 
 ## Delivery
 Branch: `feature/manual-whatsapp-only-20261112`
-Status: proposed; not merged.
+PR: https://github.com/amnas-cubixmet/cubegears-backend/pull/80
+Company Panel PR: https://github.com/amnas-cubixmet/company-panel/pull/131
+Merge status: pending CI and integration validation.

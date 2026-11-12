@@ -202,6 +202,21 @@ class MobileStaffOnboardingTests(TestCase):
         )
         self.assertEqual(invalid.status_code, 400)
 
+    @override_settings(DEBUG=False, FRONTEND_URL="http://not-secure.example")
+    def test_invalid_production_frontend_url_is_handled_without_http_500(self):
+        # Creation succeeds once; invitation failure is isolated.
+        created = self.create_staff(consent=False)
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertIsNone(created.data["setupLink"])
+        employee = Employee.objects.get(pk=created.data["id"])
+        retried = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True}, format="json",
+        )
+        self.assertEqual(retried.status_code, 400, retried.data)
+        self.assertIn("HTTPS FRONTEND_URL", str(retried.data))
+        self.assertEqual(Employee.objects.filter(company=self.company, pk=employee.pk).count(), 1)
+
     def test_failed_setup_link_generation_keeps_created_staff_and_allows_retry(self):
         from unittest.mock import patch
         with patch("apps.employees.views.EmployeeViewSet._issue_staff_invitation",
