@@ -155,3 +155,44 @@ or reviewed cherry-picks before announcing production resolution.
 Do not treat failed deployment builds as a test of whether corrected login or
 password reset endpoints behave properly. Verify the deployed commit SHA and
 actual service HTTP responses separately.
+
+
+## Final repository-level implementation verification (2026-11-12)
+
+**Backend final security change:** PR [#88](https://github.com/amnas-cubixmet/cubegears-backend/pull/88)
+merged as commit [`09331c4055e9a5d0f39b5684e9ca4ea78e8893d1`](https://github.com/amnas-cubixmet/cubegears-backend/commit/09331c4055e9a5d0f39b5684e9ca4ea78e8893d1).
+
+**Actual tested results for PR HEAD `83ebeaa76c53a5d65430d39749898e57c5997cca`:**
+[GitHub Actions 43202149935](https://github.com/amnas-cubixmet/cubegears-backend/actions/runs/43202149935) **SUCCESS**:
+- Django checks, migrations check, isolated authentication/tenant/business regression suite:
+  **458 tests passed**, including live-token logout/refresh invalidation,
+  expired one-use reset links, email/mobile identity paths, and disabled roles.
+- PostgreSQL 16 migrations and finance/inventory permission tests: **SUCCESS**.
+- Production Docker image build/Compose syntax check: **SUCCESS**.
+- Production environment contract unittest checks: **13 passed**.
+- Historical SQLite backup test step referenced deleted `scripts/test_backup_sqlite.py`;
+  the dead CI invocation was removed without pretending a backup validation exists.
+  Production PostgreSQL backup/restore verification remains an operational gate.
+
+**Frontend tested results:**
+- [Company Panel merged-main CI 43201456184](https://github.com/amnas-cubixmet/company-panel/actions/runs/43201456184)
+  **SUCCESS**: lint/check, Vite build, production environment gate, six actual
+  auth error unit tests **(6/6 pass)**, Chromium Playwright UI smoke.
+  Auth fixes are in PRs [#153](https://github.com/amnas-cubixmet/company-panel/pull/153)
+  and [#154](https://github.com/amnas-cubixmet/company-panel/pull/154);
+  merge commits `cae57aec13f93995bcccc70a9838f18aafc1e1e9` and
+  `ce5e38340c7577ef9d2b9b0989fae1d01e29ac7e`.
+- [Public Website merged-main CI 43200359382](https://github.com/amnas-cubixmet/cubegears-public-website/actions/runs/43200359382)
+  **SUCCESS**: Next.js build/CI. PR #18 merged as
+  `58960606531c6b585251054cec7f9c5be272da53`.
+- Customer Website is unchanged. Most recently inspected customer-website main
+  CI 43172552037 passed prior to this authentication work.
+
+**Important verification boundary:** The tested **repository** code is green.
+The actual Vercel projects currently build from `cubixmet/*` rather than
+these `amnas-cubixmet/*` commits; the inspected Company Panel and Backend
+production deployments fail (see CG-PROD-001/002 above).
+Production SMTP recipient delivery, production database, live end-to-end browser
+login/reset/magic/staff onboarding and tenant authorization **remain UNVERIFIED**.
+Do not mark production authentication accepted until the Git source mismatch,
+deployment build errors, and isolated staging/live tests have been resolved.
