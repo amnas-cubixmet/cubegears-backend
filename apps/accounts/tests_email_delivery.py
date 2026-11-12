@@ -108,7 +108,7 @@ class BrandedEmailTemplateTests(TestCase):
     def test_responsive_action_email_has_branded_button_and_text_fallback(self):
         url = "https://example.test/setup?token=abc&next=1"
         result = send_account_email(
-            subject="Set up your CubeGears password",
+            subject="Set up your cubixgear password",
             message="Welcome to your new account.\nChoose a secure password.",
             recipient_list=["member@example.test"],
             from_email="notifications@example.test",
@@ -122,14 +122,41 @@ class BrandedEmailTemplateTests(TestCase):
         self.assertEqual(message.content_subtype, "plain")
         self.assertEqual(len(message.alternatives), 1)
         html = message.alternatives[0][0]
-        self.assertIn("CubeGears", html)
+        self.assertIn("cubixgear", html)
+        self.assertNotIn(">CG<", html)
+        self.assertNotIn("CubeGears", html)
         self.assertIn("Set up password", html)
         self.assertIn("href=\"https://example.test/setup?token=abc&amp;next=1\"", html)
         self.assertIn("@media screen and (max-width:620px)", html)
         self.assertIn("prefers-reduced-motion", html)
         self.assertIn("Never share login or password-reset links", html)
         self.assertIn(url, message.body)
-        self.assertIn("CubeGears · Secure account notifications", message.body)
+        self.assertIn("cubixgear · Secure account notifications", message.body)
+
+    def test_email_logo_is_embedded_inline_with_matching_cid(self):
+        send_account_email(
+            subject="Your cubixgear magic login link",
+            message="Secure single-use login link.",
+            recipient_list=["member@example.test"],
+            action_url="https://example.test/magic?token=test",
+            action_label="Sign in to cubixgear",
+        )
+        message = mail.outbox[0]
+        html = message.alternatives[0][0]
+        images = [
+            part for part in message.message().walk()
+            if part.get_content_type() == "image/png"
+        ]
+        self.assertEqual(len(images), 1)
+        image = images[0]
+        self.assertEqual(image.get_content_disposition(), "inline")
+        cid = image.get("Content-ID")
+        self.assertTrue(cid.startswith("<") and cid.endswith(">"))
+        self.assertIn(f'src="cid:{cid[1:-1]}"', html)
+        self.assertIn('alt="cubixgear logo"', html)
+        self.assertTrue(image.get_payload(decode=True).startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+        self.assertNotIn(">CG<", html)
+        self.assertIn("cubixgear", html)
 
     def test_html_escapes_dynamic_content(self):
         send_account_email(
