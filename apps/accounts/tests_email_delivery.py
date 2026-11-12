@@ -154,7 +154,7 @@ class BrandedEmailTemplateTests(TestCase):
         self.assertTrue(cid.startswith("<") and cid.endswith(">"))
         self.assertIn(f'src="cid:{cid[1:-1]}"', html)
         self.assertIn('alt="cubixgear logo"', html)
-        self.assertTrue(image.get_payload(decode=True).startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+        self.assertTrue(image.get_payload(decode=True).startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertNotIn(">CG<", html)
         self.assertIn("cubixgear", html)
 
