@@ -180,6 +180,38 @@ class ForgotPasswordView(APIView):
             )
         return Response(generic)
 
+class ResetPasswordLinkValidationView(APIView):
+    """Verify possession of a recovery token before showing a password form.
+
+    No bearer session is issued and the endpoint never reveals account data.
+    Legacy email+token links remain supported alongside uid+token links.
+    """
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [RecoveryRateThrottle]
+
+    def post(self, request):
+        uid = request.data.get("uid")
+        email = request.data.get("email")
+        token = request.data.get("token")
+        invalid = {"code": "INVALID_RESET_LINK", "message": "This link is invalid or expired."}
+        if not isinstance(token, str) or not token or len(token) > 256:
+            return Response(invalid, status=400)
+        try:
+            if isinstance(uid, str) and uid:
+                ident = urlsafe_base64_decode(uid).decode()
+                user = User.objects.get(pk=ident, is_active=True)
+            elif isinstance(email, str) and email:
+                user = unique_active_email_user(email)
+            else:
+                user = None
+        except (ValueError, TypeError, User.DoesNotExist, UnicodeError):
+            user = None
+        if not user or is_platform_account(user) or not default_token_generator.check_token(user, token):
+            return Response(invalid, status=400)
+        return Response({"valid": True})
+
+
 class ResetPasswordView(APIView):
     # Public auth routes must ignore stale Authorization headers from clients.
     authentication_classes = []
