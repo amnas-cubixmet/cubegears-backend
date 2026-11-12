@@ -31,7 +31,7 @@ DEFAULTS={
 "notifications":{"jobCreated":True,"jobAssigned":True,"jobStatus":True,"jobReady":True,"lowStock":True,"overdueInvoice":True,"leaveDecision":True,"email":False,"whatsapp":False,"browserPush":True},
 "security":{"sessionHours":12,"requireStrongPassword":True,"auditExports":True,"twoFactor":False},
 "integrations":{"razorpayEnabled":False,"whatsappEnabled":False,"emailEnabled":False,"webhookUrl":""},
-"storage":{"autoCompress":True,"keepOriginals":False,"allowStaffUpload":True,"allowStaffDelete":False,"retentionDays":0,"maxFileMb":20,"allowedTypes":["image/jpeg","image/png","image/webp"]},
+"storage":{"enabled":True,"autoCompress":True,"keepOriginals":False,"allowStaffUpload":True,"allowStaffDelete":False,"retentionDays":0,"maxFileMb":20,"allowedTypes":["image/jpeg","image/png","image/webp"]},
 }
 
 class SubscriptionViewSet(CompanyScopedModelViewSet):
@@ -145,6 +145,9 @@ class StorageSummaryView(APIView):
                 'meterIntervalHours': round(((settings.STORAGE_METER_INTERVAL_SECONDS if settings.STORAGE_MONTHLY_METERED_ENABLED and not collection_policy() else policy.meter_interval_seconds) / 3600), 4) if policy else None,
             },
             "quotaGb": active_sub.plan_definition.included_storage_gb if active_sub and active_sub.plan_definition_id else None,
+            "usedBytes": int(used),
+            "fileCount": files.count(),
+            "quotaBytes": (int(active_sub.plan_definition.included_storage_gb * (1024**3)) if active_sub and active_sub.plan_definition_id else None),
             "usedGb":round(used/(1024**3),3),
             "settings":storage_settings,
             "files":MediaFileSerializer(files[:500],many=True,context={"request":request}).data,
@@ -161,6 +164,8 @@ class StorageFilesView(APIView):
             return response.Response({"message": "No files supplied."}, status=400)
         cfg = CompanySetting.objects.filter(company=request.user.company, category="storage").first()
         policy = {**DEFAULTS["storage"], **(cfg.data if cfg else {})}
+        if policy.get("enabled") is False:
+            return response.Response({"message": "Storage uploads are disabled for this workshop."}, status=403)
         allowed = set(policy["allowedTypes"]) & set(DEFAULTS["storage"]["allowedTypes"])
         max_bytes = min(int(policy.get("maxFileMb") or 20), 20) * 1024 * 1024
         for upload in uploads:
@@ -170,6 +175,9 @@ class StorageFilesView(APIView):
         try:
             with transaction.atomic():
                 Company.objects.select_for_update().get(pk=request.user.company_id)
+                current_setting = CompanySetting.objects.filter(company=request.user.company, category="storage").first()
+                if current_setting and current_setting.data.get("enabled") is False:
+                    return response.Response({"message": "Storage uploads are disabled for this workshop."}, status=403)
                 sub=(Subscription.objects.filter(company=request.user.company,status__iexact='Active').select_related('plan_definition').order_by('-created_at').first())
                 used=MediaFile.objects.filter(company=request.user.company).aggregate(v=Sum('size_bytes'))['v'] or 0
                 if sub and sub.plan_definition_id and used + sum(f.size for f in uploads) > sub.plan_definition.included_storage_gb * (1024**3):
@@ -257,8 +265,12 @@ class StorageSettingsView(APIView):
     permission_classes=[RolePermission]
     permission_code="storage.manage"
     def put(self,request):
-        obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
-        obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
+        if "enabled" in request.data and not isinstance(request.data["enabled"], bool):
+            return response.Response({"enabled": ["Use true or false."]}, status=400)
+        with transaction.atomic():
+            Company.objects.select_for_update().get(pk=request.user.company_id)
+            obj,_=CompanySetting.objects.get_or_create(company=request.user.company,category="storage",defaults={"branch":request.user.branch,"data":{}})
+            obj.data={**obj.data,**request.data}; obj.save(update_fields=["data","updated_at"])
         return StorageSummaryView().get(request)
 
 class StorageEventsView(APIView):
@@ -526,6 +538,8 @@ class StorageFileReplaceView(APIView):
             return response.Response({'message': 'Supply the replacement file.'}, status=400)
         cfg = CompanySetting.objects.filter(company=request.user.company, category='storage').first()
         policy = {**DEFAULTS['storage'], **(cfg.data if cfg else {})}
+        if policy.get("enabled") is False:
+            return response.Response({"message": "Storage uploads are disabled for this workshop."}, status=403)
         allowed = set(policy['allowedTypes']) & set(DEFAULTS['storage']['allowedTypes'])
         max_bytes = min(int(policy.get('maxFileMb') or 20), 20) * 1024 * 1024
         if upload.size <= 0 or upload.size > max_bytes or upload.content_type not in allowed:
@@ -536,6 +550,9 @@ class StorageFileReplaceView(APIView):
         try:
             with transaction.atomic():
                 Company.objects.select_for_update().get(pk=request.user.company_id)
+                current_setting = CompanySetting.objects.filter(company=request.user.company, category="storage").first()
+                if current_setting and current_setting.data.get("enabled") is False:
+                    return response.Response({"message": "Storage uploads are disabled for this workshop."}, status=403)
                 media = MediaFile.objects.select_for_update().filter(company=request.user.company, pk=file_id).first()
                 if media is None:
                     raise Http404('File not found.')
