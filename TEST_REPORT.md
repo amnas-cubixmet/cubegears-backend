@@ -56,3 +56,73 @@ Without the retired automatic platform WhatsApp sender, public signup cannot del
 ## Release gates
 
 Capture redacted browser Network request IDs + Django traceback on affected deployment for CG-STAFF-001/002/CG-CUSTOMER-001. Verify 401/403/404/500 behaviors; manually test iPhone/Android and desktop, expired token, no duplicate creation, copy, invoice/estimate/reminder/ready, cross-tenant rejection, and absence of outbound Meta provider HTTP requests. Close issues only after these gates pass.
+
+
+---
+
+# Authentication Repair — Regression and Production Readiness (2026-11-12)
+
+**Scope:** `amnas-cubixmet/cubegears-backend` plus Company Panel and Public Website.
+**Verification methodology:** real GitHub Actions on throwaway SQLite/PostgreSQL databases and
+mocked email dispatch; no production accounts, live SMTP inbox, production HTTP tracebacks,
+or production database records have been accessed. Production acceptance is **not established**
+until real hosting and delivery checks are completed.
+
+| Bug ID | Severity | Endpoint / component | Root cause (file) | Implemented fix | Regression / observed result |
+| --- | --- | --- | --- | --- | --- |
+| CG-AUTH-001 | Medium | `POST /api/v1/auth/signup` in CI | Anonymous throttling cache shared by otherwise isolated test cases (`apps/accounts/tests_part03_owner_signup.py`) | Clear test-only throttle cache in `setUp`, preserve real 5/hour throttle | Previously CI 43195421485: expected 400, got 429; run full auth suite in follow-up |
+| CG-AUTH-002 | High | `POST /api/v1/auth/refresh` | `SecureTokenRefreshView` checked account status but not JWT password-hash revocation claim (`apps/accounts/views.py`) | Constant-time comparison with SimpleJWT `REVOKE_TOKEN_CLAIM` before any token rotation | Reproduced: run 43198564323 200 instead of 401 after reset. New test in `apps/accounts/tests_session_revocation.py`; follow-up CI required |
+| CG-AUTH-003 | Medium | `POST /api/v1/auth/forgot-password`, `/magic-link` | Case-insensitive query `.first()` could select arbitrary legacy email-collision account (`apps/accounts/views.py`) | Reject ambiguous matches without email delivery or token issuance | `AuthenticationLifecycleTests.test_case_colliding_emails_cannot_trigger_ambiguous_recovery` |
+| CG-AUTH-004 | Medium | `POST /api/v1/auth/signup` | Email-only onboarding could commit unusable account even when email dispatch disabled (`apps/accounts/views.py`) | Return `503 EMAIL_DELIVERY_UNAVAILABLE` before creating tenant; public site offers direct secure password creation | `test_disabled_email_does_not_create_magic_token_or_unusable_signup` |
+| CG-AUTH-005 | Medium | `POST /api/v1/auth/setup-password` | Missing UID accessed via direct indexing, could raise 500 (`apps/accounts/views.py`) | Missing UID now returns safe HTTP 400 | `test_setup_password_without_uid_is_clean_400_not_500` |
+| CG-AUTH-006 | Medium | `POST /api/v1/auth/reset-password/validate` | Reset UI did not validate link until password submission (`apps/accounts/urls.py`, `views.py`) | Add safe throttled validation endpoint and disable reset form until validated | `test_owner_email_reset_is_one_use_and_revokes_old_jwts`, `test_expired_reset_token_is_rejected` |
+| CG-AUTH-007 | Low | Company Panel login/recovery frontend | Recovery had no visible manual mobile path and treated network/server errors as expired staff links (`src/pages/auth/ForgotPassword.jsx`, `StaffSetPasswordPage.jsx`) | Add manual admin-mediated mobile recovery; separate invalid link vs network/5xx; retain existing email and magic | Company Panel main CI 43199679763: lint, build, Playwright smoke passed |
+| CG-AUTH-008 | Medium | Company Panel frontend regression runner | CI reported green while `node --test tests/*.test.js` executed 0 tests | Add six Node authentication error tests (`tests/auth-errors.test.js`) | In PR #154; review latest CI |
+| CG-AUTH-009 | Medium | Public signup email delivery dependency | Public signup required email invitation, even if backend mail mode disabled (`app/signup/signup-form.tsx`, `app/api/signup/route.ts`) | Optional secure owner password submitted directly to Django; email invite remains supported | Public site PR #18 and main CI 43200359382 passed |
+| CG-AUTH-010 | Operational | Production account email transport | Production `ACCOUNT_EMAIL_DELIVERY_MODE` defaults `disabled`; SMTP host/password/worker are environment-dependent (`apps/accounts/email.py`, `config/settings.py`) | Explicit readiness gate and existing `check_email_delivery` management command retained | Local transport mocks cover acceptance/failure; **real inbox delivery NOT VERIFIED** |
+
+## Access and compatibility
+
+- Existing user accounts, password hashes, tenant roles, staff records, historical data,
+  customer portal tokens, and manual WhatsApp share/copy code remain intact.
+- Magic login tokens are random and SHA-256 hashed, single-use; staff setup HMAC links remain manual.
+  The customer website is a separate signed customer portal and was not modified.
+- `SIMPLE_JWT.CHECK_REVOKE_TOKEN=True` requires both request authentication **and refresh**
+  to reject old password hashes. Refresh rotation and logout use SimpleJWT blacklist.
+- Mobile-only staff recovery remains **administrator-mediated manual invitation**:
+  no OTP, Meta Cloud API or automatic WhatsApp provider calls.
+- Email delivery acknowledgement to a public caller is intentionally non-enumerating; a queued
+  Celery message does **not** certify mailbox delivery.
+
+## GitHub changes and CI evidence
+
+- Backend PR [#87](https://github.com/amnas-cubixmet/cubegears-backend/pull/87):
+  merged to `main` as `d41d684aead72b09301aa19d349574c1c5096743`.
+- Backend security PR [#88](https://github.com/amnas-cubixmet/cubegears-backend/pull/88):
+  password-change refresh revocation and the expiry-test correction (merge/CI to verify).
+- Company Panel PR [#153](https://github.com/amnas-cubixmet/company-panel/pull/153):
+  merged as `cae57aec13f93995bcccc70a9838f18aafc1e1e9`;
+  [main CI 43199679763](https://github.com/amnas-cubixmet/company-panel/actions/runs/43199679763) successful.
+- Company Panel regression PR [#154](https://github.com/amnas-cubixmet/company-panel/pull/154):
+  adds actual `node:test` assertions, not merely a zero-test CI pass.
+- Public Website PR [#18](https://github.com/amnas-cubixmet/cubegears-public-website/pull/18):
+  merged as `58960606531c6b585251054cec7f9c5be272da53`,
+  [main CI 43200359382](https://github.com/amnas-cubixmet/cubegears-public-website/actions/runs/43200359382) successful.
+
+## Remaining production release gates
+
+1. Verify all backend and Company Panel security PR checks are green and merged;
+   check the exact current main SHA after merge (a previous green SHA is insufficient).
+2. Configure real HTTPS `FRONTEND_URL`, `ACCOUNT_EMAIL_DELIVERY_MODE=smtp`
+   (or correctly operating Celery/Redis), provider credentials and sender **in hosting secrets only**.
+   Run `python manage.py check --deploy`, migrations and
+   `python manage.py check_email_delivery --to <approved-test-inbox>`.
+   Confirm the actual recipient inbox/headers and email links, not just SMTP acceptance.
+3. Exercise login/reset/magic/staff onboarding with **isolated staging accounts** against deployed
+   domains; collect redacted response codes, `X-Request-ID`, server tracebacks (no secrets),
+   refresh rotation, logout and cross-tenant denial. Do not reset real users without approval.
+4. Run manually on iPhone and Android; inspect redirect URLs and no token leakage in browser
+   history, logs or referrers. Check existing accounts and company RBAC are unchanged.
+
+**Completion status:** Code fixes committed; staging and production SMTP / E2E checks are still
+required before claiming full production authentication acceptance.
