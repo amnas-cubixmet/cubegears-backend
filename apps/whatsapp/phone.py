@@ -10,7 +10,7 @@ def normalize_recipient(value):
     raw = str(value or "").strip()
     if not raw:
         return ""
-    digits = re.sub(r"\\D", "", raw)
+    digits = re.sub(r"\D", "", raw)
     if not raw.startswith("+") and not any(
         digits.startswith(code) for code in _COUNTRY_LENGTHS
     ):

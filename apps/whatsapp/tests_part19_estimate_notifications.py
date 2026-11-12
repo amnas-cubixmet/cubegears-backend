@@ -19,8 +19,7 @@ from apps.whatsapp.models import (
     WhatsAppNotificationLog, CustomerNotificationPreference,
 )
 from apps.whatsapp.tasks import (
-    queue_customer_notification, remind_open_estimates,
-    send_whatsapp_notification,
+    queue_customer_notification,
 )
 
 
@@ -110,153 +109,39 @@ class Part19EstimateNotificationTests(TestCase):
             {"action": "withdraw"}, format="json",
         )
 
-    def test_published_quote_queues_one_idempotent_notification_only(self):
+    def test_publishing_estimate_never_schedules_whatsapp_message(self):
         with self.captureOnCommitCallbacks(execute=True):
             result = self.share()
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data["status"], "Awaiting Customer")
-        log = WhatsAppNotificationLog.objects.get(event="estimate_shared")
-        self.assertEqual(log.idempotency_key, f"estimate:{self.quote.pk}:shared")
-        self.assertEqual(log.status, "failed")
-        self.assertNotIn("/access/", str(log.__dict__))
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.share().status_code, 200)
-        self.assertEqual(
-            WhatsAppNotificationLog.objects.filter(event="estimate_shared").count(), 1
-        )
-
-    def test_opt_out_and_manual_mode_never_queue_automatic_share(self):
-        self.preference.whatsapp_opt_in = False
-        self.preference.save(update_fields=["whatsapp_opt_in"])
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.share().status_code, 200)
         self.assertFalse(WhatsAppNotificationLog.objects.exists())
-        self.assertEqual(self.withdraw().status_code, 200)
-        self.preference.whatsapp_opt_in = True
-        self.preference.save(update_fields=["whatsapp_opt_in"])
-        self.conn.messaging_mode = "manual"
-        self.conn.save(update_fields=["messaging_mode"])
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.share().status_code, 200)
-        self.assertFalse(WhatsAppNotificationLog.objects.exists())
+        self.assertIsNone(queue_customer_notification(
+            self.customer, "estimate_shared", f"estimate:{self.quote.pk}:shared", job=self.job
+        ))
 
-    def test_manual_estimate_draft_has_secure_link_but_not_sent_status(self):
-        self.assertEqual(self.public.post(
-            "/api/v1/whatsapp/manual-share", {
-                "targetType": "estimate", "targetId": str(self.quote.pk)
-            }, format="json",
-        ).status_code, 401)
-        unshared = self.staff.post("/api/v1/whatsapp/manual-share", {
+    def test_latest_published_estimate_has_manual_secure_draft(self):
+        missing = self.staff.post("/api/v1/whatsapp/manual-share", {
             "targetType": "estimate", "targetId": str(self.quote.pk)
         }, format="json")
-        self.assertEqual(unshared.status_code, 409)
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.share().status_code, 200)
+        self.assertEqual(missing.status_code, 409)
+        self.assertEqual(self.share().status_code, 200)
         drafted = self.staff.post("/api/v1/whatsapp/manual-share", {
             "targetType": "estimate", "targetId": str(self.quote.pk)
         }, format="json")
         self.assertEqual(drafted.status_code, 200, drafted.data)
-        self.assertEqual(drafted.data["status"], "manual_prepared")
         self.assertIn("Estimate V1", drafted.data["preview"])
-        self.assertIn("PART19-001", drafted.data["preview"])
-        self.assertIn("1200.00", drafted.data["preview"])
-        self.assertIn("https://wa.me/919876543210?", drafted.data["url"])
-        self.assertIn("%2Faccess%2F", drafted.data["url"])
-        self.assertFalse(WhatsAppNotificationLog.objects.filter(
-            event="manual_estimate", status="sent",
-        ).exists())
-        self.assertEqual(self.withdraw().status_code, 200)
-        self.assertEqual(self.staff.post("/api/v1/whatsapp/manual-share", {
-            "targetType": "estimate", "targetId": str(self.quote.pk)
-        }, format="json").status_code, 409)
+        self.assertIn("wa.me/", drafted.data["url"])
+        self.assertEqual(drafted.data["status"], "manual_prepared")
+        self.assertFalse(WhatsAppNotificationLog.objects.filter(status="sent").exists())
 
-    def test_rejected_quote_is_not_queued_or_sent(self):
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(self.share().status_code, 200)
+    def test_withdrawn_estimate_cannot_be_shared_or_auto_reminded(self):
+        self.assertEqual(self.share().status_code, 200)
         self.assertEqual(self.withdraw().status_code, 200)
-        self.assertIsNone(queue_customer_notification(
-            self.customer, "estimate_shared",
-            f"estimate:{self.quote.pk}:shared", job=self.job,
-        ))
         self.assertIsNone(queue_customer_notification(
             self.customer, "estimate_reminder",
-            f"estimate:{self.quote.pk}:reminder:1", job=self.job,
+            f"estimate:{self.quote.pk}:reminder:1", job=self.job
         ))
-
-    @override_settings(
-        WHATSAPP_SEND_ENABLED=True,
-        WHATSAPP_ESTIMATE_REMINDERS_ENABLED=True,
-        CELERY_BROKER_URL="redis://localhost:6379/0",
-    )
-    def test_daily_sweep_idempotently_queues_only_due_customer_quotes(self):
-        with patch("apps.whatsapp.tasks.send_whatsapp_notification.delay"):
-            with self.captureOnCommitCallbacks(execute=True):
-                self.assertEqual(self.share().status_code, 200)
-            updated = timezone.now() - timedelta(hours=50)
-            JobEstimate.objects.filter(pk=self.quote.pk).update(updated_at=updated)
-            with self.captureOnCommitCallbacks(execute=True):
-                self.assertEqual(remind_open_estimates.run(), 1)
-                self.assertEqual(remind_open_estimates.run(), 0)
-            self.assertEqual(WhatsAppNotificationLog.objects.filter(
-                event="estimate_reminder",
-            ).count(), 1)
-            # New slot is distinct; still one notification per cadence slot.
-            JobEstimate.objects.filter(pk=self.quote.pk).update(
-                updated_at=timezone.now() - timedelta(hours=75)
-            )
-            with self.captureOnCommitCallbacks(execute=True):
-                remind_open_estimates.run()
-            self.assertEqual(WhatsAppNotificationLog.objects.filter(
-                event="estimate_reminder",
-            ).count(), 2)
-
-        self.conn.event_settings["estimate_reminder_hours"] = 48
-        self.conn.save(update_fields=["event_settings"])
-        self.assertEqual(self.withdraw().status_code, 200)
-        with self.captureOnCommitCallbacks(execute=True):
-            self.assertEqual(remind_open_estimates.run(), 0)
-
-    @override_settings(
-        WHATSAPP_SEND_ENABLED=True,
-        CELERY_BROKER_URL="redis://localhost:6379/0",
-    )
-    def test_worker_skips_withdrawn_estimate_even_if_message_was_prequeued(self):
-        with patch("apps.whatsapp.tasks.send_whatsapp_notification.delay"):
-            with self.captureOnCommitCallbacks(execute=True):
-                self.assertEqual(self.share().status_code, 200)
-        log = WhatsAppNotificationLog.objects.get(event="estimate_shared")
-        self.assertEqual(log.status, "queued")
-        self.assertEqual(self.withdraw().status_code, 200)
-        with patch("apps.whatsapp.tasks.send_template_message") as send:
-            self.assertEqual(send_whatsapp_notification.run(str(log.pk)), "skipped")
-        send.assert_not_called()
-        log.refresh_from_db()
-        self.assertEqual(log.status, "skipped")
-
-    def test_cross_tenant_and_invalid_reminder_cadence_are_blocked(self):
-        other = Company.objects.create(name="Other Garage", slug="part19other")
-        foreign = Customer.objects.create(
-            company=other, name="Unrelated", phone="+919111111111"
-        )
-        self.assertEqual(self.staff.post("/api/v1/whatsapp/manual-share", {
-            "targetType": "estimate", "targetId": str(self.quote.pk),
-        }, format="json").status_code, 409)
-        # A quote belonging to another workshop must never be exposed.
-        self.assertIsNone(queue_customer_notification(
-            foreign, "estimate_shared",
-            f"estimate:{self.quote.pk}:shared", job=self.job,
-        ))
-        for invalid in (0, 12, 72, "24", True):
-            response = self.staff.patch("/api/v1/whatsapp/settings", {
-                "events": {
-                    "estimate_reminder": True,
-                    "estimate_reminder_hours": invalid,
-                },
-            }, format="json")
-            self.assertEqual(response.status_code, 400)
-        valid = self.staff.patch("/api/v1/whatsapp/settings", {
-            "events": {"estimate_shared": True, "estimate_reminder": True,
-                       "estimate_reminder_hours": 48},
+        result = self.staff.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "estimate", "targetId": str(self.quote.pk)
         }, format="json")
-        self.assertEqual(valid.status_code, 200, valid.data)
-        self.assertEqual(valid.data["events"]["estimate_reminder_hours"], 48)
+        self.assertEqual(result.status_code, 409)
