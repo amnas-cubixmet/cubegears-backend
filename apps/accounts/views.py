@@ -485,7 +485,17 @@ class StaffInvitationValidationView(APIView):
         record = resolve_invitation(request.data.get("token"))
         if not record:
             return Response({"valid":False,"message":"Invalid or expired setup link."}, status=400)
-        return Response({"valid":True,"purpose":record.purpose,"expiresAt":record.expires_at})
+        # A valid bearer invitation may identify its audience so the UI can
+        # label owner onboarding correctly, without disclosing personal data.
+        account_type = (
+            "owner" if record.user.company.owner_id == record.user_id else "staff"
+        )
+        return Response({
+            "valid": True,
+            "purpose": record.purpose,
+            "expiresAt": record.expires_at,
+            "accountType": account_type,
+        })
 
 
 class StaffInvitationConsumeView(APIView):
