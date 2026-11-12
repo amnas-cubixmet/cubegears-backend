@@ -83,6 +83,7 @@ jobs:
             apps.credits.tests_company_saas_invoices \
             apps.credits.tests_bundle_purchase_throttle \
             apps.credits.tests_storage_interval_monitoring \
+            apps.saas.tests_storage_defaults \
             apps.invoices.tests_template_appearance \
             apps.invoices.tests_calculations \
             apps.gstr.tests \
