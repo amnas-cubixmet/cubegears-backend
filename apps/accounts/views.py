@@ -47,6 +47,9 @@ def unique_active_email_user(email):
 
 
 class PublicSignupRateThrottle(AnonRateThrottle):
+    # Do not share DRF's default "anon" cache bucket with verification,
+    # recovery, login or other public actions.
+    scope = "workshop_public_signup"
     rate = "5/hour"
 
 
@@ -62,7 +65,22 @@ class TokenRefreshRateThrottle(AnonRateThrottle):
 
 
 class RecoveryRateThrottle(AnonRateThrottle):
+    scope = "workshop_recovery"
     rate = "5/hour"
+
+
+class InvitationValidateRateThrottle(AnonRateThrottle):
+    # A page opening (and React development remount) validates a link.
+    # Reserve a separate, still bounded bucket for these read-only checks.
+    scope = "workshop_invitation_validate"
+    rate = "60/hour"
+
+
+class InvitationConsumeRateThrottle(AnonRateThrottle):
+    # Saving a password is a sensitive state-changing operation. Validation
+    # traffic must not make the one-time link impossible to consume.
+    scope = "workshop_invitation_consume"
+    rate = "10/hour"
 
 
 
@@ -479,7 +497,7 @@ class StaffInvitationValidationView(APIView):
     # Public auth routes must ignore stale Authorization headers from clients.
     authentication_classes = []
     permission_classes = [AllowAny]
-    throttle_classes = [RecoveryRateThrottle]
+    throttle_classes = [InvitationValidateRateThrottle]
 
     def post(self, request):
         record = resolve_invitation(request.data.get("token"))
@@ -502,7 +520,7 @@ class StaffInvitationConsumeView(APIView):
     # Public auth routes must ignore stale Authorization headers from clients.
     authentication_classes = []
     permission_classes = [AllowAny]
-    throttle_classes = [RecoveryRateThrottle]
+    throttle_classes = [InvitationConsumeRateThrottle]
 
     def post(self, request):
         from django.contrib.auth.password_validation import validate_password
