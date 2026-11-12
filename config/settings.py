@@ -289,6 +289,8 @@ AUTH_USER_MODEL = "accounts.User"
 
 # One-use password invitations remain independent of messaging providers.
 STAFF_PASSWORD_LINK_SIGNING_KEY = env("STAFF_PASSWORD_LINK_SIGNING_KEY", SECRET_KEY)
+# Immutable startup security choice: Django's test runner overrides DEBUG=False.
+STAFF_SETUP_ALLOW_LOCAL_HTTP = DEBUG
 
 CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
 CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost/access" if DEBUG else "https://customer.cubegears.com/access")

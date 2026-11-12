@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import secrets
 import uuid
+from urllib.parse import urlsplit
 from datetime import timedelta
 
 from django.conf import settings
@@ -28,7 +29,13 @@ def _digest(token):
 
 def invitation_url(record):
     url = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
-    if not settings.DEBUG and not url.startswith("https://"):
+    parsed = urlsplit(url)
+    local_http = (
+        parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        and getattr(settings, "STAFF_SETUP_ALLOW_LOCAL_HTTP", False)
+    )
+    if not ((parsed.scheme == "https" and parsed.hostname) or local_http):
         raise ValueError("A public HTTPS FRONTEND_URL is required for password setup.")
     raw = _token(record)
     if not hmac.compare_digest(_digest(raw), record.token_hash):
