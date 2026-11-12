@@ -44,18 +44,18 @@
         <!--[if mso]><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td><![endif]-->
         <table class="email-card card-column" role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;border:1px solid #e4eaf3;border-radius:20px;overflow:hidden;">
 
-          <!-- Branded masthead. Text-only logo displays even when images are blocked. -->
+          <!-- Real product logo, embedded by Content-ID (no network fetch). -->
+          <!-- Brand text remains visible when images are blocked. -->
           <tr>
             <td class="header-cell" bgcolor="#111b30" style="background-color:#111b30;padding:26px 36px;">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
-                  <td width="46" valign="middle" style="width:46px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td width="39" height="39" align="center" valign="middle" bgcolor="#3478f6" style="width:39px;height:39px;background-color:#3478f6;border-radius:12px;color:#ffffff;font-weight:800;font-size:14px;letter-spacing:-0.5px;">CG</td>
-                      </tr>
-                    </table>
+                  {% if logo_cid %}
+                  <td width="56" valign="middle" style="width:56px;padding-right:12px;">
+                    <img src="{{ logo_cid }}" alt="cubixgear logo" width="42" height="42"
+                         style="display:block;width:42px;height:42px;max-width:42px;border:0;outline:none;text-decoration:none;">
                   </td>
+                  {% endif %}
                   <td valign="middle" class="brand-name" style="font-size:21px;line-height:27px;font-weight:800;letter-spacing:-0.7px;color:#ffffff;">
                     {{ brand }}
                   </td>
