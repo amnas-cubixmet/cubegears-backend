@@ -95,6 +95,23 @@ class CustomerPortalSecurityTests(TestCase):
         self.assertEqual(self.public.get("/api/v1/c/" + new).status_code, 200)
         self.assertIsNone(resolve_link(old))
 
+    def test_stale_customer_token_digest_returns_409_and_regeneration_recovers(self):
+        from apps.customers.portal_tokens import ensure_portal_access
+        access = ensure_portal_access(self.customer)
+        access.token_hash = "0" * 64
+        access.save(update_fields=["token_hash"])
+        route = f"/api/v1/customer-portal/links/{self.customer.pk}"
+        broken = self.staff.get(route)
+        self.assertEqual(broken.status_code, 409, broken.data)
+        self.assertEqual(broken.data["code"], "CUSTOMER_LINK_REGENERATION_REQUIRED")
+        self.assertNotIn("token", str(broken.data).lower())
+        regenerated = self.staff.post(route, {"action": "rotate"}, format="json")
+        self.assertEqual(regenerated.status_code, 200, regenerated.data)
+        recovered = self.staff.get(route)
+        self.assertEqual(recovered.status_code, 200, recovered.data)
+        self.assertEqual(regenerated.data["url"], recovered.data["url"])
+        self.assertIsNotNone(resolve_link(recovered.data["url"].rsplit("/", 1)[-1]))
+
     def test_cross_company_link_access_is_rejected_for_staff(self):
         foreign = self.staff.get(f"/api/v1/customer-portal/links/{self.stranger.pk}")
         self.assertEqual(foreign.status_code, 404)

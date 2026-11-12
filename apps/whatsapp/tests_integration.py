@@ -77,6 +77,23 @@ class WhatsAppManualOnlyTests(TestCase):
             "manual_prepared",
         )
 
+    def test_invalid_record_id_is_a_safe_400_not_internal_server_error(self):
+        for value in ("invalid-id", None, "<script>alert(1)</script>"):
+            result = self.client.post("/api/v1/whatsapp/manual-share", {
+                "targetType": "customer", "targetId": value,
+            }, format="json")
+            self.assertEqual(result.status_code, 400)
+            self.assertIn("valid record", result.data["message"])
+
+    def test_manual_share_does_not_require_meta_and_recovers_customer_contact(self):
+        self.customer.whatsapp = "invalid"
+        self.customer.save(update_fields=["whatsapp"])
+        result = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(self.customer.pk),
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertIn("wa.me/919888888888", result.data["url"])
+
     def test_invalid_number_and_tenant_isolation(self):
         self.customer.phone = "9888888888"
         self.customer.save(update_fields=["phone"])

@@ -38,6 +38,10 @@ class WhatsAppManualShareView(APIView):
     def post(self, request):
         kind = str(request.data.get("targetType") or "").lower().strip()
         ident = request.data.get("targetId")
+        try:
+            ident = uuid.UUID(str(ident))
+        except (ValueError, TypeError, AttributeError):
+            return Response({"message": "Choose a valid record to share."}, status=400)
         company = request.user.company
         estimate = None
 
@@ -110,7 +114,9 @@ class WhatsAppManualShareView(APIView):
         if not customer or customer.company_id != company.pk:
             return Response({"message": "Customer is unavailable for this workshop."}, status=404)
 
-        number = normalize_recipient(customer.whatsapp or customer.phone)
+        # Prefer a valid explicit WhatsApp contact; fall back to the registered
+        # customer phone when that legacy optional field is incomplete.
+        number = normalize_recipient(customer.whatsapp) or normalize_recipient(customer.phone)
         if not number:
             return Response({
                 "message": "Customer WhatsApp number must include country code, e.g. +919876543210."

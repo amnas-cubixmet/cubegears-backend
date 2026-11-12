@@ -263,6 +263,25 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertNotEqual(renewed.data["setupLink"], created.data["setupLink"])
         queue.assert_not_called()
 
+    def test_staff_profile_detail_and_activity_support_endpoints_are_json_not_500(self):
+        reply = self.create_staff(consent=False)
+        employee_id = reply.data["id"]
+        paths = [
+            f"/api/v1/employees/{employee_id}",
+            f"/api/v1/employees/activities?employee={employee_id}",
+            "/api/v1/employees/teams",
+            "/api/v1/employees/shifts",
+            "/api/v1/employees/documents",
+        ]
+        for path in paths:
+            response = self.admin.get(path)
+            self.assertEqual(response.status_code, 200, (path, getattr(response, "data", None)))
+            self.assertIsNotNone(response.data)
+        detail = self.admin.get(paths[0])
+        self.assertEqual(detail.data["loginStatus"], "Pending Password Setup")
+        self.assertIsNone(detail.data["setupLink"])
+        self.assertTrue(self.admin.get(paths[1]).data)
+
     def test_disable_login_does_not_disable_employment_or_payroll(self):
         reply = self.create_staff()
         employee = Employee.objects.get(pk=reply.data["id"])
