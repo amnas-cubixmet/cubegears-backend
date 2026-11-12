@@ -287,26 +287,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "accounts.User"
 
-# Official Meta account onboarding is disabled without explicit configuration.
+# One-use password invitations remain independent of messaging providers.
 STAFF_PASSWORD_LINK_SIGNING_KEY = env("STAFF_PASSWORD_LINK_SIGNING_KEY", SECRET_KEY)
-# Optional verified platform sender for first owner signup (not a new workshop's account).
-WHATSAPP_PLATFORM_PHONE_ID = env("WHATSAPP_PLATFORM_PHONE_ID", "")
-WHATSAPP_PLATFORM_ACCESS_TOKEN = env("WHATSAPP_PLATFORM_ACCESS_TOKEN", "")
-WHATSAPP_PLATFORM_TEMPLATE = env("WHATSAPP_PLATFORM_TEMPLATE", "")
-WHATSAPP_PLATFORM_TEMPLATE_LANGUAGE = env("WHATSAPP_PLATFORM_TEMPLATE_LANGUAGE", "en_US")
-
-WHATSAPP_META_APP_ID = env("WHATSAPP_META_APP_ID", "")
-WHATSAPP_META_APP_SECRET = env("WHATSAPP_META_APP_SECRET", "")
-WHATSAPP_META_CONFIG_ID = env("WHATSAPP_META_CONFIG_ID", "")
-WHATSAPP_WEBHOOK_VERIFY_TOKEN = env("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
-WHATSAPP_TOKEN_ENCRYPTION_KEY = env("WHATSAPP_TOKEN_ENCRYPTION_KEY", "")
-WHATSAPP_GRAPH_VERSION = env("WHATSAPP_GRAPH_VERSION", "v25.0")
-WHATSAPP_SEND_ENABLED = env_bool("WHATSAPP_SEND_ENABLED", False)
-# Part 19: opt-in separately from WhatsApp sending. Only one Beat should
-# run the daily cadence sweep, and each tenant must enable reminders as well.
-WHATSAPP_ESTIMATE_REMINDERS_ENABLED = env_bool("WHATSAPP_ESTIMATE_REMINDERS_ENABLED", False)
-# Dedicated explicit opt-in. No automatic messages with unverified WABA/consent.
-STAFF_WHATSAPP_AUTO_SEND_ENABLED = env_bool("STAFF_WHATSAPP_AUTO_SEND_ENABLED", False)
+# Immutable startup security choice: Django's test runner overrides DEBUG=False.
+STAFF_SETUP_ALLOW_LOCAL_HTTP = DEBUG
 
 CUSTOMER_PORTAL_SIGNING_KEY = env("CUSTOMER_PORTAL_SIGNING_KEY", SECRET_KEY)
 CUSTOMER_PORTAL_BASE_URL = env("CUSTOMER_PORTAL_BASE_URL", "http://localhost/access" if DEBUG else "https://customer.cubegears.com/access")
@@ -464,17 +448,6 @@ if CREDIT_BILLING_CELERY_ENABLED:
     CELERY_BEAT_SCHEDULE["cubegear-settle-calendar-credit-statements"] = {
         "task": "credits.settle_calendar_cycles",
         "schedule": crontab(hour=0, minute=10),
-    }
-
-if WHATSAPP_ESTIMATE_REMINDERS_ENABLED:
-    if not (WHATSAPP_SEND_ENABLED and CELERY_BROKER_URL.startswith(("redis://", "rediss://"))):
-        raise ImproperlyConfigured(
-            "WHATSAPP_ESTIMATE_REMINDERS_ENABLED needs WHATSAPP_SEND_ENABLED and a Redis Celery broker."
-        )
-    from celery.schedules import crontab
-    CELERY_BEAT_SCHEDULE["cubegear-remind-published-customer-estimates"] = {
-        "task": "whatsapp.remind_open_estimates",
-        "schedule": crontab(hour=10, minute=30),
     }
 
 # Razorpay SaaS subscription checkout. Configure TEST keys before enabling.

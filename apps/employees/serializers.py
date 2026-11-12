@@ -138,6 +138,7 @@ class EmployeeSerializer(serializers.ModelSerializer):
     whatsappConsent=serializers.BooleanField(source='whatsapp_consent',required=False)
     whatsappConsentSource=serializers.CharField(source='whatsapp_consent_source',required=False,allow_blank=True,max_length=120)
     setupLink=serializers.SerializerMethodField()
+    invitationError=serializers.SerializerMethodField()
     whatsappInviteStatus=serializers.SerializerMethodField()
     assignedRoleId=serializers.SerializerMethodField()
     accountStatus=serializers.SerializerMethodField()
@@ -162,6 +163,9 @@ class EmployeeSerializer(serializers.ModelSerializer):
     def get_setupLink(self,obj):
         # Only the authorized admin's immediate create/invite response contains a link.
         return getattr(obj, '_setup_link', None)
+
+    def get_invitationError(self, obj):
+        return getattr(obj, '_invitation_error', '')
 
     def get_whatsappInviteStatus(self,obj):
         if not obj.user_id:

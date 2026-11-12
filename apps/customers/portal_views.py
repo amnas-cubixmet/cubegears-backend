@@ -67,7 +67,16 @@ class CustomerPortalLinkView(APIView):
         access = ensure_portal_access(self._customer(request, customer_id))
         result = {"enabled": access.is_active, "customerId": str(customer_id)}
         if access.is_active:
-            result["url"] = issue_link(access)
+            try:
+                result["url"] = issue_link(access)
+            except ValueError:
+                # A stale token digest (e.g. signing-key rotation) is a
+                # recoverable link conflict, never an HTML 500 traceback.
+                return Response({
+                    "message": "The tracking link needs regeneration. Select Regenerate Link.",
+                    "code": "CUSTOMER_LINK_REGENERATION_REQUIRED",
+                    "enabled": False,
+                }, status=409)
         return Response(result)
 
     def post(self, request, customer_id):

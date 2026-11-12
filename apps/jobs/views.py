@@ -1478,23 +1478,8 @@ class JobViewSet(CompanyScopedModelViewSet):
             {"estimateId": str(estimate.pk), "version": estimate.version,
              "total": str(estimate.total)},
         )
-        if action == "share":
-            # A published quote may trigger the workshop's preconfigured,
-            # consent-gated Meta notification. It must never delay the staff
-            # response or send before this transaction commits.
-            from apps.whatsapp.tasks import queue_customer_notification
-            job_id, company_id, quote_id = job.pk, job.company_id, estimate.pk
-
-            def notify_customer():
-                current = Job.objects.select_related("customer", "vehicle").filter(
-                    pk=job_id, company_id=company_id,
-                ).first()
-                if current:
-                    queue_customer_notification(
-                        current.customer, "estimate_shared",
-                        f"estimate:{quote_id}:shared", job=current,
-                    )
-            transaction.on_commit(notify_customer)
+        # Publishing an estimate updates its workflow only. Any customer
+        # notification must be prepared via a separate explicit staff click.
         return response.Response(JobEstimateSerializer(estimate).data)
 
     @decorators.action(

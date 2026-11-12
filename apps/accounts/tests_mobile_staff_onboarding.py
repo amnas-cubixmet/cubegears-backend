@@ -187,17 +187,53 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(repeat.status_code, 200, repeat.data)
         self.assertEqual(repeat.data["setupLink"], result.data["setupLink"])
 
-    def test_manual_whatsapp_reset_requires_consent_and_boolean_mode(self):
+    def test_manual_whatsapp_setup_requires_boolean_but_not_api_or_consent(self):
         created = self.create_staff(consent=False)
         employee = Employee.objects.get(pk=created.data["id"])
-        for payload in ({"manualOnly": True}, {"manualOnly": "true"}):
-            result = self.admin.post(
-                f"/api/v1/employees/{employee.pk}/invite", payload, format="json",
-            )
-            self.assertEqual(result.status_code, 400, result.data)
-        self.assertEqual(
-            StaffPasswordInvitation.objects.filter(user=employee.user).count(), 1
+        ready = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True}, format="json",
         )
+        self.assertEqual(ready.status_code, 200, ready.data)
+        self.assertEqual(ready.data["whatsappInviteStatus"], "manual")
+        invalid = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": "true"}, format="json",
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+    @override_settings(DEBUG=False, FRONTEND_URL="http://not-secure.example")
+    def test_invalid_production_frontend_url_is_handled_without_http_500(self):
+        # Creation succeeds once; invitation failure is isolated.
+        created = self.create_staff(consent=False)
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertIsNone(created.data["setupLink"])
+        employee = Employee.objects.get(pk=created.data["id"])
+        retried = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True}, format="json",
+        )
+        self.assertEqual(retried.status_code, 400, retried.data)
+        self.assertIn("HTTPS FRONTEND_URL", str(retried.data))
+        self.assertEqual(Employee.objects.filter(company=self.company, pk=employee.pk).count(), 1)
+
+    def test_failed_setup_link_generation_keeps_created_staff_and_allows_retry(self):
+        from unittest.mock import patch
+        with patch("apps.employees.views.EmployeeViewSet._issue_staff_invitation",
+                   side_effect=ValueError("Temporary signing config issue")):
+            created = self.create_staff(consent=False)
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertIsNone(created.data["setupLink"])
+        self.assertIn("setup link could not", created.data["invitationError"])
+        employee = Employee.objects.get(pk=created.data["id"])
+        self.assertEqual(Employee.objects.filter(company=self.company, phone=employee.phone).count(), 1)
+        retried = self.admin.post(
+            f"/api/v1/employees/{employee.pk}/invite",
+            {"manualOnly": True}, format="json",
+        )
+        self.assertEqual(retried.status_code, 200, retried.data)
+        self.assertIn("/set-password/", retried.data["setupLink"])
+        self.assertEqual(Employee.objects.filter(company=self.company, phone=employee.phone).count(), 1)
 
     @override_settings(STAFF_WHATSAPP_AUTO_SEND_ENABLED=True)
     def test_manual_share_does_not_reuse_queued_auto_link(self):
@@ -226,6 +262,25 @@ class MobileStaffOnboardingTests(TestCase):
         self.assertEqual(renewed.data["whatsappInviteStatus"], "manual")
         self.assertNotEqual(renewed.data["setupLink"], created.data["setupLink"])
         queue.assert_not_called()
+
+    def test_staff_profile_detail_and_activity_support_endpoints_are_json_not_500(self):
+        reply = self.create_staff(consent=False)
+        employee_id = reply.data["id"]
+        paths = [
+            f"/api/v1/employees/{employee_id}",
+            f"/api/v1/employees/activities?employee={employee_id}",
+            "/api/v1/employees/teams",
+            "/api/v1/employees/shifts",
+            "/api/v1/employees/documents",
+        ]
+        for path in paths:
+            response = self.admin.get(path)
+            self.assertEqual(response.status_code, 200, (path, getattr(response, "data", None)))
+            self.assertIsNotNone(response.data)
+        detail = self.admin.get(paths[0])
+        self.assertEqual(detail.data["loginStatus"], "Pending Password Setup")
+        self.assertIsNone(detail.data["setupLink"])
+        self.assertTrue(self.admin.get(paths[1]).data)
 
     def test_disable_login_does_not_disable_employment_or_payroll(self):
         reply = self.create_staff()
@@ -313,19 +368,16 @@ class MobileStaffOnboardingTests(TestCase):
         },format="json")
         self.assertEqual(reply.status_code,404)
 
-    def test_workshop_registration_allows_no_email_without_exposing_link(self):
+    def test_public_owner_signup_requires_password_or_email_without_meta(self):
+        count = Company.objects.count()
         anonymous = self.public.post("/api/v1/auth/signup",{
             "workshop_name":"Mobile Registration Garage", "owner_name":"Mobile Owner",
             "mobile":"+919101234567", "whatsapp_consent": True,
         },format="json")
-        self.assertEqual(anonymous.status_code,201,anonymous.data)
-        self.assertEqual(anonymous.data["user"]["email"],None)
-        workshop = Company.objects.get(pk=anonymous.data["workshop"]["id"])
-        self.assertEqual(workshop.phone,"+919101234567")
-        owner = User.objects.get(pk=anonymous.data["user"]["id"])
-        self.assertFalse(owner.has_usable_password())
-        self.assertTrue(StaffPasswordInvitation.objects.filter(user=owner).exists())
-        self.assertNotIn("setupLink",anonymous.data)
+        self.assertEqual(anonymous.status_code, 400, anonymous.data)
+        self.assertIn("email", anonymous.data)
+        self.assertNotIn("setupLink", str(anonymous.data))
+        self.assertEqual(Company.objects.count(), count)
 
 
     def test_staff_invitation_never_uses_optional_email(self):
@@ -541,60 +593,13 @@ class MobileStaffOnboardingTests(TestCase):
             employee=employee, action="Staff WhatsApp Consent Revoked", actor=self.owner,
         ).exists())
 
-    @override_settings(WHATSAPP_META_APP_SECRET="signed-staff-stop-test")
-    def test_signed_staff_stop_opt_out_preserves_consent_provenance(self):
-        import hashlib
-        import hmac
-        import json
-        from apps.employees.models import EmployeeActivity
-        from apps.whatsapp.models import WhatsAppBusinessConnection
-        from apps.whatsapp.staff_invites import send_staff_invitation
+    def test_retired_webhook_does_not_change_staff_consent(self):
         reply = self.create_staff(consent=True)
-        employee = Employee.objects.select_related("user").get(pk=reply.data["id"])
-        source = employee.whatsapp_consent_source
-        invitation = employee.user.staff_password_invitations.latest("created_at")
-        invitation.delivery_status = "queued"
-        invitation.save(update_fields=["delivery_status"])
-        WhatsAppBusinessConnection.objects.create(
-            company=self.company, connected=True,
-            phone_number_id="signed-staff-phone",
-        )
-        body = json.dumps({
-            "entry": [{
-                "changes": [{
-                    "value": {
-                        "metadata": {"phone_number_id": "signed-staff-phone"},
-                        "messages": [{
-                            "from": employee.user.normalized_phone.lstrip("+"),
-                            "text": {"body": "STOP"},
-                        }],
-                    },
-                }],
-            }],
-        }).encode()
-        signature = hmac.new(b"signed-staff-stop-test", body, hashlib.sha256).hexdigest()
-        result = self.public.generic(
-            "POST", "/api/v1/whatsapp/webhook", data=body,
-            content_type="application/json",
-            HTTP_X_HUB_SIGNATURE_256="sha256=" + signature,
-        )
-        self.assertEqual(result.status_code, 200)
+        employee = Employee.objects.get(pk=reply.data["id"])
+        self.assertTrue(employee.whatsapp_consent)
+        result = self.public.post("/api/v1/whatsapp/webhook", {
+            "entry": [{"changes": [{"value": {"messages": [{"text": {"body": "STOP"}}]}}]}]
+        }, format="json")
+        self.assertEqual(result.status_code, 404)
         employee.refresh_from_db()
-        invitation.refresh_from_db()
-        self.assertFalse(employee.whatsapp_consent)
-        self.assertEqual(employee.whatsapp_consent_source, source)
-        self.assertEqual(invitation.delivery_status, "manual")
-        self.assertEqual(send_staff_invitation.run(str(invitation.pk)), "manual_only")
-        self.assertEqual(EmployeeActivity.objects.filter(
-            employee=employee, action="Staff WhatsApp Consent Revoked",
-        ).count(), 1)
-        # Meta may redeliver inbound webhooks; no second consent audit event.
-        duplicate = self.public.generic(
-            "POST", "/api/v1/whatsapp/webhook", data=body,
-            content_type="application/json",
-            HTTP_X_HUB_SIGNATURE_256="sha256=" + signature,
-        )
-        self.assertEqual(duplicate.status_code, 200)
-        self.assertEqual(EmployeeActivity.objects.filter(
-            employee=employee, action="Staff WhatsApp Consent Revoked",
-        ).count(), 1)
+        self.assertTrue(employee.whatsapp_consent)

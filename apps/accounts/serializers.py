@@ -268,9 +268,11 @@ class PublicWorkshopSignupSerializer(serializers.Serializer):
             validate_password(password)
         elif confirmation:
             raise serializers.ValidationError({"password": "Enter a password."})
-        elif not attrs.get("email") and not attrs.get("whatsapp_consent"):
+        elif not attrs.get("email"):
+            # Cloud WhatsApp owner delivery has been retired. A public
+            # anonymous response must never expose a password bearer token.
             raise serializers.ValidationError({
-                "password": "Create a password or choose an authorized password invitation channel."
+                "email": "Provide an email for password setup, or choose a password during signup."
             })
         return attrs
 

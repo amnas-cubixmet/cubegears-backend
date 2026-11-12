@@ -75,42 +75,37 @@ class OwnerPasswordSignupTests(TestCase):
         revoked = self.client.post("/api/v1/auth/refresh", {"refresh": token}, format="json")
         self.assertEqual(revoked.status_code, 401, revoked.data)
 
-    def test_legacy_mobile_whatsapp_setup_still_supported(self):
+    def test_phone_only_owner_registration_does_not_expose_admin_bearer_link(self):
         response = self.client.post("/api/v1/auth/signup", {
             "workshop_name": "Invitation Workshop",
             "owner_name": "Owner",
             "mobile": "+919848484851",
             "whatsapp_consent": True,
         }, format="json")
-        self.assertEqual(response.status_code, 201, response.data)
-        self.assertNotIn("setupLink", response.data)
-        owner = User.objects.get(pk=response.data["user"]["id"])
-        self.assertFalse(owner.has_usable_password())
-        self.assertEqual(StaffPasswordInvitation.objects.filter(user=owner).count(), 1)
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("email", response.data)
+        self.assertFalse(Company.objects.filter(name="Invitation Workshop").exists())
+
 
 
 @override_settings(
     CREDIT_FEATURE_ENFORCEMENT_ENABLED=False,
     CREDIT_LABEL_ONLY_ACCESS_ENABLED=False,
-    WHATSAPP_SEND_ENABLED=True,
     STAFF_WHATSAPP_AUTO_SEND_ENABLED=True,
+    WHATSAPP_SEND_ENABLED=True,
     CELERY_BROKER_URL="redis://localhost:6379/0",
 )
-class AutomaticStaffWhatsAppTests(TestCase):
-    """Automatic sends require explicit settings + consent + verified template."""
+class RetiredAutomaticWhatsAppTests(TestCase):
+    """Legacy settings cannot trigger Cloud API delivery after migration."""
 
     def setUp(self):
-        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
-
-        self.company = Company.objects.create(
-            name="Consent Workshop", slug="consent-workshop",
-        )
+        self.company = Company.objects.create(name="Manual Staff", slug="manual-staff")
         owner_role = Role.objects.create(
             company=self.company, name="Super Admin", code="SUPER_ADMIN",
             is_system=True, is_active=True, permissions=["*"],
         )
         self.owner = User.objects.create_user(
-            email="owner@consent-workshop.test", name="Owner",
+            email="owner@manual-staff.test", name="Owner",
             phone="+919988001100", password="StrongOwnerPassword2026!",
             company=self.company, role=owner_role,
         )
@@ -120,60 +115,34 @@ class AutomaticStaffWhatsAppTests(TestCase):
             company=self.company, name="Technician", code="TECHNICIAN",
             is_system=False, is_active=True, permissions=["jobs.view"],
         )
+        from apps.whatsapp.models import WhatsAppBusinessConnection, WhatsAppMessageTemplate
         WhatsAppBusinessConnection.objects.create(
             company=self.company, connected=True, notifications_enabled=True,
-            messaging_mode="automatic", phone_number_id="official-phone",
-            waba_id="official-waba", encrypted_access_token="test-cipher",
+            messaging_mode="automatic", phone_number_id="legacy-phone",
+            waba_id="legacy-waba", encrypted_access_token="old-token",
             event_settings={"staff_onboarding": True},
         )
         WhatsAppMessageTemplate.objects.create(
             company=self.company, event="staff_onboarding",
-            template_name="staff_password_setup", approval_status="APPROVED",
+            template_name="legacy_staff_template", approval_status="APPROVED",
         )
         self.admin = APIClient()
-        self.admin.force_authenticate(self.owner)
+        self.admin.force_authenticate(user=self.owner)
 
-    def register_staff(self, *, consent=True):
-        return self.admin.post("/api/v1/employees", {
-            "name": "New Technician", "phone": "+919988001101",
-            "roleId": str(self.staff_role.pk), "role": "Technician",
-            "employmentStatus": "Active", "loginAccessEnabled": True,
-            "whatsappConsent": consent,
-            "whatsappConsentSource": "Signed onboarding consent" if consent else "",
-        }, format="json")
-
-    def test_opted_in_staff_queues_and_sends_one_official_template(self):
+    def test_staff_invitation_remains_manual_even_with_legacy_automatic_settings(self):
         from unittest.mock import patch
         from apps.whatsapp.staff_invites import send_staff_invitation
-
-        with patch("apps.whatsapp.staff_invites.send_staff_invitation.delay") as task:
-            with self.captureOnCommitCallbacks(execute=True):
-                result = self.register_staff()
-        self.assertEqual(result.status_code, 201, result.data)
-        self.assertEqual(result.data["whatsappInviteStatus"], "queued")
-        task.assert_called_once()
-        invite = StaffPasswordInvitation.objects.get(user_id=result.data["user"])
-        self.assertEqual(invite.delivery_status, "queued")
-        with patch("apps.whatsapp.staff_invites.decrypt_token", return_value="mock-server-secret"), patch(
-            "apps.whatsapp.staff_invites.send_template_message",
-            return_value={"messages": [{"id": "wamid.test.123"}]},
-        ) as sender:
-            self.assertEqual(send_staff_invitation.run(str(invite.pk)), "sent")
-            self.assertEqual(send_staff_invitation.run(str(invite.pk)), "sent")
-        sender.assert_called_once()
-        invite.refresh_from_db()
-        self.assertEqual(invite.delivery_status, "sent")
-        self.assertEqual(invite.meta_message_id, "wamid.test.123")
-        self.assertEqual(invite.attempts, 1)
-        self.assertNotIn("mock-server-secret", str(result.data))
-
-    def test_no_staff_consent_falls_back_to_manual_and_never_queues(self):
-        from unittest.mock import patch
-
-        with patch("apps.whatsapp.staff_invites.send_staff_invitation.delay") as task:
-            with self.captureOnCommitCallbacks(execute=True):
-                reply = self.register_staff(consent=False)
-        self.assertEqual(reply.status_code, 201, reply.data)
-        self.assertEqual(reply.data["whatsappInviteStatus"], "manual")
-        self.assertIn("/set-password/", reply.data["setupLink"])
-        task.assert_not_called()
+        with patch("apps.whatsapp.staff_invites.send_template_message") as sender:
+            created = self.admin.post("/api/v1/employees", {
+                "name": "New Technician", "phone": "+919988001101",
+                "roleId": str(self.staff_role.pk), "role": "Technician",
+                "employmentStatus": "Active", "loginAccessEnabled": True,
+                "whatsappConsent": True, "whatsappConsentSource": "Signed onboarding consent",
+            }, format="json")
+            self.assertEqual(created.status_code, 201, created.data)
+            self.assertEqual(created.data["whatsappInviteStatus"], "manual")
+            self.assertIn("/set-password/", created.data["setupLink"])
+            invite = StaffPasswordInvitation.objects.get(user_id=created.data["user"])
+            self.assertEqual(send_staff_invitation.run(str(invite.pk)), "manual_only")
+            sender.assert_not_called()
+        self.assertEqual(invite.delivery_status, "manual")
