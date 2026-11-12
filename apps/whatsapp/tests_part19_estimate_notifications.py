@@ -1,10 +1,7 @@
 """Part 19: consent-based estimate notifications, manual drafts and reminders."""
-from datetime import timedelta
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.test import TestCase, override_settings
-from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
