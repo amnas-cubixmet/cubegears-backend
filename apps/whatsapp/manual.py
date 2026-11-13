@@ -21,6 +21,7 @@ from apps.jobs.workflow import workflow_state
 from apps.customers.estimate_review import public_estimate
 from .models import WhatsAppNotificationLog
 from .phone import normalize_recipient
+from .preferences import manual_sharing_enabled
 
 
 def click_to_chat(phone, message):
@@ -45,6 +46,10 @@ class WhatsAppManualShareView(APIView):
         company = request.user.company
         if company is None:
             raise PermissionDenied("Sign in to a workshop before sharing records.")
+        if not manual_sharing_enabled(company):
+            return Response({
+                "message": "Manual WhatsApp sharing is disabled for this workshop. Ask an admin to enable it in Settings."
+            }, status=409)
         estimate = None
 
         if kind == "customer":
