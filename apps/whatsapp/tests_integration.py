@@ -94,7 +94,19 @@ class WhatsAppManualOnlyTests(TestCase):
         self.assertEqual(result.status_code, 200, result.data)
         self.assertIn("wa.me/919888888888", result.data["url"])
 
+    def test_legacy_indian_mobile_works_for_an_indian_workshop(self):
+        self.customer.phone = "9888888888"
+        self.customer.save(update_fields=["phone"])
+        result = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(self.customer.pk),
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertIn("wa.me/919888888888", result.data["url"])
+
     def test_invalid_number_and_tenant_isolation(self):
+        # A non-Indian workshop must not silently send to an Indian number.
+        self.company.country = "United Arab Emirates"
+        self.company.save(update_fields=["country"])
         self.customer.phone = "9888888888"
         self.customer.save(update_fields=["phone"])
         invalid = self.client.post("/api/v1/whatsapp/manual-share", {
@@ -139,6 +151,8 @@ class WhatsAppManualOnlyTests(TestCase):
         self.assertEqual(normalize_recipient("+971 501234567"), "971501234567")
         self.assertEqual(normalize_recipient("+974 12345678"), "97412345678")
         self.assertEqual(normalize_recipient("9876543210"), "")
+        self.assertEqual(normalize_recipient("9876543210", country="India"), "919876543210")
+        self.assertEqual(normalize_recipient("9876543210", country="United Arab Emirates"), "")
         self.assertEqual(normalize_recipient("+91987654"), "")
         self.assertEqual(normalize_recipient("+999123456789"), "")
 

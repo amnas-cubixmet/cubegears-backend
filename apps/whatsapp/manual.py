@@ -43,6 +43,8 @@ class WhatsAppManualShareView(APIView):
         except (ValueError, TypeError, AttributeError):
             return Response({"message": "Choose a valid record to share."}, status=400)
         company = request.user.company
+        if company is None:
+            raise PermissionDenied("Sign in to a workshop before sharing records.")
         estimate = None
 
         if kind == "customer":
@@ -116,7 +118,11 @@ class WhatsAppManualShareView(APIView):
 
         # Prefer a valid explicit WhatsApp contact; fall back to the registered
         # customer phone when that legacy optional field is incomplete.
-        number = normalize_recipient(customer.whatsapp) or normalize_recipient(customer.phone)
+        # Only an explicitly Indian workshop may normalize legacy 10-digit mobiles.
+        number = (
+            normalize_recipient(customer.whatsapp, country=company.country)
+            or normalize_recipient(customer.phone, country=company.country)
+        )
         if not number:
             return Response({
                 "message": "Customer WhatsApp number must include country code, e.g. +919876543210."
