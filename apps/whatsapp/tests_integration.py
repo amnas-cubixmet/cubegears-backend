@@ -87,6 +87,32 @@ class WhatsAppManualOnlyTests(TestCase):
         self.assertTrue(draft.data["url"].startswith("https://wa.me/"))
         self.assertEqual(draft.data["status"], "manual_prepared")
 
+    def test_legacy_automatic_whatsapp_flags_cannot_be_enabled(self):
+        # Historical settings may contain true. The API must not report an
+        # automatic WhatsApp capability that no longer exists.
+        CompanySetting.objects.create(
+            company=self.company, category="notifications",
+            data={"whatsapp": True},
+        )
+        CompanySetting.objects.create(
+            company=self.company, category="integrations",
+            data={"whatsappEnabled": True},
+        )
+        root = self.client.get("/api/v1/settings")
+        self.assertEqual(root.status_code, 200, root.data)
+        self.assertFalse(root.data["notifications"]["whatsapp"])
+        self.assertFalse(root.data["integrations"]["whatsappEnabled"])
+        for category, payload in (
+            ("notifications", {"whatsapp": True}),
+            ("integrations", {"whatsappEnabled": True}),
+        ):
+            url = "/api/v1/settings/" + category
+            self.assertFalse(self.client.get(url).data[
+                "whatsapp" if category == "notifications" else "whatsappEnabled"
+            ])
+            result = self.client.put(url, payload, format="json")
+            self.assertEqual(result.status_code, 400, result.data)
+
     def test_old_cloud_configuration_cannot_trigger_automatic_delivery(self):
         WhatsAppBusinessConnection.objects.create(
             company=self.company, messaging_mode="automatic", connected=True,
