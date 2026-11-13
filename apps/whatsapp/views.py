@@ -9,7 +9,6 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import user_has_permission
 from apps.customers.models import Customer
 from .models import CustomerNotificationPreference, WhatsAppNotificationLog
-from .preferences import manual_sharing_enabled, save_manual_sharing_enabled
 
 
 def _manage(request):
@@ -23,7 +22,6 @@ class WhatsAppSettingsView(APIView):
 
     def get(self, request):
         _manage(request)
-        manual_enabled = manual_sharing_enabled(request.user.company)
         return Response({
             "messagingMode": "manual",
             "configured": True,
@@ -32,8 +30,8 @@ class WhatsAppSettingsView(APIView):
             # not the manual click-to-chat feature.
             "notificationsEnabled": False,
             "sendEnabled": False,
-            "manualEnabled": manual_enabled,
-            "manualStatus": "enabled" if manual_enabled else "disabled",
+            "manualEnabled": True,
+            "manualStatus": "enabled",
             "eventNames": [],
             "events": {},
             "templates": [],
@@ -41,25 +39,19 @@ class WhatsAppSettingsView(APIView):
 
     def patch(self, request):
         _manage(request)
-        if request.user.company is None:
-            raise PermissionDenied("Sign in to a workshop to change WhatsApp sharing.")
         if not isinstance(request.data, dict):
             return Response({"message": "Provide a settings object."}, status=400)
         allowed = {"manualEnabled", "messagingMode", "notificationsEnabled"}
         if set(request.data) - allowed:
-            return Response({"message": "Automatic WhatsApp integration is unavailable. Only manual sharing can be changed."}, status=400)
+            return Response({"message": "Only manual WhatsApp sharing is available."}, status=400)
         if (request.data.get("messagingMode", "manual") != "manual"
-                or request.data.get("notificationsEnabled", False) is not False):
-            return Response({"message": "Only manual WhatsApp sharing is supported. Automatic sending is disabled."}, status=400)
-        if "manualEnabled" in request.data:
-            enabled = request.data["manualEnabled"]
-            if type(enabled) is not bool:
-                return Response({"manualEnabled": "Select true or false."}, status=400)
-            save_manual_sharing_enabled(
-                request.user.company, enabled, branch=request.user.branch,
-            )
+                or request.data.get("notificationsEnabled", False) is not False
+                or ("manualEnabled" in request.data and request.data["manualEnabled"] is not True)):
+            return Response({
+                "message": "Manual WhatsApp sharing is always enabled. Automatic sending is unavailable."
+            }, status=400)
+        # Read-only compatibility for older clients; no enable/disable switch.
         return self.get(request)
-
 
 class WhatsAppLogsView(APIView):
     permission_classes = [IsAuthenticated]
