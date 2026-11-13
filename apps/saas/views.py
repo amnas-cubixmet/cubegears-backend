@@ -34,6 +34,15 @@ DEFAULTS={
 "storage":{"enabled":True,"autoCompress":True,"keepOriginals":False,"allowStaffUpload":True,"allowStaffDelete":False,"retentionDays":0,"maxFileMb":20,"allowedTypes":["image/jpeg","image/png","image/webp"]},
 }
 
+def _manual_only_messaging_settings(category, data):
+    """Legacy notification/integration switches never enable automatic WhatsApp."""
+    if category == "notifications":
+        return {**data, "whatsapp": False}
+    if category == "integrations":
+        return {**data, "whatsappEnabled": False}
+    return data
+
+
 class SubscriptionViewSet(CompanyScopedModelViewSet):
     queryset=Subscription.objects.all(); serializer_class=SubscriptionSerializer
     permission_code="billing.view"
@@ -444,11 +453,13 @@ class SettingsView(APIView):
             if category=="company":
                 c=request.user.company
                 result={**result,"name":c.name,"phone":c.phone,"email":c.email,"gstNo":c.gstin,"address":c.address,"currency":c.currency,"logo":c.logo}
-            return response.Response(result)
+            return response.Response(_manual_only_messaging_settings(category, result))
         result={k:(v.copy() if isinstance(v,dict) else v) for k,v in DEFAULTS.items()}
         for obj in qs: result[obj.category]={**result.get(obj.category,{}),**obj.data}
         c=request.user.company
         result["company"]={**result["company"],"name":c.name,"phone":c.phone,"email":c.email,"gstNo":c.gstin,"address":c.address,"currency":c.currency,"logo":c.logo}
+        for category in ("notifications", "integrations"):
+            result[category] = _manual_only_messaging_settings(category, result.get(category, {}))
         return response.Response(result)
     def put(self,request,category=None):
         if not category:
@@ -458,6 +469,14 @@ class SettingsView(APIView):
         payload = request.data
         if not isinstance(payload, dict):
             return response.Response({"message": "A settings object is required."}, status=400)
+        if category == "notifications" and payload.get("whatsapp") is True:
+            return response.Response({
+                "message": "Automatic WhatsApp notifications are unavailable. Use Manual WhatsApp Sharing."
+            }, status=400)
+        if category == "integrations" and payload.get("whatsappEnabled") is True:
+            return response.Response({
+                "message": "Automatic WhatsApp integration is unavailable. Use Manual WhatsApp Sharing."
+            }, status=400)
         if category == "notifications":
             allowed = set(DEFAULTS["notifications"])
             unknown = set(payload) - allowed
