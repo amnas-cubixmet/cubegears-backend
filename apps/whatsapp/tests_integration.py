@@ -6,6 +6,7 @@ from apps.accounts.models import User
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.roles.models import Role
+from apps.saas.models import CompanySetting
 from apps.whatsapp.models import (
     WhatsAppBusinessConnection, WhatsAppMessageTemplate,
     WhatsAppNotificationLog, CustomerNotificationPreference,
@@ -44,6 +45,47 @@ class WhatsAppManualOnlyTests(TestCase):
             self.assertEqual(self.client.post("/api/v1/whatsapp/" + endpoint,
                 {}, format="json").status_code, 404)
         self.assertIn(self.public.get("/api/v1/whatsapp/settings").status_code, (401, 403))
+
+    def test_manual_sharing_is_permanently_enabled_and_has_no_disable_option(self):
+        settings_url = "/api/v1/whatsapp/settings"
+        share_url = "/api/v1/whatsapp/manual-share"
+
+        initial = self.client.get(settings_url)
+        self.assertEqual(initial.status_code, 200, initial.data)
+        self.assertTrue(initial.data["manualEnabled"])
+        self.assertEqual(initial.data["manualStatus"], "enabled")
+        self.assertFalse(initial.data["sendEnabled"])
+        self.assertFalse(initial.data["notificationsEnabled"])
+        self.assertEqual(initial.data["messagingMode"], "manual")
+
+        for values in (
+            {"manualEnabled": False},
+            {"messagingMode": "automatic"},
+            {"notificationsEnabled": True},
+        ):
+            result = self.client.patch(settings_url, values, format="json")
+            self.assertEqual(result.status_code, 400, result.data)
+
+        same = self.client.patch(
+            settings_url, {"manualEnabled": True}, format="json"
+        )
+        self.assertEqual(same.status_code, 200, same.data)
+        self.assertTrue(same.data["manualEnabled"])
+
+        # Even old disabled settings cannot disable manual Click-to-Chat.
+        CompanySetting.objects.create(
+            company=self.company, category="whatsapp_manual",
+            data={"enabled": False},
+        )
+        latest = self.client.get(settings_url)
+        self.assertTrue(latest.data["manualEnabled"])
+        draft = self.client.post(share_url, {
+            "targetType": "customer",
+            "targetId": str(self.customer.pk),
+        }, format="json")
+        self.assertEqual(draft.status_code, 200, draft.data)
+        self.assertTrue(draft.data["url"].startswith("https://wa.me/"))
+        self.assertEqual(draft.data["status"], "manual_prepared")
 
     def test_old_cloud_configuration_cannot_trigger_automatic_delivery(self):
         WhatsAppBusinessConnection.objects.create(
