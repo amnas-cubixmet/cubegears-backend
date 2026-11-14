@@ -103,6 +103,25 @@ class JobBillingSummaryTests(TestCase):
         result = self.client.get(self.url)
         self.assertEqual(result.status_code, 403)
 
+    def test_invoices_role_can_only_see_authorized_branch_jobs(self):
+        second_branch = Branch.objects.create(
+            company=self.company, name="Second Branch", code="SECOND",
+        )
+        role = Role.objects.create(
+            company=self.company, name="Billing Staff", code="JOB_BILL_STAFF",
+            permissions=["jobs.view", "invoices.view"], is_active=True,
+        )
+        user = User.objects.create_user(
+            email="job-billing-staff@example.test", password="test-only",
+            name="Billing Staff", company=self.company, branch=second_branch, role=role,
+        )
+        self.client.force_authenticate(user)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+        user.branch = self.branch
+        user.save(update_fields=["branch"])
+        result = self.client.get(self.url)
+        self.assertEqual(result.status_code, 200, result.data)
+
     def test_company_scope_prevents_other_workshop_job_access(self):
         company = Company.objects.create(name="Other Garage", slug="other-job-billing-garage")
         branch = Branch.objects.create(company=company, name="Main", code="MAIN")
