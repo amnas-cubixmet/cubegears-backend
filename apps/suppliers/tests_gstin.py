@@ -1,5 +1,6 @@
 """GSTIN validation regression tests for supplier CRUD and GST purchases."""
 from types import SimpleNamespace
+from decimal import Decimal
 
 from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.exceptions import ValidationError
@@ -13,7 +14,7 @@ from apps.roles.models import Role
 from apps.suppliers.gstin import (
     normalized_supplier_gstin, supplier_gstin_error, supplier_gstin_state_code,
 )
-from apps.suppliers.purchase_gst import purchase_gst_context
+from apps.suppliers.purchase_gst import purchase_gst_context, purchase_line_components
 
 
 class SupplierGstinValidationTests(SimpleTestCase):
@@ -27,6 +28,22 @@ class SupplierGstinValidationTests(SimpleTestCase):
         self.assertEqual(supplier_gstin_state_code(""), "")
         result = purchase_gst_context(SimpleNamespace(gstin=""), "32")
         self.assertEqual(result["taxMode"], "unregistered")
+
+    def test_unregistered_purchase_requires_neither_buyer_state_nor_extra_tax_classification(self):
+        context = purchase_gst_context(SimpleNamespace(gstin=""), None)
+        self.assertEqual(context["taxMode"], "unregistered")
+        self.assertEqual(context["placeOfSupply"], "")
+        result = purchase_line_components(Decimal("100"), Decimal("0"), context, "")
+        self.assertEqual(result["tax"], Decimal("0"))
+        self.assertEqual(result["gstTreatment"], "unregistered")
+        with self.assertRaises(ValidationError):
+            purchase_line_components(Decimal("100"), Decimal("18"), context, "taxable")
+
+    def test_registered_supplier_uses_buyer_state_and_preserves_legacy_clients(self):
+        registered = SimpleNamespace(gstin="32ABCDE1234F1Z5")
+        self.assertEqual(purchase_gst_context(registered, None)["taxMode"], "legacy")
+        self.assertEqual(purchase_gst_context(registered, "32")["taxMode"], "cgst_sgst")
+        self.assertEqual(purchase_gst_context(registered, "29")["taxMode"], "igst")
 
     def test_incomplete_wrong_state_and_wrong_structure_are_rejected(self):
         cases = (
