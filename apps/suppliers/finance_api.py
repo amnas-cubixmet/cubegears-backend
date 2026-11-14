@@ -454,9 +454,16 @@ class SupplierPurchaseGSTOptions(APIView):
     permission_map = {"GET": "stock.view"}
 
     def get(self, request):
-        from apps.jobs.india_gst import STATE_NAMES
+        from apps.jobs.india_gst import STATE_NAMES, state_code
+
+        # Preselect workshop location as a convenience, but allow the user to
+        # change the actual legal place of supply for each supplier invoice.
+        branch_state = getattr(getattr(request.user, "branch", None), "state", "")
+        company_state = getattr(getattr(request.user, "company", None), "state", "")
+        suggested_state = state_code(branch_state) or state_code(company_state)
 
         return Response({
+            "suggestedBuyerStateCode": suggested_state,
             "states": [
                 {"code": code, "name": name.title()}
                 for name, code in sorted(STATE_NAMES.items())
