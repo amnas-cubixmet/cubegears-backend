@@ -297,6 +297,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         name = serializer.validated_data.get("name") or code
         role_name = serializer.validated_data.get("role_name") or ""
         role_id = serializer.validated_data.pop("roleId", None)
+        permitted_branch_ids = serializer.validated_data.pop("allowedBranchIds", None)
         login_enabled = serializer.validated_data.pop("loginAccessEnabled", False)
         requested_role = self._resolve_role(role_name, role_id) if role_name or role_id else None
         branch = serializer.validated_data.get("branch", self.request.user.branch)
@@ -325,6 +326,8 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                 is_staff=False, is_superuser=False, email_verified=False,
             )
 
+        if user is not None and permitted_branch_ids is not None:
+            user.allowed_branches.set(permitted_branch_ids)
         obj = serializer.save(
             company=company, branch=branch, employee_code=code, email=email,
             payment_type="daily", user=user,
@@ -357,6 +360,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         if instance.user and instance.user.role and instance.user.role.is_system:
             raise PermissionDenied("Protected company owner accounts cannot be edited here.")
         selected_id = serializer.validated_data.pop("roleId", None)
+        permitted_branch_ids = serializer.validated_data.pop("allowedBranchIds", None)
         requested_name=serializer.validated_data.get("role_name")
         requested_email=serializer.validated_data.get("email")
         requested_phone=serializer.validated_data.get("phone")
@@ -471,6 +475,12 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
                     fields.append("role")
             if fields:
                 obj.user.save(update_fields=[*fields,"updated_at"])
+            if permitted_branch_ids is not None:
+                obj.user.allowed_branches.set(permitted_branch_ids)
+            elif "branch" in serializer.validated_data:
+                # The primary branch changed. Prune any old extra branch
+                # memberships to avoid silently expanding staff access.
+                obj.user.allowed_branches.clear()
 
         after={
             "role":obj.role_name,
