@@ -1,5 +1,5 @@
 from decimal import Decimal
-from django.db import models
+from django.db import models, transaction
 from common.models import CompanyOwnedModel
 
 class StockCategory(CompanyOwnedModel):
@@ -10,14 +10,46 @@ class StockCategory(CompanyOwnedModel):
     class Meta: ordering=["name"]
     def __str__(self): return self.name
 
+class SupplierCodeSequence(models.Model):
+    """Company-owned, monotonic supplier reference counter (not a public UUID)."""
+    company = models.OneToOneField(
+        "companies.Company", on_delete=models.CASCADE, related_name="supplier_code_sequence",
+    )
+    next_number = models.PositiveIntegerField(default=1)
+
+
 class Supplier(CompanyOwnedModel):
     name=models.CharField(max_length=180)
+    code=models.CharField(max_length=20,blank=True,default="")
     contact_person=models.CharField(max_length=120,blank=True)
     phone=models.CharField(max_length=30,blank=True)
     email=models.EmailField(blank=True)
     gstin=models.CharField(max_length=20,blank=True)
     address=models.TextField(blank=True)
     is_active=models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "code"], name="supplier_code_unique_within_company",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.code and self.company_id:
+            from apps.companies.models import Company
+            with transaction.atomic():
+                # Serializes reference allocation across concurrent staff requests.
+                Company.objects.select_for_update().get(pk=self.company_id)
+                sequence, _ = SupplierCodeSequence.objects.get_or_create(
+                    company_id=self.company_id,
+                )
+                self.code = f"SUP-{sequence.next_number:05d}"
+                sequence.next_number += 1
+                sequence.save(update_fields=["next_number"])
+                return super().save(*args, **kwargs)
+        return super().save(*args, **kwargs)
+
     def __str__(self): return self.name
 
 class StockItem(CompanyOwnedModel):
