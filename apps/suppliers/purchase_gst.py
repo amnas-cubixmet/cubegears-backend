@@ -15,17 +15,24 @@ TREATMENTS = frozenset({"taxable", "exempt", "nil_rated", "zero_rated", "non_gst
 
 
 def purchase_gst_context(supplier, place_of_supply):
-    if not place_of_supply:
-        return {"taxMode": "legacy", "placeOfSupply": "", "supplierStateCode": ""}
-    pos = state_code(str(place_of_supply))
-    if not pos:
-        raise ValidationError({"placeOfSupply": "Select a valid Indian place-of-supply state."})
+    """Unregistered suppliers can sell without GST or Place of Supply.
+
+    Keep the legacy no-POS behavior for older registered-client requests, but
+    never apply that legacy tax path to unregistered suppliers or bad GSTINs.
+    The current UI always supplies buyer state when the supplier is registered.
+    """
     gstin = normalized_supplier_gstin(supplier.gstin)
+    if gstin:
+        problem = supplier_gstin_error(gstin)
+        if problem:
+            raise ValidationError({"supplierId": problem + " Edit Supplier Details before posting a GST purchase."})
+    pos = state_code(str(place_of_supply)) if place_of_supply else ""
+    if place_of_supply and not pos:
+        raise ValidationError({"placeOfSupply": "Select a valid Indian place-of-supply state."})
     if not gstin:
         return {"taxMode": "unregistered", "placeOfSupply": pos, "supplierStateCode": ""}
-    problem = supplier_gstin_error(gstin)
-    if problem:
-        raise ValidationError({"supplierId": problem + " Edit Supplier Details before posting a GST purchase."})
+    if not pos:
+        return {"taxMode": "legacy", "placeOfSupply": "", "supplierStateCode": ""}
     return {
         "taxMode": "cgst_sgst" if gstin[:2] == pos else "igst",
         "placeOfSupply": pos,
