@@ -35,6 +35,11 @@ class UserSerializer(serializers.ModelSerializer):
     paidAccessRequired = serializers.SerializerMethodField()
     onboardingRequired = serializers.SerializerMethodField()
     effectivePermissions = serializers.SerializerMethodField()
+    allowedBranchIds = serializers.SerializerMethodField()
+
+    def get_allowedBranchIds(self, obj):
+        from apps.accounts.branch_access import authorized_branch_ids
+        return [str(pk) for pk in sorted(authorized_branch_ids(obj), key=str)]
 
     def get_isCompanyOwner(self, obj):
         from .permissions import is_company_owner
@@ -83,7 +88,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "name", "email", "phone", "normalized_phone", "avatar",
-            "company", "branch", "role",
+            "company", "branch", "role", "allowedBranchIds",
             "employeeProfileId", "employeeDisplayNo", "effectivePermissions", "isCompanyOwner", "paidAccessRequired", "onboardingRequired",
             "is_staff", "is_superuser", "email_verified",
             "created_at",
