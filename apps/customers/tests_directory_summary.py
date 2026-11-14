@@ -43,7 +43,8 @@ class CustomerDirectorySummaryTests(TestCase):
             permissions=["customers.view"], is_active=True,
         )
         self.staff = User.objects.create_user(
-            company=self.company, role=self.staff_role, email="summary-staff@example.test",
+            company=self.company, role=self.staff_role, branch=self.branch,
+            email="summary-staff@example.test",
             password="test-password", name="Contacts Only",
         )
         self.customer = Customer.objects.create(

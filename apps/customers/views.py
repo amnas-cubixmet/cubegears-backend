@@ -6,6 +6,9 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import Customer, CustomerActivity, CustomerReminder
 from .serializers import CustomerSerializer, CustomerActivitySerializer, CustomerReminderSerializer
 from apps.branches.models import Branch
+from apps.accounts.permissions import is_company_owner
+from apps.accounts.branch_access import authorized_branch_ids, default_authorized_branch
+from rest_framework.exceptions import ValidationError
 
 class CustomerViewSet(CompanyScopedModelViewSet):
     queryset = Customer.objects.select_related("branch").all()
@@ -27,6 +30,10 @@ class CustomerViewSet(CompanyScopedModelViewSet):
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Owners retain access to historical records with no branch. Only
+        # staff are restricted to their explicitly authorized branches.
+        if not is_company_owner(self.request.user):
+            qs = qs.filter(branch_id__in=authorized_branch_ids(self.request.user))
         q = self.request.query_params.get("search")
         if q:
             # Search registration/job numbers only for roles authorized to view
@@ -55,13 +62,10 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        # The base view assigns the user's default branch; honor a selected
-        # branch only after the base create() validates its tenant ownership.
         selected = serializer.validated_data.get("branch")
-        branch = selected if selected is not None else self.request.user.branch
-        if branch is not None and not branch.is_active:
-            from rest_framework.exceptions import ValidationError
-            raise ValidationError({"branch": "Select an active workshop branch."})
+        branch = selected if selected is not None else default_authorized_branch(self.request.user)
+        if branch is None or branch.pk not in authorized_branch_ids(self.request.user):
+            raise ValidationError({"branch": "No active authorized branch available for this customer."})
         serializer.save(company=self.request.user.company, branch=branch)
 
     @decorators.action(detail=False, methods=["get"], url_path="directory-summary")
@@ -136,19 +140,30 @@ class CustomerViewSet(CompanyScopedModelViewSet):
     @decorators.action(detail=False, methods=["get"], url_path="branch-options")
     def branch_options(self, request):
         branches = Branch.objects.filter(
-            company=request.user.company, is_active=True
+            company=request.user.company, is_active=True,
+            pk__in=authorized_branch_ids(request.user),
         ).order_by("name", "pk")
+        default_branch = default_authorized_branch(request.user)
+        sorted_branches = sorted(
+            branches,
+            key=lambda item: (
+                not (default_branch and item.pk == default_branch.pk),
+                item.name.casefold(), str(item.pk),
+            ),
+        )
         return response.Response([
-            {"id": str(item.pk), "name": item.name} for item in branches
+            {"id": str(item.pk), "name": item.name} for item in sorted_branches
         ])
 
     @decorators.action(detail=False, methods=["post"], url_path="check-duplicate")
     def check_duplicate(self, request):
         phone = str(request.data.get("phone") or "").strip()
         email = str(request.data.get("email") or "").strip()
-        # Duplicate detection must be based on ALL records in this tenant,
-        # not user-supplied list filters like status/search/branch.
+        # Never disclose contact details from branches this staff user cannot
+        # access. Duplicate checks are scoped to their effective membership.
         qs = Customer.objects.filter(company_id=request.user.company_id)
+        if not is_company_owner(request.user):
+            qs = qs.filter(branch_id__in=authorized_branch_ids(request.user))
         if phone or email:
             match_filter = Q(phone=phone) if phone else Q(pk__isnull=True)
             if email:

@@ -21,6 +21,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     phone = models.CharField(max_length=30, blank=True)
     company = models.ForeignKey("companies.Company", on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
     branch = models.ForeignKey("branches.Branch", on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
+    # Additional branches explicitly granted by the company owner; primary branch remains accessible.
+    allowed_branches = models.ManyToManyField("branches.Branch", blank=True, related_name="authorized_users")
     role = models.ForeignKey("roles.Role", on_delete=models.SET_NULL, null=True, blank=True, related_name="users")
     avatar = models.URLField(blank=True)
     is_active = models.BooleanField(default=True)

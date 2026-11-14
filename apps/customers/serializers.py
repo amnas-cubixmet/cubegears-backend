@@ -39,10 +39,14 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def validate_branch(self, branch):
         request = self.context.get("request")
-        if branch and (
+        from apps.accounts.branch_access import authorized_branch_ids
+        if branch is None:
+            raise serializers.ValidationError("Select an authorized active branch.")
+        if (
             branch.company_id != request.user.company_id or not branch.is_active
+            or branch.pk not in authorized_branch_ids(request.user)
         ):
-            raise serializers.ValidationError("Select an active branch in your company.")
+            raise serializers.ValidationError("You may assign customers only to an authorized active branch.")
         return branch
 
 class CustomerActivitySerializer(serializers.ModelSerializer):
