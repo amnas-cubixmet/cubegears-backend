@@ -94,3 +94,71 @@ class CustomerBranchIntegrationTests(TestCase):
         }, format="json")
         self.assertEqual(update.status_code, 400, update.data)
         self.assertEqual(Customer.objects.get(pk=valid.data["id"]).branch_id, self.branch.pk)
+
+    def test_staff_only_sees_and_uses_its_authorized_branches(self):
+        staff = User.objects.create_user(
+            company=self.company, role=self.owner.role, branch=self.branch,
+            email="limited-customer-staff@example.test", password="test-password",
+            name="Branch Staff",
+        )
+        south = Customer.objects.create(
+            company=self.company, branch=self.branch,
+            name="South Private Customer", phone="+919555555550",
+        )
+        north = Customer.objects.create(
+            company=self.company, branch=self.second,
+            name="North Private Customer", phone="+919555555551",
+        )
+        self.client.force_authenticate(user=staff)
+        choices = self.client.get("/api/v1/customers/branch-options")
+        self.assertEqual([row["id"] for row in choices.data], [str(self.branch.pk)])
+        listing = self.client.get("/api/v1/customers")
+        data = listing.data if isinstance(listing.data, list) else listing.data["results"]
+        self.assertEqual([row["name"] for row in data], ["South Private Customer"])
+        self.assertEqual(self.client.get(f"/api/v1/customers/{north.pk}").status_code, 404)
+        denied = self.client.post("/api/v1/customers", {
+            "name": "Unauthorized Customer", "phone": "+919555555552",
+            "branch": str(self.second.pk),
+        }, format="json")
+        self.assertEqual(denied.status_code, 400, denied.data)
+        self.assertFalse(Customer.objects.filter(name="Unauthorized Customer").exists())
+        created = self.client.post("/api/v1/customers", {
+            "name": "Auto Assigned Customer", "phone": "+919555555553",
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(Customer.objects.get(pk=created.data["id"]).branch_id, self.branch.pk)
+        self.assertEqual(self.client.patch(f"/api/v1/customers/{south.pk}", {
+            "branch": str(self.second.pk),
+        }, format="json").status_code, 400)
+        self.assertEqual(self.client.patch(f"/api/v1/customers/{south.pk}", {
+            "branch": None,
+        }, format="json").status_code, 400)
+
+        staff.allowed_branches.add(self.second)
+        options = self.client.get("/api/v1/customers/branch-options")
+        self.assertEqual({item["id"] for item in options.data}, {
+            str(self.branch.pk), str(self.second.pk),
+        })
+        self.assertEqual(options.data[0]["id"], str(self.branch.pk))
+        self.assertEqual(self.client.get(f"/api/v1/customers/{north.pk}").status_code, 200)
+        reassigned = self.client.patch(f"/api/v1/customers/{south.pk}", {
+            "branch": str(self.second.pk),
+        }, format="json")
+        self.assertEqual(reassigned.status_code, 200, reassigned.data)
+
+    def test_staff_cannot_read_duplicate_customer_contact_from_another_branch(self):
+        staff = User.objects.create_user(
+            company=self.company, role=self.owner.role, branch=self.branch,
+            email="privacy-staff@example.test", password="test-password", name="Privacy Staff",
+        )
+        Customer.objects.create(
+            company=self.company, branch=self.second,
+            name="Private North Contact", phone="+919555555558",
+        )
+        self.client.force_authenticate(user=staff)
+        result = self.client.post("/api/v1/customers/check-duplicate", {
+            "phone": "+919555555558",
+        }, format="json")
+        self.assertEqual(result.status_code, 200)
+        self.assertFalse(result.data["duplicate"])
+        self.assertIsNone(result.data["customer"])
