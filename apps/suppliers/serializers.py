@@ -1,6 +1,7 @@
 """Canonical supplier CRUD serializer; inventory imports this for legacy APIs."""
 from rest_framework import serializers
 from .models import Supplier
+from common.phone_numbers import normalize_contact_phone
 
 class SupplierSerializer(serializers.ModelSerializer):
     gstNo=serializers.CharField(source="gstin",required=False,allow_blank=True)
@@ -12,7 +13,13 @@ class SupplierSerializer(serializers.ModelSerializer):
         if not company_id:
             return attrs
         name = (attrs.get("name", getattr(self.instance, "name", "")) or "").strip()
-        phone = (attrs.get("phone", getattr(self.instance, "phone", "")) or "").strip()
+        phone = attrs.get("phone", getattr(self.instance, "phone", "")) or ""
+        # Do not reject untouched legacy records when updating another field.
+        # Explicit new or changed phone values must follow national lengths.
+        if "phone" in attrs:
+            phone = normalize_contact_phone(str(phone), required=False)
+        else:
+            phone = str(phone).strip()
         gstin = (attrs.get("gstin", getattr(self.instance, "gstin", "")) or "").strip().upper()
         if not name:
             raise serializers.ValidationError({"name": "Supplier Name is required."})
