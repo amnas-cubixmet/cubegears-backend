@@ -72,8 +72,6 @@ def auto_payment_account_for(request, data):
     a single active account or the explicitly selected Finance default.
     Never debit the first arbitrary Bank/UPI account.
     """
-    from apps.finance.channels import account_channel
-
     if data.get("accountId"):
         return account_for(request, data["accountId"], lock=True)
     channel = str(data.get("method") or "").strip()
