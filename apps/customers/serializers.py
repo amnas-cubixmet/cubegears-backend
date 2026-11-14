@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import Customer, CustomerActivity, CustomerReminder
 from apps.branches.models import Branch
+from common.phone_numbers import normalize_contact_phone
 
 class CustomerSerializer(serializers.ModelSerializer):
     branchName = serializers.CharField(source="branch.name", read_only=True)
@@ -22,10 +23,17 @@ class CustomerSerializer(serializers.ModelSerializer):
         return value
 
     def validate_phone(self, value):
-        value = value.strip()
-        if not value:
-            raise serializers.ValidationError("Customer contact number is required.")
-        return value
+        return normalize_contact_phone(value, required=True)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        # One phone contact: the same number is used for manual WhatsApp
+        # sharing. Old records remain untouched until the phone is updated.
+        if "phone" in attrs:
+            attrs["whatsapp"] = attrs["phone"]
+        elif not self.instance and "whatsapp" in attrs:
+            attrs["whatsapp"] = attrs.get("phone", "")
+        return attrs
 
     def validate_branch(self, branch):
         request = self.context.get("request")
