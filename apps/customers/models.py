@@ -17,6 +17,8 @@ class Customer(CompanyOwnedModel):
     state = models.CharField(max_length=100, blank=True)
     pincode = models.CharField(max_length=12, blank=True)
     notes = models.TextField(blank=True)
+    # Reference metadata only: actual uploads are handled by separate storage APIs.
+    documents = models.JSONField(default=list, blank=True)
     credit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="active")
     last_service_date = models.DateField(null=True, blank=True)

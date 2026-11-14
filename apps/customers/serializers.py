@@ -22,6 +22,27 @@ class CustomerSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Customer name is required.")
         return value
 
+    def validate_documents(self, value):
+        """Store only small reference metadata, never uploaded file data."""
+        if not isinstance(value, list) or len(value) > 100:
+            raise serializers.ValidationError("Provide up to 100 document references.")
+        allowed = ("id", "name", "type", "vehicleReg", "expiryDate",
+                   "status", "fileName", "uploadedDate")
+        clean = []
+        for document in value:
+            if not isinstance(document, dict):
+                raise serializers.ValidationError("Each document reference must be an object.")
+            if not str(document.get("name") or "").strip():
+                raise serializers.ValidationError("Document name is required.")
+            row = {}
+            for key in allowed:
+                data = str(document.get(key) or "").strip()
+                if len(data) > (180 if key in ("name", "fileName") else 100):
+                    raise serializers.ValidationError(f"Document {key} is too long.")
+                row[key] = data
+            clean.append(row)
+        return clean
+
     def validate_phone(self, value):
         return normalize_contact_phone(value, required=True)
 
