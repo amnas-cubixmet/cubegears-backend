@@ -15,6 +15,7 @@ from apps.inventory.models import (
 )
 from apps.payments.models import Payment
 from apps.expenses.models import Expense
+from apps.finance.channels import account_channel
 
 CENT = Decimal("0.01")
 
@@ -100,7 +101,7 @@ def accounts_summary(company_id):
             "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
-            "isActive": acc.is_active,
+            "isActive": acc.is_active, "isDefaultPayment": acc.is_default_payment,
         })
         # Preserve legacy account IDs; all digital money is shown under Bank
         # in the new two-channel Finance UI, and only physical notes are Cash.
@@ -323,7 +324,7 @@ class FinanceAccountCollection(FinanceBalanceRedactionMixin, APIView):
                 "openingBalance": str(acc.opening_balance),
                 "openingDate": acc.opening_date.isoformat() if acc.opening_date else None,
                 "currentBalance": str(bal), "isActive": acc.is_active,
-                "description": acc.description,
+                "isDefaultPayment": acc.is_default_payment, "description": acc.description,
             })
         return Response(result)
 
@@ -351,7 +352,8 @@ class FinanceAccountCollection(FinanceBalanceRedactionMixin, APIView):
             is_active=True, created_by=request.user,
         )
         return Response({"id": str(acc.pk), "name": acc.name, "kind": acc.kind,
-                         "currentBalance": str(acc.opening_balance), "isActive": True}, status=201)
+                         "currentBalance": str(acc.opening_balance), "isActive": True,
+                         "isDefaultPayment": False}, status=201)
 
 
 class FinanceAccountDetail(FinanceBalanceRedactionMixin, APIView):
@@ -389,7 +391,8 @@ class FinanceAccountDetail(FinanceBalanceRedactionMixin, APIView):
             "bankName": acc.bank_name, "accountNumber": mask_account_number(acc.account_number),
             "ifsc": acc.ifsc, "branchName": acc.branch_name,
             "openingBalance": str(acc.opening_balance), "currentBalance": str(bal),
-            "isActive": acc.is_active, "description": acc.description,
+            "isActive": acc.is_active, "isDefaultPayment": acc.is_default_payment,
+            "description": acc.description,
             "openingDate": acc.opening_date.isoformat() if acc.opening_date else None,
             "ledger": list(reversed(ledger)),
         })
@@ -428,8 +431,29 @@ class FinanceAccountDetail(FinanceBalanceRedactionMixin, APIView):
             if not isinstance(d["isActive"], bool):
                 raise ValidationError({"isActive": "Expected true or false."})
             acc.is_active = d["isActive"]
+            if not acc.is_active:
+                acc.is_default_payment = False
+
+        if "isDefaultPayment" in d:
+            preference = d["isDefaultPayment"]
+            if not isinstance(preference, bool):
+                raise ValidationError({"isDefaultPayment": "Expected true or false."})
+            if preference:
+                channel = account_channel(acc.kind)
+                if not acc.is_active or channel is None:
+                    raise ValidationError({"isDefaultPayment": "Only active Cash / Bank accounts may be default payment accounts."})
+                # A company can have one default physical Cash source and one
+                # default Bank/UPI source. Lock all candidates to serialize
+                # updates and avoid silently charging a different account.
+                account_kinds = ["Cash"] if channel == "Cash" else ["Bank", "UPI", "Wallet"]
+                others = WorkshopFinancialAccount.objects.select_for_update().filter(
+                    company=request.user.company, kind__in=account_kinds,
+                ).exclude(pk=acc.pk)
+                others.filter(is_default_payment=True).update(is_default_payment=False)
+            acc.is_default_payment = preference
         acc.save()
-        return Response({"id": str(acc.pk), "name": acc.name, "isActive": acc.is_active})
+        return Response({"id": str(acc.pk), "name": acc.name,
+                         "isActive": acc.is_active, "isDefaultPayment": acc.is_default_payment})
 
 
 class FinanceAdjustment(FinanceBalanceRedactionMixin, APIView):

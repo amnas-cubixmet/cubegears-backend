@@ -65,6 +65,32 @@ def account_for(request, pk, *, lock=False):
     return get_object_or_404(qs, pk=pk, company_id=request.user.company_id)
 
 
+def auto_payment_account_for(request, data):
+    """Resolve a selected payment channel to a company-scoped active ledger.
+
+    Explicit accountId remains supported for older clients. Without it, use
+    a single active account or the explicitly selected Finance default.
+    Never debit the first arbitrary Bank/UPI account.
+    """
+    if data.get("accountId"):
+        return account_for(request, data["accountId"], lock=True)
+    channel = str(data.get("method") or "").strip()
+    if channel not in {"Cash", "Bank"}:
+        raise ValidationError({"method": "Choose Cash in Hand or Bank / UPI."})
+    kinds = ["Cash"] if channel == "Cash" else ["Bank", "UPI", "Wallet"]
+    candidates = list(WorkshopFinancialAccount.objects.select_for_update().filter(
+        company_id=request.user.company_id, is_active=True, kind__in=kinds,
+    ).order_by("pk"))
+    selected = [account for account in candidates if account.is_default_payment]
+    if len(selected) == 1:
+        return selected[0]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValidationError({"method": f"No active {channel} account in Finance. Create an account first."})
+    raise ValidationError({"method": f"Multiple {channel} accounts in Finance. Set one as Default Payment Account in Finance > Accounts."})
+
+
 def account_balance(account):
     recorded = WorkshopAccountEntry.objects.filter(
         company_id=account.company_id, account=account,
@@ -232,7 +258,7 @@ def prepare_items(request, rows, receive_into_stock, tax_context=None):
 def record_supplier_payment(request, data):
     """Only canonical supplier payment ledger changes money; caller wraps atomically."""
     supplier = supplier_for(request, data.get("supplierId"))
-    account = account_for(request, data.get("accountId"), lock=True)
+    account = auto_payment_account_for(request, data)
     if not account.is_active:
         raise ValidationError({"accountId": "Select an active cash/bank account."})
     amount = money(data.get("amount"), "amount", positive=True)
@@ -493,6 +519,7 @@ class AccountCollection(APIView):
         accounts = WorkshopFinancialAccount.objects.filter(company_id=request.user.company_id).order_by("name")
         return Response([{
             "id": str(account.pk), "name": account.name, "kind": account.kind,
+            "isDefaultPayment": account.is_default_payment,
             "openingBalance": str(account.opening_balance),
             "recordedBalance": str(account_balance(account)),
             "isActive": account.is_active,
