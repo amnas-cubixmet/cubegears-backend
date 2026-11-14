@@ -138,8 +138,16 @@ class CustomerViewSet(CompanyScopedModelViewSet):
             company=request.user.company, is_active=True,
             pk__in=authorized_branch_ids(request.user),
         ).order_by("name", "pk")
+        default_branch = default_authorized_branch(request.user)
+        sorted_branches = sorted(
+            branches,
+            key=lambda item: (
+                not (default_branch and item.pk == default_branch.pk),
+                item.name.casefold(), str(item.pk),
+            ),
+        )
         return response.Response([
-            {"id": str(item.pk), "name": item.name} for item in branches
+            {"id": str(item.pk), "name": item.name} for item in sorted_branches
         ])
 
     @decorators.action(detail=False, methods=["post"], url_path="check-duplicate")
