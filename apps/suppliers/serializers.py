@@ -6,7 +6,10 @@ from .gstin import normalized_supplier_gstin, supplier_gstin_error
 
 class SupplierSerializer(serializers.ModelSerializer):
     gstNo=serializers.CharField(source="gstin",required=False,allow_blank=True)
-    class Meta: model=Supplier; exclude=("company","branch","gstin")
+    class Meta:
+        model = Supplier
+        exclude = ("company", "branch", "gstin")
+        read_only_fields = ("code",)
 
     def validate(self, attrs):
         request = self.context.get("request")
