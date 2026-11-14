@@ -160,6 +160,13 @@ class JobViewSet(CompanyScopedModelViewSet):
         from apps.invoices.models import Invoice
 
         job = self.get_object()
+        # Do not expose another branch's invoices to a staff member even if
+        # the caller knows its UUID. Owners can inspect historical branchless jobs.
+        from django.http import Http404
+        from apps.accounts.permissions import is_company_owner
+        from apps.accounts.branch_access import authorized_branch_ids
+        if not is_company_owner(request.user) and job.branch_id not in authorized_branch_ids(request.user):
+            raise Http404
         invoices = list(
             Invoice.objects.filter(company=job.company, kind="invoice")
             .filter(Q(job=job) | Q(source_job_id=str(job.pk)))
