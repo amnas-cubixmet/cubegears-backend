@@ -75,3 +75,31 @@ class VehicleInspectionPhoto(CompanyOwnedModel):
         indexes = [
             models.Index(fields=["company", "vehicle", "published"], name="vehicle_photo_visibility_idx"),
         ]
+
+
+class VehicleCatalogEntry(CompanyOwnedModel):
+    """Workshop-specific reusable make/model option, independent of a vehicle.
+
+    Blank model means that the workshop added a make without a model yet.
+    Case-folded keys prevent case-only duplicates within the same company.
+    """
+    make = models.CharField(max_length=80)
+    model = models.CharField(max_length=80, blank=True)
+    make_key = models.CharField(max_length=80, editable=False)
+    model_key = models.CharField(max_length=80, blank=True, editable=False)
+
+    class Meta:
+        ordering = ["make_key", "model_key"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "make_key", "model_key"],
+                name="unique_vehicle_catalog_entry_per_company",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        self.make = " ".join(self.make.split())
+        self.model = " ".join(self.model.split())
+        self.make_key = self.make.casefold()
+        self.model_key = self.model.casefold()
+        super().save(*args, **kwargs)
