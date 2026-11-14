@@ -72,6 +72,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "activity": "jobs.view",
         "issue_part": ["jobs.edit", "stock.edit"],
         "cost_summary": ["jobs.view", "payroll.view", "expenses.view", "stock.view"],
+        "billing_summary": ["jobs.view", "invoices.view"],
     }
     def get_queryset(self):
         qs=super().get_queryset(); st=self.request.query_params.get("status")
@@ -145,6 +146,56 @@ class JobViewSet(CompanyScopedModelViewSet):
             "unapprovedMechanicWork": pending_mechanic,
             "partsAtCurrentCost": used_current_cost,
             "note": "Total is recorded direct cost, excludes unallocated daily wages and workshop overhead.",
+        })
+
+    @decorators.action(detail=True, methods=["get"], url_path="billing-summary")
+    def billing_summary(self, request, pk=None):
+        """Canonical posted invoice totals for a Job Card (read-only).
+
+        Drafts and cancelled invoices never become income, payments or dues.
+        Payments already applied to Invoice.paid are not counted a second time.
+        This endpoint does not expose internal cost data to invoice-only staff.
+        """
+        from django.db.models import Q
+        from apps.invoices.models import Invoice
+
+        job = self.get_object()
+        invoices = list(
+            Invoice.objects.filter(company=job.company, kind="invoice")
+            .filter(Q(job=job) | Q(source_job_id=str(job.pk)))
+            .exclude(status__in=["Cancelled", "Canceled", "Void", "Voided"])
+            .order_by("-created_at", "-pk")
+            .distinct()
+        )
+        posted_statuses = {"Finalized", "Paid", "Issued", "Partially Paid", "Overdue"}
+        posted = [row for row in invoices
+                  if row.finalized_at is not None and row.status in posted_statuses]
+        zero = Decimal("0.00")
+        def amount(value):
+            return str(value.quantize(Decimal("0.01")))
+
+        total = sum((row.total for row in posted), zero)
+        taxable = sum((row.taxable for row in posted), zero)
+        received = sum((row.paid for row in posted), zero)
+        outstanding = sum((row.balance for row in posted), zero)
+        selected = posted[0] if posted else (invoices[0] if invoices else None)
+        return response.Response({
+            "jobId": str(job.pk),
+            "customerId": str(job.customer_id),
+            "vehicleId": str(job.vehicle_id),
+            "invoiceCount": len(invoices),
+            "postedInvoiceCount": len(posted),
+            "draftInvoiceCount": sum(1 for row in invoices if row.status == "Draft"),
+            "primaryInvoiceId": str(selected.pk) if selected else None,
+            "primaryInvoiceNumber": selected.number if selected else None,
+            "primaryInvoiceStatus": selected.status if selected else None,
+            "postedInvoiceIds": [str(row.pk) for row in posted],
+            "sellingBeforeGST": amount(taxable) if posted else None,
+            "invoiceTotal": amount(total) if posted else None,
+            "paid": amount(received) if posted else None,
+            "outstanding": amount(outstanding) if posted else None,
+            "source": "finalized_invoices" if posted else "not_invoiced",
+            "note": "Amounts come from posted invoices. Estimates, drafts and cancelled invoices are excluded.",
         })
 
     def _guard_active_timers(self,job,next_status):
