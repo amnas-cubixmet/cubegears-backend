@@ -127,6 +127,18 @@ class EmployeeSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    assignedBranchIds=serializers.SerializerMethodField()
+    allowedBranchIds=serializers.ListField(
+        child=serializers.UUIDField(), required=False, write_only=True,
+        min_length=1, max_length=3,
+    )
+
+    def get_assignedBranchIds(self, obj):
+        if obj.user_id:
+            from apps.accounts.branch_access import authorized_branch_ids
+            return [str(value) for value in sorted(authorized_branch_ids(obj.user), key=str)]
+        return [str(obj.branch_id)] if obj.branch_id else []
+
     team=TeamSerializer(read_only=True)
     teamId=serializers.PrimaryKeyRelatedField(source="team",queryset=Team.objects.all(),required=False,allow_null=True,write_only=True)
     teamName=serializers.CharField(source="team.name",read_only=True)
@@ -213,6 +225,25 @@ class EmployeeSerializer(serializers.ModelSerializer):
             if attrs.get('role_name') and attrs['role_name'].casefold() != selected.name.casefold():
                 raise serializers.ValidationError({'roleId': 'Role name and selected role do not match.'})
             attrs['role_name'] = selected.name
+        requested_branches = attrs.get("allowedBranchIds")
+        if requested_branches is not None:
+            from apps.accounts.permissions import user_has_permission
+            if not user_has_permission(request.user, "company.manage"):
+                raise serializers.ValidationError({
+                    "allowedBranchIds": "Only the workshop owner can assign additional staff branches.",
+                })
+            if len(set(requested_branches)) != len(requested_branches):
+                raise serializers.ValidationError({"allowedBranchIds": "Select each branch once."})
+            permitted = Branch.objects.filter(
+                pk__in=requested_branches, company=company, is_active=True,
+            )
+            if permitted.count() != len(requested_branches):
+                raise serializers.ValidationError({"allowedBranchIds": "Choose up to 3 active branches in this company."})
+            primary = attrs.get("branch", getattr(self.instance, "branch", None))
+            if primary is not None and primary.pk not in requested_branches:
+                raise serializers.ValidationError({"allowedBranchIds": "Include the staff primary branch."})
+            if not (attrs.get("loginAccessEnabled") or getattr(self.instance, "user_id", None)):
+                raise serializers.ValidationError({"allowedBranchIds": "Additional branch access requires an active staff login."})
         linked = attrs.get("user", getattr(self.instance, "user", None))
         if linked and (linked.company_id != company.id or linked.is_staff or linked.is_superuser):
             raise serializers.ValidationError({"user": "Select a workshop account in this company."})
