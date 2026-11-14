@@ -31,8 +31,10 @@ class CustomerSerializer(serializers.ModelSerializer):
         # sharing. Old records remain untouched until the phone is updated.
         if "phone" in attrs:
             attrs["whatsapp"] = attrs["phone"]
-        elif not self.instance and "whatsapp" in attrs:
-            attrs["whatsapp"] = attrs.get("phone", "")
+        elif "whatsapp" in attrs:
+            # Separate WhatsApp numbers are no longer accepted; keep the
+            # existing saved phone when this PATCH does not update phone.
+            attrs["whatsapp"] = getattr(self.instance, "phone", "")
         return attrs
 
     def validate_branch(self, branch):
