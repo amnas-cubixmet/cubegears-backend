@@ -147,6 +147,8 @@ class WorkshopFinancialAccount(CompanyOwnedModel):
     kind = models.CharField(max_length=16, choices=KIND_CHOICES)
     opening_balance = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0"))
     is_active = models.BooleanField(default=True)
+    # Explicit default payment source; separate from account balance and ledger entries.
+    is_default_payment = models.BooleanField(default=False)
     created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True)
     # Bank/account detail fields
     bank_name = models.CharField(max_length=120, blank=True, default="")
