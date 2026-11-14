@@ -6,6 +6,7 @@ from common.viewsets import CompanyScopedModelViewSet
 from .models import Customer, CustomerActivity, CustomerReminder
 from .serializers import CustomerSerializer, CustomerActivitySerializer, CustomerReminderSerializer
 from apps.branches.models import Branch
+from apps.accounts.permissions import is_company_owner
 from apps.accounts.branch_access import authorized_branch_ids, default_authorized_branch
 from rest_framework.exceptions import ValidationError
 
@@ -28,7 +29,11 @@ class CustomerViewSet(CompanyScopedModelViewSet):
     }
 
     def get_queryset(self):
-        qs = super().get_queryset().filter(branch_id__in=authorized_branch_ids(self.request.user))
+        qs = super().get_queryset()
+        # Owners retain access to historical records with no branch. Only
+        # staff are restricted to their explicitly authorized branches.
+        if not is_company_owner(self.request.user):
+            qs = qs.filter(branch_id__in=authorized_branch_ids(self.request.user))
         q = self.request.query_params.get("search")
         if q:
             # Search registration/job numbers only for roles authorized to view
@@ -156,10 +161,9 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         email = str(request.data.get("email") or "").strip()
         # Never disclose contact details from branches this staff user cannot
         # access. Duplicate checks are scoped to their effective membership.
-        qs = Customer.objects.filter(
-            company_id=request.user.company_id,
-            branch_id__in=authorized_branch_ids(request.user),
-        )
+        qs = Customer.objects.filter(company_id=request.user.company_id)
+        if not is_company_owner(request.user):
+            qs = qs.filter(branch_id__in=authorized_branch_ids(request.user))
         if phone or email:
             match_filter = Q(phone=phone) if phone else Q(pk__isnull=True)
             if email:
