@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.search.views import WorkspaceSearchView
 from apps.reports.views import DashboardView
 from apps.saas.views import SettingsView
+from apps.vehicles.catalog import VehicleCatalogView
 from common.readiness import ReadinessView
 
 class HealthView(APIView):
@@ -45,6 +46,7 @@ urlpatterns = [
     path("api/v1/roles/", include("apps.roles.urls")),
 
     re_path(r"^api/v1/customers/?", include("apps.customers.urls")),
+    path("api/v1/vehicle-catalog", VehicleCatalogView.as_view(), name="vehicle-catalog"),
     re_path(r"^api/v1/vehicles/?", include("apps.vehicles.urls")),
     re_path(r"^api/v1/services/?", include("apps.services.urls")),
     re_path(r"^api/v1/jobs/?", include("apps.jobs.urls")),
