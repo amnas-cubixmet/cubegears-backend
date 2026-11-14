@@ -6,6 +6,7 @@ from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.customers.models import Customer
+from apps.employees.models import Employee
 from apps.roles.models import Role
 
 
@@ -162,3 +163,39 @@ class CustomerBranchIntegrationTests(TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertFalse(result.data["duplicate"])
         self.assertIsNone(result.data["customer"])
+
+    def test_only_owner_can_grant_one_to_three_active_staff_branches(self):
+        staff = User.objects.create_user(
+            company=self.company, role=self.owner.role, branch=self.branch,
+            email="multi-branch-staff@example.test", password="test-password",
+            name="Limited Technician",
+        )
+        profile = Employee.objects.create(
+            company=self.company, branch=self.branch, user=staff,
+            name="Limited Technician", phone="+919555559999",
+            employee_code="EMP900", role_name="Customer Admin",
+        )
+        endpoint = f"/api/v1/employees/{profile.pk}"
+        selected = [str(self.branch.pk), str(self.second.pk)]
+        updated = self.client.patch(endpoint, {
+            "allowedBranchIds": selected,
+        }, format="json")
+        self.assertEqual(updated.status_code, 200, getattr(updated, "data", None))
+        staff.refresh_from_db()
+        self.assertEqual(set(staff.allowed_branches.values_list("pk", flat=True)), {
+            self.branch.pk, self.second.pk,
+        })
+        self.assertEqual(set(updated.data["assignedBranchIds"]), set(selected))
+        incorrect = self.client.patch(endpoint, {
+            "allowedBranchIds": [str(self.second.pk)],
+        }, format="json")
+        self.assertEqual(incorrect.status_code, 400)
+        foreign = self.client.patch(endpoint, {
+            "allowedBranchIds": [str(self.branch.pk), str(self.outside.pk)],
+        }, format="json")
+        self.assertEqual(foreign.status_code, 400)
+        self.client.force_authenticate(user=staff)
+        forbidden = self.client.patch(endpoint, {
+            "allowedBranchIds": [str(self.branch.pk), str(self.second.pk)],
+        }, format="json")
+        self.assertIn(forbidden.status_code, (400, 403))
