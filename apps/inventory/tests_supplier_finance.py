@@ -195,9 +195,14 @@ class SupplierFinanceTests(TestCase):
         self.assertEqual(self.account_balance(), "20000.00")
 
     def test_bill_price_and_tax_derive_from_line_values_not_client_total(self):
+        # GST amounts require a registered supplier and verified buyer state.
+        # Do not weaken the unregistered-supplier 0% safeguard for a legacy test.
+        self.supplier.gstin = "32ABCDE1234F1Z5"
+        self.supplier.save(update_fields=["gstin"])
         r = self.client.post(f"{self.base}/bills", {
             "supplierId": str(self.supplier.pk), "invoiceNumber": "GST-01",
             "invoiceDate": "2026-11-05", "total": "0.00",
+            "placeOfSupply": "32",
             "items": [{"description": "Paint", "quantity": "5", "purchaseRate": "400", "gstRate": "5"}],
         }, format="json")
         self.assertEqual(r.status_code, 201, getattr(r, "data", None))
