@@ -16,6 +16,7 @@ from apps.inventory.models import (
 from apps.payments.models import Payment
 from apps.expenses.models import Expense
 from apps.finance.channels import account_channel
+from common.record_references import record_label, record_reference
 
 CENT = Decimal("0.01")
 
@@ -686,7 +687,7 @@ class FinanceLedger(FinanceBalanceRedactionMixin, APIView):
                 cell(entry.entry_type),
                 cell(str(entry.amount) if entry.amount > 0 else "0.00"),
                 cell(str(-entry.amount) if entry.amount < 0 else "0.00"),
-                cell(entry.reference),
+                cell(record_label(entry.reference) or record_reference(entry.pk)),
                 cell(entry.created_by.name if entry.created_by else ""),
             ])
         table = Table(rows, repeatRows=1, colWidths=[65, 110, 95, 64, 64, 230, 105])
@@ -716,14 +717,14 @@ class FinanceLedger(FinanceBalanceRedactionMixin, APIView):
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="transactions.csv"'
         writer = csv.writer(response)
-        writer.writerow(["Date", "Account", "Type", "Credit", "Debit", "Reference", "Source Key", "Created By"])
+        writer.writerow(["Date", "Account", "Type", "Credit", "Debit", "Reference", "Transaction Reference", "Created By"])
         for entry in qs.order_by("-posted_at")[:5000]:
             credit = str(entry.amount) if entry.amount > 0 else "0.00"
             debit = str(abs(entry.amount)) if entry.amount < 0 else "0.00"
             writer.writerow([
                 entry.posted_at.date().isoformat(), csv_safe(entry.account.name),
-                csv_safe(entry.entry_type), credit, debit, csv_safe(entry.reference),
-                csv_safe(entry.source_key), csv_safe(entry.created_by.name if entry.created_by else ""),
+                csv_safe(entry.entry_type), credit, debit, csv_safe(record_label(entry.reference)),
+                record_reference(entry.pk), csv_safe(entry.created_by.name if entry.created_by else ""),
             ])
         return response
 

@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, register_converter
 from django.views.generic.base import RedirectView
 from . import views
 from . import auth_views
@@ -6,6 +6,9 @@ from apps.credits import panel_views as credits_panel
 from apps.credits.cycle_panel import cycle_policy_control
 from apps.credits.calendar_panel import calendar_policy_control
 from apps.credits.pricing_views import module_pricing
+from common.record_references import RecordReferenceConverter
+
+register_converter(RecordReferenceConverter, "recordref")
 
 app_name = "panel"
 
@@ -24,20 +27,20 @@ urlpatterns = [
 
     path("companies/", views.companies, name="companies"),
     path("companies/add/", views.company_create, name="company-create"),
-    path("companies/<uuid:pk>/", views.company_detail, name="company-detail"),
-    path("companies/<uuid:pk>/saas-invoices/<str:source>/<int:invoice_id>/pdf/",
+    path("companies/<recordref:pk>/", views.company_detail, name="company-detail"),
+    path("companies/<recordref:pk>/saas-invoices/<str:source>/<int:invoice_id>/pdf/",
          views.company_saas_invoice_pdf, name="company-saas-invoice-pdf"),
-    path("companies/<uuid:pk>/edit/", views.company_edit, name="company-edit"),
-    path("companies/<uuid:pk>/delete/", views.company_delete, name="company-delete"),
-    path("companies/<uuid:pk>/toggle/", views.company_toggle, name="company-toggle"),
+    path("companies/<recordref:pk>/edit/", views.company_edit, name="company-edit"),
+    path("companies/<recordref:pk>/delete/", views.company_delete, name="company-delete"),
+    path("companies/<recordref:pk>/toggle/", views.company_toggle, name="company-toggle"),
 
     path("users/", views.users, name="users"),
     path("users/add/", views.user_create, name="user-create"),
-    path("users/<uuid:pk>/", views.user_detail, name="user-detail"),
-    path("users/<uuid:pk>/edit/", views.user_edit, name="user-edit"),
-    path("users/<uuid:pk>/delete/", views.user_delete, name="user-delete"),
-    path("users/<uuid:pk>/toggle/", views.user_toggle, name="user-toggle"),
-    path("users/<uuid:pk>/invite/", views.user_invite, name="user-invite"),
+    path("users/<recordref:pk>/", views.user_detail, name="user-detail"),
+    path("users/<recordref:pk>/edit/", views.user_edit, name="user-edit"),
+    path("users/<recordref:pk>/delete/", views.user_delete, name="user-delete"),
+    path("users/<recordref:pk>/toggle/", views.user_toggle, name="user-toggle"),
+    path("users/<recordref:pk>/invite/", views.user_invite, name="user-invite"),
 
     path("plans/", views.plan_catalog, name="plans"),
     path("plans/add/", views.plan_create, name="plan-create"),
@@ -58,10 +61,10 @@ urlpatterns = [
 
     path("staff/", views.staff, name="staff"),
     path("staff/add/", views.staff_create, name="staff-create"),
-    path("staff/<uuid:pk>/", views.staff_detail, name="staff-detail"),
-    path("staff/<uuid:pk>/edit/", views.staff_edit, name="staff-edit"),
-    path("staff/<uuid:pk>/invite/", views.staff_invite, name="staff-invite"),
-    path("staff/<uuid:pk>/delete/", views.staff_delete, name="staff-delete"),
+    path("staff/<recordref:pk>/", views.staff_detail, name="staff-detail"),
+    path("staff/<recordref:pk>/edit/", views.staff_edit, name="staff-edit"),
+    path("staff/<recordref:pk>/invite/", views.staff_invite, name="staff-invite"),
+    path("staff/<recordref:pk>/delete/", views.staff_delete, name="staff-delete"),
 ]
 
 # Dedicated SaaS team role editor: scope is server-selected, never POST-selected.
@@ -76,5 +79,5 @@ for resource, (_, _, singular, _) in views.PANEL_RESOURCES.items():
     urlpatterns.append(path(f'{resource}/add/', views.resource_action,
                             {'resource': resource, 'action': 'create'}, name=f'{singular}-create'))
     for action, suffix in [('detail', ''), ('edit', 'edit/'), ('delete', 'delete/')]:
-        urlpatterns.append(path(f'{resource}/<uuid:pk>/{suffix}', views.resource_action,
+        urlpatterns.append(path(f'{resource}/<recordref:pk>/{suffix}', views.resource_action,
                                 {'resource': resource, 'action': action}, name=f'{singular}-{action}'))

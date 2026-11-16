@@ -148,15 +148,10 @@ def credits_control(request):
     # Preserve failed package submissions, including edits, without losing field values.
     package_draft = request.POST if request.method == "POST" and request.POST.get("action") == "package" else {}
     can_manage_packages = panel_permission(request.user, "credits", "edit")
-    company_id = request.GET.get("company", "").strip()
+    company_id = getattr(request, "panel_company_id", None)
     records = CreditLedger.objects.select_related("company", "actor").order_by("-created_at")
     if company_id:
-        try:
-            uuid.UUID(company_id)
-        except ValueError:
-            company_id = ""
-        else:
-            records = records.filter(company_id=company_id)
+        records = records.filter(company_id=company_id)
     wallets = CreditWallet.objects.select_related("company").order_by("company__name")
     show_archived = request.GET.get("show_archived") == "1"
     packages = CreditPackage.objects.filter(is_archived=show_archived).annotate(
