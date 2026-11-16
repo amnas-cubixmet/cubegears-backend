@@ -9,6 +9,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.exceptions import NotFound
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import decorators,response,status
 from rest_framework.exceptions import ValidationError
@@ -24,6 +25,8 @@ from .complaint_status import sync_complaint_status, manual_complaint_status, un
 from .india_gst import gst_context, calculate_tax, gst_rate
 from apps.invoices.gst_rate_options import find_gst_choice
 from apps.notifications.job_events import notify_job_event
+
+POSTED_JOB_INVOICE_STATUSES = ("Finalized", "Paid", "Issued", "Partially Paid", "Overdue")
 
 def _same_quick_create_phone(stored, supplied):
     """Allow verified +91 normalization of legacy 10-digit Indian contacts only."""
@@ -156,7 +159,6 @@ class JobViewSet(CompanyScopedModelViewSet):
         Payments already applied to Invoice.paid are not counted a second time.
         This endpoint does not expose internal cost data to invoice-only staff.
         """
-        from django.db.models import Q
         from apps.invoices.job_draft import job_selling_before_gst, suggested_job_invoice
         from apps.invoices.models import Invoice
 
@@ -169,15 +171,14 @@ class JobViewSet(CompanyScopedModelViewSet):
         if not is_company_owner(request.user) and job.branch_id not in authorized_branch_ids(request.user):
             raise Http404
         invoices = list(
-            Invoice.objects.filter(company=job.company, kind="invoice")
-            .filter(Q(job=job) | Q(source_job_id=str(job.pk)))
+            Invoice.objects.filter(company=job.company, customer_id=job.customer_id, kind="invoice")
+            .filter(Q(job=job) | Q(job__isnull=True, source_job_id=str(job.pk)))
             .exclude(status__in=["Cancelled", "Canceled", "Void", "Voided"])
             .order_by("-created_at", "-pk")
             .distinct()
         )
-        posted_statuses = {"Finalized", "Paid", "Issued", "Partially Paid", "Overdue"}
         posted = [row for row in invoices
-                  if row.finalized_at is not None and row.status in posted_statuses]
+                  if row.finalized_at is not None and row.status in POSTED_JOB_INVOICE_STATUSES]
         zero = Decimal("0.00")
         def amount(value):
             return str(value.quantize(Decimal("0.01")))
@@ -829,9 +830,9 @@ class JobViewSet(CompanyScopedModelViewSet):
         elif stage == "invoice":
             from apps.invoices.models import Invoice
             if not Invoice.objects.filter(
-                company=job.company, job=job, kind="invoice",
-                status__in=["Finalized","Paid"],
-            ).exists():
+                company=job.company, customer_id=job.customer_id, kind="invoice",
+                status__in=POSTED_JOB_INVOICE_STATUSES, finalized_at__isnull=False,
+            ).filter(Q(job=job) | Q(job__isnull=True, source_job_id=str(job.pk))).exists():
                 raise ValidationError({"stage":"Finalize a linked invoice before completing delivery."})
             # Save handover metadata with the stage transition in one transaction.
             handover = request.data.get("delivery")
