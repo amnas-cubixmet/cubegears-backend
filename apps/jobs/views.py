@@ -326,6 +326,10 @@ class JobViewSet(CompanyScopedModelViewSet):
             qc_data = serializer.validated_data["qc"]
             if not isinstance(qc_data, dict):
                 raise ValidationError({"qc": "Quality Check must be an object."})
+            if "qc" in (job.workflow_progress or {}).get("skipped", []):
+                raise ValidationError({"qc": "Skipped QC records are read-only."})
+            if qc_data.get("status") == "Skipped":
+                raise ValidationError({"qc": "Use Skip QC to record a skip."})
             inspector_name = str(getattr(self.request.user, "name", "") or "").strip()
             if not inspector_name:
                 raise ValidationError({"qc": "Your login account needs a name to save QC."})
@@ -745,6 +749,7 @@ class JobViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"stage": "This Job Card stage is already completed."})
         if stage != state["current"]:
             raise ValidationError({"stage": f"Complete {state['current']} before {stage}."})
+        skip_qc = stage == "qc" and request.data.get("skipQC") is True
 
         if stage == "overview":
             if not job.customer_id or not job.vehicle_id:
@@ -805,11 +810,21 @@ class JobViewSet(CompanyScopedModelViewSet):
             self._guard_active_timers(job, "QC")
         elif stage == "qc":
             qc = job.qc or {}
-            if qc.get("status") != "Pass":
-                raise ValidationError({"stage":"Quality Check must pass before billing."})
             checklist = qc.get("checklist") or []
-            if not checklist or any(item.get("status") != "Pass" for item in checklist):
-                raise ValidationError({"stage":"Every Quality Check item must be marked Pass."})
+            if skip_qc:
+                reason = request.data.get("reason")
+                if not isinstance(reason, str) or not 3 <= len(reason.strip()) <= 160:
+                    raise ValidationError({"reason": "Enter a skip reason between 3 and 160 characters."})
+                if qc.get("status") in {"Fail", "Failed", "Rework Required"} or any(
+                    isinstance(item, dict) and item.get("status") == "Fail" for item in checklist
+                ):
+                    raise ValidationError({"qc": "Resolve failed checks before proceeding to billing."})
+                skip_reason = reason.strip()
+            else:
+                if qc.get("status") != "Pass":
+                    raise ValidationError({"stage":"Quality Check must pass before billing."})
+                if not checklist or any(not isinstance(item, dict) or item.get("status") != "Pass" for item in checklist):
+                    raise ValidationError({"stage":"Every Quality Check item must be marked Pass."})
             self._guard_active_timers(job, "Ready for Delivery")
         elif stage == "invoice":
             from apps.invoices.models import Invoice
@@ -868,16 +883,32 @@ class JobViewSet(CompanyScopedModelViewSet):
         if stage == "invoice":
             job.delivered_at = timezone.now()
         fields = ["workflow_progress", "status", "delivered_at", "updated_at"]
+        if skip_qc:
+            skipped_at = progress["lastCompletedAt"]
+            skipped = set(progress.get("skipped") or []) | {"qc"}
+            progress["skipped"] = [name for name in STAGES if name in skipped]
+            progress["skipDetails"] = {**(progress.get("skipDetails") or {}), "qc": {
+                "reason": skip_reason, "skippedAt": skipped_at, "skippedById": str(request.user.pk),
+            }}
+            progress["lastSkippedAt"] = skipped_at
+            job.qc = {**qc, "status": "Skipped", "skipReason": skip_reason}
+            fields.append("qc")
         if stage == "estimate":
             fields.append("estimate_total")
         if sync_complaint_status(job):
             fields.append("complaints")
         job.save(update_fields=fields)
+        metadata = {"stage": stage}
+        if stage == "estimate":
+            metadata["estimateApproval"] = estimate_approval
+        if skip_qc:
+            metadata.update(progress["skipDetails"]["qc"])
         activity = JobActivity.objects.create(
             company=job.company,branch=job.branch,job=job,actor=request.user,
-            event="Workflow Stage Completed",description=f"{stage} completed",
+            event="Quality Check Skipped" if skip_qc else "Workflow Stage Completed",
+            description=skip_reason if skip_qc else f"{stage} completed",
             from_status=old_status,to_status=job.status,
-            metadata={"stage": stage, **({"estimateApproval": estimate_approval} if stage == "estimate" else {})},
+            metadata=metadata,
         )
         if old_status != job.status:
             notify_job_event(job,
