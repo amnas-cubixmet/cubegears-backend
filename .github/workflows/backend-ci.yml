@@ -141,9 +141,10 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
-      - name: PostgreSQL finance, supplier and payments regressions
+      - name: PostgreSQL finance, supplier, payments and staff invite regressions
         run: |
           python manage.py test apps.finance.tests apps.finance.tests_part14 apps.expenses.tests_budgets apps.inventory.tests_supplier_finance apps.inventory.tests_part12_stock_ledger apps.inventory.tests_part13_supplier_returns apps.payments.tests_reversal apps.payments.tests_customer_credits apps.companies.tests_onboarding apps.invoices.tests_part10_integrity apps.invoices.tests_part10_document_integrity apps.gstr.tests apps.gstr.tests_part15 --noinput
+          python manage.py test apps.accounts.tests_mobile_staff_onboarding.MobileStaffOnboardingTests.test_manual_whatsapp_reset_stays_manual_even_when_cloud_api_is_enabled apps.accounts.tests_mobile_staff_onboarding.MobileStaffOnboardingTests.test_configured_whatsapp_stays_manual_and_never_queues_on_create_or_resend --noinput
 
 
 
