@@ -9,8 +9,9 @@ from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.customers.models import Customer
+from apps.inventory.models import StockItem
 from apps.invoices.models import Invoice
-from apps.jobs.models import Job
+from apps.jobs.models import Job, JobPart
 from apps.roles.models import Role
 from apps.vehicles.models import Vehicle
 
@@ -86,9 +87,35 @@ class JobBillingSummaryTests(TestCase):
         result = self.client.get(self.url)
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data["source"], "not_invoiced")
+        self.assertEqual(result.data["draftInvoiceTotal"], "1000.00")
+        self.assertEqual(result.data["draftSellingBeforeGST"], "1000.00")
         self.assertIsNone(result.data["invoiceTotal"])
         self.assertIsNone(result.data["paid"])
         self.assertIsNone(result.data["outstanding"])
+
+    def test_recorded_work_has_a_provisional_selling_total_without_posting_an_invoice(self):
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch, name="Part", sku="PART-001",
+            cost_price="100", selling_price="200",
+        )
+        JobPart.objects.create(
+            company=self.company, branch=self.branch, job=self.job,
+            item=part, issued=True, quantity=1, unit_price="200",
+        )
+        self.job.work = [
+            {"id": "work-a", "service": "Labour", "billable": True, "customerRate": "100"},
+            {"id": "work-b", "service": "Labour", "billable": True, "customerRate": "100"},
+            {"description": "Internal work", "billable": False, "customerRate": "500"},
+        ]
+        self.job.save(update_fields=["work"])
+
+        result = self.client.get(self.url)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data["workSellingBeforeGST"], "400.00")
+        self.assertIsNone(result.data["invoiceTotal"])
+        self.assertIsNone(result.data["paid"])
+        self.assertIsNone(result.data["outstanding"])
+        self.assertFalse(Invoice.objects.filter(job=self.job).exists())
 
     def test_jobs_view_without_invoice_permission_denied(self):
         role = Role.objects.create(
