@@ -16,7 +16,7 @@ from apps.inventory.models import (
 from apps.payments.models import Payment
 from apps.expenses.models import Expense
 from apps.finance.channels import account_channel
-from common.record_references import record_label, record_reference
+from common.record_references import record_label, record_reference, record_uuid
 
 CENT = Decimal("0.01")
 
@@ -615,7 +615,17 @@ class FinanceLedger(FinanceBalanceRedactionMixin, APIView):
             qs = qs.filter(posted_at__date__lte=date_to)
         search = request.query_params.get("q", "").strip()
         if search:
-            qs = qs.filter(Q(reference__icontains=search) | Q(source_key__icontains=search))
+            terms = search.rsplit(maxsplit=1)
+            try:
+                record_id = record_uuid(terms[-1])
+            except ValueError:
+                record_id = None
+            matches = Q(reference__icontains=search) | Q(source_key__icontains=search)
+            if record_id and len(terms) == 1:
+                matches |= Q(pk=record_id) | Q(reference__icontains=str(record_id)) | Q(source_key__icontains=str(record_id))
+            elif record_id:
+                matches |= Q(reference__icontains=f"{terms[0]} {record_id}")
+            qs = qs.filter(matches)
 
         # CSV export
         if request.query_params.get("export") == "csv":

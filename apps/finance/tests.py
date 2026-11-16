@@ -12,6 +12,7 @@ from apps.finance.views import account_balance
 from apps.inventory.models import WorkshopFinancialAccount, WorkshopAccountEntry
 from apps.payments.models import Payment
 from apps.roles.models import Role
+from common.record_references import record_label, record_reference
 
 
 @override_settings(
@@ -185,6 +186,24 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(pdf_response.status_code, 200, getattr(pdf_response, "data", None))
         self.assertEqual(pdf_response["Content-Type"], "application/pdf")
         self.assertTrue(pdf_response.content.startswith(b"%PDF"))
+
+    def test_ledger_search_accepts_display_references_and_keeps_account_filter(self):
+        entry = WorkshopAccountEntry.objects.create(
+            company=self.company, account=self.cash, amount=Decimal("12.00"),
+            entry_type="manual_adjustment", source_key="reference-search",
+            reference=f"Payment {self.expense.pk}", posted_at=timezone.now(),
+        )
+        url = "/api/v1/finance/ledger"
+        for query in (record_reference(entry.pk).upper(), record_label(entry.reference), entry.reference):
+            with self.subTest(query=query):
+                response = self.client.get(url, {"q": query, "account": self.cash.pk})
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertEqual([row["id"] for row in response.data["results"]], [str(entry.pk)])
+        response = self.client.get(url, {"q": record_reference(entry.pk), "account": self.bank.pk})
+        self.assertEqual(response.data["count"], 0)
+        exported = self.client.get(url, {"q": record_label(entry.reference), "export": "csv"})
+        self.assertIn(record_label(entry.reference).encode(), exported.content)
+        self.assertNotIn(str(self.expense.pk).encode(), exported.content)
 
     def test_customer_invoice_1500_receives_700_due_800_and_cash_increases_once(self):
         from apps.customers.models import Customer
