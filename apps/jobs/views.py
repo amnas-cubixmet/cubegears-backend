@@ -150,13 +150,14 @@ class JobViewSet(CompanyScopedModelViewSet):
 
     @decorators.action(detail=True, methods=["get"], url_path="billing-summary")
     def billing_summary(self, request, pk=None):
-        """Canonical posted invoice totals for a Job Card (read-only).
+        """Posted invoice totals and provisional Job Card selling (read-only).
 
         Drafts and cancelled invoices never become income, payments or dues.
         Payments already applied to Invoice.paid are not counted a second time.
         This endpoint does not expose internal cost data to invoice-only staff.
         """
         from django.db.models import Q
+        from apps.invoices.job_draft import job_selling_before_gst, suggested_job_invoice
         from apps.invoices.models import Invoice
 
         job = self.get_object()
@@ -186,6 +187,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         received = sum((row.paid for row in posted), zero)
         outstanding = sum((row.balance for row in posted), zero)
         selected = posted[0] if posted else (invoices[0] if invoices else None)
+        draft = selected if selected and selected.status == "Draft" else None
+        work_selling = job_selling_before_gst(suggested_job_invoice(job)["items"]) if not selected else None
         return response.Response({
             "jobId": str(job.pk),
             "customerId": str(job.customer_id),
@@ -199,6 +202,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             "postedInvoiceIds": [str(row.pk) for row in posted],
             "sellingBeforeGST": amount(taxable) if posted else None,
             "invoiceTotal": amount(total) if posted else None,
+            "draftSellingBeforeGST": amount(draft.taxable) if draft else None,
+            "draftInvoiceTotal": amount(draft.total) if draft else None,
+            "workSellingBeforeGST": amount(work_selling) if work_selling is not None else None,
             "paid": amount(received) if posted else None,
             "outstanding": amount(outstanding) if posted else None,
             "source": "finalized_invoices" if posted else "not_invoiced",

@@ -20,6 +20,17 @@ def amount(value):
     return result if result.is_finite() and result >= 0 else None
 
 
+def job_selling_before_gst(items):
+    """Total the suggested billable lines using invoice line rounding."""
+    if not items:
+        return None
+    return sum(
+        ((Decimal(item["qty"]) * Decimal(item["rate"])).quantize(CENT, rounding=ROUND_HALF_UP)
+         for item in items),
+        Decimal("0.00"),
+    )
+
+
 def suggested_job_invoice(job):
     registered = bool(str(job.company.gstin or "").strip())
     items, notices = [], []
