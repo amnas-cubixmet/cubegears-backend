@@ -111,7 +111,7 @@
       <select id="storage-live-company" name="company">
         <option value="">All companies</option>
         {% for c in companies %}
-          <option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+          <option value="{{ c.id|record_reference }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
         {% endfor %}
       </select>
       <button class="btn btn-primary" type="submit">Apply filter</button>
@@ -146,11 +146,11 @@
     {% if live_storage_page.has_other_pages %}
       <nav class="cg-storage-ref-pagination" aria-label="Live company storage pages">
         {% if live_storage_page.has_previous %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}live_page={{ live_storage_page.previous_page_number }}#storage-live-title">Previous</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}live_page={{ live_storage_page.previous_page_number }}#storage-live-title">Previous</a>
         {% endif %}
         <span>Page {{ live_storage_page.number }} of {{ live_storage_page.paginator.num_pages }}</span>
         {% if live_storage_page.has_next %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}live_page={{ live_storage_page.next_page_number }}#storage-live-title">Next</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}live_page={{ live_storage_page.next_page_number }}#storage-live-title">Next</a>
         {% endif %}
       </nav>
     {% endif %}
@@ -170,7 +170,7 @@
       <label class="sr-only" for="storage-company">Company</label>
       <select id="storage-company" name="company">
         <option value="">All companies</option>
-        {% for c in companies %}<option value="{{ c.id }}" {% if company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        {% for c in companies %}<option value="{{ c.id|record_reference }}" {% if company_id == c.id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
       </select>
       <button class="btn btn-primary" type="submit">Apply filter</button>
       {% if company_id %}<a class="btn" href="{% url 'panel:storage' %}#storage-directory-title">Clear</a>{% endif %}
@@ -196,11 +196,11 @@
     {% if rows.has_other_pages %}
       <nav class="cg-storage-ref-pagination" aria-label="Storage history pages">
         {% if rows.has_previous %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}page={{ rows.previous_page_number }}#storage-directory-title">Previous</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}page={{ rows.previous_page_number }}#storage-directory-title">Previous</a>
         {% endif %}
         <span>Page {{ rows.number }} of {{ rows.paginator.num_pages }}</span>
         {% if rows.has_next %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}page={{ rows.next_page_number }}#storage-directory-title">Next</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}page={{ rows.next_page_number }}#storage-directory-title">Next</a>
         {% endif %}
       </nav>
     {% endif %}
@@ -239,11 +239,11 @@
     {% if event_rows.has_other_pages %}
       <nav class="cg-storage-ref-pagination" aria-label="Storage activity pages">
         {% if event_rows.has_previous %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}event_page={{ event_rows.previous_page_number }}#storage-events-title">Previous</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}event_page={{ event_rows.previous_page_number }}#storage-events-title">Previous</a>
         {% endif %}
         <span>Page {{ event_rows.number }} of {{ event_rows.paginator.num_pages }}</span>
         {% if event_rows.has_next %}
-          <a class="btn" href="?{% if company_id %}company={{ company_id }}&amp;{% endif %}event_page={{ event_rows.next_page_number }}#storage-events-title">Next</a>
+          <a class="btn" href="?{% if company_id %}company={{ company_id|record_reference }}&amp;{% endif %}event_page={{ event_rows.next_page_number }}#storage-events-title">Next</a>
         {% endif %}
       </nav>
     {% endif %}

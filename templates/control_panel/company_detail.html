@@ -193,7 +193,7 @@
       </div>
       {% panel_can 'panel:storage' as can_view_storage %}
       {% if can_view_storage %}
-        <a class="cg-company-view-all" href="{% url 'panel:storage' %}?company={{ object.pk }}">
+        <a class="cg-company-view-all" href="{% url 'panel:storage' %}?company={{ object.pk|record_reference }}">
           View storage
           <span aria-hidden="true">↗</span>
         </a>

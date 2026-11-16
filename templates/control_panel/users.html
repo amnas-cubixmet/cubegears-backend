@@ -29,7 +29,7 @@
         </label>
         <label><span class="sr-only">Company filter</span><select name="company" aria-label="Company filter">
           <option value="">All companies</option>
-          {% for company in companies %}<option value="{{ company.pk }}" {% if company_id == company.pk|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+          {% for company in companies %}<option value="{{ company.pk|record_reference }}" {% if company_id == company.pk %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
         </select></label>
         <label><span class="sr-only">Status filter</span><select name="status" aria-label="Status filter">
           <option value="">All statuses</option>

@@ -7,7 +7,6 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from apps.accounts.email import queue_email
 from apps.accounts.account_links import password_action_url
-from uuid import UUID
 
 from django.conf import settings as django_settings
 from django.contrib import messages
@@ -40,6 +39,7 @@ from .permissions import route_allowed, landing_route
 from .auth_views import _limited
 from apps.accounts.permissions import can_delegate, panel_permission
 from apps.roles.models import Role
+from common.record_references import record_reference, record_uuid
 from .audit import record_panel_event
 from .forms import (
     CompanyForm, EmployeeForm, RoleForm,
@@ -52,15 +52,24 @@ from .forms import (
 def panel_admin_required(view_func):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect_to_login(request.get_full_path(), reverse("panel:login"))
-        if not route_allowed(request.user, request.resolver_match.url_name):
+        if request.user.is_authenticated and not route_allowed(request.user, request.resolver_match.url_name):
             return HttpResponseForbidden("Control Panel access is restricted to CubixGear administrators.")
-        if request.GET.get("company"):
+        query = request.GET.copy()
+        company = query.get("company", "").strip()
+        if company:
             try:
-                UUID(request.GET["company"].strip())
+                request.panel_company_id = record_uuid(company)
             except ValueError:
                 return HttpResponseBadRequest("Invalid company filter.")
+            query["company"] = record_reference(request.panel_company_id)
+        path = request.path
+        if kwargs.get("pk") is not None:
+            path = "/".join(record_reference(segment) for segment in path.split("/"))
+        target = path + ("?" + query.urlencode() if query else "")
+        if not request.user.is_authenticated:
+            return redirect_to_login(target, reverse("panel:login"))
+        if request.method in {"GET", "HEAD"} and (path != request.path or query != request.GET):
+            return redirect(target)
         return view_func(request, *args, **kwargs)
     return wrapped
 
@@ -112,7 +121,7 @@ def panel_logout(request):
 
 
 def _company_filter(request, queryset):
-    company_id = request.GET.get("company", "").strip()
+    company_id = getattr(request, "panel_company_id", None)
     if company_id:
         queryset = queryset.filter(company_id=company_id)
     return queryset, company_id

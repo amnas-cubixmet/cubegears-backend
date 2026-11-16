@@ -204,10 +204,10 @@
 
   <section class="panel-card credit-tab-panel" id="credit-panel-ledger" role="tabpanel" aria-labelledby="credit-tab-ledger" data-credit-panel="ledger" tabindex="0">
     <div class="credit-summary-title"><div><h3>Full credit activity ledger</h3><p>Company-scoped top-ups, debits, platform adjustments and automatic renewals.</p></div>
-      <form method="get" class="credit-panel-filter"><select name="company" aria-label="Filter company"><option value="">All companies</option>{% for company in companies %}<option value="{{ company.id }}" {% if filter_company == company.id|stringformat:"s" %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select><button type="submit" class="btn">Filter</button></form>
+      <form method="get" class="credit-panel-filter"><select name="company" aria-label="Filter company"><option value="">All companies</option>{% for company in companies %}<option value="{{ company.id|record_reference }}" {% if filter_company == company.id %}selected{% endif %}>{{ company.name }}</option>{% endfor %}</select><button type="submit" class="btn">Filter</button></form>
     </div>
     <div class="responsive-table"><table><thead><tr><th>Time</th><th>Company</th><th>Event</th><th>Credits</th><th>Balance after</th><th>Reference</th></tr></thead><tbody>
-    {% for entry in logs %}<tr><td>{{ entry.created_at|date:"d M Y H:i" }}</td><td>{{ entry.company.name }}</td><td><strong>{{ entry.kind|title }}</strong><div>{{ entry.description }}</div></td><td>{{ entry.delta }}</td><td>{{ entry.balance_after }}</td><td>{{ entry.reference }}</td></tr>
+    {% for entry in logs %}<tr><td>{{ entry.created_at|date:"d M Y H:i" }}</td><td>{{ entry.company.name }}</td><td><strong>{{ entry.kind|title }}</strong><div>{{ entry.description|record_label }}</div></td><td>{{ entry.delta }}</td><td>{{ entry.balance_after }}</td><td>{{ entry.reference|record_label }}</td></tr>
     {% empty %}<tr><td colspan="6">No credit transactions found.</td></tr>{% endfor %}
     </tbody></table></div>
   </section>
