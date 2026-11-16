@@ -2,6 +2,7 @@
 from datetime import date
 from django.utils import timezone
 from decimal import Decimal
+from uuid import uuid4
 
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -14,6 +15,7 @@ from apps.inventory.models import StockItem, StockMovement
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobPart, OutsideLabourCharge
 from apps.roles.models import Role
+from apps.services.models import Service
 from apps.vehicles.models import Vehicle
 
 
@@ -186,6 +188,80 @@ class JobInvoiceDraftTests(TestCase):
         res = self.client.post("/api/v1/billing/documents", self._invoice_payload(), format="json")
         self.assertEqual(res.status_code, 400, getattr(res, "data", None))
         self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_job_card_workflow_preserves_actual_charges_and_links_through_delivery(self):
+        customer, vehicle = self.job.customer, self.job.vehicle
+        created = self.client.post("/api/v1/jobs", {
+            "customer": str(customer.pk), "vehicle": str(vehicle.pk),
+            "branchId": str(self.branch.pk), "kilometre": 1200, "status": "New",
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        job_id = created.data["id"]
+        job_url = f"/api/v1/jobs/{job_id}"
+
+        def complete(stage, next_stage, **fields):
+            result = self.client.post(f"{job_url}/workflow", {"stage": stage, **fields}, format="json")
+            self.assertEqual(result.status_code, 200, result.data)
+            self.assertEqual(result.data["current"], next_stage)
+            return result.data
+
+        complete("overview", "inspection")
+        check = self.client.patch(f"{job_url}/inspection/checklist", {
+            "itemName": "Brakes", "status": "Good",
+        }, format="json")
+        self.assertEqual(check.status_code, 200, check.data)
+        inspection = self.client.post(f"{job_url}/inspection/complete", {}, format="json")
+        self.assertEqual(inspection.status_code, 200, inspection.data)
+        quote = self.client.post(f"{job_url}/estimates/quick", {"lines": [{
+            "description": "Quoted work", "quantity": "1", "unitPrice": "900", "type": "Service",
+        }]}, format="json")
+        self.assertEqual(quote.status_code, 201, quote.data)
+        complete("estimate", "work", estimateId=quote.data["id"], approveEstimate=True)
+
+        service = Service.objects.create(company=self.company, branch=self.branch,
+                                         name="Brake service", code="BRAKES", price="650", unit="Job")
+        work = self.client.post(f"{job_url}/work/services", {
+            "serviceId": str(service.pk), "requestId": str(uuid4()), "mechanicCost": "150",
+        }, format="json")
+        self.assertEqual(work.status_code, 201, work.data)
+        complete("work", "qc", confirmWorkDone=True)
+        draft_url = f"/api/v1/billing/documents/job-draft?jobId={job_id}"
+        self.assertEqual(self.client.get(draft_url).status_code, 400)
+        qc = self.client.patch(job_url, {"qc": {
+            "status": "Pass", "checklist": [{"item": "Brakes", "status": "Pass"}],
+        }}, format="json")
+        self.assertEqual(qc.status_code, 200, qc.data)
+        complete("qc", "invoice")
+
+        draft = self.client.get(draft_url)
+        self.assertEqual(draft.status_code, 200, draft.data)
+        self.assertEqual([(line["description"], line["rate"]) for line in draft.data["items"]],
+                         [("Brake service", "650.00")])
+        payload = {
+            "date": date.today().isoformat(), "sourceJobId": job_id,
+            "customer": {**draft.data["customer"], "phone": "+919100000099"},
+            "vehicle": {**draft.data["vehicle"], "vin": "BILLING-SNAPSHOT"},
+            "items": [{**line, "inventoryId": None} for line in draft.data["items"]],
+        }
+        saved = self.client.post("/api/v1/billing/documents", payload, format="json")
+        self.assertEqual(saved.status_code, 201, saved.data)
+        invoice_url = f"/api/v1/billing/documents/{saved.data['id']}"
+        payload["items"][0]["rate"] = "700"
+        updated = self.client.patch(invoice_url, payload, format="json")
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(updated.data["jobId"], job_id)
+        self.assertEqual(updated.data["customerId"], str(customer.pk))
+        self.assertEqual(updated.data["vehicleId"], str(vehicle.pk))
+        self.assertEqual(updated.data["customer"]["phone"], "+919100000099")
+        self.assertFalse(Customer.objects.filter(company=self.company, phone="+919100000099").exists())
+        handover = {"finalKm": "1205", "acknowledgedBy": customer.name}
+        early = self.client.post(f"{job_url}/workflow", {"stage": "invoice", "delivery": handover}, format="json")
+        self.assertEqual(early.status_code, 400, early.data)
+        finalized = self.client.post(f"{invoice_url}/finalize", {}, format="json")
+        self.assertEqual(finalized.status_code, 200, finalized.data)
+        self.assertEqual(Decimal(finalized.data["total"]), Decimal("700"))
+        self.assertEqual(self.client.get(draft_url).data["existingInvoiceId"], saved.data["id"])
+        self.assertTrue(complete("invoice", "invoice", delivery=handover)["finished"])
 
     def test_direct_create_rejects_second_active_job_invoice(self):
         Invoice.objects.create(

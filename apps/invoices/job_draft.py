@@ -137,6 +137,8 @@ def suggested_job_invoice(job):
         "jobId": str(job.pk), "jobNumber": job.job_number,
         "customer": {
             "name": customer.name, "phone": customer.phone or "",
+            "customerType": customer.customer_type, "companyName": customer.company_name,
+            "email": customer.email or "",
             "address": customer.address or "", "gstin": customer.gstin or "",
             "state": customer.state or "",
         },

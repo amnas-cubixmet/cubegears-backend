@@ -58,7 +58,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "id", "created_at", "updated_at", "template_snapshot",
             "status", "paid", "balance", "taxable", "cgst", "sgst", "igst",
             "total", "tax_mode", "finalized_at", "cancelled_at",
-            "source_estimate", "cancellation_reason",
+            "source_estimate", "cancellation_reason", "job",
         )
 
     def validate(self, attrs):
@@ -107,6 +107,12 @@ class InvoiceSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         "jobCardNo": "An existing linked invoice cannot be moved to another Job Card."
                     })
+            elif self.instance.kind == "invoice" and (
+                attrs.get("jobCardNo") or attrs.get("source_job_id") not in (None, "", self.instance.source_job_id)
+            ):
+                raise serializers.ValidationError({
+                    "jobCardNo": "Create a linked invoice from the Job Card after completing Quality Check."
+                })
         if self.instance is None and attrs.get("kind", "invoice") == "invoice":
             source_id = str(attrs.get("source_job_id") or "").strip()
             job_number = str(attrs.get("jobCardNo") or "").strip()
@@ -269,10 +275,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if validated_data.get("kind", "invoice") == "invoice" and validated_data.get("source_job_id"):
             # Link by the already-validated, tenant-scoped UUID, not a display label.
             job = Job.objects.get(company=company, pk=validated_data["source_job_id"])
-        customer = self._resolve_customer(customer_payload, company) or (job.customer if job else None)
+        job_invoice = job and validated_data.get("kind", "invoice") == "invoice"
+        customer = (job.customer if job_invoice else self._resolve_customer(customer_payload, company)
+                    or (job.customer if job else None))
         if not customer:
             raise serializers.ValidationError({"customer": "Customer is required."})
-        vehicle = self._resolve_vehicle(vehicle_payload, company, customer) or (job.vehicle if job else None)
+        vehicle = (job.vehicle if job_invoice else self._resolve_vehicle(vehicle_payload, company, customer)
+                   or (job.vehicle if job else None))
         if vehicle is not None and vehicle.customer_id != customer.pk:
             raise serializers.ValidationError({
                 "vehicle": "The selected vehicle belongs to a different customer."
@@ -311,13 +320,20 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 "stateCode": str(company.gstin or "").strip()[:2] if company.gstin else "",
             }
 
-        if customer_payload is not None:
+        if instance.job_id and instance.kind == "invoice":
+            instance.customer = instance.job.customer
+            instance.vehicle = instance.job.vehicle
+            if isinstance(customer_payload, dict):
+                instance.customer_snapshot = customer_payload
+            if isinstance(vehicle_payload, dict):
+                instance.vehicle_snapshot = vehicle_payload
+        elif customer_payload is not None:
             customer = self._resolve_customer(customer_payload, company)
             if customer:
                 instance.customer = customer
                 if isinstance(customer_payload, dict):
                     instance.customer_snapshot = customer_payload
-        if vehicle_payload is not None:
+        if (not instance.job_id or instance.kind != "invoice") and vehicle_payload is not None:
             vehicle = self._resolve_vehicle(vehicle_payload, company, instance.customer)
             if vehicle is not None and vehicle.customer_id != instance.customer_id:
                 raise serializers.ValidationError({
@@ -330,7 +346,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "vehicle": "Invoice customer and vehicle owner must match."
             })
-        if job_number is not None:
+        if job_number is not None and not instance.job_id:
             instance.job = self._resolve_job(job_number, company)
 
         for key, value in validated_data.items():
