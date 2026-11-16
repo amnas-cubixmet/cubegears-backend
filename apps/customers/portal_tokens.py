@@ -3,9 +3,30 @@ import hashlib
 import hmac
 import secrets
 import uuid
+from urllib.parse import urlsplit
 from django.conf import settings
 from django.utils import timezone
 from .models import CustomerPortalAccess
+
+
+class InvalidDevelopmentOrigin(ValueError):
+    pass
+
+
+def _development_origin(value):
+    if not isinstance(value, str) or len(value) > 64:
+        raise InvalidDevelopmentOrigin
+    try:
+        url = urlsplit(value)
+        if (url.scheme == "http" and url.hostname in {"localhost", "127.0.0.1"}
+                and url.username is None and url.password is None
+                and url.path in {"", "/"} and not url.query and not url.fragment):
+            # Reading .port validates malformed and out-of-range ports.
+            if url.port != 0:
+                return url
+    except ValueError as error:
+        raise InvalidDevelopmentOrigin from error
+    raise InvalidDevelopmentOrigin
 
 
 def _token(access):
@@ -30,13 +51,12 @@ def ensure_portal_access(customer):
     return record
 
 
-def issue_link(access):
+def issue_link(access, *, development_origin=None):
     token = _token(access)
     if not hmac.compare_digest(digest(token), access.token_hash or ""):
         raise ValueError("Tracking link cannot be recovered. Regenerate it.")
     import os
     import re
-    from urllib.parse import urlsplit
     from apps.companies.subdomains import subdomain_label
 
     # Development links must stay on the exact local workshop website.
@@ -44,7 +64,7 @@ def issue_link(access):
     # feature flag in a local environment must not send customers to production.
     base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost/access").rstrip("/")
     if settings.DEBUG:
-        parsed = urlsplit(base)
+        parsed = _development_origin(development_origin) if development_origin is not None else urlsplit(base)
         label = subdomain_label(access.company)
         if (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
                 and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):

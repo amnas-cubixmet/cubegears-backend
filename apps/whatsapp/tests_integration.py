@@ -1,4 +1,6 @@
 """Manual-only WhatsApp sharing and historical-data regression coverage."""
+from urllib.parse import parse_qs, urlsplit
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -144,6 +146,37 @@ class WhatsAppManualOnlyTests(TestCase):
             WhatsAppNotificationLog.objects.get(company=self.company).status,
             "manual_prepared",
         )
+
+    @override_settings(DEBUG=True, CUSTOMER_PORTAL_BASE_URL="http://localhost:5174/access")
+    def test_manual_share_uses_configured_development_port_for_preview_and_draft(self):
+        url = "/api/v1/whatsapp/manual-share"
+        payload = {"targetType": "customer", "targetId": str(self.customer.pk)}
+        initial = self.client.post(url, payload, format="json")
+        self.assertEqual(initial.status_code, 200, initial.data)
+        default_link = initial.data["preview"].rsplit(" ", 1)[-1]
+        expected_link = default_link.replace(":5174/", ":4190/")
+
+        result = self.client.post(url, {**payload,
+            "customerWebsiteDevOrigin": "http://127.0.0.1:4190",
+        }, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertTrue(expected_link.startswith("http://whatsapp-tenant-test.localhost:4190/access/"))
+        self.assertTrue(result.data["preview"].endswith(expected_link))
+        self.assertEqual(parse_qs(urlsplit(result.data["url"]).query)["text"], [result.data["preview"]])
+
+        for invalid in ("https://example.test", "http://localhost:4190/access", "http://localhost:70000"):
+            result = self.client.post(url, {**payload, "customerWebsiteDevOrigin": invalid}, format="json")
+            self.assertEqual(result.status_code, 400, result.data)
+
+    @override_settings(DEBUG=False, CUSTOMER_PORTAL_BASE_URL="https://customer.example.test/access")
+    def test_production_manual_share_ignores_a_development_origin(self):
+        result = self.client.post("/api/v1/whatsapp/manual-share", {
+            "targetType": "customer", "targetId": str(self.customer.pk),
+            "customerWebsiteDevOrigin": "http://localhost:4190",
+        }, format="json", secure=True)
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(urlsplit(result.data["preview"].rsplit(" ", 1)[-1]).scheme, "https")
+        self.assertNotIn("localhost", result.data["preview"])
 
     def test_invalid_record_id_is_a_safe_400_not_internal_server_error(self):
         for value in ("invalid-id", None, "<script>alert(1)</script>"):
