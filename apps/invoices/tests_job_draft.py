@@ -349,7 +349,8 @@ class JobInvoiceDraftTests(TestCase):
         invoice = Invoice.objects.create(
             company=self.company, branch=self.branch,
             customer=self.job.customer, vehicle=self.job.vehicle, job=self.job,
-            kind="invoice", date=date.today(), number="INV-DELIVERY", status="Finalized",
+            kind="invoice", date=date.today(), number="INV-DELIVERY", status="Partially Paid",
+            finalized_at=timezone.now(), total=Decimal("100"), paid=Decimal("40"), balance=Decimal("60"),
         )
         self.assertIsNotNone(invoice.pk)
         url = f"/api/v1/jobs/{self.job.pk}/workflow"
