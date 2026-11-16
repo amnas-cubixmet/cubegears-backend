@@ -6,6 +6,7 @@ are returned only to a permitted staff session and never stored in log text.
 import uuid
 from urllib.parse import quote
 
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
@@ -14,7 +15,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import user_has_permission
 from apps.customers.models import Customer
-from apps.customers.portal_tokens import ensure_portal_access, issue_link
+from apps.customers.portal_tokens import InvalidDevelopmentOrigin, ensure_portal_access, issue_link
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobEstimate
 from apps.jobs.workflow import workflow_state
@@ -131,8 +132,11 @@ class WhatsAppManualShareView(APIView):
         access = ensure_portal_access(customer)
         if not access.is_active:
             return Response({"message": "Tracking link is revoked. Re-enable it before sharing."}, status=409)
+        development_origin = request.data.get("customerWebsiteDevOrigin") if settings.DEBUG else None
         try:
-            secure_url = issue_link(access)
+            secure_url = issue_link(access, development_origin=development_origin)
+        except InvalidDevelopmentOrigin:
+            return Response({"message": "Use a local HTTP customer website origin without a path."}, status=400)
         except ValueError:
             return Response({"message": "Tracking link cannot be recovered. Regenerate the customer link."}, status=409)
 
