@@ -136,6 +136,45 @@ class JobInvoiceDraftTests(TestCase):
         self.job.save(update_fields=["status", "workflow_progress"])
         self.assertEqual(self.client.get(self.url).status_code, 400)
 
+    def test_skip_pending_quality_check_preserves_results_and_unlocks_invoice(self):
+        self.job.status = "QC"
+        self.job.workflow_progress = {"completed": ["overview", "inspection", "estimate", "work"]}
+        self.job.qc = {
+            "status": "Pending", "checklist": [{"item": "Brakes", "status": "Pending"}],
+            "testDriveNotes": "Saved notes",
+        }
+        self.job.save(update_fields=["status", "workflow_progress", "qc"])
+        workflow_url = f"/api/v1/jobs/{self.job.pk}/workflow"
+        self.assertEqual(self.client.get(self.url).status_code, 400)
+        self.assertEqual(self.client.post(workflow_url, {"stage": "qc", "skipQC": True}, format="json").status_code, 400)
+        payload = {"stage": "qc", "skipQC": True, "reason": "Parts collection only"}
+        result = self.client.post(workflow_url, payload, format="json")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertEqual(result.data["current"], "invoice")
+        self.assertIn("qc", result.data["skipped"])
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.qc["status"], "Skipped")
+        self.assertEqual(self.job.qc["checklist"][0]["status"], "Pending")
+        self.assertEqual(self.job.qc["testDriveNotes"], "Saved notes")
+        activity = self.job.activities.get(event="Quality Check Skipped")
+        self.assertEqual(activity.metadata["reason"], payload["reason"])
+        self.assertEqual(activity.actor, self.owner)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.assertEqual(self.client.post(workflow_url, payload, format="json").status_code, 400)
+
+    def test_skip_quality_check_rejects_failed_checks(self):
+        self.job.status = "QC"
+        self.job.workflow_progress = {"completed": ["overview", "inspection", "estimate", "work"]}
+        self.job.qc = {"status": "Pending", "checklist": [{"item": "Brakes", "status": "Fail"}]}
+        self.job.save(update_fields=["status", "workflow_progress", "qc"])
+        result = self.client.post(f"/api/v1/jobs/{self.job.pk}/workflow", {
+            "stage": "qc", "skipQC": True, "reason": "Skip checklist",
+        }, format="json")
+        self.assertEqual(result.status_code, 400, result.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, "QC")
+        self.assertEqual(self.client.get(self.url).status_code, 400)
+
     def test_existing_invoice_is_returned_and_never_duplicated(self):
         invoice = Invoice.objects.create(
             company=self.company, branch=self.branch,
