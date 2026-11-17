@@ -89,7 +89,7 @@ class WorkshopSubdomainTests(TestCase):
 
     def test_existing_and_custom_labels_are_reserved_and_unauthorized_updates_denied(self):
         ensure_default_subdomain(self.other)
-        for label in ("second-garage", "www", "api", "ab", "bad.name",
+        for label in ("second-garage", "www", "api", "a", "ab", "bad.name",
                       "invalid_name", "a" * 64):
             with self.subTest(label=label):
                 reply = self.client.patch(

@@ -6,6 +6,7 @@ import secrets
 import uuid
 from urllib.parse import urlsplit
 from django.conf import settings
+from django.db.models import F
 from django.utils import timezone
 from apps.companies.subdomains import (
     LABEL_PATTERN, customer_portal_root_domain, ensure_default_subdomain, subdomain_label,
@@ -115,7 +116,7 @@ def resolve_link(raw_token):
         return None
     access = CustomerPortalAccess.objects.select_related("customer", "company").filter(
         id=access_id, is_active=True, customer__status="active",
-        company__is_active=True,
+        company__is_active=True, customer__company_id=F("company_id"),
     ).first()
     if not access:
         return None

@@ -36,7 +36,7 @@ def validate_subdomain_label(value):
     if not isinstance(value, str):
         raise ValueError("Enter a subdomain label.")
     label = value.strip().lower()
-    if not LABEL_PATTERN.fullmatch(label) or label in RESERVED_LABELS:
+    if len(label) < 3 or not LABEL_PATTERN.fullmatch(label) or label in RESERVED_LABELS:
         raise ValueError("Use 3–63 lowercase letters, numbers or hyphens; reserved names are unavailable.")
     return label
 

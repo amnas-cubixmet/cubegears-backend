@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import time
+from ipaddress import ip_address
 from mimetypes import guess_type
 
 from django.conf import settings
@@ -24,7 +25,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.companies.models import Company, CompanyWebsiteSettings, CompanyWebsiteSubdomain
-from apps.companies.subdomains import customer_portal_root_domain
+from apps.companies.subdomains import LABEL_PATTERN, RESERVED_LABELS, customer_portal_root_domain
 from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
 from apps.customers.estimate_review import public_estimate
@@ -63,7 +64,9 @@ def _tenant(request):
     expected = hmac.new(key.encode(), (ts + ":" + host).encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, expected):
         raise Http404("Website not found.")
-    hostname = host.split(":", 1)[0]
+    hostname, _, port = host.partition(":")
+    if not settings.DEBUG and port:
+        raise Http404("Website not found.")
     if settings.DEBUG and hostname in {"localhost", "127.0.0.1"}:
         slug = os.environ.get("PORTAL_DEV_COMPANY_SLUG", "")
         if slug:
@@ -73,7 +76,7 @@ def _tenant(request):
         root = "localhost"
     if hostname.endswith("." + root):
         label = hostname[:-(len(root) + 1)]
-        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
+        if LABEL_PATTERN.fullmatch(label) and label not in RESERVED_LABELS:
             entry = CompanyWebsiteSubdomain.objects.select_related("company").filter(
                 label=label, company__is_active=True
             ).first()
@@ -135,7 +138,7 @@ def _session_access(request, company):
         return None
     access = CustomerPortalAccess.objects.select_related("customer", "company").filter(
         pk=auth.get("access"), customer_id=auth.get("customer"), company=company,
-        is_active=True, customer__status="active", company__is_active=True,
+        is_active=True, customer__company=company, customer__status="active", company__is_active=True,
     ).first()
     # A rotated capability is a new authorization version. A browser session
     # minted from the previous link must not survive rotation (or revocation).
@@ -262,8 +265,12 @@ def _dashboard(access):
 class CustomerWebsiteThrottle(ScopedRateThrottle):
     """Use the client identity supplied by the trusted proxy, not its egress IP."""
     def get_ident(self, request):
-        ident = request.headers.get("X-CG-Portal-Client", "") or super().get_ident(request)
-        return str(ident)[:64]
+        ident = request.headers.get("X-CG-Portal-Client", "") or request.META.get("REMOTE_ADDR", "")
+        try:
+            client = str(ip_address(ident))
+        except ValueError:
+            client = "unknown"
+        return f"{request.portal_company.pk}:{client}"
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -273,10 +280,15 @@ class PortalBaseView(APIView):
     throttle_classes = [CustomerWebsiteThrottle]
     throttle_scope = "customer_website"
 
+    def perform_authentication(self, request):
+        # Validate the signed proxy request before touching the tenant's rate limit.
+        request.portal_company = _tenant(request)
+        super().perform_authentication(request)
+
 
 class WebsiteBrandingView(PortalBaseView):
     def get(self, request):
-        company = _tenant(request)
+        company = request.portal_company
         response = _no_store(Response(_branding(company)))
         response.set_cookie(
             "cg_portal_csrf", _make_csrf(), max_age=3600, path="/",
@@ -287,14 +299,14 @@ class WebsiteBrandingView(PortalBaseView):
 
 class WebsiteSessionView(PortalBaseView):
     def get(self, request):
-        company = _tenant(request)
+        company = request.portal_company
         access = _session_access(request, company)
         if not access:
             return _no_store(Response({"message": "Customer session required."}, status=401))
         return _no_store(Response(_dashboard(access)))
 
     def post(self, request):
-        company = _tenant(request)
+        company = request.portal_company
         if not _verify_csrf(request):
             return _no_store(Response({"message": "Invalid request token."}, status=403))
         token = request.data.get("token")
@@ -314,7 +326,6 @@ class WebsiteSessionView(PortalBaseView):
 
 class WebsiteLogoutView(PortalBaseView):
     def post(self, request):
-        _tenant(request)
         if not _verify_csrf(request):
             return _no_store(Response({"message": "Invalid request token."}, status=403))
         request.session.flush()
@@ -329,7 +340,7 @@ class WebsiteEstimateDecisionView(PortalBaseView):
     """
     @transaction.atomic
     def post(self, request, estimate_id):
-        company = _tenant(request)
+        company = request.portal_company
         if not _verify_csrf(request):
             return _no_store(Response({"message": "Invalid request token."}, status=403))
         access = _session_access(request, company)
@@ -447,7 +458,7 @@ class WebsiteEstimateDecisionView(PortalBaseView):
 
 class WebsiteLogoView(PortalBaseView):
     def get(self, request):
-        company = _tenant(request)
+        company = request.portal_company
         if not company.logo_image:
             raise Http404("Logo unavailable.")
         try:
@@ -462,7 +473,7 @@ class WebsiteLogoView(PortalBaseView):
 
 class WebsitePhotoView(PortalBaseView):
     def get(self, request, photo_id):
-        company = _tenant(request)
+        company = request.portal_company
         access = _session_access(request, company)
         if not access:
             raise Http404("Photo unavailable.")
@@ -475,7 +486,7 @@ class WebsitePhotoView(PortalBaseView):
 
 class WebsiteInvoicePdfView(PortalBaseView):
     def get(self, request, invoice_id):
-        company = _tenant(request)
+        company = request.portal_company
         access = _session_access(request, company)
         if not access:
             raise Http404("Invoice unavailable.")
