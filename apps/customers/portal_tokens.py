@@ -1,11 +1,15 @@
 """Revocable long-lived customer tracking capability; no raw token in DB."""
 import hashlib
 import hmac
+import os
 import secrets
 import uuid
 from urllib.parse import urlsplit
 from django.conf import settings
 from django.utils import timezone
+from apps.companies.subdomains import (
+    LABEL_PATTERN, customer_portal_root_domain, ensure_default_subdomain, subdomain_label,
+)
 from .models import CustomerPortalAccess
 
 
@@ -55,9 +59,6 @@ def issue_link(access, *, development_origin=None):
     token = _token(access)
     if not hmac.compare_digest(digest(token), access.token_hash or ""):
         raise ValueError("Tracking link cannot be recovered. Regenerate it.")
-    import os
-    import re
-    from apps.companies.subdomains import subdomain_label
 
     # Development links must stay on the exact local workshop website.
     # Do this BEFORE production-domain checks: enabling the production wildcard
@@ -65,19 +66,18 @@ def issue_link(access, *, development_origin=None):
     base = getattr(settings, "CUSTOMER_PORTAL_BASE_URL", "http://localhost/access").rstrip("/")
     if settings.DEBUG:
         parsed = _development_origin(development_origin) if development_origin is not None else urlsplit(base)
-        label = subdomain_label(access.company)
-        if (parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
-                and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label)):
-            port = f":{parsed.port}" if parsed.port else ""
-            return f"http://{label}.localhost{port}/access/{token}"
+        if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}:
+            label = subdomain_label(access.company)
+            if LABEL_PATTERN.fullmatch(label):
+                port = f":{parsed.port}" if parsed.port else ""
+                return f"http://{label}.localhost{port}/access/{token}"
 
     # Use a tenant-specific production subdomain only after wildcard DNS/TLS
     # have been explicitly enabled.
     if os.environ.get("CUSTOMER_WEBSITE_LINKS_ENABLED", "").lower() == "true":
-        root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
-        label = subdomain_label(access.company)
-        if re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?", label):
-            return f"https://{label}.{root}/access/{token}"
+        label = ensure_default_subdomain(access.company).label
+        if LABEL_PATTERN.fullmatch(label):
+            return f"https://{label}.{customer_portal_root_domain()}/access/{token}"
 
     # Transitional fallback stays on the configured Next.js /access route.
     if base.endswith("/c"):
