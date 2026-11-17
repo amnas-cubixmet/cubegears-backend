@@ -94,14 +94,15 @@ def revoke_link(access):
     access.save(update_fields=["is_active", "revoked_at", "updated_at"])
 
 
-def rotate_link(access):
+def rotate_link(access, *, development_origin=None):
     access.nonce = secrets.token_hex(32)
     access.token_hash = digest(_token(access))
     access.is_active = True
     access.rotated_at = timezone.now()
     access.revoked_at = None
+    url = issue_link(access, development_origin=development_origin)
     access.save(update_fields=["nonce", "token_hash", "is_active", "rotated_at", "revoked_at", "updated_at"])
-    return issue_link(access)
+    return url
 
 
 def resolve_link(raw_token):
