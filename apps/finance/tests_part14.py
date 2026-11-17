@@ -59,6 +59,35 @@ class Part14DoubleEntryTests(TestCase):
         self.assertEqual(statement.data["liabilitiesAndEquity"], "1500.00")
         self.assertEqual(JournalEntry.objects.count(), 2)
 
+    def test_bank_account_creation_posts_opening_balance_on_the_submitted_date(self):
+        response = self.client.post("/api/v1/finance/accounts", {
+            "name": "Supplier Payments Bank", "kind": "Bank",
+            "openingBalance": "750.25", "openingDate": "2026-11-06",
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        account = WorkshopFinancialAccount.objects.get(pk=response.data["id"], company=self.company)
+        self.assertEqual(account.opening_date.isoformat(), "2026-11-06")
+        journal = JournalEntry.objects.get(company=self.company, source_key=f"opening:{account.pk}")
+        self.assertEqual(timezone.localdate(journal.posted_at), account.opening_date)
+        self.assertEqual(journal.lines.get(account__financial_account=account).debit, Decimal("750.25"))
+        self.assertEqual(journal.lines.get(account__code="3000").credit, Decimal("750.25"))
+        self.assertFalse(WorkshopAccountEntry.objects.filter(account=account).exists())
+
+    def test_invalid_opening_date_is_a_field_error_on_create_and_update(self):
+        response = self.client.post("/api/v1/finance/accounts", {
+            "name": "Invalid Date Bank", "kind": "Bank", "openingDate": "2026-02-30",
+        }, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("openingDate", response.data)
+        self.assertFalse(WorkshopFinancialAccount.objects.filter(company=self.company, name="Invalid Date Bank").exists())
+        response = self.client.patch(f"/api/v1/finance/accounts/{self.bank.pk}", {
+            "openingDate": "not a date",
+        }, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("openingDate", response.data)
+        self.bank.refresh_from_db()
+        self.assertIsNone(self.bank.opening_date)
+
     def test_manual_journal_balanced_and_idempotent_with_non_cash_accounts(self):
         payload = {
             "memo": "Allocate retained earnings to operating costs",

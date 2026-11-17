@@ -7,6 +7,7 @@ from django.db.models import Sum, Q, F, DecimalField, ExpressionWrapper
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from rest_framework.fields import DateField
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from apps.accounts.permissions import RolePermission, is_company_owner
@@ -38,6 +39,14 @@ def valid_money(value, field="amount", allow_zero=False):
     except (ValueError, TypeError, ArithmeticError):
         raise ValidationError({field: "Enter a valid amount (up to two decimal places)."})
 
+
+def parse_opening_date(value):
+    if value in (None, ""):
+        return None
+    try:
+        return DateField().run_validation(value)
+    except ValidationError as error:
+        raise ValidationError({"openingDate": error.detail}) from error
 
 
 
@@ -339,6 +348,7 @@ class FinanceAccountCollection(FinanceBalanceRedactionMixin, APIView):
         if kind not in ("Cash", "Bank", "UPI", "Wallet", "Other"):
             raise ValidationError({"kind": "Choose Cash, Bank, UPI, Wallet or Other."})
         opening = valid_money(d.get("openingBalance", "0"), "openingBalance", allow_zero=True)
+        opening_date = parse_opening_date(d.get("openingDate"))
         if WorkshopFinancialAccount.objects.filter(company=request.user.company, name=name).exists():
             raise ValidationError({"name": "An account with this name already exists."})
         acc = WorkshopFinancialAccount.objects.create(
@@ -348,7 +358,7 @@ class FinanceAccountCollection(FinanceBalanceRedactionMixin, APIView):
             account_number=str(d.get("accountNumber", "") or ""),
             ifsc=str(d.get("ifsc", "") or ""),
             branch_name=str(d.get("branchName", "") or ""),
-            opening_date=d.get("openingDate") or None,
+            opening_date=opening_date,
             description=str(d.get("description", "") or ""),
             is_active=True, created_by=request.user,
         )
@@ -427,7 +437,7 @@ class FinanceAccountDetail(FinanceBalanceRedactionMixin, APIView):
         if "openingDate" in d:
             if WorkshopAccountEntry.objects.filter(company=request.user.company, account=acc).exists():
                 raise ValidationError({"openingDate": "Posted account dates are immutable; use an audited adjustment."})
-            acc.opening_date = d["openingDate"] or None
+            acc.opening_date = parse_opening_date(d["openingDate"])
         if "isActive" in d:
             if not isinstance(d["isActive"], bool):
                 raise ValidationError({"isActive": "Expected true or false."})
