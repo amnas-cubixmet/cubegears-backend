@@ -568,6 +568,53 @@ class AccountLedger(APIView):
                          "entries": entries})
 
 
+@transaction.atomic
+def create_supplier_bill(request, data, *, require_place_of_supply=False):
+    """Create a canonical supplier bill and optionally post stock and payment."""
+    supplier = supplier_for(request, data.get("supplierId"))
+    if not supplier.is_active:
+        raise ValidationError({"supplierId": "Supplier is inactive."})
+    # Lock the supplier while checking invoice references, including case variants.
+    Supplier.objects.select_for_update().get(pk=supplier.pk)
+    if data.get("postNow") is True and not user_has_permission(request.user, "stock.edit"):
+        raise PermissionDenied("Purchase posting requires Inventory Edit permission.")
+    invoice_number = str(data.get("invoiceNumber") or "").strip()
+    if not invoice_number or len(invoice_number) > 100:
+        raise ValidationError({"invoiceNumber": "Enter a supplier invoice reference (1–100 characters)."})
+    try:
+        invoice_date = date.fromisoformat(str(data.get("invoiceDate")))
+        due_date = date.fromisoformat(str(data["dueDate"])) if data.get("dueDate") else None
+    except (TypeError, ValueError):
+        raise ValidationError({"invoiceDate": "Use ISO YYYY-MM-DD dates."})
+    job = None
+    if data.get("relatedJobId"):
+        job = get_object_or_404(Job, pk=data["relatedJobId"], company_id=request.user.company_id)
+    receive = data.get("receiveIntoStock") is True
+    if require_place_of_supply and supplier.gstin.strip() and not data.get("placeOfSupply"):
+        raise ValidationError({"placeOfSupply": "Select the place of supply on the supplier invoice."})
+    tax_context = purchase_gst_context(supplier, data.get("placeOfSupply"))
+    items, subtotal, tax = prepare_items(request, data.get("items"), receive, tax_context)
+    if SupplierBill.objects.filter(
+        company_id=request.user.company_id, supplier=supplier,
+        invoice_number__iexact=invoice_number,
+    ).exists():
+        raise ValidationError({"invoiceNumber": "This supplier invoice already exists."})
+    if subtotal + tax >= Decimal("1000000000000"):
+        raise ValidationError({"items": "The supplier bill total exceeds the supported limit."})
+    bill = SupplierBill.objects.create(
+        company_id=request.user.company_id, branch=request.user.branch,
+        supplier=supplier, invoice_number=invoice_number,
+        invoice_date=invoice_date, due_date=due_date, related_job=job,
+        items=items, subtotal=subtotal, tax=tax, total=subtotal + tax,
+        receive_into_stock=receive, created_by=request.user,
+    )
+    if data.get("postNow") is True:
+        return finalize_supplier_bill(request, bill, data.get("payment"), data.get("payments"))
+    if data.get("payment") is not None or data.get("payments") is not None:
+        raise ValidationError({"payment": "Immediate payments require postNow=true."})
+    return bill_info(bill)
+
+
 class SupplierBillCollection(APIView):
     permission_classes = [RolePermission]
     permission_map = {"GET": ["stock.view", "payments.view"], "POST": ["stock.create", "payments.create"]}
@@ -580,49 +627,8 @@ class SupplierBillCollection(APIView):
             qs = qs.filter(supplier=supplier)
         return Response([bill_info(bill) for bill in qs[:100]])
 
-    @transaction.atomic
     def post(self, request):
-        supplier = supplier_for(request, request.data.get("supplierId"))
-        if not supplier.is_active:
-            raise ValidationError({"supplierId": "Supplier is inactive."})
-        # Lock the supplier while checking invoice references, including case variants.
-        Supplier.objects.select_for_update().get(pk=supplier.pk)
-        if request.data.get("postNow") is True and not user_has_permission(request.user, "stock.edit"):
-            raise PermissionDenied("Purchase posting requires Inventory Edit permission.")
-        invoice_number = str(request.data.get("invoiceNumber") or "").strip()
-        if not invoice_number or len(invoice_number) > 100:
-            raise ValidationError({"invoiceNumber": "Enter a supplier invoice reference (1–100 characters)."})
-        try:
-            invoice_date = date.fromisoformat(str(request.data.get("invoiceDate")))
-            due_date = date.fromisoformat(str(request.data["dueDate"])) if request.data.get("dueDate") else None
-        except (TypeError, ValueError):
-            raise ValidationError({"invoiceDate": "Use ISO YYYY-MM-DD dates."})
-        job = None
-        if request.data.get("relatedJobId"):
-            job = get_object_or_404(Job, pk=request.data["relatedJobId"], company_id=request.user.company_id)
-        receive = request.data.get("receiveIntoStock") is True
-        tax_context = purchase_gst_context(supplier, request.data.get("placeOfSupply"))
-        items, subtotal, tax = prepare_items(request, request.data.get("items"), receive, tax_context)
-        if SupplierBill.objects.filter(
-            company_id=request.user.company_id, supplier=supplier,
-            invoice_number__iexact=invoice_number,
-        ).exists():
-            raise ValidationError({"invoiceNumber": "This supplier invoice already exists."})
-        bill = SupplierBill.objects.create(
-            company_id=request.user.company_id, branch=request.user.branch,
-            supplier=supplier, invoice_number=invoice_number,
-            invoice_date=invoice_date, due_date=due_date, related_job=job,
-            items=items, subtotal=subtotal, tax=tax, total=subtotal + tax,
-            receive_into_stock=receive, created_by=request.user,
-        )
-        if request.data.get("postNow") is True:
-            return Response(finalize_supplier_bill(
-                request, bill, request.data.get("payment"),
-                request.data.get("payments"),
-            ), status=201)
-        if request.data.get("payment") is not None or request.data.get("payments") is not None:
-            raise ValidationError({"payment": "Immediate payments require postNow=true."})
-        return Response(bill_info(bill), status=201)
+        return Response(create_supplier_bill(request, request.data), status=201)
 
 
 class SupplierBillPost(APIView):

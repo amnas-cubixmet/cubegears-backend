@@ -1,4 +1,6 @@
 """Tenant-safe supplier credit accounting / single-posting regressions."""
+from decimal import Decimal
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -87,6 +89,71 @@ class SupplierFinanceTests(TestCase):
         r = self.client.get(f"{self.base}/accounts")
         self.assertEqual(r.status_code, 200)
         return r.data[0]["recordedBalance"]
+
+    def test_register_part_with_available_opening_stock(self):
+        payload = {
+            "partName": "Opening stock filter", "onHand": "6.50",
+            "costPrice": "100.00", "sellingPrice": "120.00",
+            "requestKey": "opening-filter-1",
+        }
+        url = "/api/v1/stock/items"
+        created = self.client.post(url, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["branchAvailable"], "6.50")
+        replay = self.client.post(url, payload, format="json")
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertEqual(replay.data["id"], created.data["id"])
+        self.assertEqual(StockMovement.objects.filter(movement_type="opening").count(), 1)
+        self.assertFalse(SupplierBill.objects.exists())
+        self.assertFalse(WorkshopAccountEntry.objects.exists())
+
+    def test_register_part_and_receive_supplier_credit_atomically(self):
+        payload = {
+            "partName": "Credit purchase filter", "supplier": str(self.supplier.pk),
+            "onHand": "0.00", "costPrice": "100.00", "sellingPrice": "120.00",
+            "requestKey": "credit-filter-1",
+            "purchase": {
+                "quantity": "6.00", "invoiceNumber": "NEW-0001", "invoiceDate": "2026-11-16",
+            },
+        }
+        url = "/api/v1/stock/receive-new-part"
+        created = self.client.post(url, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["branchAvailable"], "6.00")
+        bill = SupplierBill.objects.get()
+        self.assertEqual(bill.total, Decimal("600.00"))
+        self.assertEqual(bill.status, "Posted")
+        self.assertEqual(bill.items[0]["itemId"], str(created.data["id"]))
+        self.assertFalse(WorkshopAccountEntry.objects.exists())
+
+        replay = self.client.post(url, payload, format="json")
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertEqual(replay.data["id"], created.data["id"])
+        self.assertEqual(StockMovement.objects.filter(movement_type="purchase").count(), 1)
+        conflict = self.client.post(url, {**payload, "requestKey": "credit-filter-2"}, format="json")
+        self.assertEqual(conflict.status_code, 400, conflict.data)
+        self.assertIn("invoiceNumber", conflict.data)
+        self.assertEqual(StockItem.objects.filter(name="Credit purchase filter").count(), 1)
+        self.assertEqual(SupplierBill.objects.count(), 1)
+
+    def test_quick_purchase_requires_payment_permits(self):
+        role = Role.objects.create(
+            company=self.company, name="Catalog clerk", code="CATALOG_CLERK",
+            permissions=["stock.create", "stock.edit"], is_active=True,
+        )
+        clerk = User.objects.create_user(
+            email="catalog-clerk@example.test", password="safe-password",
+            name="Clerk", company=self.company, branch=self.branch, role=role,
+        )
+        self.client.force_authenticate(user=clerk)
+        denied = self.client.post("/api/v1/stock/receive-new-part", {
+            "partName": "Denied purchase", "supplier": str(self.supplier.pk),
+            "costPrice": "100.00", "requestKey": "clerk-purchase-1",
+            "purchase": {"quantity": "1.00", "invoiceNumber": "DENIED", "invoiceDate": "2026-11-16"},
+        }, format="json")
+        self.assertEqual(denied.status_code, 403, denied.data)
+        self.assertFalse(StockItem.objects.filter(name="Denied purchase").exists())
+        self.assertFalse(SupplierBill.objects.exists())
 
     def test_supplier_directory_balances_include_more_than_first_hundred_posted_bills(self):
         from datetime import date
