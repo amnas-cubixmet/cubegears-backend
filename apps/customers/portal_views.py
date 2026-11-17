@@ -11,7 +11,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import user_has_permission
 from apps.customers.models import Customer
 from apps.customers.portal_tokens import (
-    ensure_portal_access, issue_link, resolve_link, revoke_link, rotate_link,
+    InvalidDevelopmentOrigin, ensure_portal_access, issue_link, resolve_link, revoke_link, rotate_link,
 )
 from apps.jobs.models import Job, JobEstimate
 from apps.invoices.models import Invoice
@@ -68,7 +68,11 @@ class CustomerPortalLinkView(APIView):
         result = {"enabled": access.is_active, "customerId": str(customer_id)}
         if access.is_active:
             try:
-                result["url"] = issue_link(access)
+                result["url"] = issue_link(
+                    access, development_origin=request.query_params.get("customerWebsiteDevOrigin"),
+                )
+            except InvalidDevelopmentOrigin:
+                return Response({"message": "Use a local HTTP customer website origin without a path."}, status=400)
             except ValueError:
                 # A stale token digest (e.g. signing-key rotation) is a
                 # recoverable link conflict, never an HTML 500 traceback.
@@ -87,7 +91,11 @@ class CustomerPortalLinkView(APIView):
             revoke_link(access)
             return Response({"enabled": False, "url": None})
         if action in {"rotate", "enable"}:
-            return Response({"enabled": True, "url": rotate_link(access)})
+            try:
+                url = rotate_link(access, development_origin=request.data.get("customerWebsiteDevOrigin"))
+            except InvalidDevelopmentOrigin:
+                return Response({"message": "Use a local HTTP customer website origin without a path."}, status=400)
+            return Response({"enabled": True, "url": url})
         return Response({"message": "Choose rotate, revoke, or enable."}, status=400)
 
 

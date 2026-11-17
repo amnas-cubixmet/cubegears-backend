@@ -95,6 +95,30 @@ class CustomerPortalSecurityTests(TestCase):
         self.assertEqual(self.public.get("/api/v1/c/" + new).status_code, 200)
         self.assertIsNone(resolve_link(old))
 
+    @override_settings(DEBUG=True, CUSTOMER_PORTAL_BASE_URL="http://localhost:5174/access")
+    def test_panel_uses_its_configured_local_port_for_read_and_rotation(self):
+        route = f"/api/v1/customer-portal/links/{self.customer.pk}"
+        origin = {"customerWebsiteDevOrigin": "http://localhost:3000"}
+        before = self.staff.get(route, origin)
+        self.assertEqual(before.status_code, 200)
+        prefix = "http://portal-ws-a.localhost:3000/access/"
+        self.assertTrue(before.data["url"].startswith(prefix))
+        invalid = self.staff.post(route, {"action": "rotate", "customerWebsiteDevOrigin": "https://example.com"}, format="json")
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(self.staff.get(route, origin).data["url"], before.data["url"])
+        rotated = self.staff.post(route, {"action": "rotate", **origin}, format="json")
+        self.assertEqual(rotated.status_code, 200)
+        self.assertTrue(rotated.data["url"].startswith(prefix))
+        self.assertNotEqual(rotated.data["url"], before.data["url"])
+
+    @override_settings(DEBUG=False)
+    def test_production_tracking_endpoint_ignores_local_port_override(self):
+        route = f"/api/v1/customer-portal/links/{self.customer.pk}"
+        normal = self.staff.get(route)
+        requested = self.staff.get(route, {"customerWebsiteDevOrigin": "http://localhost:3000"})
+        self.assertEqual(requested.status_code, 200)
+        self.assertEqual(requested.data["url"], normal.data["url"])
+
     def test_stale_customer_token_digest_returns_409_and_regeneration_recovers(self):
         from apps.customers.portal_tokens import ensure_portal_access
         access = ensure_portal_access(self.customer)
