@@ -95,6 +95,22 @@ class CustomerWebsiteTests(TestCase):
             200,
         )
 
+    @override_settings(DEBUG=False)
+    def test_only_active_workshop_hosts_are_used_for_throttling(self):
+        path = "/api/v1/customer-website/branding"
+        Company.objects.create(name="Reserved", slug="api")
+        self.second.is_active = False
+        self.second.save(update_fields=["is_active"])
+        with patch("apps.customers.website_views.CustomerWebsiteThrottle.allow_request", return_value=True) as limit:
+            self.assertEqual(self.client.get(path).status_code, 404)
+            for host in ("api.cubegears.com", "beta.cubegears.com", "unknown.cubegears.com", "alpha.cubegears.com:443"):
+                self.assertEqual(self.client.get(path, **self.headers(host)).status_code, 404, host)
+            limit.assert_not_called()
+            response = self.client.get(path, **self.headers())
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.cookies["cg_portal_csrf"]["secure"])
+            limit.assert_called_once()
+
     def test_redeem_link_and_read_existing_customer_data(self):
         self.assertEqual(self._login().status_code, 200)
         result = self.client.get("/api/v1/customer-website/session", **self.headers())
@@ -130,6 +146,21 @@ class CustomerWebsiteTests(TestCase):
         rotate_link(ensure_portal_access(self.customer))
         response = self.client.get("/api/v1/customer-website/session", **self.headers())
         self.assertEqual(response.status_code, 401)
+
+    def test_inactive_workshop_cannot_continue_an_existing_session(self):
+        self.assertEqual(self._login().status_code, 200)
+        self.first.is_active = False
+        self.first.save(update_fields=["is_active"])
+        self.assertEqual(self.client.get("/api/v1/customer-website/session", **self.headers()).status_code, 404)
+
+    def test_inactive_browser_session_expires(self):
+        self.assertEqual(self._login().status_code, 200)
+        session = self.client.session
+        auth = session["cg_customer_portal"]
+        auth["last_seen"] -= 31 * 60
+        session["cg_customer_portal"] = auth
+        session.save()
+        self.assertEqual(self.client.get("/api/v1/customer-website/session", **self.headers()).status_code, 401)
 
     def test_logout_invalidates_browser_session(self):
         self.assertEqual(self._login().status_code, 200)

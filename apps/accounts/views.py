@@ -375,23 +375,25 @@ class PublicWorkshopSignupView(APIView):
             base_slug = "workshop-" + base_slug
         slug = base_slug
         suffix = 2
-        while (Company.objects.filter(slug=slug).exists()
-               or CompanyWebsiteSubdomain.objects.filter(label=slug).exists()):
+        while True:
+            if not CompanyWebsiteSubdomain.objects.filter(label=slug).exists():
+                # The unique login slug is arbitrated by the database when two
+                # registrations choose the same name simultaneously.
+                company, created = Company.objects.get_or_create(slug=slug, defaults={
+                    "name": data["workshop_name"].strip(),
+                    "legal_name": data["workshop_name"].strip(),
+                    "email": data.get("email") or "",
+                    "phone": data["mobile"],
+                    "currency": "INR",
+                    "plan": "credits",
+                    "require_paid_features": True,
+                    "is_active": True,
+                })
+                if created:
+                    break
             addition = "-" + str(suffix)
             slug = base_slug[:63 - len(addition)].rstrip("-") + addition
             suffix += 1
-
-        company = Company.objects.create(
-            name=data["workshop_name"].strip(),
-            legal_name=data["workshop_name"].strip(),
-            slug=slug,
-            email=data.get("email") or "",
-            phone=data["mobile"],
-            currency="INR",
-            plan="credits",
-            require_paid_features=True,
-            is_active=True,
-        )
 
         # Backend owns the default website reservation. No new Vercel
         # project/domain is provisioned for each workshop signup.
