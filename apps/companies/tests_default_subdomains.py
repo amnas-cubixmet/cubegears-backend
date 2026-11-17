@@ -204,4 +204,40 @@ class WorkshopSubdomainTests(TestCase):
         new_company = Company.objects.get(pk=result.data["workshop"]["id"])
         self.assertEqual(new_company.slug, "popular-garage-2")
         self.assertEqual(CompanyWebsiteSubdomain.objects.get(company=new_company).label,
-                         "popular-garage-2")
+                         "popular-garage1")
+
+    def test_duplicate_and_malayalam_names_get_readable_unique_labels(self):
+        for name, slug, label in (
+            ("ABC", "abc", "abc"),
+            ("ABC", "abc-2", "abc1"),
+            ("ABC", "abc-3", "abc2"),
+            ("മലബാർ ഓട്ടോ വർക്സ്", "legacy-local-name", "workshop"),
+            ("കേരള ഓട്ടോ", "legacy-local-name-2", "workshop1"),
+        ):
+            with self.subTest(name=name, slug=slug):
+                company = Company.objects.create(name=name, slug=slug)
+                self.assertEqual(ensure_default_subdomain(company).label, label)
+
+    def test_conflicting_owner_edit_returns_an_available_suggestion(self):
+        assign_subdomain(self.other, "abc")
+        path = "/api/v1/company/customer-website/subdomain"
+        conflict = self.client.patch(path, {"label": "abc"}, format="json")
+        self.assertEqual(conflict.status_code, 400)
+        self.assertEqual(conflict.data["suggestedLabel"], "abc1")
+        accepted = self.client.patch(path, {"label": "abc1"}, format="json")
+        self.assertEqual(accepted.status_code, 200)
+        self.assertEqual(accepted.data["subdomainLabel"], "abc1")
+
+    @override_settings(DEBUG=False)
+    def test_production_default_routes_the_nested_workshop_hostname(self):
+        with patch.dict(os.environ):
+            os.environ.pop("CUSTOMER_PORTAL_ROOT_DOMAIN")
+            customer = Customer.objects.create(company=self.company, name="Customer", phone="+919999900009")
+            url = issue_link(ensure_portal_access(customer))
+            host = "first-garage.customer.cubixgear.tech"
+            self.assertTrue(url.startswith(f"https://{host}/access/"))
+            settings = self.client.get("/api/v1/company/customer-website")
+            self.assertEqual(settings.data["subdomain"], host)
+            response = self.client.get("/api/v1/customer-website/branding", **self.headers(host))
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["name"], "First Garage")

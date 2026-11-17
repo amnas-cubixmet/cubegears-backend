@@ -24,6 +24,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.companies.models import Company, CompanyWebsiteSettings, CompanyWebsiteSubdomain
+from apps.companies.subdomains import customer_portal_root_domain
 from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
 from apps.customers.estimate_review import public_estimate
@@ -67,7 +68,7 @@ def _tenant(request):
         slug = os.environ.get("PORTAL_DEV_COMPANY_SLUG", "")
         if slug:
             return get_object_or_404(Company, slug=slug, is_active=True)
-    root = os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").lower().strip(".")
+    root = customer_portal_root_domain()
     if settings.DEBUG and hostname.endswith(".localhost"):
         root = "localhost"
     if hostname.endswith("." + root):

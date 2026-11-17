@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import IsCompanyAdmin
 from .models import CompanyWebsiteSettings
 from .subdomains import (
-    assign_subdomain, ensure_default_subdomain,
+    SubdomainUnavailable, assign_subdomain, customer_portal_root_domain, ensure_default_subdomain,
 )
 
 
@@ -32,10 +32,6 @@ class SettingsSerializer(serializers.ModelSerializer):
         return color.lower()
 
 
-def _root_domain():
-    return os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", "cubegears.com").strip(".").lower()
-
-
 class CompanyWebsiteSettingsView(APIView):
     permission_classes = [IsCompanyAdmin]
 
@@ -51,7 +47,7 @@ class CompanyWebsiteSettingsView(APIView):
         # A website hostname has its own global reservation and is never the
         # mutable company name nor the staff-login slug.
         label = ensure_default_subdomain(company).label
-        settings_data["subdomain"] = label + "." + _root_domain()
+        settings_data["subdomain"] = label + "." + customer_portal_root_domain()
         settings_data["subdomainLabel"] = label
         settings_data["wildcardReady"] = os.environ.get(
             "CUSTOMER_WEBSITE_LINKS_ENABLED", ""
@@ -77,11 +73,13 @@ class CompanyWebsiteSubdomainView(APIView):
         try:
             previous = ensure_default_subdomain(request.user.company).label
             entry = assign_subdomain(request.user.company, requested)
+        except SubdomainUnavailable as exc:
+            return Response({"label": str(exc), "suggestedLabel": exc.suggestion}, status=400)
         except ValueError as exc:
             return Response({"label": str(exc)}, status=400)
         return Response({
             "subdomainLabel": entry.label,
-            "subdomain": entry.label + "." + _root_domain(),
+            "subdomain": entry.label + "." + customer_portal_root_domain(),
             "changed": previous != entry.label,
             "wildcardReady": os.environ.get(
                 "CUSTOMER_WEBSITE_LINKS_ENABLED", ""
