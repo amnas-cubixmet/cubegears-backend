@@ -2,10 +2,12 @@ import re
 from django.db import transaction
 from django.db.models import F,Q
 from rest_framework import decorators,response
+from rest_framework.fields import DateField
 from rest_framework.exceptions import ValidationError
 from apps.companies.models import Company
+from apps.suppliers.finance_api import create_supplier_bill, quantity as purchase_quantity
 from common.viewsets import CompanyScopedModelViewSet
-from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit,StockBranchBalance
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit,StockBranchBalance,SupplierBill
 from .branch_stock import locked_branch_balance, move_balance, available_in_branch
 from .request_keys import stock_request_key, replay_movement
 from .part12_operations import transfer_inventory, return_issued_stock, count_inventory
@@ -16,6 +18,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
     action_permission_map = {
         "dashboard": "stock.view",
         "stock_in": "stock.create",
+        "receive_new_part": ["stock.create", "stock.edit", "payments.create"],
         "issue": "stock.edit",
         "stock_return": "stock.edit",
         "adjustment": "stock.edit",
@@ -32,6 +35,90 @@ class StockItemViewSet(CompanyScopedModelViewSet):
         if q: qs=qs.filter(Q(name__icontains=q)|Q(sku__icontains=q)|Q(part_number__icontains=q)|Q(barcode__icontains=q)|Q(brand__icontains=q)|Q(rack__icontains=q)|Q(category__name__icontains=q)|Q(supplier__name__icontains=q))
         if self.request.query_params.get("low_stock") in {"1","true","True"}: qs=qs.filter(on_hand__lte=F("minimum_stock")+F("reserved"))
         return qs
+
+    def create(self, request, *args, **kwargs):
+        return self._create_with_stock(request)
+
+    @decorators.action(detail=False, methods=["post"], url_path="receive-new-part")
+    def receive_new_part(self, request):
+        purchase = request.data.get("purchase")
+        if not isinstance(purchase, dict):
+            raise ValidationError({"purchase": "Provide the supplier invoice and purchase quantity."})
+        return self._create_with_stock(request, purchase)
+
+    @transaction.atomic
+    def _create_with_stock(self, request, purchase=None):
+        key = stock_request_key(request)
+        if purchase is None and not key:
+            return super().create(request)
+        if purchase is not None:
+            if not key:
+                raise ValidationError({"requestKey": "Provide a unique request key for the purchase."})
+            incoming = purchase_quantity(purchase.get("quantity"))
+            try:
+                invoice_date = DateField().run_validation(purchase.get("invoiceDate"))
+            except ValidationError as error:
+                raise ValidationError({"invoiceDate": error.detail}) from error
+        else:
+            incoming = purchase_quantity(request.data.get("onHand"))
+
+        Company.objects.select_for_update().get(pk=request.user.company_id)
+        existing = StockMovement.objects.filter(
+            company_id=request.user.company_id, request_key=key,
+        ).select_related("item").first()
+        if existing:
+            expected_kind = "purchase" if purchase is not None else "opening"
+            if (existing.movement_type != expected_kind or existing.quantity != incoming or
+                    existing.branch_id != request.user.branch_id or
+                    existing.item.name != str(request.data.get("partName") or "").strip()):
+                raise ValidationError({"requestKey": "This request already saved a different stock entry. Check Inventory."})
+            if purchase is not None:
+                bill_id = re.fullmatch(
+                    r"SUPBILL:([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})",
+                    existing.reference,
+                )
+                if not bill_id or not SupplierBill.objects.filter(
+                    company_id=request.user.company_id, pk=bill_id[1],
+                    supplier_id=existing.item.supplier_id,
+                    invoice_number__iexact=str(purchase.get("invoiceNumber") or "").strip(),
+                    invoice_date=invoice_date,
+                ).exists() or str(existing.item.supplier_id) != str(request.data.get("supplier")):
+                    raise ValidationError({"requestKey": "This request already saved a different supplier invoice. Check Inventory."})
+            return response.Response(self.get_serializer(existing.item).data)
+        if purchase is None:
+            return super().create(request)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self._validate_related_tenants(serializer.validated_data)
+        data = serializer.validated_data
+        if data.get("on_hand", 0) or data.get("reserved", 0):
+            raise ValidationError({"onHand": "Use the purchase quantity for a supplier purchase."})
+        supplier = data.get("supplier")
+        if not supplier:
+            raise ValidationError({"supplier": "Choose a supplier for this purchase."})
+        self.perform_create(serializer)
+        item = serializer.instance
+        bill = create_supplier_bill(request, {
+            "supplierId": str(supplier.pk),
+            "invoiceNumber": purchase.get("invoiceNumber"),
+            "invoiceDate": invoice_date.isoformat(),
+            "placeOfSupply": purchase.get("placeOfSupply"),
+            "receiveIntoStock": True,
+            "postNow": True,
+            "items": [{
+                "itemId": str(item.pk),
+                "quantity": str(incoming),
+                "purchaseRate": str(item.cost_price),
+                "gstRate": str(item.tax) if supplier.gstin.strip() else "0",
+                "gstTreatment": item.gst_zero_classification,
+            }],
+        }, require_place_of_supply=True)
+        StockMovement.objects.filter(
+            company_id=item.company_id, item=item, reference=f"SUPBILL:{bill['id']}",
+        ).update(request_key=key)
+        item.refresh_from_db()
+        return response.Response(self.get_serializer(item).data, status=201)
 
     @decorators.action(detail=False, methods=["get"], url_path="rack-locations")
     def rack_locations(self, request):
@@ -85,6 +172,7 @@ class StockItemViewSet(CompanyScopedModelViewSet):
                 company=item.company,
                 branch=item.branch,
                 item=item,
+                request_key=stock_request_key(self.request),
                 movement_type="opening",
                 quantity=item.on_hand,
                 unit_cost=item.cost_price,
