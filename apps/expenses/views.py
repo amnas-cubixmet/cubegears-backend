@@ -62,12 +62,11 @@ class ExpenseViewSet(CompanyScopedModelViewSet):
             "supplier bill", "supplier credit",
         }:
             raise ValidationError({
-                "category": "Supplier purchases and their payments must be linked to a posted Supplier Bill. "
-                            "Use Inventory → Supplier Purchase / Supplier Payments, not a separate Expense debit."
+                "category": "Use Supplier Purchases or Supplier Payments for this bill."
             })
         if normalized in {"staff salary", "daily wages", "overtime", "salary", "payroll"}:
             raise ValidationError({
-                "category": "Staff wages and salary must use Payroll Payments, not a duplicate Expense."
+                "category": "Use Payroll Payments for staff wages and salary."
             })
 
     @staticmethod

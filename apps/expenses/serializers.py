@@ -28,6 +28,12 @@ class ExpenseSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        if not self.instance or "amount" in attrs or "tax" in attrs:
+            amount = attrs.get("amount", self.instance.amount if self.instance else Decimal("0.00"))
+            tax = attrs.get("tax", self.instance.tax if self.instance else Decimal("0.00"))
+            if tax > amount:
+                raise serializers.ValidationError({"tax": "Included GST cannot exceed the expense amount."})
+
         budget = attrs.get(
             "budget_item", self.instance.budget_item if self.instance else None,
         )

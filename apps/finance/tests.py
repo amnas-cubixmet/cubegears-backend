@@ -98,6 +98,31 @@ class FinanceAccountingTests(TestCase):
         self.assertEqual(response.data["paidAmount"], "200.00")
         self.assertEqual(self.client.delete(f"/api/v1/expenses/{response.data['id']}").status_code, 400)
 
+    def test_included_expense_gst_must_fit_in_the_gross_amount(self):
+        url = "/api/v1/expenses"
+        payload = {
+            "date": "2026-11-06", "category": "Electricity",
+            "description": "Electricity bill", "amount": "118.00", "tax": "118.01",
+            "status": "approved",
+        }
+        invalid = self.client.post(url, payload, format="json")
+        self.assertEqual(invalid.status_code, 400, invalid.data)
+        self.assertIn("tax", invalid.data)
+        self.assertEqual(Expense.objects.count(), 1)
+
+        valid = self.client.post(url, {**payload, "tax": "18.00"}, format="json")
+        self.assertEqual(valid.status_code, 201, valid.data)
+        self.assertEqual(valid.data["amount"], "118.00")
+        self.assertEqual(valid.data["tax"], "18.00")
+        self.assertEqual(valid.data["balanceDue"], "118.00")
+        self.assertEqual(WorkshopAccountEntry.objects.count(), 0)
+
+        expense_url = f"{url}/{valid.data['id']}"
+        invalid_update = self.client.patch(expense_url, {"amount": "17.99"}, format="json")
+        self.assertEqual(invalid_update.status_code, 400, invalid_update.data)
+        self.assertIn("tax", invalid_update.data)
+        self.assertEqual(Expense.objects.get(pk=valid.data["id"]).amount, Decimal("118.00"))
+
     def test_transfer_is_not_income_and_does_not_change_total_assets(self):
         response = self.client.post("/api/v1/finance/transfers", {
             "fromAccountId": str(self.cash.pk), "toAccountId": str(self.bank.pk),
