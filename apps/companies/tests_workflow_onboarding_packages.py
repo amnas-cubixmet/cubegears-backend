@@ -172,7 +172,9 @@ class WorkflowFeaturePackagesTests(TestCase):
         inventory = module_inventory()
         keys = {item["key"] for item in inventory if item["billable"]}
         self.assertTrue({"workshop_operations", "accounts_tax",
-                         "attendance_payroll", "business_insights", "storage"} <= keys)
+                         "attendance_payroll", "storage"} <= keys)
+        self.assertNotIn("business_insights", keys)
+        self.assertIn("reports", WORKFLOW_PACKAGES["accounts_tax"]["modules"])
         self.assertFalse(ALL_GROUPED_MODULES & keys)
         members = [
             member for package in WORKFLOW_PACKAGES.values() for member in package["modules"]
@@ -190,7 +192,63 @@ class WorkflowFeaturePackagesTests(TestCase):
         self.assertIn("payroll", expanded)
         self.assertNotIn("jobs", expanded)
         self.assertTrue(legacy_individual_feature_bundle({"attendance"}))
+        self.assertTrue(legacy_individual_feature_bundle({"business_insights"}))
         self.assertFalse(legacy_individual_feature_bundle({"attendance_payroll"}))
+        self.assertEqual(billed_feature_keys("reports"), ("reports", "accounts_tax", "business_insights"))
+        self.assertIn("reports", expand_entitlements({"accounts_tax"}))
+        self.assertIn("reports", expand_entitlements({"business_insights"}))
+        self.assertNotIn("finance", expand_entitlements({"business_insights"}))
+
+    @override_settings(CREDIT_FEATURE_ENFORCEMENT_ENABLED=True, CREDIT_LABEL_ONLY_ACCESS_ENABLED=True)
+    def test_reports_are_sold_with_accounts_and_existing_access_stays_valid(self):
+        company = Company.objects.create(name="Reports Garage", slug="reports-garage", require_paid_features=True)
+        owner_role = Role.objects.create(company=company, name="Owner", code="OWNER", permissions=["*"])
+        owner = User.objects.create(email="reports-owner@example.test", company=company, role=owner_role)
+        company.owner = owner
+        company.save(update_fields=["owner"])
+        reports_role = Role.objects.create(company=company, name="Reporter", code="REPORTER", permissions=["reports.view"])
+        reporter = User.objects.create(email="reporter@example.test", company=company, role=reports_role)
+        restricted_role = Role.objects.create(company=company, name="Worker", code="WORKER", permissions=[])
+        restricted = User.objects.create(email="report-worker@example.test", company=company, role=restricted_role)
+        accounts = FeatureBundle.objects.get(key="workflow-accounts_tax")
+        legacy = FeatureBundle.objects.get(key="workflow-business_insights")
+        client = APIClient()
+        client.force_authenticate(owner)
+        catalog_url = "/api/v1/saas/credits/bundles"
+        purchase_url = f"{catalog_url}/purchase"
+
+        catalog = client.get(catalog_url)
+        self.assertEqual(catalog.status_code, 200, catalog.data)
+        by_id = {row["id"]: row for row in catalog.data}
+        self.assertNotIn(legacy.pk, by_id)
+        self.assertIn("reports", by_id[accounts.pk]["includedModuleKeys"])
+        self.assertIn("Reports", by_id[accounts.pk]["includedModules"])
+        self.assertFalse(user_has_permission(reporter, "reports.view"))
+        rejected = client.post(purchase_url, {"bundleId": legacy.pk}, format="json")
+        self.assertEqual(rejected.status_code, 409, rejected.data)
+        self.assertEqual(rejected.data["code"], "REPORTS_IN_ACCOUNTS_TAX")
+
+        access = CompanyBundleAccess.objects.create(
+            company=company, bundle=legacy, enabled=True,
+            valid_until=timezone.now() + timedelta(days=5), billing_type_at_purchase="monthly",
+        )
+        self.assertTrue(user_has_permission(reporter, "reports.view"))
+        self.assertFalse(user_has_permission(restricted, "reports.view"))
+        legacy_row = next(row for row in client.get(catalog_url).data if row["id"] == legacy.pk)
+        self.assertTrue(legacy_row["active"])
+        self.assertFalse(legacy_row["purchaseEnabled"])
+        overlap = client.post(purchase_url, {"bundleId": accounts.pk}, format="json")
+        self.assertEqual(overlap.status_code, 409, overlap.data)
+        self.assertEqual(overlap.data["code"], "EXISTING_LEGACY_ENTITLEMENT")
+
+        access.enabled = False
+        access.save(update_fields=["enabled"])
+        CompanyBundleAccess.objects.create(
+            company=company, bundle=accounts, enabled=True,
+            valid_until=timezone.now() + timedelta(days=5), billing_type_at_purchase="monthly",
+        )
+        self.assertTrue(user_has_permission(reporter, "reports.view"))
+        self.assertFalse(user_has_permission(restricted, "reports.view"))
 
     @override_settings(CREDIT_FEATURE_ENFORCEMENT_ENABLED=True,
                        CREDIT_LABEL_ONLY_ACCESS_ENABLED=True)

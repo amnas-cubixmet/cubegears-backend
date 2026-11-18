@@ -11,7 +11,8 @@ from rest_framework.views import APIView
 
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.module_groups import (
-    WORKFLOW_PACKAGES, package_metadata, legacy_individual_feature_bundle,
+    WORKFLOW_PACKAGES, LEGACY_REPORT_FEATURES, REPORTS_PACKAGE_MESSAGE,
+    package_metadata, legacy_individual_feature_bundle,
 )
 from apps.saas.access import FREE_TENANT_MODULES
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
@@ -42,6 +43,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
     workflow_key = next((item["key"] for item in active_features
                          if item["key"] in WORKFLOW_PACKAGES), None)
     workflow_info = package_metadata(workflow_key) if workflow_key else None
+    feature_keys = {item["key"] for item in paid_features}
+    reports_only = bool(feature_keys) and feature_keys <= LEGACY_REPORT_FEATURES
     can_resume = bool(access and not access.enabled and access.last_price_credits > 0 and access.purchased_at and (
         access.billing_type_at_purchase == "permanent" or (
             access.billing_type_at_purchase in {"ten_seconds", "hourly", "daily", "weekly", "monthly"}
@@ -71,6 +74,8 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         from .monthly_policy import policy
         if not _enabled() or not policy():
             disabled_reason = 'POSTPAID_ENGINE_DISABLED'
+    if reports_only:
+        disabled_reason = 'REPORTS_IN_ACCOUNTS_TAX'
     return {
         'billingMode': 'monthly_postpaid' if postpaid else 'prepaid',
         "id": bundle.pk, "key": bundle.key,
@@ -93,7 +98,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "features": active_features,
         "freeModules": [feature["key"] for feature in active_features if feature["key"] in FREE_TENANT_MODULES],
         "active": bool(postpaid_state and postpaid_state.enabled and not postpaid_state.suspended) if postpaid else (bundle_is_usable(access) if access else False),
-        "canResume": can_resume,
+        "canResume": can_resume and not reports_only,
         "retired": bundle.is_retired,
         "validUntil": access.valid_until.isoformat() if access and access.valid_until else None,
         "usesRemaining": access.uses_remaining if access else 0,
@@ -116,21 +121,28 @@ class BundleListView(APIView):
         legacy_purchased_ids = set(CompanyBundleAccess.objects.filter(
             company=request.user.company,
         ).values_list("bundle_id", flat=True))
+        legacy_purchased_ids.update(ModulePriceLabel.objects.filter(
+            monthly_postpaid=True,
+            feature__key__in=LEGACY_REPORT_FEATURES,
+            feature__postpaid_tenants__company=request.user.company,
+            feature__postpaid_tenants__enabled=True,
+        ).values_list("bundle_id", flat=True))
         # Old published labels can still reference Dashboard/Settings/Staff.
         # Exclude free-only labels from the paid marketplace rather than
         # presenting free core access as an activation or renewal product.
-        bundles = [
-            bundle
-            for bundle in FeatureBundle.objects.filter(is_active=True).filter(
-                Q(is_retired=False) | Q(company_access__company=request.user.company)
-            ).distinct().prefetch_related("features")
-            if (not bundle.features.all() or any(
-                feature.key not in FREE_TENANT_MODULES
-                for feature in bundle.features.all()
-            )) and (not legacy_individual_feature_bundle(
-                {feature.key for feature in bundle.features.all()}
-            ) or bundle.id in legacy_purchased_ids)
-        ]
+        candidates = FeatureBundle.objects.filter(is_active=True).filter(
+            Q(is_retired=False) | Q(pk__in=legacy_purchased_ids)
+        ).prefetch_related("features")
+        bundles = []
+        for bundle in candidates:
+            feature_keys = {feature.key for feature in bundle.features.all()}
+            paid_keys = feature_keys - FREE_TENANT_MODULES
+            if feature_keys and not paid_keys:
+                continue
+            legacy = legacy_individual_feature_bundle(feature_keys) or (paid_keys and paid_keys <= LEGACY_REPORT_FEATURES)
+            if legacy and bundle.pk not in legacy_purchased_ids:
+                continue
+            bundles.append(bundle)
         accesses = {
             a.bundle_id: a for a in CompanyBundleAccess.objects.filter(
                 company=request.user.company, bundle_id__in=[b.pk for b in bundles]
@@ -180,9 +192,12 @@ class BundlePurchaseView(APIView):
         bundle = get_object_or_404(
             FeatureBundle, pk=payload.validated_data["bundleId"], is_active=True
         )
-        if legacy_individual_feature_bundle(
-            set(bundle.features.values_list("key", flat=True))
-        ) and not CompanyBundleAccess.objects.filter(
+        feature_rows = list(bundle.features.values_list("key", "is_active"))
+        package_keys = {key for key, _ in feature_rows}
+        paid_keys = {key for key, active in feature_rows if active} - FREE_TENANT_MODULES
+        if paid_keys and paid_keys <= LEGACY_REPORT_FEATURES:
+            return Response({"code": "REPORTS_IN_ACCOUNTS_TAX", "message": REPORTS_PACKAGE_MESSAGE}, status=409)
+        if legacy_individual_feature_bundle(package_keys) and not CompanyBundleAccess.objects.filter(
             company=request.user.company, bundle=bundle,
         ).exists():
             return Response({
@@ -192,10 +207,11 @@ class BundlePurchaseView(APIView):
         # Do not charge a group that overlaps a legacy standalone entitlement.
         # A billing migration or explicit upgrade credit is required first;
         # never silently collect two fees for the same access.
-        package_keys = set(bundle.features.values_list("key", flat=True))
         for key in package_keys & set(WORKFLOW_PACKAGES):
             from .service import bundle_is_usable
             legacy_members = set(WORKFLOW_PACKAGES[key]["modules"])
+            if "reports" in legacy_members:
+                legacy_members.update(LEGACY_REPORT_FEATURES)
             owned_legacy = CompanyBundleAccess.objects.filter(
                 company=request.user.company, enabled=True,
                 bundle__features__key__in=legacy_members,
