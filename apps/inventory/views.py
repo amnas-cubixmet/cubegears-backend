@@ -507,7 +507,7 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
     queryset=PurchaseOrder.objects.all(); serializer_class=PurchaseOrderSerializer
 
     def perform_update(self, serializer):
-        from rest_framework.exceptions import PermissionDenied, ValidationError
+        from rest_framework.exceptions import ValidationError
         if hasattr(serializer.instance, "supplier_credit"):
             protected = {"total", "subtotal", "tax", "supplier", "items", "status", "number"}
             if protected.intersection(serializer.validated_data):
@@ -515,7 +515,7 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        from rest_framework.exceptions import PermissionDenied, ValidationError
+        from rest_framework.exceptions import ValidationError
         if hasattr(instance, "supplier_credit"):
             raise ValidationError({"message": "Cannot delete a purchase with linked supplier credit."})
         instance.delete()
