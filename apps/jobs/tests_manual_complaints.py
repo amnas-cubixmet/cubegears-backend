@@ -50,6 +50,35 @@ class ManualComplaintTests(TestCase):
             {"status": status, "notes": notes, **kwargs}, format="json",
         )
 
+    def edit(self, key="CMP-1", description="Brake noise in reverse", original="Brake noise"):
+        return self.client.patch(self.url(f"complaints/{key}"), {
+            "description": description, "originalDescription": original,
+        }, format="json")
+
+    def test_wording_edit_preserves_review_and_rejects_a_stale_draft(self):
+        self.assertEqual(self.update(status="Resolved", notes="Brake repaired").status_code, 200)
+        self.job.refresh_from_db()
+        previous_rows = self.job.complaints
+        result = self.edit()
+        self.assertEqual(result.status_code, 200, result.data)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.complaints[0], {
+            **previous_rows[0], "description": "Brake noise in reverse", "wording": "Brake noise in reverse",
+        })
+        self.assertEqual(self.job.complaints[1], previous_rows[1])
+        self.assertEqual(self.edit().status_code, 200)
+        self.assertEqual(self.edit(description="Old edit").status_code, 409)
+        self.assertEqual(JobActivity.objects.filter(job=self.job, event="Customer Complaint Edited").count(), 1)
+
+    def test_wording_edit_accepts_legacy_reference_and_locks_delivered_jobs(self):
+        self.job.complaints[0].pop("id")
+        self.job.save(update_fields=["complaints"])
+        self.assertEqual(self.edit("row-0", description="  ").status_code, 400)
+        self.assertEqual(self.edit("row-0").status_code, 200)
+        self.assertEqual(self.edit("row-2").status_code, 404)
+        Job.objects.filter(pk=self.job.pk).update(status="Delivered")
+        self.assertEqual(self.edit("row-0", "Still noisy", "Brake noise in reverse").status_code, 400)
+
     def test_legacy_auto_completed_is_not_inferred_as_resolved(self):
         reply = self.client.get(self.url("").rstrip("/"))
         self.assertEqual(reply.status_code, 200, reply.data)
@@ -124,6 +153,7 @@ class ManualComplaintTests(TestCase):
         )
         self.client.force_authenticate(user=reader)
         self.assertEqual(self.update().status_code, 403)
+        self.assertEqual(self.edit().status_code, 403)
         foreign = Company.objects.create(name="Another", slug="another-complaint-workshop")
         foreign_role = Role.objects.create(company=foreign, name="Owner",
                                            code="FOREIGN_COMPLAINT_OWNER",
@@ -134,6 +164,7 @@ class ManualComplaintTests(TestCase):
         )
         self.client.force_authenticate(user=user)
         self.assertEqual(self.update().status_code, 404)
+        self.assertEqual(self.edit().status_code, 404)
 
     def test_status_validation_and_legacy_row_token(self):
         self.assertEqual(self.update(status="Completed").status_code, 400)

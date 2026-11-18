@@ -9,6 +9,21 @@ VALID_COMPLAINT_STATUSES = (
 )
 
 
+def complaint_index(entries, complaint_id):
+    match = next((i for i, entry in enumerate(entries)
+                  if isinstance(entry, dict) and entry.get("id") is not None
+                  and str(entry["id"]) == complaint_id), None)
+    if match is not None or not complaint_id.startswith("row-"):
+        return match
+    try:
+        index = int(complaint_id[4:])
+    except ValueError:
+        return None
+    if 0 <= index < len(entries) and isinstance(entries[index], dict) and not entries[index].get("id"):
+        return index
+    return None
+
+
 def manual_complaint_status(entry):
     raw = str((entry or {}).get("status") or "").strip()
     if raw in VALID_COMPLAINT_STATUSES:
