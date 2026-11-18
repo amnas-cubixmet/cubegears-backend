@@ -134,17 +134,22 @@ class WorkshopJobNotificationsTests(TestCase):
 
     def test_notifications_are_excluded_from_workshop_operations_pricing(self):
         group = FeatureGroup.objects.create(key="test-notifications", label="Test Notifications")
-        notifications = PlanFeature.objects.create(key="notifications", group=group, label="Notifications")
-        operations = PlanFeature.objects.create(key="workshop_operations", group=group, label="Workshop Operations")
-        bundle = FeatureBundle.objects.create(key="operations", name="Workshop Operations", price_credits=10)
+        notifications, _ = PlanFeature.objects.update_or_create(
+            key="notifications", defaults={"group": group, "label": "Notifications", "is_active": True},
+        )
+        operations, _ = PlanFeature.objects.update_or_create(
+            key="workshop_operations", defaults={"group": group, "label": "Workshop Operations", "is_active": True},
+        )
+        bundle = FeatureBundle.objects.create(key="test-workshop-operations", name="Workshop Operations", price_credits=10)
         bundle.features.add(operations, notifications)
-        legacy = FeatureBundle.objects.create(key="notifications", name="Notifications", price_credits=5)
+        legacy = FeatureBundle.objects.create(key="test-paid-notifications", name="Notifications", price_credits=5)
         legacy.features.add(notifications)
 
         client = APIClient()
         client.force_authenticate(self.owner)
         catalog = client.get("/api/v1/saas/credits/bundles")
         self.assertEqual(catalog.status_code, 200, catalog.data)
+        self.assertNotIn(legacy.pk, [row["id"] for row in catalog.data])
         self.assertNotIn("notifications", [row["key"] for row in catalog.data])
         workshop = next(row for row in catalog.data if row["id"] == bundle.pk)
         self.assertNotIn("notifications", workshop["includedModuleKeys"])
