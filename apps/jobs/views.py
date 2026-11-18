@@ -16,6 +16,10 @@ from rest_framework.exceptions import ValidationError
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Job,JobActivity,JobEstimate,JobPart,JobPhoto
 from .audit import record_job_event
+from .editor import (
+    CUSTOMER_FIELDS, JOB_FIELDS, VEHICLE_FIELDS, editor_changes, editor_complaints,
+    editor_payload, editor_profile_access, editor_profile_serializer,
+)
 from .inspection_inputs import validate_finding, validate_diagnostic
 from .estimate_requests import estimate_identity, saved_estimate_identity, attach_identity
 from apps.customers.estimate_review import public_estimate
@@ -62,6 +66,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "work_service_remove": "jobs.edit",
         "complaint_status": "jobs.edit",
         "complaint_details": "jobs.edit",
+        "editor": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
         "quick_estimate": "jobs.edit",
@@ -671,6 +676,57 @@ class JobViewSet(CompanyScopedModelViewSet):
                          "job_ready" if new_status == Job.STATUS_READY else "job_status_changed",
                          activity)
         return response.Response(self.get_serializer(job).data)
+
+    @decorators.action(detail=True, methods=["get", "patch"])
+    @transaction.atomic
+    def editor(self, request, pk=None):
+        scoped = self.get_object()
+        if request.method == "GET":
+            return response.Response(editor_payload(self, scoped))
+
+        if not isinstance(request.data, dict) or set(request.data) - {"versions", "job", "customer", "vehicle"}:
+            raise ValidationError({"job": "Submit only Job Card and linked profile changes."})
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company_id=scoped.company_id)
+        if job.status == Job.STATUS_DELIVERED:
+            raise ValidationError({"job": "Delivered Job Cards are locked."})
+        job_changes = editor_changes(request.data, "job", JOB_FIELDS)
+        customer_changes = editor_changes(request.data, "customer", CUSTOMER_FIELDS)
+        vehicle_changes = editor_changes(request.data, "vehicle", VEHICLE_FIELDS)
+        versions = request.data.get("versions")
+        if not isinstance(versions, dict):
+            raise ValidationError({"job": "Reload the Job Card before editing."})
+
+        access = editor_profile_access(request.user, job)
+        customer = editor_profile_serializer(request, job, "customer", customer_changes, access)
+        vehicle = editor_profile_serializer(request, job, "vehicle", vehicle_changes, access)
+        for key, record in (("job", job), ("customer", customer and customer.instance),
+                            ("vehicle", vehicle and vehicle.instance)):
+            if record and versions.get(key) != record.updated_at.isoformat():
+                return response.Response(
+                    {"message": "This Job Card or a linked profile changed. Reload before saving."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        if "complaints" in job_changes:
+            job_changes["complaints"] = editor_complaints(job, job_changes["complaints"])
+        if job_changes:
+            serializer = self.get_serializer(job, data=job_changes, partial=True)
+            serializer.is_valid(raise_exception=True)
+            self._validate_related_tenants(serializer.validated_data)
+            if "complaints" in job_changes:
+                saved_count = len(job.complaints or [])
+                # Saved rows were merged against the locked Job Card above.
+                # Keep their original review data, including legacy values.
+                serializer.validated_data["complaints"][:saved_count] = job_changes["complaints"][:saved_count]
+            self.perform_update(serializer)
+            job = serializer.instance
+        for label, serializer in (("Customer", customer), ("Vehicle", vehicle)):
+            if serializer:
+                saved = serializer.save()
+                record_job_event(job, request.user, f"{label} Profile Updated",
+                                 f"Updated linked {label.lower()} details.", {"profileId": str(saved.pk)})
+        job.refresh_from_db()
+        return response.Response(editor_payload(self, job))
 
     @decorators.action(
         detail=True, methods=["patch"],
