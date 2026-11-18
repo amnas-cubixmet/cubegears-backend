@@ -5,7 +5,7 @@ from .module_groups import billed_feature_keys, expand_entitlements
 
 # Always included for every active tenant, subject to the role's explicit permissions.
 # `billing` remains company-owner-only in user_has_permission().
-FREE_TENANT_MODULES = frozenset({"dashboard", "settings", "staff", "roles", "billing"})
+FREE_TENANT_MODULES = frozenset({"dashboard", "settings", "staff", "roles", "billing", "notifications"})
 
 
 def active_plan(company):
@@ -100,8 +100,8 @@ def feature_allowed(user, permission):
             balance = CreditWallet.objects.filter(company=user.company).values_list("balance", flat=True).first()
             if balance is None or balance <= 0:
                 return False
-    # Dashboard, Settings, Staff Management, Roles & Permissions and SaaS Account are free in EVERY billing
-    # mode, including strict paid-label-only mode. RBAC/tenant checks run first
+    # Free workspace modules are available in every entitlement mode.
+    # RBAC/tenant checks run first
     # in user_has_permission: this never gives employees owner/billing access.
     if module in FREE_TENANT_MODULES:
         return True
@@ -116,8 +116,7 @@ def feature_allowed(user, permission):
     if strict_company and module == "company":
         return True
     # Legacy rollout compatibility.
-    if not strict_company and module in {"dashboard", "billing", "settings", "company", "storage",
-                  "notifications", "roles"}:
+    if not strict_company and module in {"company", "storage"}:
         return True
 
     # Strict label-only mode is OPT-IN. Fail closed if it is enabled without

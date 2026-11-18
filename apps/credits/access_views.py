@@ -15,9 +15,7 @@ from apps.accounts.permissions import user_has_permission, is_company_owner
 from apps.roles.permission_catalog import TENANT_PERMISSIONS
 
 
-CORE_MODULES = frozenset({
-    "billing", "company", "roles", "dashboard", "staff", "settings",
-})
+CORE_MODULES = FREE_TENANT_MODULES | {"company"}
 
 
 class TenantFeatureAccessView(APIView):
@@ -40,7 +38,7 @@ class TenantFeatureAccessView(APIView):
         )
         core = (CORE_MODULES | {"storage"} if is_company_owner(user) else CORE_MODULES)
         if not user.company.require_paid_features:
-            core |= {"settings", "storage", "notifications"}
+            core |= {"storage"}
         modules = sorted({
             code.partition(".")[0] for code in permissions
             if "." in code and code.partition(".")[0] not in core

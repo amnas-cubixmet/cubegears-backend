@@ -9,8 +9,8 @@ from collections import OrderedDict
 WORKFLOW_PACKAGES = OrderedDict((
     ("workshop_operations", {
         "label": "Workshop Operations",
-        "description": "Customers, vehicles, services, job cards, inventory/suppliers, invoices and customer updates.",
-        "modules": ("customers", "vehicles", "services", "jobs", "stock", "invoices", "notifications"),
+        "description": "Customers, vehicles, services, job cards, inventory/suppliers and invoices.",
+        "modules": ("customers", "vehicles", "services", "jobs", "stock", "invoices"),
         "flows": ("Customer → Vehicle → Job Card → Parts → Estimate → Invoice → Customer Updates",),
         "dependencies": (),
     }),
@@ -71,7 +71,9 @@ def legacy_only_workforce_bundle(keys):
 
 def legacy_individual_feature_bundle(keys):
     """Hide obsolete standalone products from *new* customers only."""
-    return bool(keys) and set(keys) <= ALL_GROUPED_MODULES and not (set(keys) & GROUP_KEYS)
+    # Old mixed labels can still reference Notifications alongside paid modules.
+    # Making it free must not turn those legacy labels into new offers.
+    return bool(keys) and set(keys) <= (ALL_GROUPED_MODULES | {"notifications"})
 
 
 def package_for(module):
