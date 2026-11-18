@@ -286,7 +286,8 @@ class JobViewSet(CompanyScopedModelViewSet):
             })
         tracked = {
             key: getattr(job, key)
-            for key in ("complaints", "work_updates", "qc", "work", "technician_id", "priority")
+            for key in ("complaints", "work_updates", "qc", "work", "technician_id", "priority",
+                        "service_type", "odometer", "fuel_level")
             if key in serializer.validated_data or
             (key == "technician_id" and "technician" in serializer.validated_data)
         }
@@ -361,6 +362,9 @@ class JobViewSet(CompanyScopedModelViewSet):
             "work": "Work Records Updated",
             "technician_id": "Mechanic Assignment Changed",
             "priority": "Job Priority Changed",
+            "service_type": "Job Service Type Changed",
+            "odometer": "Check-in Odometer Updated",
+            "fuel_level": "Check-in Fuel Level Updated",
         }
         for key, before in tracked.items():
             after = getattr(updated, key)

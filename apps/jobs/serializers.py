@@ -60,6 +60,7 @@ class JobSerializer(serializers.ModelSerializer):
     vin=serializers.CharField(source="vehicle.vin",read_only=True)
     kilometre=serializers.IntegerField(source="odometer",read_only=True)
     fuelLevel=serializers.CharField(source="fuel_level",read_only=True)
+    serviceType = serializers.ChoiceField(source="service_type", choices=Job.SERVICE_TYPES, required=False)
     vehicleInfo=serializers.SerializerMethodField()
     jobNumber=serializers.CharField(source="job_number",required=False)
     assignedEmployeeId=serializers.SerializerMethodField()
@@ -74,7 +75,7 @@ class JobSerializer(serializers.ModelSerializer):
     estimates=JobEstimateSerializer(many=True,read_only=True)
     class Meta:
         model=Job
-        exclude=("company","branch")
+        exclude=("company","branch","service_type")
         # Money is derived from finalized estimates, posted labour and stock
         # movements, never trusted from a generic browser PATCH.
         read_only_fields=("id","created_at","updated_at","workflow_progress","parts_workflow",
