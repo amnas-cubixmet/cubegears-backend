@@ -38,7 +38,7 @@ class StaffSeatPricingTests(TestCase):
         company.owner = cls.owner
         company.save(update_fields=["owner"])
         cls.role = Role.objects.create(
-            company=company, name="Mechanic", code="MECHANIC", permissions=["jobs.view"],
+            company=company, name="Mechanic", code="MECHANIC", permissions=["dashboard.view"],
         )
         cls.feature = PlanFeature.objects.get(key="accounts_tax")
         cls.bundle = FeatureBundle.objects.create(
