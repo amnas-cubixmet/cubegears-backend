@@ -684,6 +684,8 @@ class JobViewSet(CompanyScopedModelViewSet):
         if request.method == "GET":
             return response.Response(editor_payload(self, scoped))
 
+        if not isinstance(request.data, dict) or set(request.data) - {"versions", "job", "customer", "vehicle"}:
+            raise ValidationError({"job": "Submit only Job Card and linked profile changes."})
         job = Job.objects.select_for_update().get(pk=scoped.pk, company_id=scoped.company_id)
         if job.status == Job.STATUS_DELIVERED:
             raise ValidationError({"job": "Delivered Job Cards are locked."})

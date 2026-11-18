@@ -52,6 +52,9 @@ def editor_profile_serializer(request, job, kind, changes, access):
         raise PermissionDenied(f"You do not have permission to edit the linked {kind} profile.")
     original = getattr(job, kind)
     locked = type(original).objects.select_for_update().get(pk=original.pk, company_id=job.company_id)
+    if (kind == "customer" and not is_company_owner(request.user)
+            and locked.branch_id not in authorized_branch_ids(request.user)):
+        raise PermissionDenied("You do not have permission to edit the linked customer profile.")
     serializer_class = CustomerSerializer if kind == "customer" else VehicleSerializer
     serializer = serializer_class(locked, data=changes, partial=True, context={"request": request})
     serializer.is_valid(raise_exception=True)
