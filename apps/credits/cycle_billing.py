@@ -19,6 +19,7 @@ from django.utils import timezone
 from apps.companies.models import Company
 from apps.saas.models import StorageEvent
 from apps.saas.access import FREE_TENANT_MODULES
+from .change_tracking import lock_company
 from .models import (
     CompanyBundleAccess, CreditCycleInvoice, CreditCyclePolicy,
     CycleLabelSession, StorageCreditPolicy,
@@ -214,6 +215,8 @@ def settle_cycle_category(company, category, start, end, *, at=None, dry_run=Fal
     # No retroactive bills for periods entirely before cycle activation.
     if not policy.activated_at or end <= policy.activated_at:
         return "not_active_yet", None
+    if category == "feature":
+        lock_company(company)
     row = CreditCycleInvoice.objects.select_for_update().filter(
         company=company, category=category, starts_on=start.date(),
     ).first()
@@ -299,19 +302,22 @@ def run_due_cycles(*, at=None, dry_run=False):
 def reconcile_cycle_label_seats(company, *, at=None):
     """Close/open exact timestamped rate snapshots when login seat count changes.
 
-    Samples run hourly with the cycle worker. We never rewrite past usage
-    rows or charge a seat rate that was not recorded by the server.
+    Staff mutations checkpoint immediately. The hourly worker reconciles
+    changes made outside the application model hooks.
     """
     policy = effective_policy()
     if not policy:
         return 0
+    lock_company(company)
     at = at or timezone.now()
     users = billable_user_count(company)
     changed = 0
-    active = CycleLabelSession.objects.select_for_update().filter(
+    active = CycleLabelSession.objects.select_for_update(of=("self",)).filter(
         company=company, ended_at__isnull=True,
     ).select_related("bundle")
     for session in active:
+        if session.started_at > at:
+            continue
         entitlement = CompanyBundleAccess.objects.filter(
             company=company, bundle_id=session.bundle_id, enabled=True,
         ).exists()
@@ -338,6 +344,7 @@ def activate_cycle_label(company, bundle, actor):
     policy = effective_policy()
     if not policy:
         raise ValueError("Postpaid cycle billing is not enabled.")
+    lock_company(company)
     if company_is_overdue(company):
         raise ValueError("Overdue wallet bill: add credits and settle it before activating modules.")
     if bundle.billing_type != "monthly" or not bundle.is_active:
