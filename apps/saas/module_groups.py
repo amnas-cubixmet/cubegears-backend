@@ -9,8 +9,8 @@ from collections import OrderedDict
 WORKFLOW_PACKAGES = OrderedDict((
     ("workshop_operations", {
         "label": "Workshop Operations",
-        "description": "Customers, vehicles, services, job cards, inventory/suppliers, invoices and customer updates.",
-        "modules": ("customers", "vehicles", "services", "jobs", "stock", "invoices", "notifications"),
+        "description": "Customers, vehicles, services, job cards, inventory/suppliers and invoices.",
+        "modules": ("customers", "vehicles", "services", "jobs", "stock", "invoices"),
         "flows": ("Customer → Vehicle → Job Card → Parts → Estimate → Invoice → Customer Updates",),
         "dependencies": (),
     }),
