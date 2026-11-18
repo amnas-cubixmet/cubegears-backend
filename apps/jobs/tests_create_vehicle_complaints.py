@@ -92,6 +92,29 @@ class JobCreateVehicleComplaintTests(TestCase):
         job = Job.objects.get(pk=resp.data["id"])
         self.assertEqual(job.odometer, 52500)
 
+    def test_job_details_keep_profile_links_and_persist_service_type(self):
+        created = self.client.post("/api/v1/jobs", {
+            **self.payload(), "serviceType": "AC Service",
+        }, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["serviceType"], "AC Service")
+        url = f"/api/v1/jobs/{created.data['id']}"
+        bad = self.client.patch(url, {"serviceType": "Unknown", "odometer": -1}, format="json")
+        self.assertEqual(bad.status_code, 400, bad.data)
+        self.assertIn("serviceType", bad.data)
+        self.assertIn("odometer", bad.data)
+        saved = self.client.patch(url, {
+            "serviceType": "Running Repair", "odometer": 0, "fuel_level": "75%",
+        }, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+        job = Job.objects.select_related("vehicle").get(pk=created.data["id"])
+        self.assertEqual((job.service_type, job.odometer, job.fuel_level), ("Running Repair", 0, "75%"))
+        self.assertEqual(job.vehicle.odometer, 52500)
+        self.assertEqual(job.customer_id, self.customer.pk)
+        self.assertEqual(str(job.vehicle_id), str(created.data["vehicleId"]))
+        Job.objects.filter(pk=job.pk).update(status=Job.STATUS_DELIVERED)
+        self.assertEqual(self.client.patch(url, {"serviceType": "General Service"}, format="json").status_code, 400)
+
     def test_authorized_explicit_vehicle_update_changes_only_metadata(self):
         vehicle = Vehicle.objects.create(
             company=self.company, branch=self.branch, customer=self.customer,

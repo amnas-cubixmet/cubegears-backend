@@ -25,6 +25,10 @@ class Job(CompanyOwnedModel):
     STATUS_NEW="New"; STATUS_INSPECTION="Inspection"; STATUS_ESTIMATE_PENDING="Estimate Pending"; STATUS_APPROVED="Approved"
     STATUS_IN_PROGRESS="In Progress"; STATUS_WAITING_PARTS="Waiting for Parts"; STATUS_QC="QC"; STATUS_READY="Ready for Delivery"; STATUS_DELIVERED="Delivered"
     STATUS_CHOICES=[(x,x) for x in [STATUS_NEW,STATUS_INSPECTION,STATUS_ESTIMATE_PENDING,STATUS_APPROVED,STATUS_IN_PROGRESS,STATUS_WAITING_PARTS,STATUS_QC,STATUS_READY,STATUS_DELIVERED]]
+    SERVICE_TYPES = (
+        "General Service", "Running Repair", "Breakdown", "Insurance Repair", "Body Shop",
+        "AC Service", "Electrical", "Engine Work", "Periodic Maintenance",
+    )
     job_number=models.CharField(max_length=40)
     customer=models.ForeignKey("customers.Customer",on_delete=models.PROTECT,related_name="jobs")
     vehicle=models.ForeignKey("vehicles.Vehicle",on_delete=models.PROTECT,related_name="jobs")
@@ -34,6 +38,9 @@ class Job(CompanyOwnedModel):
     priority=models.CharField(max_length=20,default="Normal")
     odometer=models.PositiveIntegerField(default=0)
     fuel_level=models.CharField(max_length=30,blank=True)
+    service_type = models.CharField(
+        max_length=30, choices=[(value, value) for value in SERVICE_TYPES], default="General Service",
+    )
     promised_at=models.DateTimeField(null=True,blank=True)
     delivered_at=models.DateTimeField(null=True,blank=True)
     complaints=models.JSONField(default=list,blank=True)
