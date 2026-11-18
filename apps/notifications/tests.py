@@ -140,16 +140,21 @@ class WorkshopJobNotificationsTests(TestCase):
         operations, _ = PlanFeature.objects.update_or_create(
             key="workshop_operations", defaults={"group": group, "label": "Workshop Operations", "is_active": True},
         )
+        jobs, _ = PlanFeature.objects.get_or_create(key="jobs", defaults={"group": group, "label": "Jobs"})
         bundle = FeatureBundle.objects.create(key="test-workshop-operations", name="Workshop Operations", price_credits=10)
         bundle.features.add(operations, notifications)
         legacy = FeatureBundle.objects.create(key="test-paid-notifications", name="Notifications", price_credits=5)
         legacy.features.add(notifications)
+        legacy_mixed = FeatureBundle.objects.create(key="test-old-jobs-bundle", name="Jobs and Notifications", price_credits=5)
+        legacy_mixed.features.add(jobs, notifications)
 
         client = APIClient()
         client.force_authenticate(self.owner)
         catalog = client.get("/api/v1/saas/credits/bundles")
         self.assertEqual(catalog.status_code, 200, catalog.data)
-        self.assertNotIn(legacy.pk, [row["id"] for row in catalog.data])
+        offered_ids = {row["id"] for row in catalog.data}
+        self.assertNotIn(legacy.pk, offered_ids)
+        self.assertNotIn(legacy_mixed.pk, offered_ids)
         self.assertNotIn("notifications", [row["key"] for row in catalog.data])
         workshop = next(row for row in catalog.data if row["id"] == bundle.pk)
         self.assertNotIn("notifications", workshop["includedModuleKeys"])

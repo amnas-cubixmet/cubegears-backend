@@ -71,7 +71,9 @@ def legacy_only_workforce_bundle(keys):
 
 def legacy_individual_feature_bundle(keys):
     """Hide obsolete standalone products from *new* customers only."""
-    return bool(keys) and set(keys) <= ALL_GROUPED_MODULES and not (set(keys) & GROUP_KEYS)
+    # Old mixed labels can still reference Notifications alongside paid modules.
+    # Making it free must not turn those legacy labels into new offers.
+    return bool(keys) and set(keys) <= (ALL_GROUPED_MODULES | {"notifications"})
 
 
 def package_for(module):

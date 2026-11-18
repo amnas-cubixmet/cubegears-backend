@@ -35,6 +35,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         {"key": feature.key, "label": feature.label}
         for feature in bundle.features.all() if feature.is_active
     ]
+    paid_features = [item for item in active_features if item["key"] not in FREE_TENANT_MODULES]
     mapping = ModulePriceLabel.objects.filter(bundle=bundle, monthly_postpaid=True).first()
     postpaid = bool(mapping)
     postpaid_state = CompanyPostpaidFeature.objects.filter(company=company, feature=mapping.feature).first() if mapping and company else None
@@ -60,7 +61,7 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         else "FEATURE_LABEL_EMPTY"
         if not active_features
         else "FREE_MODULES_ONLY"
-        if all(item["key"] in FREE_TENANT_MODULES for item in active_features)
+        if not paid_features
         else "INVALID_USER_PRICE"
         if not Decimal("0.01") <= bundle.per_user_credits <= Decimal("1000000.00")
         else None
@@ -78,10 +79,10 @@ def _public_bundle(bundle, access=None, user_count=0, company=None):
         "includedModules": (
             [item.replace("_", " ").title().replace("Gstr", "GST")
              for item in workflow_info["includedModules"]]
-            if workflow_info else [feature["label"] for feature in active_features]
+            if workflow_info else [feature["label"] for feature in paid_features]
         ),
         "includedModuleKeys": workflow_info["includedModules"] if workflow_info else [
-            feature["key"] for feature in active_features
+            feature["key"] for feature in paid_features
         ],
         "workflowDependencies": workflow_info["workflowDependencies"] if workflow_info else [],
         "workflowPaths": workflow_info["workflowPaths"] if workflow_info else [],
