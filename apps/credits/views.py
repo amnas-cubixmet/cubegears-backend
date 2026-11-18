@@ -4,6 +4,7 @@ import uuid
 from decimal import Decimal
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
@@ -14,6 +15,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from apps.accounts.permissions import user_has_permission, IsCompanyOwner
 from apps.saas.models import PlanFeature
+from apps.saas.module_groups import LEGACY_REPORT_FEATURES, REPORTS_PACKAGE_MESSAGE
 from apps.saas.razorpay_client import configured, create_order, fetch_payment, verify_checkout, verify_webhook, GatewayError
 from .models import CreditLedger, CreditPackage, CreditPurchase, FeatureCreditPrice, CompanyCreditFeature, CreditWebhookEvent, CompanyPostpaidFeature, FeatureMeterPeriod
 from .service import wallet_for, staff_count, billable_user_count, price_for, enable_paid_feature, disable_paid_feature, confirm_purchase, change_balance
@@ -146,6 +148,9 @@ class CreditFeaturesView(APIView):
             }
         rows = FeatureCreditPrice.objects.filter(feature__is_active=True).exclude(
             feature__key__in=FREE_TENANT_MODULES
+        ).exclude(
+            Q(feature__key__in=LEGACY_REPORT_FEATURES) &
+            ~Q(feature_id__in=current.keys() | monthly_states.keys())
         ).select_related("feature").order_by("feature__sort_order", "feature__label")
         return Response([
             {
@@ -195,7 +200,9 @@ class CreditFeaturesView(APIView):
                     if current.get(rate.feature_id) and current[rate.feature_id].next_charge_at else None
                 ),
                 "available": rate.is_available and price_for(rate, count, users) > 0,
-                "activationEnabled": bool(settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features),
+                "activationEnabled": rate.feature.key not in LEGACY_REPORT_FEATURES and bool(
+                    settings.CREDIT_FEATURE_ENFORCEMENT_ENABLED or request.user.company.require_paid_features
+                ),
             }
             for rate in rows
         ])
@@ -237,6 +244,8 @@ class EnableCreditFeatureView(APIView):
             return Response({'code': 'MONTHLY_PAYMENT_OVERDUE', 'message': 'Settle outstanding usage before activating another module.'}, status=409)
         payload = FeatureInput(data=request.data)
         payload.is_valid(raise_exception=True)
+        if payload.validated_data["key"] in LEGACY_REPORT_FEATURES:
+            return Response({"code": "REPORTS_IN_ACCOUNTS_TAX", "message": REPORTS_PACKAGE_MESSAGE}, status=409)
         feature = get_object_or_404(PlanFeature, key=payload.validated_data["key"], is_active=True)
         rate = FeatureCreditPrice.objects.filter(feature=feature, is_available=True).first()
         if not rate or price_for(rate, staff_count(request.user.company), billable_user_count(request.user.company)) <= 0:
