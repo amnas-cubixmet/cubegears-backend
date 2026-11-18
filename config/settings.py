@@ -322,10 +322,12 @@ SIMPLE_JWT = {
     "CHECK_REVOKE_TOKEN": True,
 }
 
-CORS_ALLOWED_ORIGINS = env_list(
-    "CORS_ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000",
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 )
+if DEBUG:
+    _DEFAULT_CORS_ORIGINS += ",http://localhost:4173,http://127.0.0.1:4173"
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", _DEFAULT_CORS_ORIGINS)
 CORS_ALLOW_CREDENTIALS = env_bool("CORS_ALLOW_CREDENTIALS", False)
 # Expose only the opaque request reference to cross-origin browser clients.
 CORS_EXPOSE_HEADERS = ["X-Request-ID", "Retry-After"]
