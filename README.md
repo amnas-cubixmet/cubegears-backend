@@ -158,6 +158,12 @@ VITE_USE_MOCK_API=false
 
 The frontend already sends `Authorization: Bearer <access-token>`.
 
+For a local PWA test, keep Django running and run `npm run build` followed by
+`npm run preview` in Company Panel. Vite Preview serves the build on port 4173.
+If you already have a backend `.env`, add `http://localhost:4173` and
+`http://127.0.0.1:4173` to its `CORS_ALLOWED_ORIGINS` list and restart Django.
+Open `http://localhost:4173/stock` online before testing offline.
+
 ## Database — one DB_* format for local and production
 
 Every backend deployment reads the same seven database variables:
