@@ -1,7 +1,9 @@
 """Idempotency for user-triggered inventory balance mutations."""
+import hashlib
+import json
 import re
 
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 
 from .models import StockMovement
 
@@ -31,3 +33,17 @@ def replay_movement(request, key, *, item, kind, quantity):
             or entry.branch_id != request.user.branch_id):
         raise ValidationError({"requestKey": "This request key belongs to a different inventory transaction."})
     return entry
+
+
+class StockRequestConflict(APIException):
+    status_code = 409
+    default_detail = "This request conflicts with an earlier inventory entry. Check Inventory."
+
+
+def stock_creation_fingerprint(data):
+    # Form and JSON callers can replay their original payload. The key may be
+    # supplied through any of the existing aliases independently of the body.
+    aliases = {"requestKey", "idempotencyKey", "idempotency_key"}
+    payload = {field: value for field, value in data.items() if field not in aliases}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
+    return hashlib.sha256(encoded).hexdigest()
