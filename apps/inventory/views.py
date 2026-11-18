@@ -3,13 +3,13 @@ from django.db import transaction
 from django.db.models import F,Q
 from rest_framework import decorators,response
 from rest_framework.fields import DateField
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from apps.companies.models import Company
 from apps.suppliers.finance_api import create_supplier_bill, quantity as purchase_quantity
 from common.viewsets import CompanyScopedModelViewSet
-from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit,StockBranchBalance,SupplierBill
+from .models import StockCategory,StockItem,StockMovement,PurchaseOrder,StockTransfer,StockAudit,StockBranchBalance,SupplierBill,StockCreationReceipt
 from .branch_stock import locked_branch_balance, move_balance, available_in_branch
-from .request_keys import stock_request_key, replay_movement
+from .request_keys import StockRequestConflict, replay_movement, stock_creation_fingerprint, stock_request_key
 from .part12_operations import transfer_inventory, return_issued_stock, count_inventory
 from .serializers import *
 
@@ -49,6 +49,16 @@ class StockItemViewSet(CompanyScopedModelViewSet):
     @transaction.atomic
     def _create_with_stock(self, request, purchase=None):
         key = stock_request_key(request)
+        actor = request.user
+        if "offlineScope" in request.data:
+            scope = request.data["offlineScope"]
+            expected = {
+                "user": str(actor.pk), "workshop": str(actor.company_id), "branch": str(actor.branch_id),
+            }
+            if scope != expected or not actor.branch_id or not actor.branch.is_active:
+                raise PermissionDenied("Sign in with the original account, workshop and active branch.")
+            if purchase is not None or not key:
+                raise ValidationError({"requestKey": "Offline opening stock requires a request key."})
         if purchase is None and not key:
             return super().create(request)
         if purchase is not None:
@@ -59,15 +69,29 @@ class StockItemViewSet(CompanyScopedModelViewSet):
                 invoice_date = DateField().run_validation(purchase.get("invoiceDate"))
             except ValidationError as error:
                 raise ValidationError({"invoiceDate": error.detail}) from error
-        else:
-            incoming = purchase_quantity(request.data.get("onHand"))
 
-        Company.objects.select_for_update().get(pk=request.user.company_id)
+        Company.objects.select_for_update().get(pk=actor.company_id)
+        receipt = StockCreationReceipt.objects.filter(
+            company_id=actor.company_id, request_key=key,
+        ).select_related("item").first()
+        fingerprint = stock_creation_fingerprint(request.data) if purchase is None else None
+        if receipt:
+            if (purchase is not None or receipt.branch_id != actor.branch_id or
+                    receipt.created_by_id != actor.pk or receipt.fingerprint != fingerprint):
+                raise StockRequestConflict()
+            return response.Response(self.get_serializer(receipt.item).data)
+
         existing = StockMovement.objects.filter(
             company_id=request.user.company_id, request_key=key,
         ).select_related("item").first()
         if existing:
             expected_kind = "purchase" if purchase is not None else "opening"
+            if purchase is None:
+                # Preserve movement-based replay for pre-migration clients.
+                # An offline request must match a full creation receipt.
+                if "offlineScope" in request.data:
+                    raise StockRequestConflict()
+                incoming = purchase_quantity(request.data.get("onHand"))
             if (existing.movement_type != expected_kind or existing.quantity != incoming or
                     existing.branch_id != request.user.branch_id or
                     existing.item.name != str(request.data.get("partName") or "").strip()):
@@ -85,12 +109,18 @@ class StockItemViewSet(CompanyScopedModelViewSet):
                 ).exists() or str(existing.item.supplier_id) != str(request.data.get("supplier")):
                     raise ValidationError({"requestKey": "This request already saved a different supplier invoice. Check Inventory."})
             return response.Response(self.get_serializer(existing.item).data)
-        if purchase is None:
-            return super().create(request)
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self._validate_related_tenants(serializer.validated_data)
+        if purchase is None:
+            self.perform_create(serializer)
+            item = serializer.instance
+            StockCreationReceipt.objects.create(
+                company_id=actor.company_id, branch_id=actor.branch_id, created_by=actor,
+                request_key=key, fingerprint=fingerprint, item=item,
+            )
+            return response.Response(serializer.data, status=201, headers=self.get_success_headers(serializer.data))
+
         data = serializer.validated_data
         if data.get("on_hand", 0) or data.get("reserved", 0):
             raise ValidationError({"onHand": "Use the purchase quantity for a supplier purchase."})
@@ -477,7 +507,7 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
     queryset=PurchaseOrder.objects.all(); serializer_class=PurchaseOrderSerializer
 
     def perform_update(self, serializer):
-        from rest_framework.exceptions import ValidationError
+        from rest_framework.exceptions import PermissionDenied, ValidationError
         if hasattr(serializer.instance, "supplier_credit"):
             protected = {"total", "subtotal", "tax", "supplier", "items", "status", "number"}
             if protected.intersection(serializer.validated_data):
@@ -485,7 +515,7 @@ class PurchaseOrderViewSet(CompanyScopedModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        from rest_framework.exceptions import ValidationError
+        from rest_framework.exceptions import PermissionDenied, ValidationError
         if hasattr(instance, "supplier_credit"):
             raise ValidationError({"message": "Cannot delete a purchase with linked supplier credit."})
         instance.delete()

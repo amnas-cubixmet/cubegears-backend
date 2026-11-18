@@ -1,11 +1,13 @@
 """Inventory part identifiers and company-persisted rack suggestions."""
+from unittest.mock import patch
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
-from apps.inventory.models import StockItem
+from apps.inventory.models import StockBranchBalance, StockCreationReceipt, StockItem, StockMovement
 from apps.roles.models import Role
 
 
@@ -23,6 +25,7 @@ class StockIdentifiersTests(TestCase):
             name="Parts Owner", phone="+919999000003",
             company=self.company, branch=self.branch, role=role,
         )
+        self.user = user
         self.company.owner = user
         self.company.save(update_fields=["owner"])
         self.client = APIClient()
@@ -127,3 +130,47 @@ class StockIdentifiersTests(TestCase):
         response = self.create_part(partName="Legacy part")
         self.assertEqual(response.status_code, 201, getattr(response, "data", None))
         self.assertEqual(response.data["zeroTaxClassification"], "")
+
+    def offline_scope(self):
+        return {
+            "user": str(self.user.pk),
+            "workshop": str(self.company.pk),
+            "branch": str(self.branch.pk),
+        }
+
+    def test_opening_stock_replay_after_lost_response(self):
+        for quantity in ("4.50", "0.00"):
+            with self.subTest(quantity=quantity):
+                key = f"pwa-opening-{quantity}"
+                self.assertEqual(self.create_part(
+                    onHand=quantity, requestKey=key, offlineScope=self.offline_scope(),
+                ).status_code, 201)
+                replay = self.create_part(
+                    onHand=quantity, requestKey=key, offlineScope=self.offline_scope(),
+                )
+                self.assertEqual(replay.status_code, 200, replay.data)
+                item = StockCreationReceipt.objects.get(request_key=key).item
+                self.assertEqual(replay.data["id"], str(item.pk))
+                self.assertEqual(str(StockBranchBalance.objects.get(item=item).quantity), quantity)
+                self.assertEqual(StockMovement.objects.filter(item=item, movement_type="opening").count(),
+                                 int(quantity != "0.00"))
+        self.assertEqual(StockItem.objects.count(), 2)
+
+    def test_opening_replay_rejects_changed_payload_and_scope(self):
+        payload = {"onHand": "1.00", "requestKey": "pwa-conflict-1", "offlineScope": self.offline_scope()}
+        self.assertEqual(self.create_part(**payload).status_code, 201)
+        self.assertEqual(self.create_part(**payload, sellingPrice="10.00").status_code, 409)
+        self.assertEqual(self.create_part(**{
+            **payload, "offlineScope": {**payload["offlineScope"], "branch": "wrong-branch"},
+        }).status_code, 403)
+        self.assertEqual(StockItem.objects.count(), 1)
+
+    def test_opening_stock_rolls_back_when_receipt_write_fails(self):
+        payload = {"onHand": "3.00", "requestKey": "pwa-atomic-1", "offlineScope": self.offline_scope()}
+        with patch.object(StockCreationReceipt.objects, "create", side_effect=RuntimeError("write failed")):
+            with self.assertRaisesRegex(RuntimeError, "write failed"):
+                self.create_part(**payload)
+        self.assertFalse(StockItem.objects.exists())
+        self.assertFalse(StockBranchBalance.objects.exists())
+        self.assertFalse(StockMovement.objects.exists())
+        self.assertEqual(self.create_part(**payload).status_code, 201)

@@ -93,6 +93,21 @@ class StockItem(CompanyOwnedModel):
     def low_stock(self): return self.available_quantity <= self.minimum_stock
     def __str__(self): return f"{self.sku} - {self.name}"
 
+class StockCreationReceipt(CompanyOwnedModel):
+    """Replay keyed part creation even when opening quantity is zero."""
+    request_key = models.CharField(max_length=120)
+    fingerprint = models.CharField(max_length=64)
+    item = models.ForeignKey(StockItem, on_delete=models.PROTECT)
+    created_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "request_key"], name="unique_stock_creation_request",
+            ),
+        ]
+
+
 class StockBranchBalance(CompanyOwnedModel):
     """Quantity available at one workshop branch; StockItem.on_hand is the total."""
     item = models.ForeignKey(StockItem, on_delete=models.PROTECT, related_name="branch_balances")
