@@ -63,10 +63,12 @@ def observe_staff_save(instance, fields, update):
             yield
             return
 
+        tracked = bool(enabled_policy())
+        if tracked and 'company_id' in fields and len(company_ids) > 1:
+            raise ValueError('Move billable records by deleting/recreating them in the target company.')
         checkpoints = [(company, lock_running_features(company) if timed else ()) for company in companies]
         at = timezone.now()
         yield
-        tracked = bool(enabled_policy())
         for company, features in checkpoints:
             reprice_staff_usage(company, features, cycle, at, tracked=tracked)
 
