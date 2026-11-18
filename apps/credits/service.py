@@ -374,13 +374,16 @@ def purchase_feature_bundle(company, bundle, actor):
 @transaction.atomic
 def disable_feature_bundle(company, bundle, actor=None):
     """Stop access, without changing purchases or refunding prepaid credits."""
+    from .cycle_billing import effective_policy, stop_cycle_label
+    if effective_policy():
+        from .change_tracking import lock_company
+        lock_company(company)
     access = CompanyBundleAccess.objects.select_for_update().filter(
         company=company, bundle=bundle,
     ).first()
     if access and access.enabled:
         # Close postpaid usage at the precise disable timestamp. Deleting the
         # entitlement or deleting files never erases already-accrued time.
-        from .cycle_billing import stop_cycle_label
         stop_cycle_label(company, bundle)
         access.enabled = False
         access.save(update_fields=["enabled", "updated_at"])

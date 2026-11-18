@@ -502,6 +502,21 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
             {"changes":changes},
         )
 
+    @transaction.atomic
+    def perform_destroy(self, instance):
+        user = instance.user
+        if user:
+            if user.pk == self.request.user.pk or (user.role and user.role.is_system):
+                raise PermissionDenied("Protected company owner accounts cannot be removed here.")
+            from django.utils import timezone
+            from apps.accounts.models import StaffPasswordInvitation
+            user.is_active = False
+            user.save(update_fields=["is_active", "updated_at"])
+            StaffPasswordInvitation.objects.filter(
+                user=user, used_at__isnull=True, invalidated_at__isnull=True,
+            ).update(invalidated_at=timezone.now(), delivery_status="superseded")
+        super().perform_destroy(instance)
+
     @decorators.action(
         detail=False,
         methods=["get"],
@@ -518,6 +533,7 @@ class EmployeeViewSet(CompanyScopedModelViewSet):
         return response.Response(self.get_serializer(obj).data)
 
     @decorators.action(detail=True,methods=["patch"],url_path="toggle-account")
+    @transaction.atomic
     def toggle_account(self,request,pk=None):
         obj=self.get_object()
         if obj.user_id == request.user.id or (obj.user and obj.user.role and obj.user.role.is_system):

@@ -81,6 +81,7 @@ jobs:
             apps.attendance.tests_punch_location \
             apps.attendance.tests_free_self_attendance_salary \
             apps.credits.tests_company_saas_invoices \
+            apps.credits.tests_staff_seat_pricing \
             apps.credits.tests_bundle_purchase_throttle \
             apps.credits.tests_storage_interval_monitoring \
             apps.saas.tests_storage_defaults \

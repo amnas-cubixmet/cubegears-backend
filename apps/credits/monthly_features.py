@@ -62,6 +62,8 @@ def _rate(company, feature):
 def activate_postpaid_feature(company, feature, *, at=None):
     if not _enabled():
         raise ValueError("Timed postpaid feature billing is disabled.")
+    from .change_tracking import lock_company
+    lock_company(company)
     previous = CompanyCreditFeature.objects.filter(company=company, feature=feature).first()
     if previous and previous.enabled:
         raise ValueError("Turn off the existing prepaid feature before changing its billing model.")
@@ -139,7 +141,7 @@ def activate_postpaid_feature(company, feature, *, at=None):
 
 
 @transaction.atomic
-def meter_postpaid_feature(item, *, at=None, force=False):
+def meter_postpaid_feature(item, *, at=None, force=False, trusted_checkpoint=True):
     if item.feature.key in FREE_TENANT_MODULES:
         return "free_module", None
     if not _enabled():
@@ -180,7 +182,7 @@ def meter_postpaid_feature(item, *, at=None, force=False):
         # explicit endpoint for the ON interval. Meter its full duration even
         # if Celery was stopped; a routine scheduler gap without such a
         # checkpoint is still excluded unless event tracking was enabled.
-        tracked = bool(force or (runtime and runtime.event_tracking_enabled))
+        tracked = bool((force and trusted_checkpoint) or (runtime and runtime.event_tracking_enabled))
         start = old if tracked or elapsed <= max_gap else at
         if elapsed > max_gap and not tracked:
             LOG.warning(
