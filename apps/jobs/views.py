@@ -21,7 +21,7 @@ from .estimate_requests import estimate_identity, saved_estimate_identity, attac
 from apps.customers.estimate_review import public_estimate
 from .serializers import JobSerializer,JobEstimateSerializer,JobPartSerializer,JobPhotoSerializer,JobActivitySerializer
 from .workflow import STAGES, NEXT_STATUS, workflow_state, stage_index_from_status
-from .complaint_status import sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
+from .complaint_status import complaint_index, sync_complaint_status, manual_complaint_status, unresolved_complaints, VALID_COMPLAINT_STATUSES
 from .india_gst import gst_context, calculate_tax, gst_rate
 from apps.invoices.gst_rate_options import find_gst_choice
 from apps.notifications.job_events import notify_job_event
@@ -61,6 +61,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         "work_service_add": "jobs.edit",
         "work_service_remove": "jobs.edit",
         "complaint_status": "jobs.edit",
+        "complaint_details": "jobs.edit",
         "inspection_add_to_estimate": "jobs.edit",
         "estimates": {"GET": "jobs.view", "POST": "jobs.edit"},
         "quick_estimate": "jobs.edit",
@@ -668,6 +669,47 @@ class JobViewSet(CompanyScopedModelViewSet):
         return response.Response(self.get_serializer(job).data)
 
     @decorators.action(
+        detail=True, methods=["patch"],
+        url_path=r"complaints/(?P<complaint_id>[^/.]+)",
+    )
+    @transaction.atomic
+    def complaint_details(self, request, pk=None, complaint_id=None):
+        scoped = self.get_object()
+        job = Job.objects.select_for_update().get(pk=scoped.pk, company_id=scoped.company_id)
+        if job.status == Job.STATUS_DELIVERED:
+            raise ValidationError({"complaint": "Delivered Job Cards are read-only."})
+
+        description = request.data.get("description")
+        original = request.data.get("originalDescription")
+        if not isinstance(description, str) or not 1 <= len(description.strip()) <= 1000:
+            raise ValidationError({"description": "Enter a complaint between 1 and 1000 characters."})
+        if not isinstance(original, str):
+            raise ValidationError({"description": "Reopen the complaint before editing."})
+
+        complaints = list(job.complaints or [])
+        index = complaint_index(complaints, complaint_id)
+        if index is None:
+            raise NotFound("Complaint not found on this Job Card.")
+        item = complaints[index]
+        current = str(item.get("description") or item.get("wording") or "")
+        description = description.strip()
+        if current != description:
+            if current != original:
+                return response.Response(
+                    {"message": "Another staff member updated this complaint. Reload the Job Card before editing again."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            complaints[index] = {**item, "description": description, "wording": description}
+            job.complaints = complaints
+            job.save(update_fields=["complaints", "updated_at"])
+            record_job_event(
+                job, request.user, "Customer Complaint Edited",
+                "Updated customer complaint wording.",
+                {"complaintId": complaint_id, "previousDescription": current, "description": description},
+            )
+        return response.Response(self.get_serializer(job).data)
+
+    @decorators.action(
         detail=True, methods=["post"],
         url_path=r"complaints/(?P<complaint_id>[^/.]+)/status",
     )
@@ -691,15 +733,7 @@ class JobViewSet(CompanyScopedModelViewSet):
         if desired in {"Not Applicable", "Not Resolved"} and len(notes) < 5:
             raise ValidationError({"notes": "Record a reason (at least 5 characters)."})
         existing = list(job.complaints or [])
-        match = next((i for i, item in enumerate(existing)
-                      if isinstance(item, dict) and str(item.get("id")) == complaint_id), None)
-        if match is None and complaint_id.startswith("row-"):
-            try:
-                index = int(complaint_id[4:])
-            except ValueError:
-                index = -1
-            if 0 <= index < len(existing) and isinstance(existing[index], dict) and not existing[index].get("id"):
-                match = index
+        match = complaint_index(existing, complaint_id)
         if match is None:
             raise ValidationError({"complaint": "Complaint not found on this Job Card."})
         item = dict(existing[match])

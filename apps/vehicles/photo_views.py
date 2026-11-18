@@ -154,17 +154,20 @@ class VehiclePhotoDetailView(APIView):
         )
         if set(request.data) - {"published", "caption"}:
             return Response({"message":"Only caption and customer visibility can be changed."}, status=400)
+        update_fields = ["updated_at"]
         if "published" in request.data:
             flag = request.data["published"]
             if not isinstance(flag, bool):
                 return Response({"message":"Published must be a boolean."}, status=400)
             photo.published = flag
+            update_fields.append("published")
         if "caption" in request.data:
             caption = str(request.data["caption"]).strip()
             if len(caption) > 255:
                 return Response({"message":"Caption is too long."}, status=400)
             photo.caption = caption
-        photo.save(update_fields=["published", "caption", "updated_at"])
+            update_fields.append("caption")
+        photo.save(update_fields=update_fields)
         return Response(_photo_data(photo))
 
 
