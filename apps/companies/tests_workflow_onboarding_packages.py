@@ -10,7 +10,8 @@ from apps.accounts.models import User
 from apps.accounts.permissions import user_has_permission
 from apps.branches.models import Branch
 from apps.companies.models import Company
-from apps.credits.models import CreditWallet, CompanyBundleAccess, FeatureBundle
+from apps.credits.models import CreditWallet, CompanyBundleAccess, CompanyPostpaidFeature, FeatureBundle
+from apps.employees.models import Employee
 from apps.roles.models import Role
 from apps.saas.feature_discovery import module_inventory
 from apps.saas.module_groups import (
@@ -199,7 +200,8 @@ class WorkflowFeaturePackagesTests(TestCase):
         self.assertIn("reports", expand_entitlements({"business_insights"}))
         self.assertNotIn("finance", expand_entitlements({"business_insights"}))
 
-    @override_settings(CREDIT_FEATURE_ENFORCEMENT_ENABLED=True, CREDIT_LABEL_ONLY_ACCESS_ENABLED=True)
+    @override_settings(CREDIT_FEATURE_ENFORCEMENT_ENABLED=True, CREDIT_LABEL_ONLY_ACCESS_ENABLED=True,
+                       CREDIT_FEATURE_POSTPAID_MONTHLY_ENABLED=True)
     def test_reports_are_sold_with_accounts_and_existing_access_stays_valid(self):
         company = Company.objects.create(name="Reports Garage", slug="reports-garage", require_paid_features=True)
         owner_role = Role.objects.create(company=company, name="Owner", code="OWNER", permissions=["*"])
@@ -241,8 +243,17 @@ class WorkflowFeaturePackagesTests(TestCase):
         self.assertEqual(overlap.status_code, 409, overlap.data)
         self.assertEqual(overlap.data["code"], "EXISTING_LEGACY_ENTITLEMENT")
 
-        access.enabled = False
-        access.save(update_fields=["enabled"])
+        access.delete()
+        price_label = legacy.module_price
+        price_label.monthly_postpaid = True
+        price_label.save(update_fields=["monthly_postpaid"])
+        postpaid = CompanyPostpaidFeature.objects.create(company=company, feature=price_label.feature, enabled=True)
+        self.assertTrue(user_has_permission(reporter, "reports.view"))
+        legacy_row = next(row for row in client.get(catalog_url).data if row["id"] == legacy.pk)
+        self.assertTrue(legacy_row["active"])
+        self.assertFalse(legacy_row["purchaseEnabled"])
+        postpaid.enabled = False
+        postpaid.save(update_fields=["enabled"])
         CompanyBundleAccess.objects.create(
             company=company, bundle=accounts, enabled=True,
             valid_until=timezone.now() + timedelta(days=5), billing_type_at_purchase="monthly",
@@ -284,6 +295,7 @@ class WorkflowFeaturePackagesTests(TestCase):
             email="staff-pkg-test@example.test", password="TestPass123!",
             name="Employee", company=company, role=staff_role,
         )
+        Employee.objects.create(company=company, user=staff, name="Employee", employee_code="PKG-01", status="Active")
         self.assertTrue(user_has_permission(staff, "attendance.self"))
         self.assertFalse(user_has_permission(staff, "payroll.view"))
 
