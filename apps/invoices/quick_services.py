@@ -67,6 +67,24 @@ class QuickServiceSerializer(serializers.ModelSerializer):
                 fields.pop(name)
         return fields
 
+    def to_representation(self, instance):
+        result = super().to_representation(instance)
+        rows = result.get("items") or []
+        if not self.context.get("can_view_invoice"):
+            for row in rows:
+                for name in ("rate", "customerCharge", "workerCharge", "purchasePrice", "taxRate", "hsnCode"):
+                    row.pop(name, None)
+        if not self.context.get("can_view_expenses"):
+            for row in rows:
+                if row.get("kind") == "outside":
+                    row.pop("workerName", None)
+                    row.pop("workerPhone", None)
+                    row.pop("workerCharge", None)
+                    row.pop("outsideLabourId", None)
+                    if row.get("workDescription"):
+                        row["description"] = row["workDescription"]
+        return result
+
 
 class QuickServiceStartSerializer(serializers.Serializer):
     requestId = serializers.UUIDField()
@@ -117,6 +135,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         context["can_view_invoice"] = user_has_permission(self.request.user, "invoices.view")
         context["can_view_customer"] = user_has_permission(self.request.user, "customers.view")
         context["can_view_vehicle"] = user_has_permission(self.request.user, "vehicles.view")
+        context["can_view_expenses"] = user_has_permission(self.request.user, "expenses.view")
         return context
 
     @staticmethod
