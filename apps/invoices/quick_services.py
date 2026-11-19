@@ -11,6 +11,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from apps.accounts.permissions import user_has_permission
+from apps.accounts.branch_access import authorized_branch_ids
 from apps.companies.models import Company
 from apps.customers.models import Customer
 from apps.vehicles.models import Vehicle
@@ -128,6 +129,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         if len(raw_items) > 100:
             raise ValidationError({"items": "Add up to 100 service, part and outside labour lines."})
         gst_registered = bool(str(company.gstin or "").strip())
+        allowed_branch_ids = {str(value) for value in authorized_branch_ids(request.user)}
         result = []
         for index, raw in enumerate(raw_items, 1):
             prefix = f"items.{index - 1}"
@@ -145,6 +147,8 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
                 ).first()
                 if not service:
                     raise ValidationError({f"{prefix}.serviceId": "Select an active service from this workshop."})
+                if service.branch_id and str(service.branch_id) not in allowed_branch_ids:
+                    raise PermissionDenied("This service belongs to a branch you cannot access.")
                 rate = service.price
                 tax_rate = service.tax_rate if service.tax_treatment == "taxable" and gst_registered else Decimal("0")
                 hsn = service.hsn_sac.strip()
@@ -260,6 +264,8 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             customer = Customer.objects.filter(pk=data["customerId"], company=company).first()
             if not customer or customer.status == "archived":
                 raise ValidationError({"customerId": "Select an active customer from this workshop."})
+            if customer.branch_id and str(customer.branch_id) not in {str(value) for value in authorized_branch_ids(request.user)}:
+                raise PermissionDenied("This customer belongs to a branch you cannot access.")
 
         vehicle = None
         if data.get("vehicleId"):
@@ -270,6 +276,8 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             ).first()
             if not vehicle or str(vehicle.status).lower() == "archived":
                 raise ValidationError({"vehicleId": "Select an active vehicle from this workshop."})
+            if vehicle.branch_id and str(vehicle.branch_id) not in {str(value) for value in authorized_branch_ids(request.user)}:
+                raise PermissionDenied("This vehicle belongs to a branch you cannot access.")
             if customer and vehicle.customer_id != customer.pk:
                 raise ValidationError({"vehicleId": "The selected vehicle belongs to a different customer."})
             if not customer:
