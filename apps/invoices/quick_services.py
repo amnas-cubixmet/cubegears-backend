@@ -228,7 +228,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({f"{prefix}.taxRate": "GST percentage cannot exceed 100."})
                 result.append({
                     "kind": "outside", "type": "Outside Labour",
-                    "description": f"{work_description} — {worker_name}",
+                    "description": work_description,
                     "qty": "1.00", "rate": str(customer_charge),
                     "customerCharge": str(customer_charge), "workerCharge": str(worker_charge),
                     "workerName": worker_name, "workerPhone": worker_phone,
