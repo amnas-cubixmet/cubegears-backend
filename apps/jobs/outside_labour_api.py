@@ -14,8 +14,10 @@ from .audit import record_job_event
 
 
 class OutsideLabourSerializer(serializers.ModelSerializer):
-    jobNumber = serializers.CharField(source="job.job_number", read_only=True)
-    vehicleReg = serializers.CharField(source="job.vehicle.registration", read_only=True)
+    jobNumber = serializers.CharField(source="job.job_number", read_only=True, default="")
+    vehicleReg = serializers.CharField(source="job.vehicle.registration", read_only=True, default="")
+    quickService = serializers.UUIDField(source="quick_service_id", read_only=True, allow_null=True)
+    quickServiceDescription = serializers.CharField(source="quick_service.description", read_only=True, default="")
     workerName = serializers.CharField(source="worker_name", max_length=160)
     workerPhone = serializers.CharField(
         source="worker_phone", allow_blank=True, required=False, max_length=30
@@ -37,7 +39,7 @@ class OutsideLabourSerializer(serializers.ModelSerializer):
     class Meta:
         model = OutsideLabourCharge
         fields = (
-            "id", "job", "jobNumber", "vehicleReg",
+            "id", "job", "jobNumber", "vehicleReg", "quickService", "quickServiceDescription",
             "workerName", "workerPhone", "workDescription",
             "customerCharge", "workerCharge", "labourMargin",
             "status", "paymentMethod", "paymentReference", "paidAt",
@@ -49,6 +51,8 @@ class OutsideLabourSerializer(serializers.ModelSerializer):
         return str(obj.customer_charge - obj.worker_charge)
 
     def validate_job(self, job):
+        if job is None:
+            return None
         user = self.context["request"].user
         if not user.is_superuser and job.company_id != user.company_id:
             raise ValidationError("Job Card belongs to a different workshop.")
@@ -59,11 +63,17 @@ class OutsideLabourSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if self.instance and self.instance.status == OutsideLabourCharge.STATUS_PAID:
             raise ValidationError("Paid outside labour is locked for audit history.")
+        job = attrs.get("job", self.instance.job if self.instance else None)
+        quick_service = self.instance.quick_service if self.instance else None
+        if bool(job) == bool(quick_service):
+            raise ValidationError("Outside labour must belong to exactly one Job Card or Quick Service.")
         return attrs
 
 
 class OutsideLabourViewSet(CompanyScopedModelViewSet):
-    queryset = OutsideLabourCharge.objects.select_related("job", "job__vehicle", "expense")
+    queryset = OutsideLabourCharge.objects.select_related(
+        "job", "job__vehicle", "quick_service", "expense",
+    )
     serializer_class = OutsideLabourSerializer
     permission_prefix = "expenses"
     action_permission_map = {
@@ -77,6 +87,9 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
         job_id = self.request.query_params.get("job")
         if job_id:
             qs = qs.filter(job_id=job_id)
+        quick_service_id = self.request.query_params.get("quickService")
+        if quick_service_id:
+            qs = qs.filter(quick_service_id=quick_service_id)
         record_status = self.request.query_params.get("status")
         if record_status:
             qs = qs.filter(status=record_status)
@@ -86,17 +99,18 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
         job = serializer.validated_data["job"]
         user = self.request.user
         record = serializer.save(company=job.company, branch=job.branch, created_by=user)
-        record_job_event(job, user, 'Outside Staff Added',
-                         f'{record.worker_name}: {record.work_description}',
-                         {'outsideLabourId': str(record.pk)})
+        record_job_event(job, user, "Outside Staff Added",
+                         f"{record.worker_name}: {record.work_description}",
+                         {"outsideLabourId": str(record.pk)})
 
     def perform_update(self, serializer):
         if serializer.instance.status == OutsideLabourCharge.STATUS_PAID:
             raise ValidationError({"status": "Paid labour cannot be edited."})
         record = serializer.save()
-        record_job_event(record.job, self.request.user, 'Outside Staff Updated',
-                         f'{record.worker_name}: {record.work_description}',
-                         {'outsideLabourId': str(record.pk)})
+        if record.job_id:
+            record_job_event(record.job, self.request.user, "Outside Staff Updated",
+                             f"{record.worker_name}: {record.work_description}",
+                             {"outsideLabourId": str(record.pk)})
 
     def perform_destroy(self, instance):
         if instance.status == OutsideLabourCharge.STATUS_PAID:
@@ -105,16 +119,18 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
         name = instance.worker_name
         identifier = str(instance.pk)
         instance.delete()
-        record_job_event(job, self.request.user, 'Outside Staff Removed', name,
-                         {'outsideLabourId': identifier})
+        if job:
+            record_job_event(job, self.request.user, "Outside Staff Removed", name,
+                             {"outsideLabourId": identifier})
 
     @decorators.action(detail=True, methods=["post"])
     @transaction.atomic
     def pay(self, request, pk=None):
         record = self.get_object()
-        record = OutsideLabourCharge.objects.select_for_update().select_related("job").get(pk=record.pk)
+        record = OutsideLabourCharge.objects.select_for_update().select_related(
+            "job", "quick_service",
+        ).get(pk=record.pk)
         if record.status == OutsideLabourCharge.STATUS_PAID:
-            # Repeated requests cannot duplicate the expense.
             return response.Response(self.get_serializer(record).data)
 
         method = str(request.data.get("paymentMethod") or "").strip()
@@ -134,12 +150,16 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
         else:
             payment_date = timezone.localdate()
 
+        source_label = (
+            record.job.job_number if record.job_id
+            else f"Quick Service: {record.quick_service.description}"
+        )
         exp = Expense.objects.create(
             company=record.company, branch=record.branch,
             created_by=request.user, date=payment_date,
             category="Outside Labour",
             vendor=record.worker_name,
-            description=f"{record.job.job_number}: {record.work_description}",
+            description=f"{source_label}: {record.work_description}",
             amount=record.worker_charge,
             tax=Decimal("0"),
             payment_method=method,
@@ -156,9 +176,10 @@ class OutsideLabourViewSet(CompanyScopedModelViewSet):
             "expense", "status", "paid_at", "paid_by", "payment_method",
             "payment_reference", "updated_at",
         ])
-        record_job_event(record.job, request.user, "Outside Staff Paid",
-                         f"Payment recorded for {record.worker_name}",
-                         {"outsideLabourId": str(record.pk), "expenseId": str(exp.pk)})
+        if record.job_id:
+            record_job_event(record.job, request.user, "Outside Staff Paid",
+                             f"Payment recorded for {record.worker_name}",
+                             {"outsideLabourId": str(record.pk), "expenseId": str(exp.pk)})
         return response.Response(self.get_serializer(record).data)
 
     @decorators.action(detail=False, methods=["get"])
