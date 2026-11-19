@@ -108,10 +108,20 @@ def persisted_invoice_amounts(invoice):
     return calculate_invoice_amounts(
         company=invoice.company, branch=invoice.branch, invoice_type=invoice.invoice_type,
         place_of_supply=customer.get("placeOfSupply") or customer.get("stateCode") or
-                        invoice.customer.state,
+                        getattr(invoice.customer, "state", ""),
         items=lines, discount=invoice.discount,
         adjustment=invoice.adjustment, paid=invoice.paid,
     )
+
+
+def recalculate_invoice(invoice):
+    result = persisted_invoice_amounts(invoice)
+    invoice.tax_mode = result["taxMode"]
+    for field in ("taxable", "cgst", "sgst", "igst", "total", "balance"):
+        setattr(invoice, field, result[field])
+    invoice.save(update_fields=[
+        "tax_mode", "taxable", "cgst", "sgst", "igst", "total", "balance", "updated_at",
+    ])
 
 
 def serialize_amounts(value):

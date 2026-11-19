@@ -43,7 +43,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
     # job FK but no source_job_id snapshot or job-card-number string.
     jobId = serializers.UUIDField(source="job_id", read_only=True, allow_null=True)
     customerId = serializers.UUIDField(source="customer_id", read_only=True)
-    customerName = serializers.CharField(source="customer.name", read_only=True)
+    customerName = serializers.CharField(source="customer.name", read_only=True, default="")
+    quickServiceId = serializers.UUIDField(source="quick_service_id", read_only=True, allow_null=True)
     vehicleId = serializers.UUIDField(source="vehicle_id", read_only=True)
     paymentMode = serializers.CharField(source="payment_mode", required=False, allow_blank=True)
     paymentTerms = serializers.CharField(source="payment_terms", required=False, allow_blank=True)
@@ -51,7 +52,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Invoice
-        exclude = ("company", "branch")
+        exclude = ("company", "branch", "quick_service")
         # Payment receipts, accounting totals, document status and finalized
         # snapshots are controlled by server-side workflow actions only.
         read_only_fields = (
@@ -276,13 +277,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
             # Link by the already-validated, tenant-scoped UUID, not a display label.
             job = Job.objects.get(company=company, pk=validated_data["source_job_id"])
         job_invoice = job and validated_data.get("kind", "invoice") == "invoice"
-        customer = (job.customer if job_invoice else self._resolve_customer(customer_payload, company)
-                    or (job.customer if job else None))
-        if not customer:
+        quick_service = validated_data.get("quick_service")
+        customer = None if quick_service else (
+            job.customer if job_invoice else self._resolve_customer(customer_payload, company)
+            or (job.customer if job else None)
+        )
+        if not customer and not quick_service:
             raise serializers.ValidationError({"customer": "Customer is required."})
         vehicle = (job.vehicle if job_invoice else self._resolve_vehicle(vehicle_payload, company, customer)
                    or (job.vehicle if job else None))
-        if vehicle is not None and vehicle.customer_id != customer.pk:
+        if vehicle is not None and vehicle.customer_id != getattr(customer, "pk", None):
             raise serializers.ValidationError({
                 "vehicle": "The selected vehicle belongs to a different customer."
             })
@@ -362,13 +366,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         customer = dict(instance.customer_snapshot or {})
-        customer.setdefault("customerType", instance.customer.customer_type)
-        customer.setdefault("companyName", instance.customer.company_name)
-        customer.setdefault("name", instance.customer.name)
-        customer.setdefault("phone", instance.customer.phone)
-        customer.setdefault("email", instance.customer.email)
-        customer.setdefault("gstin", instance.customer.gstin)
-        customer.setdefault("address", instance.customer.address)
+        if instance.customer:
+            customer.setdefault("customerType", instance.customer.customer_type)
+            customer.setdefault("companyName", instance.customer.company_name)
+            for field in ("name", "phone", "email", "gstin", "address"):
+                customer.setdefault(field, getattr(instance.customer, field))
         data["customer"] = customer
 
         if instance.vehicle:

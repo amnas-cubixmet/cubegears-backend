@@ -3,16 +3,17 @@ from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import decorators,response,status
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.renderers import JSONRenderer
 from .renderers import InvoicePDFRenderer
-from apps.accounts.permissions import user_has_permission
 from common.viewsets import CompanyScopedModelViewSet
 from .models import Invoice,EWayBill
 from apps.jobs.audit import record_job_event
 from .serializers import InvoiceSerializer,EWayBillSerializer
 from .gst_rate_options import gst_rate_options
 from .numbering import next_document_number
+from .calculations import recalculate_invoice
+from .issuance import finalize_invoice
 
 class InvoiceViewSet(CompanyScopedModelViewSet):
     queryset=Invoice.objects.select_related("customer","vehicle","job").prefetch_related("items").all()
@@ -192,76 +193,24 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
                 "number": "Document number is already in use in this workshop."
             })
         obj=serializer.save(company=company,branch=self.request.user.branch,number=number)
-        self._recalculate(obj)
+        recalculate_invoice(obj)
         if obj.job_id:
             record_job_event(obj.job, self.request.user, 'Invoice Created',
                              f'{obj.number} created', {'invoiceId': str(obj.pk)})
 
     @transaction.atomic
     def perform_update(self,serializer):
-        obj=serializer.save(); self._recalculate(obj)
+        obj=serializer.save(); recalculate_invoice(obj)
         if obj.job_id:
             record_job_event(obj.job, self.request.user, 'Invoice Updated',
                              f'{obj.number} updated', {'invoiceId': str(obj.pk)})
 
-    def _recalculate(self,obj):
-        """Persist the same Decimal arithmetic returned by POST /preview."""
-        from .calculations import persisted_invoice_amounts
-
-        result = persisted_invoice_amounts(obj)
-        obj.tax_mode = result["taxMode"]
-        obj.taxable = result["taxable"]
-        obj.cgst = result["cgst"]
-        obj.sgst = result["sgst"]
-        obj.igst = result["igst"]
-        obj.total = result["total"]
-        obj.balance = result["balance"]
-        obj.save(update_fields=[
-            "tax_mode", "taxable", "cgst", "sgst", "igst",
-            "total", "balance", "updated_at",
-        ])
-
     @decorators.action(detail=True,methods=["post"])
     @transaction.atomic
     def finalize(self,request,pk=None):
-        from apps.inventory.models import StockItem,StockMovement
         scoped = self.get_object()
         obj = Invoice.objects.select_for_update().get(pk=scoped.pk, company=scoped.company)
-        if obj.status in {"Finalized","Paid","Issued","Converted"}: return response.Response(InvoiceSerializer(obj).data)
-        if obj.status != "Draft":
-            raise ValidationError({"status": "Only draft documents can be finalized."})
-        if obj.kind=="invoice":
-            # Only invoices that consume stock require the additional Stock permission.
-            if obj.items.filter(stock_item__isnull=False).exists() and not user_has_permission(request.user, "stock.edit"):
-                raise PermissionDenied("Stock edit permission is required to finalize invoices containing stock items.")
-            expected_type = "gst" if str(obj.company.gstin or "").strip() else "regular"
-            if obj.invoice_type != expected_type:
-                raise ValidationError({
-                    "invoiceType": "Invoice type does not match workshop GST registration. Update Company Settings and recreate the draft as needed."
-                })
-            if obj.invoice_type == "gst":
-                lines = list(obj.items.all())
-                if not lines or any(not line.hsn_sac.strip() for line in lines):
-                    raise ValidationError({"items": "Classify every GST invoice item with its applicable HSN/SAC before finalizing."})
-            for line in obj.items.select_related("stock_item"):
-                if not line.stock_item_id: continue
-                try:
-                    item=StockItem.objects.select_for_update().get(pk=line.stock_item_id,company=obj.company)
-                except StockItem.DoesNotExist:
-                    raise ValidationError("An invoice item references stock from another company or a missing stock item.")
-                if item.available_quantity < line.quantity: raise ValidationError(f"Insufficient stock for {item.name}.")
-                item.on_hand -= line.quantity; item.save(update_fields=["on_hand","updated_at"])
-                StockMovement.objects.create(company=obj.company,branch=obj.branch,item=item,movement_type="sale",quantity=-line.quantity,reference=obj.number,created_by=request.user)
-            obj.status="Paid" if obj.balance<=0 else "Finalized"
-        else: obj.status="Issued"
-        from .template_settings import template_for_document
-        if not obj.template_snapshot:
-            obj.template_snapshot = template_for_document(obj.company, obj.kind)
-        obj.finalized_at=timezone.now()
-        obj.save(update_fields=["status","finalized_at","template_snapshot","updated_at"])
-        if obj.job_id:
-            record_job_event(obj.job, request.user, "Invoice Finalized",
-                             f"{obj.number} {obj.status.lower()}", {"invoiceId": str(obj.pk)})
+        finalize_invoice(obj, request.user)
         return response.Response(InvoiceSerializer(obj).data)
 
     @decorators.action(detail=True,methods=["post"])
@@ -330,7 +279,7 @@ class InvoiceViewSet(CompanyScopedModelViewSet):
         # Converted estimates start as new draft invoices and use the active
         # invoice design when finalized, not the source estimate's appearance.
         invoice.template_snapshot = {}
-        self._recalculate(invoice); src.status="Converted"; src.save(update_fields=["status","updated_at"])
+        recalculate_invoice(invoice); src.status="Converted"; src.save(update_fields=["status","updated_at"])
         if invoice.job_id:
             record_job_event(invoice.job, request.user, "Estimate Converted",
                              f"{src.number} converted to {invoice.number}", {"invoiceId": str(invoice.pk)})
