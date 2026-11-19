@@ -8,6 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.accounts.permissions import user_has_permission
 from apps.companies.models import Company
 from apps.inventory.models import WorkshopFinancialAccount
 from apps.payments.serializers import PaymentSerializer
@@ -37,6 +38,13 @@ class QuickServiceSerializer(serializers.ModelSerializer):
             "id", "description", "requestId", "created_at", "closedAt",
             "invoiceId", "invoiceNumber", "invoiceTotal", "invoiceStatus", "paymentMethod",
         )
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if not self.context.get("can_view_invoice"):
+            for name in ("invoiceId", "invoiceNumber", "invoiceTotal", "invoiceStatus", "paymentMethod"):
+                fields.pop(name)
+        return fields
 
 
 class ServiceLineSerializer(serializers.Serializer):
@@ -71,6 +79,11 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         "preview": close_permissions,
         "close": close_permissions,
     }
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["can_view_invoice"] = user_has_permission(self.request.user, "invoices.view")
+        return context
 
     def create(self, request):
         serializer = self.get_serializer(data=request.data)

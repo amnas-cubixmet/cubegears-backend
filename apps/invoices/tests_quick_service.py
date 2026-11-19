@@ -130,3 +130,11 @@ class QuickServiceTests(TestCase):
         self.client.force_authenticate(user=self.user)
         self.assertEqual(self.checkout(service, account=foreign).status_code, 400)
         self.assertFalse(Invoice.objects.exists())
+
+        self.assertEqual(self.checkout(service).status_code, 200)
+        self.client.force_authenticate(user=worker)
+        result = self.client.get(f"{self.url}/{service}")
+        self.assertEqual(result.status_code, 200, result.data)
+        self.assertTrue(result.data["closedAt"])
+        self.assertNotIn("invoiceId", result.data)
+        self.assertNotIn("invoiceTotal", result.data)
