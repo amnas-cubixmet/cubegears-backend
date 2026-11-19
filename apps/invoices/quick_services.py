@@ -19,7 +19,7 @@ from apps.services.models import Service
 from apps.inventory.models import StockItem, WorkshopFinancialAccount
 from apps.inventory.branch_stock import branch_stock_snapshot
 from apps.jobs.models import OutsideLabourCharge
-from apps.jobs.india_gst import state_code
+from apps.jobs.india_gst import STATE_NAMES, state_code
 from apps.payments.serializers import PaymentSerializer
 from apps.payments.views import record_payment
 from common.viewsets import CompanyScopedModelViewSet
@@ -257,14 +257,38 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         return result
 
     @staticmethod
-    def _customer_snapshot(service, place_of_supply):
+    def _state_name(value):
+        label = str(value or "").strip()
+        code = state_code(label)
+        if not code and label in set(STATE_NAMES.values()):
+            code = label
+        if code:
+            return next((name.title() for name, state_value in STATE_NAMES.items() if state_value == code), label)
+        return label
+
+    @classmethod
+    def _place_of_supply_state(cls, service):
+        candidates = [
+            service.customer.state if service.customer else "",
+            service.branch.state if service.branch else "",
+            service.company.state,
+        ]
+        for candidate in candidates:
+            normalized = cls._state_name(candidate)
+            if state_code(normalized):
+                return normalized
+        gstin = str(service.company.gstin or "").strip()
+        return cls._state_name(gstin[:2]) if len(gstin) >= 2 else ""
+
+    @staticmethod
+    def _customer_snapshot(service, place_of_supply_state):
         customer = service.customer
         if not customer:
-            return {"placeOfSupply": place_of_supply} if place_of_supply else {}
+            return {"placeOfSupply": place_of_supply_state} if place_of_supply_state else {}
         return {
             "name": customer.name, "phone": customer.phone, "email": customer.email,
             "address": customer.address, "state": customer.state, "gstin": customer.gstin,
-            "placeOfSupply": place_of_supply,
+            "placeOfSupply": place_of_supply_state,
         }
 
     @staticmethod
@@ -456,7 +480,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         if not account:
             raise ValidationError({"account": "Select an active account owned by your workshop."})
 
-        customer_snapshot = self._customer_snapshot(service, recipient.get("placeOfSupply", ""))
+        customer_snapshot = self._customer_snapshot(service, self._place_of_supply_state(service))
         vehicle_snapshot = self._vehicle_snapshot(service)
         doc = InvoiceSerializer(data={
             "date": timezone.localdate(), "invoiceType": invoice_type,
