@@ -60,7 +60,10 @@ class QuickServiceSerializer(serializers.ModelSerializer):
             for name in ("invoiceId", "invoiceNumber", "invoiceTotal", "invoiceStatus", "paymentMethod"):
                 fields.pop(name)
         if not self.context.get("can_view_customer"):
-            for name in ("customerId", "customerName", "vehicleId", "vehicleReg"):
+            for name in ("customerId", "customerName"):
+                fields.pop(name)
+        if not self.context.get("can_view_vehicle"):
+            for name in ("vehicleId", "vehicleReg"):
                 fields.pop(name)
         return fields
 
@@ -113,6 +116,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         context = super().get_serializer_context()
         context["can_view_invoice"] = user_has_permission(self.request.user, "invoices.view")
         context["can_view_customer"] = user_has_permission(self.request.user, "customers.view")
+        context["can_view_vehicle"] = user_has_permission(self.request.user, "vehicles.view")
         return context
 
     @staticmethod
