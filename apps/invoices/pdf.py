@@ -117,7 +117,7 @@ def create_invoice_pdf(invoice):
         "name": invoice.customer.name, "phone": invoice.customer.phone,
         "email": invoice.customer.email, "gstin": invoice.customer.gstin,
         "address": invoice.customer.address,
-    })
+    } if invoice.customer else {})
     vehicle = _snapshot(invoice.vehicle_snapshot, {
         "registration": invoice.vehicle.registration if invoice.vehicle else "",
         "makeModel": " ".join(filter(None, [invoice.vehicle.make, invoice.vehicle.model]))
@@ -127,7 +127,7 @@ def create_invoice_pdf(invoice):
     })
     transport = invoice.transport or {}
     is_gst = invoice.invoice_type == "gst"
-    recipient_type = (invoice.customer_snapshot or {}).get("customerType") or invoice.customer.customer_type
+    recipient_type = (invoice.customer_snapshot or {}).get("customerType") or getattr(invoice.customer, "customer_type", "")
     is_business = recipient_type == "business"
     # Presentation follows the buyer, tax liability follows the supplier.
     # A taxable B2C service bill is still a tax invoice under GST law.
@@ -224,7 +224,13 @@ def create_invoice_pdf(invoice):
         ("TOPPADDING", (0, 0), (-1, -1), 11),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 11),
     ]))
-    story.extend([contacts, Spacer(1, 17), P("WORK, SERVICES & PARTS", "heading"), Spacer(1, 5)])
+    if invoice.quick_service_id:
+        story.append(P("QUICK SERVICE", "heading"))
+        if is_gst:
+            story.append(P(f"Place of supply: {customer.get('placeOfSupply', '')}", "small"))
+    else:
+        story.append(contacts)
+    story.extend([Spacer(1, 17), P("WORK, SERVICES & PARTS", "heading"), Spacer(1, 5)])
 
     if is_gst:
         col_widths = [24, doc.width - 24 - 55 - 36 - 49 - 59 - 43 - 66, 55, 36, 49, 59, 43, 66]

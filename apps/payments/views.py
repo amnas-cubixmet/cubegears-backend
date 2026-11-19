@@ -15,6 +15,124 @@ from .customer_credit import available_advance, paid_status
 from .serializers import PaymentSerializer
 
 
+@transaction.atomic
+def record_payment(serializer, user, *, branch):
+    """Post a validated receipt and its linked invoice and ledger entries."""
+    company = user.company
+    customer = serializer.validated_data.get("customer")
+    invoice = serializer.validated_data.get("invoice")
+    amount = serializer.validated_data.get("amount")
+    if serializer.validated_data.get("status", "Completed") != "Completed":
+        raise ValidationError({"status": "New payments must be completed. Record only confirmed collections."})
+
+    if amount is None or not amount.is_finite() or amount <= Decimal("0"):
+        raise ValidationError({"amount": "Payment must be greater than zero."})
+    direction = serializer.validated_data.get("direction", "IN")
+    if direction not in ("IN", "OUT"):
+        raise ValidationError({"direction": "Choose IN or OUT."})
+    if direction == "OUT":
+        category = str(serializer.validated_data.get("category") or "").strip().casefold()
+        restricted = ("supplier", "spare part", "stock purchase", "inventory purchase", "salary", "wage", "overtime")
+        if any(label in category for label in restricted):
+            raise ValidationError({
+                "category": "Use the linked Supplier Payments or Payroll workflow so outstanding liabilities and bank ledger stay synchronized."
+            })
+    if invoice and direction != "IN":
+        raise ValidationError({"direction": "Invoice collections must be incoming payments."})
+    if invoice and customer is None:
+        customer = invoice.customer
+    # Customer-linked receipts without an invoice are advance credits.
+    # Standalone incoming finance receipts remain supported, but they are
+    # never treated as customer advances or included in customer ledgers.
+    if direction == "IN" and not invoice and customer:
+        if not serializer.validated_data.get("idempotency_key"):
+            raise ValidationError({"idempotency_key": "A unique request key is required for advances."})
+    if direction == "OUT" and customer:
+        raise ValidationError({
+            "customer": "Customer refunds must use the controlled refund-advance workflow."
+        })
+    account = serializer.validated_data.get("account")
+    if not account:
+        raise ValidationError({"account": "Select an authorized receiving or paying account."})
+    key = serializer.validated_data.get("idempotency_key")
+    if key and Payment.objects.filter(company=company, idempotency_key=key).exists():
+        raise ValidationError({"idempotency_key": "This request was already processed; no duplicate payment was posted."})
+    if account:
+        from apps.inventory.models import WorkshopFinancialAccount
+        from apps.finance.views import account_balance
+        account = WorkshopFinancialAccount.objects.select_for_update().filter(
+            pk=account.pk, company=company, is_active=True
+        ).first()
+        if not account:
+            raise ValidationError({"account": "Select an active account owned by your company."})
+        from apps.finance.channels import validate_payment_channel
+        validate_payment_channel(serializer.validated_data.get("method", "Cash"), account)
+        if direction == "OUT" and account_balance(account) < amount:
+            raise ValidationError({"amount": "Insufficient funds in the selected account."})
+
+    if customer and customer.company_id != company.id:
+        raise ValidationError({"customer": "Customer belongs to another company."})
+    if invoice and invoice.company_id != company.id:
+        raise ValidationError({"invoice": "Invoice belongs to another company."})
+    if invoice and customer and invoice.customer_id != customer.id:
+        raise ValidationError({"invoice": "Invoice does not belong to the selected customer."})
+
+    # Lock the canonical invoice before validating the balance and writing
+    # the payment. Never accept an overpayment based on a stale frontend.
+    locked_invoice = None
+    if invoice:
+        locked_invoice = Invoice.objects.select_for_update().get(
+            pk=invoice.pk, company=company
+        )
+        if locked_invoice.kind != "invoice":
+            raise ValidationError({"invoice": "Payments require an invoice, not an estimate."})
+        if locked_invoice.status not in {"Finalized", "Paid", "Partially Paid", "Overdue"} or not locked_invoice.finalized_at:
+            raise ValidationError({"invoice": "Only finalized, non-cancelled invoices can receive customer payments."})
+        balance_due = max(Decimal("0"), locked_invoice.total - locked_invoice.paid)
+        if amount > balance_due:
+            raise ValidationError({"amount": "Payment exceeds the outstanding invoice balance."})
+
+    payment = serializer.save(
+        status="Completed",
+        customer=customer,
+        company=company,
+        branch=branch,
+        recorded_by=user,
+    )
+    if locked_invoice:
+        locked_invoice.paid += payment.amount
+        locked_invoice.balance = max(
+            Decimal("0"), locked_invoice.total - locked_invoice.paid
+        )
+        locked_invoice.status = paid_status(locked_invoice)
+        locked_invoice.save(
+            update_fields=["paid", "balance", "status", "updated_at"]
+        )
+        if getattr(locked_invoice, 'job_id', None):
+            record_job_event(locked_invoice.job, user, 'Payment Received',
+                             f'Payment registered against {locked_invoice.number}',
+                             {'paymentId': str(payment.pk), 'invoiceId': str(locked_invoice.pk)})
+
+    # Post to workshop account ledger if an account is linked
+    if payment.account_id:
+        from apps.inventory.models import WorkshopAccountEntry
+        # IN = money received = positive; OUT = money paid = negative
+        signed_amount = payment.amount if payment.direction == "IN" else -payment.amount
+        source_key = f"customer_payment_{payment.pk}"
+        WorkshopAccountEntry.objects.create(
+            company=company,
+            branch=branch,
+            account=payment.account,
+            amount=signed_amount,
+            entry_type="customer_payment" if payment.direction == "IN" else "outgoing_payment",
+            source_key=source_key,
+            reference=f"Payment {payment.pk}" + (f" | {payment.reference}" if payment.reference else ""),
+            posted_at=timezone.now(),
+            created_by=user,
+        )
+    return payment
+
+
 class PaymentViewSet(CompanyScopedModelViewSet):
     queryset = Payment.objects.select_related("customer", "invoice", "recorded_by").all()
     serializer_class = PaymentSerializer
@@ -77,120 +195,8 @@ class PaymentViewSet(CompanyScopedModelViewSet):
                 return response.Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
         return super().create(request, *args, **kwargs)
 
-    @transaction.atomic
     def perform_create(self, serializer):
-        company = self.request.user.company
-        customer = serializer.validated_data.get("customer")
-        invoice = serializer.validated_data.get("invoice")
-        amount = serializer.validated_data.get("amount")
-        if serializer.validated_data.get("status", "Completed") != "Completed":
-            raise ValidationError({"status": "New payments must be completed. Record only confirmed collections."})
-
-        if amount is None or not amount.is_finite() or amount <= Decimal("0"):
-            raise ValidationError({"amount": "Payment must be greater than zero."})
-        direction = serializer.validated_data.get("direction", "IN")
-        if direction not in ("IN", "OUT"):
-            raise ValidationError({"direction": "Choose IN or OUT."})
-        if direction == "OUT":
-            category = str(serializer.validated_data.get("category") or "").strip().casefold()
-            restricted = ("supplier", "spare part", "stock purchase", "inventory purchase", "salary", "wage", "overtime")
-            if any(label in category for label in restricted):
-                raise ValidationError({
-                    "category": "Use the linked Supplier Payments or Payroll workflow so outstanding liabilities and bank ledger stay synchronized."
-                })
-        if invoice and direction != "IN":
-            raise ValidationError({"direction": "Invoice collections must be incoming payments."})
-        if invoice and customer is None:
-            customer = invoice.customer
-        # Customer-linked receipts without an invoice are advance credits.
-        # Standalone incoming finance receipts remain supported, but they are
-        # never treated as customer advances or included in customer ledgers.
-        if direction == "IN" and not invoice and customer:
-            if not serializer.validated_data.get("idempotency_key"):
-                raise ValidationError({"idempotency_key": "A unique request key is required for advances."})
-        if direction == "OUT" and customer:
-            raise ValidationError({
-                "customer": "Customer refunds must use the controlled refund-advance workflow."
-            })
-        account = serializer.validated_data.get("account")
-        if not account:
-            raise ValidationError({"account": "Select an authorized receiving or paying account."})
-        key = serializer.validated_data.get("idempotency_key")
-        if key and Payment.objects.filter(company=company, idempotency_key=key).exists():
-            raise ValidationError({"idempotency_key": "This request was already processed; no duplicate payment was posted."})
-        if account:
-            from apps.inventory.models import WorkshopFinancialAccount
-            from apps.finance.views import account_balance
-            account = WorkshopFinancialAccount.objects.select_for_update().filter(
-                pk=account.pk, company=company, is_active=True
-            ).first()
-            if not account:
-                raise ValidationError({"account": "Select an active account owned by your company."})
-            from apps.finance.channels import validate_payment_channel
-            validate_payment_channel(serializer.validated_data.get("method", "Cash"), account)
-            if direction == "OUT" and account_balance(account) < amount:
-                raise ValidationError({"amount": "Insufficient funds in the selected account."})
-
-        if customer and customer.company_id != company.id:
-            raise ValidationError({"customer": "Customer belongs to another company."})
-        if invoice and invoice.company_id != company.id:
-            raise ValidationError({"invoice": "Invoice belongs to another company."})
-        if invoice and customer and invoice.customer_id != customer.id:
-            raise ValidationError({"invoice": "Invoice does not belong to the selected customer."})
-
-        # Lock the canonical invoice before validating the balance and writing
-        # the payment. Never accept an overpayment based on a stale frontend.
-        locked_invoice = None
-        if invoice:
-            locked_invoice = Invoice.objects.select_for_update().get(
-                pk=invoice.pk, company=company
-            )
-            if locked_invoice.kind != "invoice":
-                raise ValidationError({"invoice": "Payments require an invoice, not an estimate."})
-            if locked_invoice.status not in {"Finalized", "Paid", "Partially Paid", "Overdue"} or not locked_invoice.finalized_at:
-                raise ValidationError({"invoice": "Only finalized, non-cancelled invoices can receive customer payments."})
-            balance_due = max(Decimal("0"), locked_invoice.total - locked_invoice.paid)
-            if amount > balance_due:
-                raise ValidationError({"amount": "Payment exceeds the outstanding invoice balance."})
-
-        payment = serializer.save(
-            status="Completed",
-            customer=customer,
-            company=company,
-            branch=self.request.user.branch,
-            recorded_by=self.request.user,
-        )
-        if locked_invoice:
-            locked_invoice.paid += payment.amount
-            locked_invoice.balance = max(
-                Decimal("0"), locked_invoice.total - locked_invoice.paid
-            )
-            locked_invoice.status = paid_status(locked_invoice)
-            locked_invoice.save(
-                update_fields=["paid", "balance", "status", "updated_at"]
-            )
-            if getattr(locked_invoice, 'job_id', None):
-                record_job_event(locked_invoice.job, self.request.user, 'Payment Received',
-                                 f'Payment registered against {locked_invoice.number}',
-                                 {'paymentId': str(payment.pk), 'invoiceId': str(locked_invoice.pk)})
-
-        # Post to workshop account ledger if an account is linked
-        if payment.account_id:
-            from apps.inventory.models import WorkshopAccountEntry
-            # IN = money received = positive; OUT = money paid = negative
-            signed_amount = payment.amount if payment.direction == "IN" else -payment.amount
-            source_key = f"customer_payment_{payment.pk}"
-            WorkshopAccountEntry.objects.create(
-                company=company,
-                branch=self.request.user.branch,
-                account=payment.account,
-                amount=signed_amount,
-                entry_type="customer_payment" if payment.direction == "IN" else "outgoing_payment",
-                source_key=source_key,
-                reference=f"Payment {payment.pk}" + (f" | {payment.reference}" if payment.reference else ""),
-                posted_at=timezone.now(),
-                created_by=self.request.user,
-            )
+        record_payment(serializer, self.request.user, branch=self.request.user.branch)
 
     def update(self, request, *args, **kwargs):
         # Mutating posted financial rows would desync Invoice.paid and the ledger.
