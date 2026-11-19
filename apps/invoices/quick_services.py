@@ -213,11 +213,14 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
                 worker_name = str(raw.get("workerName") or "").strip()
                 worker_phone = str(raw.get("workerPhone") or "").strip()
                 work_description = str(raw.get("workDescription") or raw.get("description") or "").strip()
-                if not worker_name or len(worker_name) > 160 or not work_description or len(work_description) > 300:
-                    raise ValidationError({prefix: "Enter a valid outside worker name and work description."})
+                if (not worker_name or len(worker_name) > 160 or len(worker_phone) > 30
+                        or not work_description or len(work_description) > 300):
+                    raise ValidationError({prefix: "Enter a valid outside worker name, phone and work description."})
                 worker_charge = self._decimal(raw.get("workerCharge"), f"{prefix}.workerCharge")
                 customer_charge = self._decimal(raw.get("customerCharge", raw.get("rate")), f"{prefix}.customerCharge")
                 hsn = str(raw.get("hsnCode") or "").strip()
+                if len(hsn) > 20:
+                    raise ValidationError({f"{prefix}.hsnCode": "SAC cannot exceed 20 characters."})
                 if gst_registered and (not hsn or raw.get("taxRate") in (None, "")):
                     raise ValidationError({prefix: "Enter the applicable SAC and GST percentage for outside labour."})
                 tax_rate = self._decimal(raw.get("taxRate", "0"), f"{prefix}.taxRate", minimum=Decimal("0")) if gst_registered else Decimal("0")
@@ -238,6 +241,8 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({f"{prefix}.description": "Enter a service description (maximum 255 characters)."})
                 rate = self._decimal(raw.get("rate"), f"{prefix}.rate")
                 hsn = str(raw.get("hsnCode") or "").strip()
+                if len(hsn) > 20:
+                    raise ValidationError({f"{prefix}.hsnCode": "HSN/SAC cannot exceed 20 characters."})
                 if gst_registered and (not hsn or raw.get("taxRate") in (None, "")):
                     raise ValidationError({prefix: "Enter the applicable SAC and GST percentage for this custom line."})
                 tax_rate = self._decimal(raw.get("taxRate", "0"), f"{prefix}.taxRate", minimum=Decimal("0")) if gst_registered else Decimal("0")
