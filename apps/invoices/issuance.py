@@ -3,6 +3,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.accounts.permissions import user_has_permission
 from apps.inventory.models import StockItem, StockMovement
+from apps.inventory.branch_stock import locked_branch_balance, move_balance
 from apps.jobs.audit import record_job_event
 from .template_settings import template_for_document
 
@@ -32,9 +33,19 @@ def finalize_invoice(obj, user):
                 item=StockItem.objects.select_for_update().get(pk=line.stock_item_id,company=obj.company)
             except StockItem.DoesNotExist:
                 raise ValidationError("An invoice item references stock from another company or a missing stock item.")
-            if item.available_quantity < line.quantity: raise ValidationError(f"Insufficient stock for {item.name}.")
-            item.on_hand -= line.quantity; item.save(update_fields=["on_hand","updated_at"])
-            StockMovement.objects.create(company=obj.company,branch=obj.branch,item=item,movement_type="sale",quantity=-line.quantity,reference=obj.number,created_by=user)
+            if obj.branch_id:
+                branch_balance = locked_branch_balance(item, obj.branch)
+                move_balance(branch_balance, -line.quantity)
+            elif item.available_quantity < line.quantity:
+                raise ValidationError(f"Insufficient stock for {item.name}.")
+            item.on_hand -= line.quantity
+            item.save(update_fields=["on_hand", "updated_at"])
+            StockMovement.objects.create(
+                company=obj.company, branch=obj.branch, item=item,
+                movement_type="sale", quantity=-line.quantity,
+                unit_cost=item.cost_price, unit_selling_price=line.rate,
+                reference=obj.number, created_by=user,
+            )
         obj.status="Paid" if obj.balance<=0 else "Finalized"
     else: obj.status="Issued"
     if not obj.template_snapshot:
