@@ -5,7 +5,18 @@ from common.models import CompanyOwnedModel
 class QuickService(CompanyOwnedModel):
     description = models.CharField(max_length=255)
     start_key = models.UUIDField()
+    start_fingerprint = models.CharField(max_length=64, blank=True, default="")
     started_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True)
+    customer = models.ForeignKey(
+        "customers.Customer", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="quick_services",
+    )
+    vehicle = models.ForeignKey(
+        "vehicles.Vehicle", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="quick_services",
+    )
+    items = models.JSONField(default=list, blank=True)
+    notes = models.TextField(blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]
@@ -61,8 +72,13 @@ class Invoice(CompanyOwnedModel):
             models.CheckConstraint(
                 condition=(
                     models.Q(quick_service__isnull=True, customer__isnull=False)
-                    | models.Q(quick_service__isnull=False, customer__isnull=True,
-                               vehicle__isnull=True, job__isnull=True, kind="invoice")
+                    | (
+                        models.Q(quick_service__isnull=False, job__isnull=True, kind="invoice")
+                        & (
+                            models.Q(customer__isnull=True, vehicle__isnull=True)
+                            | models.Q(customer__isnull=False)
+                        )
+                    )
                 ),
                 name="invoice_recipient_or_quick_service",
             ),

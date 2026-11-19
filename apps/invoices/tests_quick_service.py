@@ -8,7 +8,10 @@ from apps.accounts.models import User
 from apps.branches.models import Branch
 from apps.companies.models import Company
 from apps.customers.models import Customer
-from apps.inventory.models import WorkshopAccountEntry, WorkshopFinancialAccount
+from apps.inventory.models import WorkshopAccountEntry, WorkshopFinancialAccount, StockItem, StockBranchBalance
+from apps.services.models import Service
+from apps.jobs.models import OutsideLabourCharge
+from apps.expenses.models import Expense
 from apps.payments.models import Payment
 from apps.roles.models import Role
 from apps.vehicles.models import Vehicle
@@ -104,6 +107,92 @@ class QuickServiceTests(TestCase):
         invoice = Invoice.objects.get()
         self.assertEqual((invoice.cgst, invoice.sgst, invoice.igst), (Decimal("27.00"), Decimal("27.00"), 0))
         self.assertEqual(invoice.customer_snapshot, {"placeOfSupply": "32"})
+
+
+    def test_full_quick_service_form_links_customer_vehicle_catalogue_parts_and_outside_labour(self):
+        self.company.gstin = "32AAIFF2342J1ZO"
+        self.company.save(update_fields=["gstin"])
+        customer = Customer.objects.create(
+            company=self.company, branch=self.branch, name="Anil Kumar",
+            phone="+919000000111", state="Kerala",
+        )
+        vehicle = Vehicle.objects.create(
+            company=self.company, branch=self.branch, customer=customer,
+            registration="KL10AB1234", make="Maruti", model="Swift",
+        )
+        service = Service.objects.create(
+            company=self.company, name="Quick Check", code="QCK-01",
+            price=Decimal("1000.00"), tax_rate=Decimal("18.00"),
+            hsn_sac="998729", unit="Job",
+        )
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch, name="Oil Filter",
+            sku="FLT-001", selling_price=Decimal("250.00"),
+            cost_price=Decimal("150.00"), on_hand=Decimal("5.00"),
+            tax=Decimal("18.00"), hsn_code="84212300",
+        )
+        payload = {
+            "requestId": str(uuid4()),
+            "description": "Quick oil service",
+            "customerId": str(customer.pk),
+            "vehicleId": str(vehicle.pk),
+            "items": [
+                {"kind": "service", "serviceId": str(service.pk), "qty": "1"},
+                {"kind": "part", "inventoryId": str(part.pk), "qty": "2"},
+                {
+                    "kind": "outside", "workerName": "Ravi Painter",
+                    "workerPhone": "+919000000222", "workDescription": "Small touch-up",
+                    "customerCharge": "500.00", "workerCharge": "300.00",
+                    "hsnCode": "998729", "taxRate": "18.00",
+                },
+            ],
+            "notes": "Counter service",
+        }
+        created = self.client.post(self.url, payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["customerId"], str(customer.pk))
+        self.assertEqual(created.data["vehicleId"], str(vehicle.pk))
+        self.assertEqual(len(created.data["items"]), 3)
+        quick_id = created.data["id"]
+        outside = OutsideLabourCharge.objects.get(quick_service_id=quick_id)
+        self.assertIsNone(outside.job_id)
+        self.assertEqual(outside.status, OutsideLabourCharge.STATUS_PENDING)
+
+        quote = self.client.post(f"{self.url}/{quick_id}/preview", {}, format="json")
+        self.assertEqual(quote.status_code, 200, quote.data)
+        self.assertEqual(quote.data["total"], "2360.00")
+        closed = self.client.post(f"{self.url}/{quick_id}/close", {
+            "paymentMethod": "Cash", "account": str(self.cash.pk),
+            "expectedTotal": "2360.00",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200, closed.data)
+        invoice = Invoice.objects.get(quick_service_id=quick_id)
+        self.assertEqual(invoice.customer_id, customer.pk)
+        self.assertEqual(invoice.vehicle_id, vehicle.pk)
+        self.assertIsNone(invoice.job_id)
+        self.assertEqual(invoice.items.count(), 3)
+        self.assertEqual(invoice.items.get(stock_item=part).quantity, Decimal("2.00"))
+        part.refresh_from_db()
+        self.assertEqual(part.on_hand, Decimal("3.00"))
+        branch_balance = StockBranchBalance.objects.get(item=part, branch=self.branch)
+        self.assertEqual(branch_balance.quantity, Decimal("3.00"))
+        self.assertEqual(outside.customer_charge, Decimal("500.00"))
+        self.assertEqual(outside.worker_charge, Decimal("300.00"))
+
+        replay = self.client.post(self.url, payload, format="json")
+        self.assertEqual(replay.status_code, 200, replay.data)
+        self.assertEqual(QuickService.objects.count(), 1)
+        self.assertEqual(OutsideLabourCharge.objects.filter(quick_service_id=quick_id).count(), 1)
+        self.assertEqual(Payment.objects.count(), 1)
+
+        paid = self.client.post(
+            f"/api/v1/outside-labour/{outside.pk}/pay",
+            {"paymentMethod": "Cash"}, format="json",
+        )
+        self.assertEqual(paid.status_code, 200, paid.data)
+        outside.refresh_from_db()
+        self.assertEqual(outside.status, OutsideLabourCharge.STATUS_PAID)
+        self.assertTrue(Expense.objects.filter(pk=outside.expense_id).exists())
 
     def test_registered_invoice_path_still_requires_a_customer(self):
         result = self.client.post("/api/v1/invoices", {

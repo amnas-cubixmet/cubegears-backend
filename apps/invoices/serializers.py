@@ -278,14 +278,20 @@ class InvoiceSerializer(serializers.ModelSerializer):
             job = Job.objects.get(company=company, pk=validated_data["source_job_id"])
         job_invoice = job and validated_data.get("kind", "invoice") == "invoice"
         quick_service = validated_data.get("quick_service")
-        customer = None if quick_service else (
-            job.customer if job_invoice else self._resolve_customer(customer_payload, company)
-            or (job.customer if job else None)
-        )
-        if not customer and not quick_service:
-            raise serializers.ValidationError({"customer": "Customer is required."})
-        vehicle = (job.vehicle if job_invoice else self._resolve_vehicle(vehicle_payload, company, customer)
-                   or (job.vehicle if job else None))
+        if quick_service:
+            customer = quick_service.customer
+            vehicle = quick_service.vehicle
+        else:
+            customer = (
+                job.customer if job_invoice else self._resolve_customer(customer_payload, company)
+                or (job.customer if job else None)
+            )
+            if not customer:
+                raise serializers.ValidationError({"customer": "Customer is required."})
+            vehicle = (
+                job.vehicle if job_invoice else self._resolve_vehicle(vehicle_payload, company, customer)
+                or (job.vehicle if job else None)
+            )
         if vehicle is not None and vehicle.customer_id != getattr(customer, "pk", None):
             raise serializers.ValidationError({
                 "vehicle": "The selected vehicle belongs to a different customer."
@@ -296,7 +302,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
         validated_data["job"] = job
 
         if isinstance(customer_payload, dict):
-            validated_data["customer_snapshot"] = customer_payload
+            # An anonymous Quick Service invoice may need a place-of-supply
+            # value for GST calculation, but must not persist it as a customer.
+            validated_data["customer_snapshot"] = (
+                {} if quick_service and not quick_service.customer else customer_payload
+            )
         if isinstance(vehicle_payload, dict):
             validated_data["vehicle_snapshot"] = vehicle_payload
 
