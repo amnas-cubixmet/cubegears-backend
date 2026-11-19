@@ -302,7 +302,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
         validated_data["job"] = job
 
         if isinstance(customer_payload, dict):
-            validated_data["customer_snapshot"] = customer_payload
+            # An anonymous Quick Service invoice may need a place-of-supply
+            # value for GST calculation, but must not persist it as a customer.
+            validated_data["customer_snapshot"] = (
+                {} if quick_service and not quick_service.customer else customer_payload
+            )
         if isinstance(vehicle_payload, dict):
             validated_data["vehicle_snapshot"] = vehicle_payload
 
