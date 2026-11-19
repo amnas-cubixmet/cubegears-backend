@@ -162,6 +162,8 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             elif kind == "part":
                 if not user_has_permission(request.user, "stock.view"):
                     raise PermissionDenied("Stock View permission is required to search and add parts.")
+                if not user_has_permission(request.user, "stock.edit"):
+                    raise PermissionDenied("Stock Edit permission is required to add parts to a Quick Service invoice.")
                 item = StockItem.objects.select_for_update().filter(
                     pk=raw.get("inventoryId"), company=company, status="Active",
                 ).first()
