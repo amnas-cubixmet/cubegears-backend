@@ -69,7 +69,8 @@ class QuickServiceSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         result = super().to_representation(instance)
-        rows = result.get("items") or []
+        rows = [dict(row) if isinstance(row, dict) else row for row in (result.get("items") or [])]
+        result["items"] = rows
         if not self.context.get("can_view_invoice"):
             for row in rows:
                 for name in ("rate", "customerCharge", "workerCharge", "purchasePrice", "taxRate", "hsnCode"):
