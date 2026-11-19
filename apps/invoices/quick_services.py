@@ -275,28 +275,34 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             if not customer:
                 customer = vehicle.customer
 
-        normalized = self._normalize_items(request, company, branch, data.get("items", []))
-        if not normalized:
-            raise ValidationError({"items": "Add at least one service, part, custom item or outside labour before starting."})
-        description = str(data.get("description") or "").strip()
-        if not description:
-            description = ", ".join(row["description"] for row in normalized[:2])[:255] or "Quick Service"
+        requested_description = str(data.get("description") or "").strip()
         notes = str(data.get("notes") or "").strip()
-
         fingerprint_payload = {
-            "description": description, "customer": str(customer.pk) if customer else "",
-            "vehicle": str(vehicle.pk) if vehicle else "", "items": normalized, "notes": notes,
+            "description": requested_description,
+            "customer": str(customer.pk) if customer else "",
+            "vehicle": str(vehicle.pk) if vehicle else "",
+            "items": data.get("items", []),
+            "notes": notes,
         }
-        fingerprint = sha256(json.dumps(fingerprint_payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        fingerprint = sha256(json.dumps(
+            fingerprint_payload, sort_keys=True, separators=(",", ":"), default=str,
+        ).encode()).hexdigest()
         existing = QuickService.objects.select_for_update().filter(
             company=company, start_key=data["requestId"],
         ).first()
         if existing:
             if existing.start_fingerprint and existing.start_fingerprint != fingerprint:
                 raise ValidationError({"requestId": "This request key was already used for different Quick Service details."})
-            if not existing.start_fingerprint and existing.description != description:
+            if not existing.start_fingerprint and requested_description and existing.description != requested_description:
                 raise ValidationError({"requestId": "This request key belongs to another Quick Service."})
             return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+        normalized = self._normalize_items(request, company, branch, data.get("items", []))
+        if not normalized:
+            raise ValidationError({"items": "Add at least one service, part, custom item or outside labour before starting."})
+        description = requested_description or (
+            ", ".join(row["description"] for row in normalized[:2])[:255] or "Quick Service"
+        )
 
         service = QuickService.objects.create(
             company=company, branch=branch, description=description,
