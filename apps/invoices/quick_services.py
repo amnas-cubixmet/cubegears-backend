@@ -298,8 +298,6 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             return Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
 
         normalized = self._normalize_items(request, company, branch, data.get("items", []))
-        if not normalized:
-            raise ValidationError({"items": "Add at least one service, part, custom item or outside labour before starting."})
         description = requested_description or (
             ", ".join(row["description"] for row in normalized[:2])[:255] or "Quick Service"
         )
