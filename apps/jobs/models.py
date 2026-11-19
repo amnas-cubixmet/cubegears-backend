@@ -135,7 +135,13 @@ class OutsideLabourCharge(CompanyOwnedModel):
     """
     STATUS_PENDING = "Pending"
     STATUS_PAID = "Paid"
-    job = models.ForeignKey(Job, on_delete=models.PROTECT, related_name="outside_labour")
+    job = models.ForeignKey(
+        Job, on_delete=models.PROTECT, null=True, blank=True, related_name="outside_labour",
+    )
+    quick_service = models.ForeignKey(
+        "invoices.QuickService", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="outside_labour",
+    )
     worker_name = models.CharField(max_length=160)
     worker_phone = models.CharField(max_length=30, blank=True)
     work_description = models.CharField(max_length=300)
@@ -164,3 +170,12 @@ class OutsideLabourCharge(CompanyOwnedModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["company", "status"], name="outlab_company_status_idx")]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(job__isnull=False, quick_service__isnull=True)
+                    | models.Q(job__isnull=True, quick_service__isnull=False)
+                ),
+                name="outside_labour_exactly_one_source",
+            ),
+        ]
