@@ -18,7 +18,7 @@ class Migration(migrations.Migration):
             model_name="customer",
             constraint=models.UniqueConstraint(
                 fields=("company", "offline_request_key"),
-                name="uniq_customer_offline_request_company",
+                name="uniq_cust_offline_key_company",
             ),
         ),
     ]
