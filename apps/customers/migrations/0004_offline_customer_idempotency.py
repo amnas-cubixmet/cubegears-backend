@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="customer",
             name="offline_payload_hash",
-            field=models.CharField(blank=True, editable=False, max_length=64),
+            field=models.CharField(blank=True, default="", editable=False, max_length=64),
         ),
         migrations.AddConstraint(
             model_name="customer",
