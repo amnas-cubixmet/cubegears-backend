@@ -17,6 +17,9 @@ class Customer(CompanyOwnedModel):
     state = models.CharField(max_length=100, blank=True)
     pincode = models.CharField(max_length=12, blank=True)
     notes = models.TextField(blank=True)
+    # Offline creates are idempotent per company; nullable for all ordinary customers.
+    offline_request_key = models.UUIDField(null=True, blank=True, editable=False)
+    offline_payload_hash = models.CharField(max_length=64, blank=True, default="", editable=False)
     # Reference metadata only: actual uploads are handled by separate storage APIs.
     documents = models.JSONField(default=list, blank=True)
     credit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
@@ -27,6 +30,12 @@ class Customer(CompanyOwnedModel):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["company","phone"]), models.Index(fields=["company","email"])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "offline_request_key"],
+                name="uniq_cust_offline_key_company",
+            ),
+        ]
 
     def __str__(self): return self.name
 
