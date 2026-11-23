@@ -33,7 +33,7 @@ class Customer(CompanyOwnedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["company", "offline_request_key"],
-                name="uniq_customer_offline_request_company",
+                name="uniq_cust_offline_key_company",
             ),
         ]
 
