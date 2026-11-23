@@ -413,42 +413,102 @@ Run `python manage.py check --deploy`, migrations and a real SMTP smoke test in
 staging before release. No deployment or live SMTP credentials are bundled.
 
 
-## Customer Website (separate frontend)
+## Customer Website (separate Next.js frontend)
 
-Customer frontend repository: https://github.com/amnas-cubixmet/cubegears-customers-website
+Frontend: https://github.com/amnas-cubixmet/cubegears-customers-website
 
-New cookie-session API endpoints under /api/v1/customer-website/:
-- GET branding (also issues a signed double-submit CSRF cookie)
-- POST session (exchange existing CustomerPortalAccess bearer URL token for a server session)
-- GET session (existing Customer/Vehicle/Job/approved Estimate/published Invoice/photo data)
-- POST logout
-- GET logo and photos/<photo_uuid> (published files only)
+One Next.js deployment serves all workshop websites at
+`https://<label>.customer.cubixgear.tech`. **Do not create another Django
+Company model or another Vercel project on every signup.** Signup already
+creates a `CompanyWebsiteSubdomain` reservation, and migration
+`apps.companies.0009_company_website_subdomain` backfills existing workshops.
+Changing the public website label never changes the staff login `Company.slug`.
 
-Every request must arrive through the same-origin frontend proxy with HMAC-signed
-X-CG-Portal-Host, X-CG-Portal-TS and X-CG-Portal-Sig headers. Django verifies the
-signature before resolving the company from a default subdomain or an *active*
-custom-domain mapping. No frontend-supplied company/customer ID is trusted.
+The Next.js same-origin route `/api/portal/*` signs each request using
+`PORTAL_PROXY_SHARED_SECRET` and forwards it to Django at
+`/api/v1/customer-website/*`. Django verifies the signature and resolves
+only an active Company with a matching registered hostname. Browser-supplied
+company IDs are not accepted for tenant selection. The public homepage
+only returns public branding; private data requires a valid customer link
+exchanged for a tenant-scoped HttpOnly session cookie.
 
-Local environment settings:
-- PORTAL_PROXY_SHARED_SECRET: same strong random value (32+ chars) in Django
-  and frontend Vite/Vercel server-side environment.
-- CUSTOMER_PORTAL_ROOT_DOMAIN=cubegears.com
-- PORTAL_DEV_COMPANY_SLUG=alpha (only used with DJANGO_DEBUG=True, for localhost)
-- CUSTOMER_WEBSITE_LINKS_ENABLED=true to emit new /access/<token> URLs
-  ONLY AFTER the customer frontend and wildcard HTTPS have been verified.
+### Configuration
 
-For production: keep SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True
-and SESSION_COOKIE_SAMESITE=Lax. Ensure HTTPS on Django and Vercel. Run migrations
-before enabling. The browser stores only same-origin HttpOnly Django session
-cookies; long-lived customer bearer credentials do not go into localStorage.
+Set **in Django's private runtime environment**:
 
-Company owner settings endpoints:
-- GET/PATCH /api/v1/company/customer-website
-- GET/POST /api/v1/company/customer-website/domains
-- DELETE /api/v1/company/customer-website/domains/<id>
+```env
+# Actual HTTPS host on which this Django service runs.
+DJANGO_ALLOWED_HOSTS=api.cubixgear.tech
+CUSTOMER_PORTAL_ROOT_DOMAIN=customer.cubixgear.tech
+PORTAL_PROXY_SHARED_SECRET=<same-random-value-at-least-32-chars-as-nextjs>
+# Temporary link fallback must be a real, existing endpoint if links are disabled.
+CUSTOMER_PORTAL_BASE_URL=https://customer.example.com/access
+CUSTOMER_WEBSITE_LINKS_ENABLED=False
+```
 
-A custom domain request is always PENDING_DNS; no domain becomes active just
-because its owner entered it. DNS ownership verification, Vercel provider domain
-registration and certificate readiness are follow-on deployment requirements.
+Set **only on the Next.js server/Vercel project** (not `NEXT_PUBLIC_*`):
 
-Tests: python manage.py test apps.customers.tests_website
+```env
+CUBEGEARS_BACKEND_URL=https://api.cubixgear.tech
+CUSTOMER_PORTAL_ROOT_DOMAIN=customer.cubixgear.tech
+PORTAL_PROXY_SHARED_SECRET=<same-random-value-at-least-32-chars-as-django>
+```
+
+Use an actual private secret generated locally; never commit populated env files.
+`CUBEGEARS_BACKEND_URL` must be the **origin**, not `/api/v1`.
+The Next.js `PORTAL_BACKEND_URL=http://127.0.0.1:8000` option is for local
+development only. The production customer wildcard hostname does **not** need
+to be added to Django `ALLOWED_HOSTS`: Next.js forwards the request to
+the Django API domain using its signed tenant-host headers.
+
+`DJANGO_DEBUG=False`, persistent PostgreSQL, HTTPS, valid backend allowed
+hosts, a secure Django secret/JWT signing key, secure session cookies and
+migrations are required before deployment. Keep the backend reverse proxy's
+`X-Forwarded-Proto` correct. Never set the same browser-wide session-cookie
+domain for every customer subdomain.
+
+### Wildcard DNS and production rollout
+
+For Vercel, attach `*.customer.cubixgear.tech` to the **single** Customer
+Website project. Vercel's official wildcard setup requires the **nameservers
+method** to support certificate issuance/renewal. Do not assume that adding
+a wildcard CNAME and delegating only `_acme-challenge` is sufficient.
+If the existing apex `cubixgear.tech` DNS is managed elsewhere, plan a
+careful `customer.cubixgear.tech` DNS-zone delegation with your provider
+and Vercel, or use the existing reverse proxy with a managed wildcard
+certificate. Preserve live API, app, mail and unrelated DNS records.
+
+1. Deploy Django and Next.js using their respective production environment
+   variables; run `python manage.py migrate --noinput`.
+2. Configure and verify wildcard DNS/TLS, and create or identify an **active**
+   workshop label in the Django production database.
+3. Run `npm run verify:portal -- <workshop>.customer.cubixgear.tech` from
+   the frontend repo. It checks branding HTTP 200, unauthenticated session
+   HTTP 401, and an unknown workshop HTTP 404 (without access tokens).
+4. Generate a **test customer's** access link from the Company Panel, redeem
+   it on the correct workshop hostname, and verify authorized vehicle and
+   invoice data. Test that another workshop hostname cannot read the session.
+   Do not paste or log actual access links, cookies or private payloads.
+5. Only after successful checks, change
+   `CUSTOMER_WEBSITE_LINKS_ENABLED=True` in Django and restart the service.
+   The setting reports deployment readiness by operator choice; it does not
+   query live DNS/SSL automatically.
+
+### Existing endpoints
+
+- `GET /api/v1/company/customer-website` — workshop branding and label
+- `PATCH /api/v1/company/customer-website` — workshop branding
+- `PATCH /api/v1/company/customer-website/subdomain` — change public label
+- `GET /api/v1/customer-website/branding` — public workshop branding
+- `POST /api/v1/customer-website/session` — exchange private access capability
+- `GET /api/v1/customer-website/session` — authorized customer dashboard
+- `POST /api/v1/customer-website/logout` — close private session
+- `GET /api/v1/customer-website/logo`, `photos/<uuid>`, `invoices/<uuid>/pdf`
+  — subject to their existing per-company/authorization checks
+
+The former per-workshop custom-domain registration endpoints were **removed**
+by migration `apps.companies.0010_remove_custom_domains`. Do not configure
+legacy `/customer-website/domains` or Vercel per-workshop API tokens.
+
+Tests:
+`python manage.py test apps.companies.tests_default_subdomains apps.customers.tests_website`.
