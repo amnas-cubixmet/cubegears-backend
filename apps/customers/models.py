@@ -19,7 +19,7 @@ class Customer(CompanyOwnedModel):
     notes = models.TextField(blank=True)
     # Offline creates are idempotent per company; nullable for all ordinary customers.
     offline_request_key = models.UUIDField(null=True, blank=True, editable=False)
-    offline_payload_hash = models.CharField(max_length=64, blank=True, editable=False)
+    offline_payload_hash = models.CharField(max_length=64, blank=True, default="", editable=False)
     # Reference metadata only: actual uploads are handled by separate storage APIs.
     documents = models.JSONField(default=list, blank=True)
     credit_limit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
