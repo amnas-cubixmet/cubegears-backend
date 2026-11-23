@@ -1,4 +1,7 @@
 import uuid
+import hashlib
+import json
+from django.db import IntegrityError
 from django.db import transaction
 from django.db.models import Q, Sum, Count
 from rest_framework import decorators, response, status
@@ -61,12 +64,76 @@ class CustomerViewSet(CompanyScopedModelViewSet):
             qs = qs.filter(branch_id=branch_id)
         return qs
 
-    def perform_create(self, serializer):
+    def _offline_replay_response(self, request, request_key, payload_hash):
+        existing = Customer.objects.filter(
+            company_id=request.user.company_id,
+            offline_request_key=request_key,
+        ).first()
+        if existing is None:
+            return None
+        if not self.get_queryset().filter(pk=existing.pk).exists():
+            return response.Response(
+                {"detail": "Saved offline customer is no longer accessible in this branch."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if existing.offline_payload_hash != payload_hash:
+            return response.Response(
+                {"detail": "The offline request key was reused with different customer data."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return response.Response(self.get_serializer(existing).data, status=status.HTTP_200_OK)
+
+    def create(self, request, *args, **kwargs):
+        # Only explicitly keyed offline creates participate. The normal online
+        # customer API retains its existing validation and response contract.
+        if "offlineRequestKey" not in request.data:
+            return super().create(request, *args, **kwargs)
+        try:
+            request_key = uuid.UUID(str(request.data["offlineRequestKey"]))
+            if request_key.version != 4:
+                raise ValueError("Only random version-4 UUID keys are accepted.")
+        except (ValueError, TypeError, AttributeError):
+            return response.Response(
+                {"offlineRequestKey": "Provide a valid UUIDv4 request key."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        payload = {key: value for key, value in request.data.items()
+                   if key != "offlineRequestKey"}
+        fingerprint = hashlib.sha256(json.dumps(
+            payload, sort_keys=True, separators=(",", ":"), default=str,
+        ).encode("utf-8")).hexdigest()
+        replay = self._offline_replay_response(request, request_key, fingerprint)
+        if replay is not None:
+            return replay
+        serializer = self.get_serializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        self._validate_related_tenants(serializer.validated_data)
+        try:
+            with transaction.atomic():
+                self.perform_create(
+                    serializer,
+                    offline_request_key=request_key,
+                    offline_payload_hash=fingerprint,
+                )
+        except IntegrityError:
+            # Another tab/browser may have completed the same request during a
+            # lost response. Only replay the exact original payload.
+            replay = self._offline_replay_response(request, request_key, fingerprint)
+            if replay is not None:
+                return replay
+            raise
+        return response.Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=self.get_success_headers(serializer.data),
+        )
+
+    def perform_create(self, serializer, **extra):
         selected = serializer.validated_data.get("branch")
         branch = selected if selected is not None else default_authorized_branch(self.request.user)
         if branch is None or branch.pk not in authorized_branch_ids(self.request.user):
             raise ValidationError({"branch": "No active authorized branch available for this customer."})
-        serializer.save(company=self.request.user.company, branch=branch)
+        serializer.save(company=self.request.user.company, branch=branch, **extra)
 
     @decorators.action(detail=False, methods=["get"], url_path="directory-summary")
     def directory_summary(self, request):
