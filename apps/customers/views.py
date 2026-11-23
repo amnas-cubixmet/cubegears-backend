@@ -27,6 +27,7 @@ class CustomerViewSet(CompanyScopedModelViewSet):
         "outstanding": "invoices.view",
         "ledger": ["payments.view", "invoices.view"],
         "branch_options": "customers.view",
+        "offline_capabilities": "customers.view",
         "directory_summary": "customers.view",
         "restore": "customers.edit",
     }
@@ -63,6 +64,12 @@ class CustomerViewSet(CompanyScopedModelViewSet):
                 return qs.none()
             qs = qs.filter(branch_id=branch_id)
         return qs
+
+    @decorators.action(detail=False, methods=["get"], url_path="offline-capabilities")
+    def offline_capabilities(self, request):
+        # Frontend must check this endpoint before enabling or replaying writes.
+        # Old backend deployments without this endpoint must fail closed.
+        return response.Response({"customerCreatesIdempotent": True})
 
     def _offline_replay_response(self, request, request_key, payload_hash):
         existing = Customer.objects.filter(
