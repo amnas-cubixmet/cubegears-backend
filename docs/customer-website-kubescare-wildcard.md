@@ -70,11 +70,13 @@ python manage.py test apps.companies.tests_default_subdomains
 ```
 
 Run the full Django suite on your own CI/staging environment before release.
-The historical `apps/companies/tests_vercel_domains.py` and
-`apps/companies/vercel_domains.py` still refer to retired
-`CompanyDomain` / `CompanyDomainAudit` models, while the live custom-domain
-API routes have been removed. That legacy test/import path requires a
-separate cleanup; do not treat it as a working custom-domain workflow.
+This branch replaces the obsolete `tests_vercel_domains.py` assertions
+(which imported removed `CompanyDomain` models) with a retired-route guard.
+The unused legacy `apps/companies/vercel_domains.py` module still references
+retired models; do not re-enable that module or treat it as a working
+custom-domain workflow without a separate design/security review.
+The local fake-domain tests have also been aligned to the supported
+`<company>.localhost` development-host mechanism.
 
 ## What does **not** need to change
 
