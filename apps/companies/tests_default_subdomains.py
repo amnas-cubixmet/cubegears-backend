@@ -241,3 +241,38 @@ class WorkshopSubdomainTests(TestCase):
             response = self.client.get("/api/v1/customer-website/branding", **self.headers(host))
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data["name"], "First Garage")
+
+    @override_settings(DEBUG=False)
+    def test_configured_kubescare_wildcard_resolves_abc_mortgage_without_per_tenant_vercel_calls(self):
+        """One wildcard deployment serves a company created by the existing backend."""
+        with patch.dict(os.environ, {
+            "CUSTOMER_PORTAL_ROOT_DOMAIN": "customer.kubescare.tech",
+            "CUSTOMER_WEBSITE_LINKS_ENABLED": "true",
+        }):
+            mortgage = Company.objects.create(name="ABC Mortgage", slug="abc-mortgage")
+            self.assertEqual(ensure_default_subdomain(mortgage).label, "abc-mortgage")
+            customer = Customer.objects.create(
+                company=mortgage, name="Mortgage Customer", phone="+919999900099",
+            )
+            link = issue_link(ensure_portal_access(customer))
+            host = "abc-mortgage.customer.kubescare.tech"
+            self.assertTrue(link.startswith(f"https://{host}/access/"), link)
+
+            own_settings = self.client.get("/api/v1/company/customer-website")
+            self.assertEqual(own_settings.status_code, 200)
+            self.assertEqual(
+                own_settings.data["subdomain"],
+                "first-garage.customer.kubescare.tech",
+            )
+            response = self.client.get(
+                "/api/v1/customer-website/branding", **self.headers(host),
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+            self.assertEqual(response.data["name"], "ABC Mortgage")
+            self.assertEqual(
+                self.client.get(
+                    "/api/v1/customer-website/branding",
+                    **self.headers("missing.customer.kubescare.tech"),
+                ).status_code,
+                404,
+            )
