@@ -204,7 +204,7 @@ class QuickServiceTests(TestCase):
     def test_checkout_requires_billing_permissions_and_scopes_service_and_account(self):
         service = self.start()
         limited = Role.objects.create(company=self.company, name="Mechanic", code="MECH", permissions=["jobs.view", "jobs.edit"])
-        worker = User.objects.create_user(email="mechanic@example.test", name="Mechanic", company=self.company, role=limited)
+        worker = User.objects.create_user(email="mechanic@example.test", name="Mechanic", company=self.company, branch=self.branch, role=limited)
         self.client.force_authenticate(user=worker)
         self.assertEqual(self.checkout(service).status_code, 403)
 
@@ -227,3 +227,64 @@ class QuickServiceTests(TestCase):
         self.assertTrue(result.data["closedAt"])
         self.assertNotIn("invoiceId", result.data)
         self.assertNotIn("invoiceTotal", result.data)
+
+    def test_quick_services_are_hidden_from_staff_without_branch_access(self):
+        service = self.start()
+        other_branch = Branch.objects.create(company=self.company, name="North", code="NORTH", state="Kerala")
+        other_service = QuickService.objects.create(
+            company=self.company, branch=other_branch, description="Other branch repair",
+            start_key=uuid4(), started_by=self.user,
+        )
+        staff_role = Role.objects.create(
+            company=self.company, name="Branch Staff", code="BRANCH", permissions=["jobs.view"],
+        )
+        staff = User.objects.create_user(
+            email="branch-staff@example.test", name="Branch Staff", company=self.company,
+            branch=self.branch, role=staff_role,
+        )
+        self.client.force_authenticate(user=staff)
+        self.assertEqual(self.client.get(f"{self.url}/{service}").status_code, 200)
+        self.assertEqual(self.client.get(f"{self.url}/{other_service.pk}").status_code, 404)
+        listed = self.client.get(self.url)
+        self.assertEqual(listed.status_code, 200, listed.data)
+        self.assertEqual([row["id"] for row in listed.data], [str(service)])
+
+    def test_checkout_rejects_an_account_owned_by_an_unauthorized_branch(self):
+        service = self.start()
+        other_branch = Branch.objects.create(company=self.company, name="North", code="NORTH", state="Kerala")
+        other_cash = WorkshopFinancialAccount.objects.create(
+            company=self.company, branch=other_branch, name="North cash", kind="Cash",
+        )
+        staff_role = Role.objects.create(
+            company=self.company, name="Branch Cashier", code="CASHIER",
+            permissions=["jobs.view", "jobs.edit", "invoices.view", "invoices.create", "invoices.edit", "payments.view", "payments.create"],
+        )
+        staff = User.objects.create_user(
+            email="cashier@example.test", name="Cashier", company=self.company,
+            branch=self.branch, role=staff_role,
+        )
+        self.client.force_authenticate(user=staff)
+        denied = self.checkout(service, account=other_cash)
+        self.assertEqual(denied.status_code, 400, denied.data)
+        self.assertFalse(Invoice.objects.exists())
+        self.assertFalse(Payment.objects.exists())
+        accepted = self.checkout(service, account=self.cash)
+        self.assertEqual(accepted.status_code, 200, accepted.data)
+
+    def test_start_rejects_aggregate_duplicate_part_quantity_over_branch_stock(self):
+        part = StockItem.objects.create(
+            company=self.company, branch=self.branch, name="Limited Filter", sku="FLT-LIMIT",
+            selling_price=Decimal("10.00"), cost_price=Decimal("5.00"),
+            on_hand=Decimal("5.00"), hsn_code="84212300",
+        )
+        result = self.client.post(self.url, {
+            "requestId": str(uuid4()), "description": "Filter service",
+            "items": [
+                {"kind": "part", "inventoryId": str(part.pk), "qty": "3"},
+                {"kind": "part", "inventoryId": str(part.pk), "qty": "3"},
+            ],
+        }, format="json")
+        self.assertEqual(result.status_code, 400, result.data)
+        self.assertFalse(QuickService.objects.exists())
+        part.refresh_from_db()
+        self.assertEqual(part.on_hand, Decimal("5.00"))
