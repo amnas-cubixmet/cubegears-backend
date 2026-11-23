@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -139,6 +140,17 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         context["can_view_expenses"] = user_has_permission(self.request.user, "expenses.view")
         return context
 
+    def get_queryset(self):
+        """Keep Quick Service reads inside the user's authorized branches.
+
+        Company scoping alone is not enough here: service cards include customer,
+        vehicle and line-item details, so staff must not be able to read another
+        branch's records by listing or guessing a UUID.
+        """
+        return super().get_queryset().filter(
+            branch_id__in=authorized_branch_ids(self.request.user),
+        )
+
     @staticmethod
     def _decimal(value, field, *, minimum=Decimal("0.01")):
         try:
@@ -154,6 +166,7 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
             raise ValidationError({"items": "Add up to 100 service, part and outside labour lines."})
         gst_registered = bool(str(company.gstin or "").strip())
         allowed_branch_ids = {str(value) for value in authorized_branch_ids(request.user)}
+        part_quantities = {}
         result = []
         for index, raw in enumerate(raw_items, 1):
             prefix = f"items.{index - 1}"
@@ -195,8 +208,10 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
                     raise ValidationError({f"{prefix}.inventoryId": "Select an active part from this workshop."})
                 snapshot = branch_stock_snapshot(item, branch)
                 available = Decimal(str((snapshot or {}).get("branchAvailable", "0")))
-                if qty > available:
+                requested = part_quantities.get(str(item.pk), Decimal("0")) + qty
+                if requested > available:
                     raise ValidationError({f"{prefix}.qty": f"Only {available} available in this branch for {item.name}."})
+                part_quantities[str(item.pk)] = requested
                 hsn = item.hsn_code.strip()
                 if gst_registered and not hsn:
                     raise ValidationError({f"{prefix}.inventoryId": f"Add an HSN code to {item.name} in Inventory before invoicing it."})
@@ -283,12 +298,13 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
     @staticmethod
     def _customer_snapshot(service, place_of_supply_state):
         customer = service.customer
+        place_of_supply = state_code(place_of_supply_state) or place_of_supply_state
         if not customer:
-            return {"placeOfSupply": place_of_supply_state} if place_of_supply_state else {}
+            return {"placeOfSupply": place_of_supply} if place_of_supply else {}
         return {
             "name": customer.name, "phone": customer.phone, "email": customer.email,
             "address": customer.address, "state": customer.state, "gstin": customer.gstin,
-            "placeOfSupply": place_of_supply_state,
+            "placeOfSupply": place_of_supply,
         }
 
     @staticmethod
@@ -474,8 +490,13 @@ class QuickServiceViewSet(CompanyScopedModelViewSet):
         invoice_type, recipient, lines, amounts = self.quote(service, items)
         if data["expectedTotal"] != amounts["total"]:
             raise ValidationError({"expectedTotal": "The invoice total changed. Review the updated total before collecting payment."})
+        allowed_branch_ids = authorized_branch_ids(user)
         account = WorkshopFinancialAccount.objects.filter(
             pk=data["account"], company=company, is_active=True,
+        ).filter(
+            # A branch-less account is shared company-wide; a branch-owned
+            # account is usable only from one of the user's authorized branches.
+            Q(branch__isnull=True) | Q(branch_id__in=allowed_branch_ids)
         ).first()
         if not account:
             raise ValidationError({"account": "Select an active account owned by your workshop."})

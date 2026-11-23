@@ -44,7 +44,7 @@ STATE_CODES = set(STATE_NAMES.values())
 
 def state_code(value):
     label = str(value or "").strip()
-    match = re.match(r"^(\d{2})(?:\b|[-\s])", label)
+    match = re.match(r"^(\d{2})(?:$|\b|[-\s])", label)
     if match and match.group(1) in STATE_CODES:
         return match.group(1)
     return STATE_NAMES.get(label.lower(), "")
