@@ -13,7 +13,7 @@ class CustomerSerializer(serializers.ModelSerializer):
     customerType = serializers.CharField(source="customer_type", required=False)
     class Meta:
         model = Customer
-        exclude = ("company",)
+        exclude = ("company", "offline_request_key", "offline_payload_hash")
         read_only_fields = ("id","created_at","updated_at")
 
     def validate_name(self, value):
