@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 
 from apps.accounts.permissions import user_has_permission
 from apps.customers.models import Customer
-from apps.customers.portal_tokens import InvalidDevelopmentOrigin, ensure_portal_access, issue_link
+from apps.customers.portal_tokens import InvalidDevelopmentOrigin, WebsiteDisabled, ensure_portal_access, issue_link
 from apps.invoices.models import Invoice
 from apps.jobs.models import Job, JobEstimate
 from apps.jobs.workflow import workflow_state
@@ -137,6 +137,8 @@ class WhatsAppManualShareView(APIView):
             secure_url = issue_link(access, development_origin=development_origin)
         except InvalidDevelopmentOrigin:
             return Response({"message": "Use a local HTTP customer website origin without a path."}, status=400)
+        except WebsiteDisabled as exc:
+            return Response({"message": str(exc)}, status=409)
         except ValueError:
             return Response({"message": "Tracking link cannot be recovered. Regenerate the customer link."}, status=409)
 

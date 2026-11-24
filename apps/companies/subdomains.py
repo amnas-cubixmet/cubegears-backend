@@ -6,6 +6,7 @@ maps to exactly one company; Vercel only needs the platform wildcard once.
 import os
 import re
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils.text import slugify
 
@@ -30,6 +31,26 @@ class SubdomainUnavailable(ValueError):
 
 def customer_portal_root_domain():
     return os.environ.get("CUSTOMER_PORTAL_ROOT_DOMAIN", DEFAULT_PORTAL_ROOT_DOMAIN).strip().lower().strip(".")
+
+
+def customer_website_url(label):
+    return f"{settings.CUSTOMER_WEBSITE_SCHEME}://{label}.{customer_portal_root_domain()}/"
+
+
+def resolve_published_company(label):
+    try:
+        label = validate_subdomain_label(label)
+    except ValueError:
+        return None
+    entry = CompanyWebsiteSubdomain.objects.select_related("company").filter(label=label).first()
+    if entry:
+        if entry.website_enabled and entry.company and entry.company.is_active:
+            return entry.company
+        return None
+    # Deliberately limited to legacy/admin-created companies without a reservation.
+    return Company.objects.filter(
+        slug=label, is_active=True, website_subdomain__isnull=True,
+    ).first()
 
 
 def validate_subdomain_label(value):
@@ -64,7 +85,7 @@ def ensure_default_subdomain(company):
         return current
 
     base = re.sub(r"[-_]+", "-", slugify(company.name))[:53].strip("-")
-    if not re.search(r"[a-z]", base):
+    if not base:
         base = "workshop"
     if len(base) < 3 or base in RESERVED_LABELS:
         base = "workshop-" + base
@@ -79,24 +100,41 @@ def ensure_default_subdomain(company):
     raise ValueError("Unable to allocate a unique workshop subdomain.")
 
 
-def assign_subdomain(company, requested):
-    """Uniqueness enforced by database and protected from login-slug collisions."""
+def check_subdomain_availability(company, requested):
     label = validate_subdomain_label(requested)
+    if CompanyWebsiteSubdomain.objects.filter(company=company, label=label).exists():
+        return label, True, None
+    candidate = next(_available_labels(company, label), None)
+    return label, candidate == label, candidate if candidate != label else None
+
+
+def update_website(company, *, requested=None, website_enabled=None):
+    """Serialize address and publication changes for the owning company."""
     with transaction.atomic():
         company = Company.objects.select_for_update().get(pk=company.pk)
         entry = ensure_default_subdomain(company)
-        if entry.label == label:
-            return entry
-        available = next(_available_labels(company, label), None)
-        if available != label:
-            raise SubdomainUnavailable("This subdomain is already in use.", available)
+        previous = entry.label
+        if requested is not None:
+            label, available, suggestion = check_subdomain_availability(company, requested)
+            if not available:
+                raise SubdomainUnavailable("This subdomain is already in use.", suggestion)
+            entry.label = label
+        if website_enabled is not None:
+            entry.website_enabled = website_enabled
         try:
-            # An inner savepoint preserves the outer request if the unique
-            # constraint wins a concurrent registration race.
+            # A savepoint lets us report conflicts detected by the unique constraint.
             with transaction.atomic():
-                entry.label = label
-                entry.save(update_fields=["label", "updated_at"])
+                entry.save(update_fields=["label", "website_enabled", "updated_at"])
+                if entry.label != previous:
+                    # Preserve the previous hostname reservation so shared URLs
+                    # can never show a different company's branding.
+                    CompanyWebsiteSubdomain.objects.create(label=previous, website_enabled=False)
         except IntegrityError as exc:
-            suggestion = next(_available_labels(company, label), None)
+            _, _, suggestion = check_subdomain_availability(company, entry.label)
             raise SubdomainUnavailable("This subdomain is already in use.", suggestion) from exc
-        return entry
+        return entry, previous != entry.label
+
+
+def assign_subdomain(company, requested):
+    entry, _ = update_website(company, requested=validate_subdomain_label(requested))
+    return entry

@@ -8,10 +8,15 @@ from urllib.parse import urlsplit
 from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
+from apps.companies.models import CompanyWebsiteSubdomain
 from apps.companies.subdomains import (
-    LABEL_PATTERN, customer_portal_root_domain, ensure_default_subdomain, subdomain_label,
+    LABEL_PATTERN, customer_website_url, ensure_default_subdomain, subdomain_label,
 )
 from .models import CustomerPortalAccess
+
+
+class WebsiteDisabled(ValueError):
+    pass
 
 
 class InvalidDevelopmentOrigin(ValueError):
@@ -57,6 +62,10 @@ def ensure_portal_access(customer):
 
 
 def issue_link(access, *, development_origin=None):
+    if not access.company.is_active or CompanyWebsiteSubdomain.objects.filter(
+        company=access.company, website_enabled=False,
+    ).exists():
+        raise WebsiteDisabled("The customer website is disabled.")
     token = _token(access)
     if not hmac.compare_digest(digest(token), access.token_hash or ""):
         raise ValueError("Tracking link cannot be recovered. Regenerate it.")
@@ -78,7 +87,7 @@ def issue_link(access, *, development_origin=None):
     if os.environ.get("CUSTOMER_WEBSITE_LINKS_ENABLED", "").lower() == "true":
         label = ensure_default_subdomain(access.company).label
         if LABEL_PATTERN.fullmatch(label):
-            return f"https://{label}.{customer_portal_root_domain()}/access/{token}"
+            return f"{customer_website_url(label)}access/{token}"
 
     # Transitional fallback stays on the configured Next.js /access route.
     if base.endswith("/c"):
@@ -118,7 +127,7 @@ def resolve_link(raw_token):
     access = CustomerPortalAccess.objects.select_related("customer", "company").filter(
         id=access_id, is_active=True, customer__status="active",
         company__is_active=True, customer__company_id=F("company_id"),
-    ).first()
+    ).exclude(company__website_subdomain__website_enabled=False).first()
     if not access:
         return None
     expected = _token(access)

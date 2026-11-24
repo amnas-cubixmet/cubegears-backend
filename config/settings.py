@@ -20,6 +20,10 @@ def env_list(name, default=""):
 
 SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
+CUSTOMER_WEBSITE_SCHEME = env("CUSTOMER_WEBSITE_SCHEME", "https").strip().lower()
+if CUSTOMER_WEBSITE_SCHEME not in ({"http", "https"} if DEBUG else {"https"}):
+    raise ImproperlyConfigured("CUSTOMER_WEBSITE_SCHEME must be https in production.")
+
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost")
 
 # Verified statutory zero-tax HSN/SAC eligibility is deliberately not guessed.

@@ -14,7 +14,7 @@ from apps.companies.subdomains import (
     assign_subdomain, ensure_default_subdomain, subdomain_label,
 )
 from apps.customers.models import Customer
-from apps.customers.portal_tokens import ensure_portal_access, issue_link
+from apps.customers.portal_tokens import WebsiteDisabled, ensure_portal_access, issue_link, resolve_link
 from apps.roles.models import Role
 
 
@@ -88,6 +88,7 @@ class WorkshopSubdomainTests(TestCase):
                 self.assertEqual(response.status_code, 404, path)
 
     def test_existing_and_custom_labels_are_reserved_and_unauthorized_updates_denied(self):
+        ensure_default_subdomain(self.company)
         ensure_default_subdomain(self.other)
         for label in ("second-garage", "www", "api", "a", "ab", "bad.name",
                       "invalid_name", "a" * 64):
@@ -227,6 +228,70 @@ class WorkshopSubdomainTests(TestCase):
         accepted = self.client.patch(path, {"label": "abc1"}, format="json")
         self.assertEqual(accepted.status_code, 200)
         self.assertEqual(accepted.data["subdomainLabel"], "abc1")
+
+    def test_availability_rename_and_public_lookup_share_the_registry(self):
+        ensure_default_subdomain(self.company)
+        assign_subdomain(self.other, "second-public")
+        path = "/api/v1/company/customer-website/subdomain"
+        self.assertEqual(self.client.get(path, {"label": "office"}).data, {
+            "label": "office", "available": True, "suggestedLabel": None,
+        })
+        self.assertFalse(self.client.get(path, {"label": "second-public"}).data["available"])
+        self.assertEqual(self.client.get(path, {"label": "bad_name"}).status_code, 400)
+        self.assertEqual(APIClient().get(path, {"label": "office"}).status_code, 401)
+
+        renamed = self.client.patch(path, {"label": "office"}, format="json")
+        self.assertEqual(renamed.status_code, 200, renamed.data)
+        self.assertEqual(renamed.data["websiteUrl"], "https://office.cubegears.com/")
+        self.assertFalse(self.client.get(path, {"label": "first-garage"}).data["available"])
+
+        public = APIClient()
+        response = public.get("/api/v1/public/website/office/", HTTP_AUTHORIZATION="Bearer stale")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["company_name"], "First Garage")
+        self.assertEqual(response.data["website_url"], renamed.data["websiteUrl"])
+        self.assertTrue(response.data["is_active"])
+        self.assertTrue(response.data["website_enabled"])
+        self.assertNotIn("id", response.data)
+        self.assertNotIn("email", response.data)
+        self.assertIn("no-store", response["Cache-Control"])
+        self.assertEqual(public.get("/api/v1/public/website/second-public/").data["company_name"],
+                         "Second Garage")
+        assign_subdomain(self.company, "first-public")
+        self.assertFalse(self.client.get(path, {"label": "office"}).data["available"])
+        for label in ("office", "first-garage", "unknown", "bad_name"):
+            self.assertEqual(public.get(f"/api/v1/public/website/{label}/").status_code, 404)
+
+    def test_disable_and_reenable_public_site_and_private_tracking(self):
+        customer = Customer.objects.create(
+            company=self.company, name="Customer", phone="+919999900008",
+        )
+        access = ensure_portal_access(customer)
+        token = issue_link(access).rsplit("/", 1)[-1]
+        path = "/api/v1/company/customer-website/subdomain"
+        self.assertEqual(self.client.patch(path, {"websiteEnabled": False, "label": "api"},
+                                           format="json").status_code, 400)
+        self.assertTrue(self.client.get("/api/v1/company/customer-website").data["websiteEnabled"])
+
+        disabled = self.client.patch(path, {"websiteEnabled": False}, format="json")
+        self.assertEqual(disabled.status_code, 200, disabled.data)
+        self.assertFalse(disabled.data["websiteEnabled"])
+        self.assertIsNone(resolve_link(token))
+        with self.assertRaises(WebsiteDisabled):
+            issue_link(access)
+        public = APIClient()
+        signed = self.headers("first-garage.cubegears.com")
+        self.assertEqual(public.get("/api/v1/customer-website/branding", **signed).status_code, 404)
+        self.assertEqual(public.get("/api/v1/customer-website/session", **signed).status_code, 404)
+        self.assertEqual(public.get("/api/v1/public/website/first-garage/").status_code, 404)
+
+        enabled = self.client.patch(path, {"websiteEnabled": True}, format="json")
+        self.assertTrue(enabled.data["websiteEnabled"])
+        self.assertEqual(public.get("/api/v1/customer-website/branding", **signed).status_code, 200)
+        self.assertEqual(resolve_link(token).pk, access.pk)
+        Company.objects.filter(pk=self.company.pk).update(is_active=False)
+        self.assertEqual(public.get("/api/v1/customer-website/branding", **signed).status_code, 404)
+        self.assertEqual(public.get("/api/v1/public/website/first-garage/").status_code, 404)
 
     @override_settings(DEBUG=False)
     def test_production_default_routes_the_nested_workshop_hostname(self):

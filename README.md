@@ -422,12 +422,15 @@ One Next.js deployment serves all workshop websites at
 Company model or another Vercel project on every signup.** Signup already
 creates a `CompanyWebsiteSubdomain` reservation, and migration
 `apps.companies.0009_company_website_subdomain` backfills existing workshops.
-Changing the public website label never changes the staff login `Company.slug`.
+Changing the public website label leaves the staff login `Company.slug`
+intact and permanently retires the previous label. Migration
+`companies.0011_website_publication` keeps existing sites enabled and
+lets owners pause public pages and customer tracking under their label.
 
 The Next.js same-origin route `/api/portal/*` signs each request using
 `PORTAL_PROXY_SHARED_SECRET` and forwards it to Django at
 `/api/v1/customer-website/*`. Django verifies the signature and resolves
-only an active Company with a matching registered hostname. Browser-supplied
+only an active Company with an enabled website and a matching hostname. Browser-supplied
 company IDs are not accepted for tenant selection. The public homepage
 only returns public branding; private data requires a valid customer link
 exchanged for a tenant-scoped HttpOnly session cookie.
@@ -440,6 +443,7 @@ Set **in Django's private runtime environment**:
 # Actual HTTPS host on which this Django service runs.
 DJANGO_ALLOWED_HOSTS=api.cubixgear.tech
 CUSTOMER_PORTAL_ROOT_DOMAIN=customer.cubixgear.tech
+CUSTOMER_WEBSITE_SCHEME=https
 PORTAL_PROXY_SHARED_SECRET=<same-random-value-at-least-32-chars-as-nextjs>
 # Temporary link fallback must be a real, existing endpoint if links are disabled.
 CUSTOMER_PORTAL_BASE_URL=https://customer.example.com/access
@@ -469,14 +473,26 @@ domain for every customer subdomain.
 
 ### Wildcard DNS and production rollout
 
-For Vercel, attach `*.customer.cubixgear.tech` to the **single** Customer
-Website project. Vercel's official wildcard setup requires the **nameservers
-method** to support certificate issuance/renewal. Do not assume that adding
-a wildcard CNAME and delegating only `_acme-challenge` is sufficient.
-If the existing apex `cubixgear.tech` DNS is managed elsewhere, plan a
-careful `customer.cubixgear.tech` DNS-zone delegation with your provider
-and Vercel, or use the existing reverse proxy with a managed wildcard
-certificate. Preserve live API, app, mail and unrelated DNS records.
+For Vercel, attach `*.customer.cubixgear.tech` to the single Customer
+Website project and enable Vercel DNS for the team domain. Keep the current
+registrar nameservers when using Vercel's documented external DNS method.
+Add these records in the `cubixgear.tech` zone:
+
+| Type | Name | Value |
+| --- | --- | --- |
+| CNAME | `*.customer` | `cname.vercel-dns-0.com.` |
+| NS | `_acme-challenge.customer` | `ns1.vercel-dns.com.` |
+| NS | `_acme-challenge.customer` | `ns2.vercel-dns.com.` |
+
+If Vercel requests ownership verification, use the project-provided TXT record.
+The existing `customer` and `api` records can remain in place. If the
+configured hosting is the private Next.js reverse proxy, use an `A` record
+named `*.customer` pointing to the verified customer edge IPv4 address, and
+configure an automatically renewed DNS-01 certificate for
+`*.customer.cubixgear.tech` on that edge. The backend API and Company Panel
+retain their own hostnames and origins.
+
+[Vercel wildcard domains with external DNS](https://vercel.com/docs/domains/working-with-domains/add-a-domain#use-wildcard-domains-with-an-external-dns-provider)
 
 1. Deploy Django and Next.js using their respective production environment
    variables; run `python manage.py migrate --noinput`.
@@ -485,20 +501,22 @@ certificate. Preserve live API, app, mail and unrelated DNS records.
 3. Run `npm run verify:portal -- <workshop>.customer.cubixgear.tech` from
    the frontend repo. It checks branding HTTP 200, unauthenticated session
    HTTP 401, and an unknown workshop HTTP 404 (without access tokens).
-4. Generate a **test customer's** access link from the Company Panel, redeem
-   it on the correct workshop hostname, and verify authorized vehicle and
-   invoice data. Test that another workshop hostname cannot read the session.
-   Do not paste or log actual access links, cookies or private payloads.
-5. Only after successful checks, change
+4. Enable wildcard link issuance by changing
    `CUSTOMER_WEBSITE_LINKS_ENABLED=True` in Django and restart the service.
    The setting reports deployment readiness by operator choice; it does not
    query live DNS/SSL automatically.
+5. Generate a **test customer's** access link from the Company Panel, redeem
+   it on the correct workshop hostname, and verify authorized vehicle and
+   invoice data. Test that another workshop hostname cannot read the session.
+   Do not paste or log actual access links, cookies or private payloads.
 
-### Existing endpoints
+### Customer Website endpoints
 
 - `GET /api/v1/company/customer-website` — workshop branding and label
 - `PATCH /api/v1/company/customer-website` — workshop branding
-- `PATCH /api/v1/company/customer-website/subdomain` — change public label
+- `GET /api/v1/company/customer-website/subdomain?label=office` — check label availability for the signed-in company
+- `PATCH /api/v1/company/customer-website/subdomain` — save `label`, `websiteEnabled`, or both
+- `GET /api/v1/public/website/office/` — public branding and canonical website URL for a published label
 - `GET /api/v1/customer-website/branding` — public workshop branding
 - `POST /api/v1/customer-website/session` — exchange private access capability
 - `GET /api/v1/customer-website/session` — authorized customer dashboard

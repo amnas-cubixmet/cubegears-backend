@@ -73,13 +73,14 @@ class CompanyWebsiteSubdomain(models.Model):
     """Dedicated public-site hostname; never mutate Company.slug (staff login ID).
 
     The unique label is a global namespace shared by all workshop customer
-    websites under CUSTOMER_PORTAL_ROOT_DOMAIN. Backfilled for legacy tenants.
+    websites under CUSTOMER_PORTAL_ROOT_DOMAIN. Unowned labels are retired.
     """
     id = models.BigAutoField(primary_key=True)
     company = models.OneToOneField(
-        Company, on_delete=models.CASCADE, related_name="website_subdomain"
+        Company, null=True, on_delete=models.SET_NULL, related_name="website_subdomain"
     )
     label = models.SlugField(max_length=63, unique=True)
+    website_enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

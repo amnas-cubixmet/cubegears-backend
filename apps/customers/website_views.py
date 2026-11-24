@@ -24,8 +24,10 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from apps.companies.models import Company, CompanyWebsiteSettings, CompanyWebsiteSubdomain
-from apps.companies.subdomains import LABEL_PATTERN, RESERVED_LABELS, customer_portal_root_domain
+from apps.companies.models import Company, CompanyWebsiteSettings
+from apps.companies.subdomains import (
+    customer_portal_root_domain, customer_website_url, resolve_published_company,
+)
 from apps.customers.models import CustomerPortalAccess
 from apps.customers.portal_tokens import resolve_link
 from apps.customers.estimate_review import public_estimate
@@ -70,25 +72,18 @@ def _tenant(request):
     if settings.DEBUG and hostname in {"localhost", "127.0.0.1"}:
         slug = os.environ.get("PORTAL_DEV_COMPANY_SLUG", "")
         if slug:
-            return get_object_or_404(Company, slug=slug, is_active=True)
+            return get_object_or_404(
+                Company.objects.exclude(website_subdomain__website_enabled=False),
+                slug=slug, is_active=True,
+            )
     root = customer_portal_root_domain()
     if settings.DEBUG and hostname.endswith(".localhost"):
         root = "localhost"
     if hostname.endswith("." + root):
         label = hostname[:-(len(root) + 1)]
-        if LABEL_PATTERN.fullmatch(label) and label not in RESERVED_LABELS:
-            entry = CompanyWebsiteSubdomain.objects.select_related("company").filter(
-                label=label, company__is_active=True
-            ).first()
-            if entry:
-                return entry.company
-            # Legacy test/admin-created companies may not yet have a registry
-            # row. Never fall back to the login slug of a renamed website.
-            fallback = Company.objects.filter(
-                slug=label, is_active=True, website_subdomain__isnull=True
-            ).first()
-            if fallback:
-                return fallback
+        company = resolve_published_company(label)
+        if company:
+            return company
     raise Http404("Website not found.")
 
 
@@ -284,6 +279,28 @@ class PortalBaseView(APIView):
         # Validate the signed proxy request before touching the tenant's rate limit.
         request.portal_company = _tenant(request)
         super().perform_authentication(request)
+
+
+@method_decorator(never_cache, name="dispatch")
+class PublicWebsiteView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "customer_website"
+
+    def get(self, request, label):
+        company = resolve_published_company(label)
+        if not company:
+            return _no_store(Response({"message": "Website not found."}, status=404))
+        label = label.lower()
+        return _no_store(Response({
+            **_branding(company),
+            "company_name": company.name,
+            "subdomain": label,
+            "website_url": customer_website_url(label),
+            "is_active": True,
+            "website_enabled": True,
+        }))
 
 
 class WebsiteBrandingView(PortalBaseView):
