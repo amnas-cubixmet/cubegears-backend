@@ -242,6 +242,10 @@ def snapshot(company):
         step == "bank" and state.get("completed")
         and all(old in completed_steps for old in LEGACY_STEPS)
     )]
+    # Progress flags can predate required-field rules or saved master-data edits.
+    # Surface stale steps as incomplete only while mandatory onboarding is pending.
+    missing_fields = persisted_setup_errors(company) if state.get("required") and not state.get("completed") else {}
+    done = [step for step in done if step not in missing_fields]
     location = setting_data(company, "attendance")
     operations = setting_data(company, "operations", DEFAULT_OPERATIONS)
     billing = setting_data(company, "billing", DEFAULT_BILLING)
@@ -271,6 +275,7 @@ def snapshot(company):
         "required": bool(state.get("required", False)),
         "completed": bool(state.get("completed") and len(done) == len(STEPS)),
         "completedSteps": done,
+        "missingFields": missing_fields,
         "steps": [{"key": step, "completed": step in done} for step in STEPS],
         "company": {
             **{key: getattr(company, key) for key in fields},
