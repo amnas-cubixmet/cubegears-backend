@@ -347,24 +347,27 @@ class WorkshopSetupView(APIView):
         company = Company.objects.select_for_update().get(pk=request.user.company_id)
         branch = head_branch(company)
         pending = onboarding_pending(company)
-        if pending:
-            errors = required_field_errors(step, values)
-            if step == "company":
-                if values.get("gstNotRegistered") and values.get("gstin"):
-                    errors["gstin"] = ["Clear GSTIN when confirming no GST registration."]
-                elif not values.get("gstNotRegistered") and not values.get("gstin"):
-                    errors["gstin"] = ["Provide GSTIN or tick No GST registration."]
-            if errors:
-                return Response(errors, status=400)
+        errors = required_field_errors(step, values) if pending else {}
+        explicit_gst_choice = step == "company" and "gstNotRegistered" in payload
+        if step == "company" and (pending or explicit_gst_choice):
+            if values.get("gstNotRegistered") and values.get("gstin"):
+                errors["gstin"] = ["Clear GSTIN when confirming no GST registration."]
+            elif not values.get("gstNotRegistered") and not values.get("gstin", company.gstin):
+                errors["gstin"] = ["Provide GSTIN or tick No GST registration."]
+        if errors:
+            return Response(errors, status=400)
 
         if step == "company":
             gst_not_registered = values.pop("gstNotRegistered", False)
-            if pending and gst_not_registered:
+            if (pending or explicit_gst_choice) and gst_not_registered:
                 values["gstin"] = ""
             for key, value in values.items():
                 setattr(company, key, value)
             company.save(update_fields=[*values, "updated_at"])
-            if pending:
+            # GST choice and GSTIN must agree even when reopening completed setup.
+            # Older clients omitting the choice may supply a real GSTIN, but an
+            # unrelated partial company update must not overwrite the choice.
+            if pending or explicit_gst_choice or values.get("gstin"):
                 update_setting(company, branch, "onboarding", {
                     "gstNotRegistered": bool(gst_not_registered),
                 })
