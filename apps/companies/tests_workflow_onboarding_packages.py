@@ -145,6 +145,37 @@ class FirstLoginMandatorySetupTests(TestCase):
         self.assertTrue(user_has_permission(self.owner, "jobs.view"))
         self.assertEqual(CreditWallet.objects.get(company=self.company).balance, Decimal("0.00"))
 
+    def test_stale_completed_steps_are_recoverable_without_resetting_other_data(self):
+        self.assertEqual(self.step("company", self.company_fields()).status_code, 200)
+        self.assertEqual(self.step("branch", self.branch_fields()).status_code, 200)
+        self.assertEqual(self.step("operations", {
+            "workingStart": "09:00", "workingEnd": "18:30",
+            "bookingSlotMinutes": 30, "jobPrefix": "GPT-",
+        }).status_code, 200)
+        self.assertEqual(self.step("bank", {"mode": "skip"}).status_code, 200)
+        self.assertEqual(self.step("billing", {
+            "invoicePrefix": "INV-", "paymentTermsDays": 5,
+            "defaultTaxRate": "18.00", "rounding": True,
+        }).status_code, 200)
+        # Simulate data saved under earlier onboarding rules or edited later.
+        Branch.objects.filter(pk=self.branch.pk).update(phone="")
+        url = "/api/v1/company/onboarding"
+        snapshot = self.client.get(url)
+        self.assertEqual(snapshot.status_code, 200)
+        self.assertNotIn("branch", snapshot.data["completedSteps"])
+        self.assertIn("phone", snapshot.data["missingFields"]["branch"])
+        self.assertIn("bank", snapshot.data["completedSteps"])
+        self.assertIn("billing", snapshot.data["completedSteps"])
+        rejected = self.client.post(url + "/complete")
+        self.assertEqual(rejected.status_code, 400)
+        self.assertIn("phone", rejected.data["missingFields"]["branch"])
+        repaired = self.step("branch", self.branch_fields())
+        self.assertEqual(repaired.status_code, 200)
+        self.assertEqual(repaired.data["missingFields"], {})
+        finished = self.client.post(url + "/complete")
+        self.assertEqual(finished.status_code, 200)
+        self.assertTrue(finished.data["completed"])
+
     def test_legacy_tenant_without_required_setup_is_not_locked(self):
         CompanySetting.objects.filter(company=self.company, category="onboarding").delete()
         self.assertTrue(user_has_permission(self.owner, "jobs.view"))
