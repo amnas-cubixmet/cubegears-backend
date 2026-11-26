@@ -7,7 +7,7 @@ import base64
 import re
 from decimal import Decimal
 from io import BytesIO
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from PIL import Image, ImageDraw
 from reportlab.graphics.barcode.qr import QrCodeWidget
@@ -155,7 +155,7 @@ def upi_qr_details(values):
     if not upi_id:
         return {"upiId": "", "payeeName": "", "qrDataUrl": ""}
     # Amount is intentionally omitted: this is a reusable merchant payment QR.
-    uri = "upi://pay?" + urlencode({"pa": upi_id, "pn": payee, "cu": "INR"})
+    uri = "upi://pay?" + urlencode({"pa": upi_id, "pn": payee, "cu": "INR"}, quote_via=quote)
     widget = QrCodeWidget(uri, barLevel="M")
     widget.qr.make()
     modules = widget.qr.modules
