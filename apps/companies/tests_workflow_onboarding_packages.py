@@ -123,6 +123,37 @@ class FirstLoginMandatorySetupTests(TestCase):
         self.assertEqual(self.company.gstin, "32ABCDE1234F1Z5")
         self.assertFalse(registered.data["company"]["gstNotRegistered"])
 
+    def test_completed_onboarding_can_switch_gst_choice_both_ways(self):
+        state = CompanySetting.objects.get(company=self.company, category="onboarding")
+        state.data = {"required": True, "completed": True,
+                      "completedSteps": ["company", "branch", "operations", "bank", "billing"],
+                      "gstNotRegistered": True}
+        state.save(update_fields=["data"])
+        self.assertEqual(self.step("branch", self.branch_fields()).status_code, 200)
+        registered = self.step("company", self.company_fields(
+            gstNotRegistered=False, gstin="32ABCDE1234F1Z5",
+        ))
+        self.assertEqual(registered.status_code, 200, registered.data)
+        self.assertFalse(registered.data["company"]["gstNotRegistered"])
+        self.assertEqual(self.client.post("/api/v1/company/onboarding/complete").status_code, 200)
+        unregistered = self.step("company", self.company_fields())
+        self.assertEqual(unregistered.status_code, 200, unregistered.data)
+        self.assertTrue(unregistered.data["company"]["gstNotRegistered"])
+        self.assertEqual(unregistered.data["company"]["gstin"], "")
+        self.assertEqual(self.client.post("/api/v1/company/onboarding/complete").status_code, 200)
+
+    def test_completed_onboarding_rejects_conflicting_gst_choice(self):
+        state = CompanySetting.objects.get(company=self.company, category="onboarding")
+        state.data = {"required": True, "completed": True, "gstNotRegistered": True}
+        state.save(update_fields=["data"])
+        response = self.step("company", self.company_fields(
+            gstNotRegistered=True, gstin="32ABCDE1234F1Z5",
+        ))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("gstin", response.data)
+        self.company.refresh_from_db()
+        self.assertEqual(self.company.gstin, "")
+
     def test_no_dashboard_or_paid_route_until_all_steps_complete(self):
         self.assertEqual(self.step("company", self.company_fields()).status_code, 200)
         self.assertEqual(self.step("branch", self.branch_fields()).status_code, 200)
