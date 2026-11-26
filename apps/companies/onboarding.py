@@ -3,8 +3,14 @@
 No shadow GST, branch, finance, or company master is created.
 """
 
+import base64
 import re
 from decimal import Decimal
+from io import BytesIO
+from urllib.parse import quote, urlencode
+
+from PIL import Image, ImageDraw
+from reportlab.graphics.barcode.qr import QrCodeWidget
 
 from django.db import transaction
 from rest_framework import serializers
@@ -128,7 +134,49 @@ class BillingSetupForm(serializers.Serializer):
     rounding = serializers.BooleanField()
 
 
+class UpiSetupForm(serializers.Serializer):
+    upiId = serializers.RegexField(
+        r"\A[A-Za-z0-9._-]{1,100}@[A-Za-z0-9][A-Za-z0-9.-]{0,49}\Z",
+        max_length=151, allow_blank=True,
+    )
+    payeeName = serializers.CharField(max_length=100, allow_blank=True)
+
+    def validate(self, values):
+        if values["upiId"] and not values["payeeName"]:
+            raise serializers.ValidationError({"payeeName": "Enter the UPI account holder name."})
+        if not values["upiId"]:
+            values["payeeName"] = ""
+        return values
+
+
+def upi_qr_details(values):
+    upi_id = values.get("upiId", "")
+    payee = values.get("payeeName", "")
+    if not upi_id:
+        return {"upiId": "", "payeeName": "", "qrDataUrl": ""}
+    # Amount is intentionally omitted: this is a reusable merchant payment QR.
+    uri = "upi://pay?" + urlencode({"pa": upi_id, "pn": payee, "cu": "INR"}, quote_via=quote)
+    widget = QrCodeWidget(uri, barLevel="M")
+    widget.qr.make()
+    modules = widget.qr.modules
+    scale, border = 8, 4
+    size = (len(modules) + 2 * border) * scale
+    image = Image.new("1", (size, size), 1)
+    draw = ImageDraw.Draw(image)
+    for y, row in enumerate(modules):
+        for x, dark in enumerate(row):
+            if dark:
+                left, top = (x + border) * scale, (y + border) * scale
+                draw.rectangle((left, top, left + scale - 1, top + scale - 1), fill=0)
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return {"upiId": upi_id, "payeeName": payee,
+            "paymentUri": uri,
+            "qrDataUrl": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")}
+
+
 class BankSetupForm(serializers.Serializer):
+    upi = UpiSetupForm(required=False)
     mode = serializers.ChoiceField(choices=("new", "existing", "skip"))
     accountId = serializers.UUIDField(required=False)
     name = serializers.CharField(required=False, max_length=120, allow_blank=True)
@@ -197,6 +245,7 @@ def snapshot(company):
     location = setting_data(company, "attendance")
     operations = setting_data(company, "operations", DEFAULT_OPERATIONS)
     billing = setting_data(company, "billing", DEFAULT_BILLING)
+    upi = setting_data(company, "upi_payment")
     fields = ("name", "legal_name", "phone", "email", "address",
               "city", "state", "country", "pincode", "gstin")
     branch_fields = ("name", "phone", "address", "city", "state", "pincode")
@@ -238,6 +287,7 @@ def snapshot(company):
         "operations": {key: operations[key] for key in DEFAULT_OPERATIONS},
         "billing": {key: billing[key] for key in DEFAULT_BILLING},
         "bank": {
+            "upi": upi_qr_details(upi),
             "configured": selected_bank is not None,
             "skipped": bool(state.get("bankSkipped", False)) and selected_bank is None,
             "accountId": str(selected_bank.pk) if selected_bank else "",
@@ -272,6 +322,12 @@ class WorkshopSetupView(APIView):
 
     def get(self, request):
         return Response(snapshot(request.user.company))
+
+    def post(self, request):
+        """Owner-only, stateless QR preview; never creates a financial transaction."""
+        form = UpiSetupForm(data=request.data)
+        form.is_valid(raise_exception=True)
+        return Response(upi_qr_details(form.validated_data))
 
     @transaction.atomic
     def patch(self, request):
@@ -409,6 +465,10 @@ class WorkshopSetupView(APIView):
                 update_setting(company, branch, "onboarding", {
                     "bankAccountId": str(existing.pk), "bankSkipped": False,
                 })
+        if step == "bank" and "upi" in values:
+            # Separate payment instructions from accounting balances. A skipped bank
+            # does not prevent a workshop from accepting UPI payments.
+            update_setting(company, branch, "upi_payment", values["upi"])
         state = setting_data(company, "onboarding")
         state["completedSteps"] = [
             key for key in STEPS if key == step or key in state.get("completedSteps", [])

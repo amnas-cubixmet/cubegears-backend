@@ -64,6 +64,50 @@ class SetupFlowTests(TestCase):
             company=self.company, category="billing",
         ).data["invoicePrefix"], "CG-")
 
+
+    def test_upi_preview_is_stateless_and_saved_without_bank(self):
+        import base64
+        from io import BytesIO
+        from urllib.parse import parse_qs, urlsplit
+        from PIL import Image
+
+        url = "/api/v1/company/onboarding"
+        upi = {"upiId": "garage@upi", "payeeName": "Garage & Sons"}
+        preview = self.client.post(url, upi, format="json")
+        self.assertEqual(preview.status_code, 200, preview.data)
+        self.assertEqual(parse_qs(urlsplit(preview.data["paymentUri"]).query),
+                         {"pa": ["garage@upi"], "pn": ["Garage & Sons"], "cu": ["INR"]})
+        png = base64.b64decode(preview.data["qrDataUrl"].split(",", 1)[1])
+        image = Image.open(BytesIO(png))
+        self.assertEqual(image.format, "PNG")
+        image.verify()
+        self.assertFalse(CompanySetting.objects.filter(company=self.company, category="upi_payment").exists())
+        saved = self.client.patch(url, {"step": "bank", "data": {"mode": "skip", "upi": upi}}, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertEqual(saved.data["bank"]["upi"]["upiId"], upi["upiId"])
+        self.assertTrue(saved.data["bank"]["skipped"])
+        self.assertFalse(WorkshopFinancialAccount.objects.filter(company=self.company).exists())
+        other = Company.objects.create(name="Other UPI garage", slug="other-upi-garage")
+        from apps.companies.onboarding import snapshot
+        self.assertEqual(snapshot(other)["bank"]["upi"]["upiId"], "")
+        # Older bank clients that omit UPI cannot overwrite it.
+        self.client.patch(url, {"step": "bank", "data": {"mode": "skip"}}, format="json")
+        self.assertEqual(self.client.get(url).data["bank"]["upi"]["upiId"], upi["upiId"])
+        cleared = self.client.patch(url, {"step": "bank", "data": {
+            "mode": "skip", "upi": {"upiId": "", "payeeName": ""}}}, format="json")
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        self.assertEqual(cleared.data["bank"]["upi"]["qrDataUrl"], "")
+
+    def test_invalid_upi_does_not_save_bank_or_payment_details(self):
+        url = "/api/v1/company/onboarding"
+        payload = {"mode": "skip", "upi": {"upiId": "not-a-vpa", "payeeName": "Garage"}}
+        result = self.client.patch(url, {"step": "bank", "data": payload}, format="json")
+        self.assertEqual(result.status_code, 400)
+        self.assertFalse(CompanySetting.objects.filter(company=self.company, category="upi_payment").exists())
+        self.assertNotIn("bank", self.client.get(url).data["completedSteps"])
+        missing_name = self.client.post(url, {"upiId": "garage@upi", "payeeName": ""}, format="json")
+        self.assertEqual(missing_name.status_code, 400)
+
     def test_cannot_finish_incomplete_setup(self):
         response = self.client.post("/api/v1/company/onboarding/complete")
         self.assertEqual(response.status_code, 400)
